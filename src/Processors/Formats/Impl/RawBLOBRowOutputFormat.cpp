@@ -26,6 +26,7 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
 }
 
 
+void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerOutputFormat("RawBLOB", [](
