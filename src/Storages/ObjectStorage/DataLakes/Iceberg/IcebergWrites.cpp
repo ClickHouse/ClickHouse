@@ -219,7 +219,7 @@ String removeEscapedSlashes(const String & json_str)
     return result;
 }
 
-void extendSchemaForPartitions(
+static void extendSchemaForPartitions(
     String & schema,
     const std::vector<String> & partition_columns,
     const std::vector<DataTypePtr> & partition_types)
@@ -308,7 +308,7 @@ void generateManifestFile(
         {
             if (version > 1)
             {
-                size_t field_index;
+                size_t field_index = 0;
                 if (!schema.root()->nameIndex(field_name, field_index))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
 
@@ -476,7 +476,7 @@ void generateManifestList(
         {
             if (version == 1)
             {
-                size_t field_index;
+                size_t field_index = 0;
                 if (!schema.root()->nameIndex(field_name, field_index))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
 

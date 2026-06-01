@@ -85,7 +85,7 @@ DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
 size_t parseTypeSize(const std::string & size_str)
 {
     ReadBufferFromString buf(size_str);
-    size_t size;
+    size_t size = 0;
     if (!tryReadIntText(size, buf))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid data type size: {}", size_str);
     return size;
@@ -94,7 +94,7 @@ size_t parseTypeSize(const std::string & size_str)
 std::shared_ptr<NumpyDataType> parseType(String type)
 {
     /// Parse endianness
-    NumpyDataType::Endianness endianness;
+    NumpyDataType::Endianness endianness = {};
     if (type[0] == '<')
         endianness = NumpyDataType::Endianness::LITTLE;
     else if (type[0] == '>')
@@ -145,7 +145,7 @@ std::vector<size_t> parseShape(String shape_string)
         /// Reject negative values before parsing as unsigned.
         if (!buf.eof() && *buf.position() == '-')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Negative shape dimension in shape {}", shape_string);
-        size_t value;
+        size_t value = 0;
         if (!tryReadIntText(value, buf))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shape format: {}", shape_string);
         shape.push_back(value);
@@ -160,17 +160,17 @@ NumpyHeader parseHeader(ReadBuffer &buf)
     assertString(magic_string, buf);
 
     /// Read npy version.
-    UInt8 version_major;
-    UInt8 version_minor;
+    UInt8 version_major = 0;
+    UInt8 version_minor = 0;
     readBinary(version_major, buf);
     readBinary(version_minor, buf);
 
     /// Read header length.
-    UInt32 header_length;
+    UInt32 header_length = 0;
     /// In v1 header length is 2 bytes, in v2 - 4 bytes.
     if (version_major == 1)
     {
-        UInt16 header_length_u16;
+        UInt16 header_length_u16 = 0;
         readBinaryLittleEndian(header_length_u16, buf);
         header_length = header_length_u16;
     }
@@ -360,7 +360,7 @@ NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Par
 
 size_t NpyRowInputFormat::countRows(size_t max_block_size)
 {
-    size_t count;
+    size_t count = 0;
     if (counted_rows + max_block_size <= size_t(header.shape[0]))
         count = max_block_size;
     else
@@ -383,7 +383,7 @@ void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyD
 template <typename ColumnValue>
 void NpyRowInputFormat::readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness)
 {
-    uint16_t value;
+    uint16_t value = 0;
     if (endianness == NumpyDataType::Endianness::BIG)
         readBinaryBigEndian(value, *in);
     else
@@ -427,7 +427,7 @@ void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr &
 template <typename T>
 void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataTypePtr & data_type, const NumpyDataType & npy_type, bool is_fixed)
 {
-    size_t size;
+    size_t size = 0;
     if (npy_type.getTypeIndex() == NumpyDataTypeIndex::String)
         size = assert_cast<const NumpyDataTypeString &>(npy_type).getSize();
     else if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
@@ -545,6 +545,7 @@ std::optional<size_t> NpySchemaReader::readNumberOrRows()
     return header.shape[0];
 }
 
+void registerInputFormatNpy(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory)
 {
     factory.registerInputFormat("Npy", [](
@@ -558,6 +559,7 @@ void registerInputFormatNpy(FormatFactory & factory)
 
     factory.markFormatSupportsSubsetOfColumns("Npy");
 }
+void registerNpySchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Npy", [](ReadBuffer & buf, const FormatSettings &)
