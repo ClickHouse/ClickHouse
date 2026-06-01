@@ -848,7 +848,7 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
@@ -865,7 +865,7 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr;
+    Discriminator global_discr = 0;
     readBinaryLittleEndian<Discriminator>(global_discr, in);
 
     if (global_discr == NULL_DISCRIMINATOR)
@@ -1230,7 +1230,7 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return cloneEmpty();
 

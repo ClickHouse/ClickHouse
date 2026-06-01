@@ -56,7 +56,7 @@ struct SummingSortedAlgorithm::AggregateDescription
     /// use the aggregate function from itself instead of 'function' above.
     bool is_agg_func_type = false;
     bool is_simple_agg_func_type = false;
-    bool remove_default_values;
+    bool remove_default_values{};
     bool aggregate_all_columns = false;
 
     String sum_function_map_name;
@@ -924,7 +924,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (queue.isValid())
     {
-        bool key_differs;
+        bool key_differs = false;
 
         SortCursor current = queue.current();
 

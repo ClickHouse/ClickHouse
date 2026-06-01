@@ -1037,13 +1037,13 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    size_t num_paths;
+    size_t num_paths = 0;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size;
+        size_t path_size = 0;
         readBinaryLittleEndian<size_t>(path_size, in);
 
         if (in.available() < path_size)
@@ -1056,7 +1056,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         in.ignore(path_size);
 
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        size_t value_size;
+        size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
 
         /// Check if we have this path in dynamic paths.
@@ -1103,16 +1103,16 @@ void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
         typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    size_t num_paths;
+    size_t num_paths = 0;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size;
+        size_t path_size = 0;
         readBinaryLittleEndian<size_t>(path_size, in);
         in.ignore(path_size);
 
-        size_t value_size;
+        size_t value_size = 0;
         readBinaryLittleEndian<size_t>(value_size, in);
         in.ignore(value_size);
     }

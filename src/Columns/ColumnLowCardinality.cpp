@@ -151,7 +151,7 @@ bool ColumnLowCardinality::tryInsert(const Field & x)
 {
     compactIfSharedDictionary();
 
-    size_t index;
+    size_t index = 0;
     if (!dictionary.getColumnUnique().tryUniqueInsert(x, index))
         return false;
 
@@ -454,7 +454,7 @@ struct LowCardinalityComparator
 
     inline bool operator () (size_t lhs, size_t rhs) const
     {
-        int ret;
+        int ret = 0;
 
         const UInt64 lhs_index = real_indexes.getUInt(lhs);
         const UInt64 rhs_index = real_indexes.getUInt(rhs);

@@ -126,7 +126,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
             chassert(result.entry->isConnected());
@@ -206,7 +206,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_,
+    ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -266,7 +266,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 #endif
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
@@ -456,7 +456,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     // Collect all roles granted on this node and pass those to the remote node
-    std::vector<String> local_granted_roles;
+    Strings local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
@@ -772,7 +772,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     return ReadResult(ReadResult::Type::Nothing);
 }
 
-bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
+bool RemoteQueryExecutor::setPartUUIDs(const UUIDs & uuids)
 {
     auto query_context = context->getQueryContext();
     auto duplicates = query_context->getPartUUIDs()->add(uuids);
