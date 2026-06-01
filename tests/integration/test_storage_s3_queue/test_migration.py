@@ -40,15 +40,18 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        # The tag is pinned to a release that knows the `table_readonly`
-        # MergeTree setting (added in 26.3) so that rotated system log
-        # tables can be re-attached after `restart_with_original_version`.
+        # System logs are disabled so that the new server does not create
+        # rotated system log tables marked with the `table_readonly` setting,
+        # which the older binary started via `restart_with_original_version`
+        # would not know and would fail to attach. Without this, the second
+        # parametrized run (which downgrades back to the old version) would
+        # fail to start on the rotated `*_log_N` tables left by the new server.
         cluster.add_instance(
             "instance_24.5",
             with_zookeeper=True,
             with_minio=True,
             image="clickhouse/clickhouse-server",
-            tag="26.3",
+            tag="24.5",
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
@@ -57,6 +60,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers_245.xml",
+                "configs/zz_disable_system_logs.xml",
             ],
             with_installed_binary=True,
         )
@@ -66,7 +70,7 @@ def started_cluster():
             with_minio=True,
             keeper_required_feature_flags=["create_if_not_exists"],
             image="clickhouse/clickhouse-server",
-            tag="26.3",
+            tag="24.5",
             stay_alive=True,
             user_configs=[
                 "configs/users.xml",
@@ -75,6 +79,7 @@ def started_cluster():
             main_configs=[
                 "configs/s3queue_log.xml",
                 "configs/remote_servers_245.xml",
+                "configs/zz_disable_system_logs.xml",
             ],
             with_installed_binary=True,
         )
@@ -96,7 +101,7 @@ def test_migration(started_cluster, setting_prefix, buckets_num):
     node2 = started_cluster.instances["instance2_24.5"]
 
     for node in [node1, node2]:
-        if "26.3" not in node.query("select version()").strip():
+        if "24.5" not in node.query("select version()").strip():
             node.restart_with_original_version()
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"

@@ -7,13 +7,15 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         # Until 25.12 index filenames weren't escaped.
-        # The tag is pinned to a release that knows the `table_readonly`
-        # MergeTree setting (added in 26.3) so that rotated system log
-        # tables can be re-attached after `restart_with_original_version`.
+        # System logs are disabled so that the new server does not create
+        # rotated system log tables marked with the `table_readonly` setting,
+        # which the older binary started via `restart_with_original_version`
+        # would not know and would fail to attach.
         cluster.add_instance(
             "old_node",
             image="clickhouse/clickhouse-server",
-            tag="26.3",
+            tag="25.12.3.21",
+            main_configs=["configs/zz_disable_system_logs.xml"],
             with_installed_binary=True,
             stay_alive=True,
         )
