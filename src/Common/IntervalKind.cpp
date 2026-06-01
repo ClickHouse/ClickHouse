@@ -3,6 +3,9 @@
 
 #include <base/EnumReflection.h>
 
+#include <string_view>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -253,112 +256,44 @@ bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view na
     /// are listed there as well but no such ClickHouse functions exist, so we
     /// don't recognise them here either - extraction on those interval kinds
     /// would fail at function-resolution time anyway.
-    if (name == "toMillisecond")
-    {
-        result = IntervalKind::Kind::Millisecond;
-        return true;
-    }
-    if (name == "toSecond")
-    {
-        result = IntervalKind::Kind::Second;
-        return true;
-    }
-    if (name == "toMinute")
-    {
-        result = IntervalKind::Kind::Minute;
-        return true;
-    }
-    if (name == "toHour")
-    {
-        result = IntervalKind::Kind::Hour;
-        return true;
-    }
-    if (name == "toDayOfMonth")
-    {
-        result = IntervalKind::Kind::Day;
-        return true;
-    }
-    if (name == "toISOWeek")
-    {
-        result = IntervalKind::Kind::Week;
-        return true;
-    }
-    if (name == "toMonth")
-    {
-        result = IntervalKind::Kind::Month;
-        return true;
-    }
-    if (name == "toQuarter")
-    {
-        result = IntervalKind::Kind::Quarter;
-        return true;
-    }
-    if (name == "toYear")
-    {
-        result = IntervalKind::Kind::Year;
-        return true;
-    }
-    return false;
+    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
+        {"toMillisecond", IntervalKind::Kind::Millisecond},
+        {"toSecond",      IntervalKind::Kind::Second},
+        {"toMinute",      IntervalKind::Kind::Minute},
+        {"toHour",        IntervalKind::Kind::Hour},
+        {"toDayOfMonth",  IntervalKind::Kind::Day},
+        {"toISOWeek",     IntervalKind::Kind::Week},
+        {"toMonth",       IntervalKind::Kind::Month},
+        {"toQuarter",     IntervalKind::Kind::Quarter},
+        {"toYear",        IntervalKind::Kind::Year},
+    };
+    auto it = lookup.find(name);
+    if (it == lookup.end())
+        return false;
+    result = it->second;
+    return true;
 }
 
 
 bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
 {
-    if ("nanosecond" == kind)
-    {
-        result = IntervalKind::Kind::Nanosecond;
-        return true;
-    }
-    if ("microsecond" == kind)
-    {
-        result = IntervalKind::Kind::Microsecond;
-        return true;
-    }
-    if ("millisecond" == kind)
-    {
-        result = IntervalKind::Kind::Millisecond;
-        return true;
-    }
-    if ("second" == kind)
-    {
-        result = IntervalKind::Kind::Second;
-        return true;
-    }
-    if ("minute" == kind)
-    {
-        result = IntervalKind::Kind::Minute;
-        return true;
-    }
-    if ("hour" == kind)
-    {
-        result = IntervalKind::Kind::Hour;
-        return true;
-    }
-    if ("day" == kind)
-    {
-        result = IntervalKind::Kind::Day;
-        return true;
-    }
-    if ("week" == kind)
-    {
-        result = IntervalKind::Kind::Week;
-        return true;
-    }
-    if ("month" == kind)
-    {
-        result = IntervalKind::Kind::Month;
-        return true;
-    }
-    if ("quarter" == kind)
-    {
-        result = IntervalKind::Kind::Quarter;
-        return true;
-    }
-    if ("year" == kind)
-    {
-        result = IntervalKind::Kind::Year;
-        return true;
-    }
-    return false;
+    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
+        {"nanosecond",  IntervalKind::Kind::Nanosecond},
+        {"microsecond", IntervalKind::Kind::Microsecond},
+        {"millisecond", IntervalKind::Kind::Millisecond},
+        {"second",      IntervalKind::Kind::Second},
+        {"minute",      IntervalKind::Kind::Minute},
+        {"hour",        IntervalKind::Kind::Hour},
+        {"day",         IntervalKind::Kind::Day},
+        {"week",        IntervalKind::Kind::Week},
+        {"month",       IntervalKind::Kind::Month},
+        {"quarter",     IntervalKind::Kind::Quarter},
+        {"year",        IntervalKind::Kind::Year},
+    };
+    auto it = lookup.find(kind);
+    if (it == lookup.end())
+        return false;
+    result = it->second;
+    return true;
 }
 }
