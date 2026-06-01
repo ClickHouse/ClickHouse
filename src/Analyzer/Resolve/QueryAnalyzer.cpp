@@ -725,7 +725,7 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
                 && constant_node->getValue().getType() != Field::Types::Int64))
             continue;
 
-        UInt64 pos;
+        UInt64 pos = 0;
         if (constant_node->getValue().getType() == Field::Types::UInt64)
         {
             pos = constant_node->getValue().safeGet<UInt64>();

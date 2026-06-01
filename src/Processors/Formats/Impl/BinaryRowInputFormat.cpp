@@ -126,7 +126,7 @@ bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const Se
 {
     if constexpr (with_defaults)
     {
-        UInt8 is_default;
+        UInt8 is_default = 0;
         readBinary(is_default, *in);
         if (is_default)
         {

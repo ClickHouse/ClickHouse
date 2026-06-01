@@ -671,7 +671,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
                         if (need[COL_ATTR_INT])
                         {
-                            uint64_t ref;
+                            uint64_t ref = 0;
                             if (std::optional<uint64_t> offset = val.getAsRelativeReference())
                                 ref = val.getUnit()->getOffset() + *offset;
                             else if (offset = val.getAsDebugInfoReference(); offset)
@@ -706,7 +706,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                     parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
                 else if (low_pc.has_value())
                 {
-                    UInt64 high;
+                    UInt64 high = 0;
                     if (!high_pc.has_value())
                         high = *low_pc + 1;
                     else if (relative_high_pc)
@@ -839,7 +839,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     for (const auto & entry : prologue.FileNames)
     {
         auto val = entry.Name.getAsCString();
-        const char * c_str;
+        const char * c_str = nullptr;
         if (llvm::Error e = val.takeError())
         {
             c_str = "<error>";
@@ -862,7 +862,7 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
     uint64_t offset = addr_base + idx * 8;
     if (offset + 8 > debug_addr_section->size())
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: {} vs {}.", offset, debug_addr_section->size());
-    uint64_t res;
+    uint64_t res = 0;
     memcpy(&res, debug_addr_section->data() + offset, 8);
     return res;
 }
