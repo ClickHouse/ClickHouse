@@ -331,7 +331,7 @@ void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *
 
 void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -346,7 +346,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
 void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
     in.ignore(string_size);
 }
