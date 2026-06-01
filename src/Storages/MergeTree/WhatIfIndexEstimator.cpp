@@ -197,11 +197,12 @@ bool tryEstimateEmpirical(
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
-    ContextPtr /* context */)
+    ContextPtr context)
 try
 {
     const auto & data = read_step->getMergeTreeData();
     const auto & storage_snapshot = read_step->getStorageSnapshot();
+    const auto & mutations_snapshot = read_step->getMutationsSnapshot();
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
@@ -235,12 +236,18 @@ try
         /// and read only baseline-aligned ranges
         RangesInDataPart part_for_read(part);
 
+        /// Apply patch parts / on-the-fly mutations so the empirical scan sees
+        /// the same values a real read would, instead of stale raw part data
+        auto alter_conversions = mutations_snapshot
+            ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context)
+            : std::make_shared<AlterConversions>();
+
         Pipe pipe = createMergeTreeSequentialSource(
             MergeTreeSequentialSourceType::Merge,
             data,
             storage_snapshot,
             std::move(part_for_read),
-            std::make_shared<AlterConversions>(),
+            std::move(alter_conversions),
             nullptr,
             index_columns,
             std::nullopt,

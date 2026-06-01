@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HypotheticalIndexStore.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
 namespace DB
