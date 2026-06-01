@@ -1001,4 +1001,19 @@ StorageMetadataPtr StorageInMemoryMetadata::clone(StorageMetadataPtr from)
     return copy;
 }
 
+StorageMetadataHandle::StorageMetadataHandle(StorageMetadataPtr metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+StorageMetadataPtr & StorageMetadataHandle::ptr() &
+{
+    return metadata;
+}
+
+const StorageInMemoryMetadata * StorageMetadataHandle::operator->() &
+{
+    return metadata.get();
+}
+
 }

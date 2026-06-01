@@ -346,6 +346,20 @@ struct StorageInMemoryMetadata
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
 
+/// Lifetime-safe wrapper
+class [[nodiscard]] StorageMetadataHandle
+{
+public:
+    StorageMetadataHandle() = default;
+    StorageMetadataHandle(StorageMetadataPtr metadata_); /// NOLINT(google-explicit-constructor)
+
+    StorageMetadataPtr & ptr() &;
+    const StorageInMemoryMetadata * operator->() &;
+
+private:
+    StorageMetadataPtr metadata;
+};
+
 String listOfColumns(const NamesAndTypesList & available_columns);
 
 }
