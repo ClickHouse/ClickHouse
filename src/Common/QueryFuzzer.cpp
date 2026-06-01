@@ -266,17 +266,27 @@ Field QueryFuzzer::getRandomField(int type)
             return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
         }
         case 1: {
-            static constexpr double values[] = {
-                std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
-                -std::numeric_limits<double>::infinity(), 0.,
-                -0.,       0.0001,
-                0.5,       0.9999,
-                1.,        1.0001,
-                2.,        10.0001,
-                100.0001,  1000.0001,
-                1e10,      1e20,
-                static_cast<double>(FLT_MIN), static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
-                static_cast<double>(FLT_MAX), static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
+            static constexpr double values[]
+                = {std::numeric_limits<double>::quiet_NaN(),
+                   std::numeric_limits<double>::infinity(),
+                   -std::numeric_limits<double>::infinity(),
+                   0.,
+                   -0.,
+                   0.0001,
+                   0.5,
+                   0.9999,
+                   1.,
+                   1.0001,
+                   2.,
+                   10.0001,
+                   100.0001,
+                   1000.0001,
+                   1e10,
+                   1e20,
+                   static_cast<double>(FLT_MIN),
+                   static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
+                   static_cast<double>(FLT_MAX),
+                   static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
             return values[fuzz_rand() % std::size(values)];
         }
         case 2: {
@@ -1759,26 +1769,57 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
 
 static const std::map<size_t, Strings> swapAggrs
     = {{1,
-        {"any",
+        {"aggThrow",
+         "any",
          "anyHeavy",
          "anyLast",
          "anyRespectNulls",
+         "approx_top_k",
          "avg",
          "count",
          "deltaSum",
+         "distinctDynamicTypes",
+         "distinctJSONPaths",
+         "distinctJSONPathsAndTypes",
          "entropy",
+         "estimateCompressionRatio",
          "first_value",
+         "flameGraph",
          "groupArray",
+         "groupArrayIntersect",
+         "groupArrayLast",
+         "groupArrayMovingAvg",
+         "groupArrayMovingSum",
+         "groupArraySample",
+         "groupArraySorted",
          "groupBitAnd",
          "groupBitOr",
          "groupBitXor",
+         "groupBitmap",
+         "groupBitmapAnd",
+         "groupBitmapOr",
+         "groupBitmapXor",
+         "groupConcat",
          "groupUniqArray",
+         "histogram",
          "kurtPop",
          "kurtSamp",
          "last_value",
          "max",
          "median",
          "min",
+         "quantile",
+         "quantileBFloat16",
+         "quantileDD",
+         "quantileExact",
+         "quantileExactExclusive",
+         "quantileExactHigh",
+         "quantileExactInclusive",
+         "quantileExactLow",
+         "quantileGK",
+         "quantilePrometheusHistogram",
+         "quantileTDigest",
+         "quantileTiming",
          "singleValueOrNull",
          "skewPop",
          "skewSamp",
@@ -1797,21 +1838,15 @@ static const std::map<size_t, Strings> swapAggrs
          "uniqExact",
          "uniqHLL12",
          "uniqTheta",
+         "uniqUpTo",
          "varPop",
          "varPopStable",
          "varSamp",
-         "varSampStable",
-         "groupArrayIntersect",
-         "groupBitmapAnd",
-         "groupBitmapOr",
-         "groupBitmapXor",
-         "quantile",
-         "groupArrayMovingAvg",
-         "groupArrayMovingSum",
-         "groupArraySorted",
-         "aggThrow"}},
+         "varSampStable"}},
        {2,
-        {"argMax",
+        {"analysisOfVariance",
+         "approx_top_sum",
+         "argMax",
          "argMin",
          "avgWeighted",
          "boundingRatio",
@@ -1825,21 +1860,33 @@ static const std::map<size_t, Strings> swapAggrs
          "cramersV",
          "cramersVBiasCorrected",
          "deltaSumTimestamp",
+         "exponentialMovingAverage",
+         "groupArrayInsertAt",
+         "intervalLengthSum",
          "kolmogorovSmirnovTest",
+         "largestTriangleThreeBuckets",
          "mannWhitneyUTest",
          "maxIntersections",
          "maxIntersectionsPosition",
+         "maxMappedArrays",
+         "meanZTest",
+         "minMappedArrays",
+         "quantileBFloat16Weighted",
+         "quantileDeterministic",
+         "quantileExactWeighted",
+         "quantileInterpolatedWeighted",
+         "quantileTDigestWeighted",
+         "quantileTimingWeighted",
          "quantileWeighted",
          "rankCorr",
+         "simpleLinearRegression",
+         "sparkbar",
          "studentTTest",
+         "sumMappedArrays",
          "theilsU",
          "topKWeighted",
          "uniq",
-         "welchTTest",
-         "simpleLinearRegression",
-         "largestTriangleThreeBuckets",
-         "analysisOfVariance",
-         "intervalLengthSum"}}};
+         "welchTTest"}}};
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
@@ -2234,9 +2281,9 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Cluster variants of file-like sources
         {"fileCluster", "urlCluster"},
         /// Object storage (url, access_key, secret_key, format, structure)
-        {"s3", "gcs", "cosn", "oss"},
+        {"azureBlobStorage", "cosn", "gcs", "hdfs", "oss", "s3"},
         /// Object storage cluster variants
-        {"s3Cluster", "azureBlobStorageCluster"},
+        {"azureBlobStorageCluster", "hdfsCluster", "s3Cluster"},
         /// Data lake table functions
         {"iceberg", "icebergS3", "deltaLake", "deltaLakeS3", "hudi", "paimon", "paimonS3"},
         /// Data lake Azure variants
@@ -2246,17 +2293,17 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Data lake local variants
         {"icebergLocal", "deltaLakeLocal", "paimonLocal"},
         /// Data lake cluster variants
-        {"icebergCluster", "icebergS3Cluster", "deltaLakeCluster", "deltaLakeS3Cluster", "hudiCluster", "paimonCluster", "paimonS3Cluster"},
+        {"deltaLakeCluster", "deltaLakeS3Cluster", "hudiCluster", "icebergCluster", "icebergS3Cluster", "paimonCluster", "paimonS3Cluster"},
         /// Data lake Azure cluster variants
-        {"icebergAzureCluster", "deltaLakeAzureCluster", "paimonAzureCluster"},
+        {"deltaLakeAzureCluster", "icebergAzureCluster", "paimonAzureCluster"},
         /// Data lake HDFS cluster variants
         {"icebergHDFSCluster", "paimonHDFSCluster"},
         /// MergeTree introspection
-        {"mergeTreeIndex", "mergeTreeAnalyzeIndexes", "mergeTreeProjection", "mergeTreeTextIndex"},
+        {"mergeTreeAnalyzeIndexes", "mergeTreeIndex", "mergeTreeParts", "mergeTreeProjection", "mergeTreeTextIndex"},
         /// External relational databases (host, port, db, table, user, password)
         {"mysql", "postgresql"},
         /// External databases with connection-style args
-        {"sqlite", "mongodb", "redis"},
+        {"hive", "mongodb", "redis", "sqlite", "ytsaurus"},
         /// Remote ClickHouse clusters
         {"remote", "remoteSecure"},
         /// Named cluster table functions
@@ -2267,6 +2314,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"fuzzQuery", "fuzzJSON"},
         /// Prometheus query variants
         {"prometheusQuery", "prometheusQueryRange"},
+        /// TimeSeries table functions (db, table → time-series views)
+        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -3343,8 +3392,13 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "parseDateTime64InJodaSyntax",
          "parseDateTime64InJodaSyntaxOrNull",
          "parseDateTime64InJodaSyntaxOrZero"},
-        /// Date ↔ Modified Julian Day conversions
-        {"toModifiedJulianDay", "toModifiedJulianDayOrNull", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
+        /// Date ↔ day-count conversions
+        {"fromDaysSinceYearZero",
+         "fromModifiedJulianDay",
+         "fromModifiedJulianDayOrNull",
+         "toDaysSinceYearZero",
+         "toModifiedJulianDay",
+         "toModifiedJulianDayOrNull"},
         /// Unix-time → DateTime
         {"fromUnixTime", "fromUnixTimeInJodaSyntax"},
         /// Date arithmetic: add/subtract intervals (date/datetime, number → datetime)
@@ -3381,6 +3435,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
         /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
         {"toBFloat16",
+         "toBFloat16OrNull",
+         "toBFloat16OrZero",
          "toFloat32",
          "toFloat32OrNull",
          "toFloat32OrZero",
@@ -3412,7 +3468,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toTimeOrNull",
          "toTimeOrZero",
          "toTimeOrDefault",
-         "toTime64OrDefault"},
+         "toTime64OrDefault",
+         "toTime64OrNull",
+         "toTime64OrZero"},
         /// Rounding functions (number → number)
         {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
         /// Bitwise binary operators
@@ -3436,7 +3494,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "normalizeUTF8NFKC",
          "normalizeUTF8NFKD",
          "caseFoldUTF8",
-         "removeDiacriticsUTF8"},
+         "removeDiacriticsUTF8",
+         "soundex"},
         /// String left/right extraction and padding
         {"right", "rightPad", "rightPadUTF8", "rightUTF8", "left", "leftPad", "leftPadUTF8", "leftUTF8"},
         /// Whitespace trimming
@@ -3481,9 +3540,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// URL hierarchy generators (url → Array(String))
         {"URLHierarchy", "URLPathHierarchy"},
         /// Trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",   "atan",
-         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",     "exp2",
-         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid", "atan2"},
+        {"sin",     "sinh", "cos",   "cosh",  "tan",    "tanh",     "asin",    "asinh",   "acos",  "acosh",     "atan",  "atanh",
+         "log",     "log2", "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",      "exp",   "exp2",      "exp10", "degrees",
+         "radians", "sqrt", "cbrt",  "erf",   "erfc",   "power",    "tgamma",  "sigmoid", "atan2", "factorial", "hypot"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
@@ -3496,6 +3555,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "metroHash64",
          "murmurHash2_32",
          "murmurHash2_64",
+         "murmurHash3_32",
          "murmurHash3_64",
          "sipHash64",
          "wyHash64",
@@ -3503,7 +3563,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "xxHash64",
          "xxh3"},
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
-        {"sipHash128", "murmurHash3_128"},
+        {"sipHash128", "sipHash128Reference", "murmurHash3_128"},
         /// Cryptographic hashes (string → FixedString)
         {"MD5", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512_256"},
         /// String position search (haystack, needle → UInt64)
@@ -3541,9 +3601,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Higher-order map functions (lambda, map → map or UInt8)
         higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base64Encode", "base64URLEncode"},
+        {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
-        {"unhex", "unbin", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
+        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
         /// Sign/magnitude
         {"abs", "sign"},
         /// JSONExtract* family (json, path → typed value)
@@ -3632,7 +3692,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])
-        {"lagInFrame", "leadInFrame"},
+        {"lag", "lagInFrame", "lead", "leadInFrame"},
         /// Array search / index (array, value → UInt64)
         {"indexOf", "countEqual"},
         /// Human-readable formatting (number → String)
@@ -3642,7 +3702,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Bitmap membership tests (Bitmap, Bitmap → UInt8)
         {"bitmapContains", "bitmapHasAny", "bitmapHasAll"},
         /// UUID type casts (String → UUID, with error-handling variants)
-        {"toUUID", "toUUIDOrNull", "toUUIDOrZero"},
+        {"toUUID", "toUUIDOrDefault", "toUUIDOrNull", "toUUIDOrZero"},
         /// String/type conversion (arity mismatch for toFixedString is intentional)
         {"toString", "toFixedString"},
         /// Type name introspection (any → String)
@@ -3655,8 +3715,28 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
+        /// AI functions (named_collection, text → result)
+        {"aiClassify", "aiEmbed", "aiExtract", "aiGenerate", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
-        {"greatCircleDistance", "geoDistance", "greatCircleAngle"}};
+        {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
+        /// Consistent hash functions (value, num_buckets → Int32)
+        {"jumpConsistentHash", "kostikConsistentHash"},
+        /// Keyed SipHash functions (key_tuple, value... → hash)
+        {"sipHash64Keyed", "sipHash128Keyed", "sipHash128ReferenceKeyed"},
+        /// Bitmap binary cardinality (Bitmap, Bitmap → UInt64)
+        {"bitmapAndCardinality", "bitmapOrCardinality", "bitmapXorCardinality", "bitmapAndnotCardinality"},
+        /// Bitmap subset extraction (Bitmap, range → Bitmap)
+        {"bitmapSubsetInRange", "bitmapSubsetLimit"},
+        /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
+        {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus"},
+        /// Snowflake ID ↔ DateTime conversions
+        {"dateTimeToSnowflake", "dateTimeToSnowflakeID", "snowflakeIDToDateTime", "snowflakeToDateTime"},
+        /// IP CIDR range functions (IP, UInt8 → Tuple)
+        {"IPv4CIDRToRange", "IPv6CIDRToRange"},
+        /// IP string predicates (String → UInt8)
+        {"isIPv4String", "isIPv6String"},
+        /// Geohash functions (coordinates/geohash → geohash/coordinates)
+        {"geohashDecode", "geohashEncode"}};
 
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
