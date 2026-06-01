@@ -165,27 +165,6 @@ FunctionOverloadResolverPtr FunctionFactory::tryGet(
     return impl ? std::move(impl) : nullptr;
 }
 
-FunctionOverloadResolverPtr FunctionFactory::tryGetWithoutTracking(
-    const std::string & name_param,
-    ContextPtr context) const
-{
-    String name = getAliasToOrName(name_param);
-    FunctionOverloadResolverPtr res;
-
-    auto it = functions.find(name);
-    if (functions.end() != it)
-        res = it->second.first(context);
-    else
-    {
-        name = Poco::toLower(name);
-        it = case_insensitive_functions.find(name);
-        if (case_insensitive_functions.end() != it)
-            res = it->second.first(context);
-    }
-
-    return res ? std::move(res) : nullptr;
-}
-
 FunctionFactory & FunctionFactory::instance()
 {
     static FunctionFactory ret;

@@ -105,37 +105,37 @@ namespace
 
         /// Declarative signature (see IFunction::getSignatureString) and the
         /// deterministic / higher-order flags. Only regular functions in the
-        /// system FunctionFactory carry these; for everything else (aliases,
-        /// aggregates, user-defined, WASM) leave the cells empty.
+        /// system FunctionFactory carry these; for everything else (aggregates,
+        /// user-defined, WASM) leave the cells empty. Aliases resolve to their
+        /// canonical function below and inherit its metadata.
         String signature;
         bool inserted_function_flags = false;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
-            if (!factory.isAlias(name))
+            try
             {
-                try
+                /// `fillData` runs under `SuppressQueryFactoriesInfoScope`, so the normal
+                /// resolution path does not register names in `query_log.used_functions`.
+                /// `tryGet` resolves aliases to the canonical function (so aliases inherit
+                /// its metadata) and honors `use_legacy_to_time`, unlike a duplicated lookup.
+                if (auto resolver = factory.tryGet(name, context))
                 {
-                    /// Use the non-tracking lookup so that querying `system.functions`
-                    /// does not register every function name in `query_log.used_functions`.
-                    if (auto resolver = factory.tryGetWithoutTracking(name, context))
-                    {
-                        signature = resolver->getSignatureString();
-                        res_columns[15]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
-                        res_columns[16]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
-                        inserted_function_flags = true;
-                    }
+                    signature = resolver->getSignatureString();
+                    res_columns[15]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                    res_columns[16]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                    inserted_function_flags = true;
                 }
-                catch (...)
-                {
-                    /// Some functions throw on construction unless certain settings are set
-                    /// (e.g. deprecated/error-prone functions). Treat them as having no
-                    /// signature and unknown determinism / higher-order flags.
-                    LOG_DEBUG(
-                        getLogger("system.functions"),
-                        "Cannot resolve function {} for introspection: {}",
-                        name,
-                        getCurrentExceptionMessage(/* with_stacktrace */ false));
-                }
+            }
+            catch (...)
+            {
+                /// Some functions throw on construction unless certain settings are set
+                /// (e.g. deprecated/error-prone functions). Treat them as having no
+                /// signature and unknown determinism / higher-order flags.
+                LOG_DEBUG(
+                    getLogger("system.functions"),
+                    "Cannot resolve function {} for introspection: {}",
+                    name,
+                    getCurrentExceptionMessage(/* with_stacktrace */ false));
             }
         }
         res_columns[14]->insert(signature);
