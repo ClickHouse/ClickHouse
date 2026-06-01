@@ -238,6 +238,11 @@ def run_fuzz_job(check_name: str):
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
+    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
+    # Their contents are also merged into stderr.log/server.log, but upload the
+    # originals too for debugging truncated reports.
+    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
@@ -251,7 +256,14 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        # Runner may have aborted before writing status.tsv (e.g. early server
+        # abort); attach available artifacts (incl. sanitizer.log.*) so the report
+        # is not lost.
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                early_result.set_files(file)
+        early_result.complete_job()
 
     # parse runner script exit status
     status = Result.Status.FAIL

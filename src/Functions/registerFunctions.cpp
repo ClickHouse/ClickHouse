@@ -6,6 +6,7 @@
 namespace DB
 {
 
+void registerFunctions();
 void registerFunctions()
 {
     auto & factory = FunctionFactory::instance();
