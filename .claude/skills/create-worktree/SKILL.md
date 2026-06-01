@@ -131,6 +131,10 @@ find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
 # becomes the long pole while every other core sits idle. The outer-by-inner product
 # is kept near the core count to avoid oversubscription. Submodules with no
 # hardlinked gitdir, or not present at the superproject's HEAD, are reported and skipped.
+# A genuine checkout failure (the recorded commit is missing from the local mirror) is
+# NOT skipped: the worker exits non-zero, `xargs` propagates that, and the step aborts
+# with a remediation command. Silently leaving an empty submodule would hand back a
+# worktree that cannot be built, which is the only reason step 6 runs at all.
 checkout_jobs=$(( $(nproc) / 8 )); [ "$checkout_jobs" -lt 1 ] && checkout_jobs=1
 export submodule_modules_dir=$GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
 export worktree_path=<WORKTREE_PATH>
@@ -140,18 +144,32 @@ git -C <WORKTREE_PATH> config -f .gitmodules --get-regexp 'submodule\..*\.path' 
         submodule_path="$1"
         submodule_gitdir="$submodule_modules_dir/$submodule_path"
         submodule_tree="$worktree_path/$submodule_path"
-        [ -d "$submodule_gitdir" ] || { echo "SKIP (no gitdir): $submodule_path"; exit 0; }
+        [ -d "$submodule_gitdir" ] || { echo "SKIP (submodule not initialized in source repo): $submodule_path"; exit 0; }
         recorded_sha=$(git -C "$worktree_path" rev-parse "HEAD:$submodule_path" 2>/dev/null)
         [ -n "$recorded_sha" ] || { echo "SKIP (not a submodule at HEAD): $submodule_path"; exit 0; }
         mkdir -p "$submodule_tree"
         printf "gitdir: %s\n" "$submodule_gitdir" > "$submodule_tree/.git"
-        git -C "$submodule_tree" update-ref --no-deref HEAD "$recorded_sha"
-        git -C "$submodule_tree" -c checkout.workers=8 -c checkout.thresholdForParallelism=1 \
-            read-tree -u --reset "$recorded_sha" 2>/dev/null || echo "SKIP: $submodule_path"
+        if ! git -C "$submodule_tree" update-ref --no-deref HEAD "$recorded_sha" 2>/dev/null \
+           || ! git -C "$submodule_tree" -c checkout.workers=8 -c checkout.thresholdForParallelism=1 \
+                  read-tree -u --reset "$recorded_sha" 2>/dev/null
+        then
+            echo "FAILED $submodule_path: commit $recorded_sha is not in the local mirror" >&2
+            exit 1
+        fi
       ' _ {}
+submodule_checkout_rc=$?
+if [ "$submodule_checkout_rc" -ne 0 ]; then
+    echo "ERROR: a submodule could not be checked out at the commit the superproject records (see the FAILED line above)." >&2
+    echo "The local mirror is missing that commit, which happens when this worktree's branch pins a submodule" >&2
+    echo "to a commit the main repo has never fetched. Fetch it in the main repo, then re-run step 6:" >&2
+    echo "    git -C <MAIN_REPO> submodule update --init" >&2
+    exit 1
+fi
 ```
 
-**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Setting the submodule `HEAD` to the superproject-recorded SHA with `update-ref --no-deref` (matching the detached HEAD that `submodule update` leaves) and then `git read-tree -u --reset` of that same SHA reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The recorded SHA is read from the target worktree's gitlink rather than the source gitdir's `HEAD`, so a worktree whose branch pins a submodule to a different commit still gets the correct dependency.
+**Important:** no `git submodule update` is needed in the common case because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Setting the submodule `HEAD` to the superproject-recorded SHA with `update-ref --no-deref` (matching the detached HEAD that `submodule update` leaves) and then `git read-tree -u --reset` of that same SHA reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The recorded SHA is read from the target worktree's gitlink rather than the source gitdir's `HEAD`, so a worktree whose branch pins a submodule to a different commit still gets the correct dependency.
+
+The step stays offline by design and does not fetch. The only case it cannot serve locally is a recorded commit that the main repo has never fetched; rather than silently producing an unbuildable worktree, it aborts and prints the one command that fixes it (`git -C <MAIN_REPO> submodule update --init`, which fetches the missing commit into the shared mirror so a re-run succeeds offline). An automatic fetch was considered and rejected: it is unreliable against shallow mirrors and servers that refuse fetch-by-SHA, and a partial fetch reproduces the very empty-submodule state this guards against.
 
 The contrib working trees total roughly 11GB, so this phase is bound by disk write bandwidth, not CPU; the two-level parallelism keeps all cores busy but the floor is the time to physically write the bytes (about 3.5s on a fast NVMe). Hardlinking the working trees from the main repo would dodge that write and be much faster, but it is deliberately avoided: hardlinked working-tree files share inodes with the main repo, so any in-place edit (`sed -i`, an appended `>>`, an in-place codegen step) would silently corrupt the main repo and every sibling worktree. The git object database is safe to hardlink only because git objects are immutable.
 
