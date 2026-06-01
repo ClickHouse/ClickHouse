@@ -994,7 +994,7 @@ void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
     }
 }
 
-StorageMetadataPtr StorageInMemoryMetadata::clone(StorageMetadataPtr from)
+std::shared_ptr<StorageInMemoryMetadata> StorageInMemoryMetadata::clone(std::shared_ptr<const StorageInMemoryMetadata> from)
 {
     auto copy = std::make_shared<StorageInMemoryMetadata>(*from);
     copy->cloned_from = from;
@@ -1021,19 +1021,19 @@ const StorageInMemoryMetadata * StorageMetadataHandle::get() const &
     return metadata.get();
 }
 
-StorageMetadataHandle::operator const StorageMetadataPtr &() const &
+StorageMetadataHandle::operator StorageMetadataPtr() const
 {
     return metadata;
-}
-
-StorageMetadataHandle::operator StorageMetadataPtr() &&
-{
-    return std::move(metadata);
 }
 
 StorageMetadataHandle::operator bool() const
 {
     return metadata != nullptr;
+}
+
+bool StorageMetadataHandle::operator==(std::nullptr_t) const
+{
+    return metadata == nullptr;
 }
 
 }
