@@ -3,5 +3,4 @@ local_path	String
 query_id	String
 position	UInt64
 elapsed_seconds	Float64
-1
-49995000
+connection_visible
