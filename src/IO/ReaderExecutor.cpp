@@ -496,6 +496,22 @@ void ReaderExecutor::releaseLiveBufferAtBound()
     }
 }
 
+void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
+{
+    if (logical_end == read_extent_end)
+        return;
+
+    /// Drain any in-flight prefetch before changing the extent: the prefetch
+    /// worker reads `read_extent_end` to bound its source connection, so mutating
+    /// it underneath the worker would race, and a prefetch issued for the old
+    /// range must not be served for the new one. No-op when no prefetch is in
+    /// flight (the common per-mark-range boundary, where prefetch is clamped to
+    /// the extent), so it is free on the hot path. Mirrors the legacy
+    /// `AsynchronousBoundedReadBuffer::setReadUntilPosition` contract.
+    discardPrefetch(FilesystemPrefetchState::CANCELLED_WITH_RANGE_CHANGE);
+    read_extent_end = logical_end;
+}
+
 void ReaderExecutor::maybeTriggerPrefetch()
 {
     if (!prefetch_pool || prefetch_handle || atEnd())

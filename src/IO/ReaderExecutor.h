@@ -104,10 +104,12 @@ public:
     /// mark range. The executor bounds its live source connection to this extent
     /// - so the borrowed HTTP connection is read to a known end and returned to
     /// the pool reusable instead of abandoned open-ended mid-response - and keeps
-    /// prefetches within it. `nullopt` clears it (read to the file end). Distinct
-    /// from the `makeTransientForReadAt` one-shot extent, which also sets
-    /// `is_transient`.
-    void setReadExtent(std::optional<size_t> logical_end) { read_extent_end = logical_end; }
+    /// prefetches within it. `nullopt` clears it (read to the file end). Drains an
+    /// in-flight prefetch when the extent changes (the worker reads the extent to
+    /// bound its connection, and a prefetch for the old range must not serve the
+    /// new one). Distinct from the `makeTransientForReadAt` one-shot extent, which
+    /// also sets `is_transient`.
+    void setReadExtent(std::optional<size_t> logical_end);
 
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
