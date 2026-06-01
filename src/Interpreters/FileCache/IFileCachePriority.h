@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
 #include <Core/Types.h>
-#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
@@ -17,6 +17,7 @@ namespace DB
 struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileSegment;
+struct FileSegmentInfo;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
@@ -26,7 +27,15 @@ class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
-    using QueueEntryType = FileCacheQueueEntryType;
+    enum class QueueEntryType : uint8_t
+    {
+        None,
+        LRU,
+        SLRU_Protected,
+        SLRU_Probationary,
+        SplitCache_Data,
+        SplitCache_System,
+    };
     using OriginInfo = FileCacheOriginInfo;
     using UserID = OriginInfo::UserID;
 
@@ -271,10 +280,10 @@ public:
     struct IPriorityDump
     {
         std::vector<FileSegmentInfo> infos;
-        IPriorityDump() = default;
-        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_) : infos(infos_) {}
-        void merge(const IPriorityDump & other) { infos.insert(infos.end(), other.infos.begin(), other.infos.end()); }
-        virtual ~IPriorityDump() = default;
+        IPriorityDump();
+        explicit IPriorityDump(const std::vector<FileSegmentInfo> & infos_);
+        void merge(const IPriorityDump & other);
+        virtual ~IPriorityDump();
     };
 
     using PriorityDumpPtr = std::shared_ptr<IPriorityDump>;

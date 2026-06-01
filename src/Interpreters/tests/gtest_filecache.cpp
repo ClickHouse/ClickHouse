@@ -198,8 +198,8 @@ void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_seg
     for (const auto & f : file_segments)
     {
         auto range = FileSegment::Range(f.range_left, f.range_right);
-        bool is_protected = (f.queue_entry_type == FileCacheQueueEntryType::SLRU_Protected);
-        bool is_probationary = (f.queue_entry_type == FileCacheQueueEntryType::SLRU_Probationary);
+        bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
+        bool is_probationary = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Probationary);
         ASSERT_TRUE(is_probationary || is_protected);
 
         std::cerr << fmt::format("{} (protected: {})", range.toString(), is_protected) <<  ", ";
@@ -2128,7 +2128,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             auto infos = cache->getFileSegmentInfos(key, user.user_id);
             ASSERT_EQ(infos.size(), 2u);
             for (const auto & info : infos)
-                ASSERT_NE(info.queue_entry_type, FileCacheQueueEntryType::None);
+                ASSERT_NE(info.queue_entry_type, IFileCachePriority::QueueEntryType::None);
         }
     }
 

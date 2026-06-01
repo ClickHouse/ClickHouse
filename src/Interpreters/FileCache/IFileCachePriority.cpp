@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
@@ -88,6 +89,19 @@ void IFileCachePriority::removeEntries(
         if (entry_state != Entry::State::Removed)
             it->remove(lock);
     }
+}
+
+IFileCachePriority::IPriorityDump::IPriorityDump() = default;
+IFileCachePriority::IPriorityDump::~IPriorityDump() = default;
+
+IFileCachePriority::IPriorityDump::IPriorityDump(const std::vector<FileSegmentInfo> & infos_)
+    : infos(infos_)
+{
+}
+
+void IFileCachePriority::IPriorityDump::merge(const IPriorityDump & other)
+{
+    infos.insert(infos.end(), other.infos.begin(), other.infos.end());
 }
 
 }
