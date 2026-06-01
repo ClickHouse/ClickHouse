@@ -202,7 +202,7 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-        size_t row_group_idx;
+        size_t row_group_idx = 0;
         if (key_emplace_result.isInserted()) /// New grouping key
         {
             /// Assign a stable index into `group_counts` to the grouping key we just inserted.
