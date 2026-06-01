@@ -188,6 +188,20 @@ void Rope::append(Rope && other)
     if (other.nodes.empty())
         return;
 
+    /// A partially-consumed `other` keeps its consumed prefix in the front node
+    /// (at the original `logical_offset`), while its intervals already start past
+    /// it - splicing the raw node would let `peek` resurrect those bytes that
+    /// `range`/`covers` report as gone. Normalize to the live range first; `slice`
+    /// trims the consumed prefix and yields `front_offset == 0`.
+    if (other.front_offset != 0)
+    {
+        append(other.slice(other.range()));
+        other.nodes.clear();
+        other.intervals.clear();
+        other.front_offset = 0;
+        return;
+    }
+
     /// Splice nodes then in-place merge — both halves are individually sorted
     /// by `logical_offset` by invariant.
     size_t split_idx = nodes.size();

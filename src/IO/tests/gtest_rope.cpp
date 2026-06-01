@@ -110,6 +110,38 @@ TEST(Rope, AppendRope)
     EXPECT_EQ(rope1.range().size, 100);
 }
 
+TEST(Rope, AppendPartiallyConsumedRope)
+{
+    /// Appending a partially-consumed rope must not resurrect its consumed
+    /// prefix: `append(Rope&&)` normalizes `other` by its `front_offset`, so the
+    /// combined rope's coverage and `peek` agree. Regression for splicing the raw
+    /// front node (which still started at the original, consumed `logical_offset`).
+    auto buf = std::make_shared<OwnedRopeBuffer>(10);
+    for (size_t i = 0; i < 10; ++i)
+        buf->data()[i] = static_cast<char>('0' + i);   // "0123456789"
+
+    Rope other;
+    other.append(RopeNode{buf, 0, 10, 0});   // covers [0, 10)
+    other.advance(5);                        // consume "01234"; live coverage is [5, 10)
+    ASSERT_EQ(other.range().offset, 5u);
+    ASSERT_EQ(other.range().size, 5u);
+
+    Rope dst;
+    dst.append(std::move(other));
+
+    /// Coverage is the live range only - the consumed prefix [0, 5) is gone.
+    EXPECT_EQ(dst.range().offset, 5u) << "consumed prefix must not reappear after append";
+    EXPECT_EQ(dst.range().size, 5u);
+    EXPECT_FALSE(dst.covers(ByteRange{0, 5}));
+    EXPECT_TRUE(dst.covers(ByteRange{5, 5}));
+
+    /// peek agrees with coverage: it serves the live bytes at offset 5, not 0.
+    auto span = dst.peek();
+    EXPECT_EQ(span.logical_offset, 5u) << "peek must start at the live offset, not the consumed prefix";
+    EXPECT_EQ(span.size, 5u);
+    EXPECT_EQ(String(span.data, span.size), "56789");
+}
+
 TEST(Rope, SliceFullRange)
 {
     auto buf = std::make_shared<OwnedRopeBuffer>(300);
