@@ -241,7 +241,7 @@ void registerDataTypeVariant(DataTypeFactory & factory)
 {
     factory.registerDataType("Variant", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type 
+This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type
 has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` value).
 
 The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
@@ -350,7 +350,7 @@ this subcolumn will have type `Nullable(T2)` if `T2` can be inside `Nullable` an
 be the same size as original `Variant` column and will contain `NULL` values (or empty values if `T2` cannot be inside `Nullable`)
 in all rows in which original `Variant` column doesn't have type `T2`.
 
-Variant subcolumns can be also read using function `variantElement(variant_column, type_name)`. 
+Variant subcolumns can be also read using function `variantElement(variant_column, type_name)`.
 
 Examples:
 
@@ -728,7 +728,7 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Var
 
 ## Functions with Variant arguments {#functions-with-variant-arguments}
 
-Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**. 
+Most functions in ClickHouse automatically support `Variant` type arguments through a **default implementation for Variant**.
 Starting from version `26.1` onwards, when a function that doesn't explicitly handle Variant types receives a Variant column, ClickHouse:
 
 1. Extracts each variant type from the Variant column
@@ -786,8 +786,8 @@ The result type depends on what the function returns for each variant:
   ```
 
 :::note
-**Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT, 
-TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like 
+**Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT,
+TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like
 division by zero or out of memory are raised normally to prevent silently hiding real problems.
 :::
 

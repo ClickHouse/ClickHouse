@@ -187,15 +187,15 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
             .description = R"DOCS_MD(
 ## Description {#description}
 
-The `SimpleAggregateFunction` data type stores the intermediate state of an 
-aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md) 
+The `SimpleAggregateFunction` data type stores the intermediate state of an
+aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md)
 type does.
 
-This optimization can be applied to functions for which the following property 
-holds: 
+This optimization can be applied to functions for which the following property
+holds:
 
-> the result of applying a function `f` to a row set `S1 UNION ALL S2` can 
-be obtained by applying `f` to parts of the row set separately, and then again 
+> the result of applying a function `f` to a row set `S1 UNION ALL S2` can
+be obtained by applying `f` to parts of the row set separately, and then again
 applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`.
 
 This property guarantees that partial aggregation results are enough to compute
@@ -242,8 +242,8 @@ The following aggregate functions are supported:
 - [`maxMap` (`maxMappedArrays`)](/sql-reference/aggregate-functions/reference/maxMappedArrays.md)
 
 :::note
-Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`, 
-so unlike with the `AggregateFunction` type there is no need to apply 
+Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,
+so unlike with the `AggregateFunction` type there is no need to apply
 `-Merge`/`-State` combinators.
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`

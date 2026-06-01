@@ -84,7 +84,7 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerDataType("Int32", createNumericDataType<Int32>, DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
-ClickHouse offers a number of fixed-length integers, 
+ClickHouse offers a number of fixed-length integers,
 with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to 32 bytes.
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
@@ -159,7 +159,7 @@ Unsigned integer types have the following aliases:
         Documentation{
             .description = R"DOCS_MD(
 :::note
-If you need accurate calculations, in particular if you work with financial or business data requiring a high precision, you should consider using [Decimal](../data-types/decimal.md) instead. 
+If you need accurate calculations, in particular if you work with financial or business data requiring a high precision, you should consider using [Decimal](../data-types/decimal.md) instead.
 
 [Floating Point Numbers](https://en.wikipedia.org/wiki/IEEE_754) might lead to inaccurate results as illustrated below:
 
@@ -305,10 +305,10 @@ The same approach works for `DISTINCT`, `GROUP BY`, and `JOIN` keys.
 
 ## BFloat16 {#bfloat16}
 
-`BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa. 
+`BFloat16` is a 16-bit floating point data type with 8-bit exponent, sign, and 7-bit mantissa.
 It is useful for machine learning and AI applications.
 
-ClickHouse supports conversions between `Float32` and `BFloat16` which 
+ClickHouse supports conversions between `Float32` and `BFloat16` which
 can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#toFloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#toBFloat16) functions.
 
 :::note

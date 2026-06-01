@@ -286,7 +286,7 @@ SELECT d::Nullable(Float64) FROM test;
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);
-SELECT v::Dynamic AS d, dynamicType(d) FROM test; 
+SELECT v::Dynamic AS d, dynamicType(d) FROM test;
 ```
 
 ```text
@@ -359,7 +359,7 @@ SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDyna
 
 ## Reading Dynamic type from the data {#reading-dynamic-type-from-the-data}
 
-All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column. 
+All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column.
 
 Example:
 

@@ -865,22 +865,9 @@ void registerDataTypeJSON(DataTypeFactory & factory)
 {
     factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive, Documentation{
             .description = String(R"DOCS_MD(
-import {CardSecondary} from '@clickhouse/click-ui/bundled';
-import WhenToUseJson from '@site/docs/best-practices/_snippets/_when-to-use-json.md';
-import Link from '@docusaurus/Link'
-
-<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
-<CardSecondary
-  badgeState="success"
-  badgeText=""
-  description="Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type."
-  icon="book"
-  infoText="Read more"
-  infoUrl="/docs/best-practices/use-json-where-appropriate"
-  title="Looking for a guide?"
-/>
-</Link>
-<br/>
+:::tip
+Check out our [JSON best practice guide](/docs/best-practices/use-json-where-appropriate) for examples, advanced features and considerations for using the JSON type.
+:::
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
@@ -909,8 +896,6 @@ Where the parameters in the syntax above are defined as:
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
-
-<WhenToUseJson />
 
 ## Creating `JSON` {#creating-json}
 
@@ -1301,9 +1286,9 @@ To read an array of objects, you can extract it from the `Dynamic` column as a s
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
 INSERT INTO test VALUES
-('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]], "k" : {"j" : 2000}}]}}'),
 ('{"a" : {"b" : [1, 2, 3]}}'),
-('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]], "k" : {"j" : 3000}}]}}');
 SELECT json FROM test;
 ```
 
