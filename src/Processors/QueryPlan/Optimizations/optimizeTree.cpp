@@ -2,7 +2,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -111,20 +110,14 @@ RowsAfterWhereState assignRowsAfterWhereCountersImpl(QueryPlan::Node & node)
                 return *child_state;
             }
 
-            finalizeRowsAfterWhereState(*child_state);
+            return *child_state;
         }
 
         return {};
     }
 
     if (child_state && child_state->valid)
-    {
-        const auto * transforming_step = typeid_cast<const ITransformingStep *>(node.step.get());
-        if (transforming_step && transforming_step->getTransformTraits().preserves_number_of_rows)
-            return *child_state;
-
-        finalizeRowsAfterWhereState(*child_state);
-    }
+        return *child_state;
 
     return {};
 }

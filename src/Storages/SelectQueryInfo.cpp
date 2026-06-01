@@ -79,6 +79,7 @@ void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     actions.serialize(ctx.out, ctx.registry);
     writeStringBinary(column_name, ctx.out);
     writeBinary(do_remove_column, ctx.out);
+    writeBinary(count_output_rows, ctx.out);
 }
 
 FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
@@ -88,6 +89,7 @@ FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
     readStringBinary(filter_dag_info.column_name, ctx.in);
     readBinary(filter_dag_info.do_remove_column, ctx.in);
+    readBinary(filter_dag_info.count_output_rows, ctx.in);
 
     return filter_dag_info;
 }

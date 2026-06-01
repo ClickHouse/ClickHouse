@@ -37,6 +37,7 @@ void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
 
     auto filter_step = std::make_unique<FilterStep>(
         query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
+    filter_step->setCountOutputRows(filter.count_output_rows);
     query_plan->addStep(std::move(filter_step));
 }
 

@@ -541,6 +541,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
                 filter.actions.clone(),
                 filter.column_name,
                 filter.do_remove_column);
+            filter_step->setCountOutputRows(filter.count_output_rows);
 
             child.plan.addStep(std::move(filter_step));
 
@@ -911,6 +912,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                         filter_info.actions.clone(),
                         filter_info.column_name,
                         filter_info.do_remove_column);
+                    filter_step->setCountOutputRows(filter_info.count_output_rows);
 
                     child.plan.addStep(std::move(filter_step));
                 }
