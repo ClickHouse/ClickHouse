@@ -118,7 +118,7 @@ protected:
     ResultT implCached(uintptr_t addr) const
     {
         typename Cache::Map::LookupResult it;
-        bool inserted;
+        bool inserted = false;
         std::lock_guard lock(cache.mutex);
         cache.map.emplace(addr, it, inserted);
         if (inserted)
