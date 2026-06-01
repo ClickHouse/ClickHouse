@@ -110,6 +110,12 @@ FROM (EXPLAIN SELECT rand() FROM 04092_view_replacing);
 SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
 FROM (EXPLAIN SELECT id FROM 04092_view_replacing WHERE rand() < 1);
 
+-- rand() in a view-keyed additional_table_filter. The pushdown would move this filter
+-- onto the shards (coordinator-side on the normal path), so it must suppress too.
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT id FROM 04092_view_replacing
+      SETTINGS additional_table_filters = {'04092_view_replacing': 'rand() < 1'});
+
 -- -----------------------------------------------------------------------
 -- Test 5: Column transformers on asterisks suppress the optimization.
 -- APPLY/REPLACE/EXCEPT on * or t.* can carry aggregate, window, or
@@ -166,6 +172,30 @@ DROP VIEW 04092_view_aliased;
 -- The non-pushdown path applies it (propagated to the shard); the pushdown must too.
 SELECT count() FROM 04092_view_replacing
 SETTINGS additional_table_filters = {'04092_dist_replacing': 'id != 2'};
+
+-- -----------------------------------------------------------------------
+-- Test 7: the optimization fires only when the view is the sole table
+-- expression. When the view is one input of a join, the pushdown must be
+-- suppressed (it cannot ship a join with a local side to the shards, and
+-- the outer query's join-column identifiers would dangle). The query must
+-- succeed and produce the same result as with the optimization disabled.
+-- 04092_dist_replacing has id values {1, 1, 2}; the JOIN keys against the
+-- single-row local table below must match the two id=1 rows.
+-- -----------------------------------------------------------------------
+CREATE TABLE 04092_join_local (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO 04092_join_local VALUES (1);
+
+-- View as the right (joined) side: previously raised NOT_FOUND_COLUMN_IN_BLOCK.
+SELECT 04092_join_local.id, v.id
+FROM 04092_join_local LEFT JOIN 04092_view_replacing AS v ON 04092_join_local.id = v.id
+ORDER BY v.id;
+
+-- Same with a view-keyed additional_table_filter: must not be hoisted past the join.
+SELECT count()
+FROM 04092_join_local LEFT JOIN 04092_view_replacing AS v ON 04092_join_local.id = v.id
+SETTINGS additional_table_filters = {'v': 'id != 1'};
+
+DROP TABLE 04092_join_local;
 
 DROP VIEW 04092_view_replacing;
 DROP TABLE 04092_dist_replacing;

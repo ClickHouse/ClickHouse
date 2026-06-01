@@ -223,6 +223,37 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// AST-level counterpart of containsNonDeterministicFunction. Used for predicates that the
+/// pushdown injects as shard-side filters but that are NOT present in the outer query tree the
+/// QueryTree-based check above runs on: the view's row policy and view-keyed
+/// additional_table_filters. On the normal StorageView path these are coordinator-side filters;
+/// the pushdown evaluates them on each shard, so a non-deterministic / server-local function in
+/// them (hostName, serverUUID, rand, now, ...) would change results once the optimization fires.
+/// A function is unsafe when its builder reports isDeterministic() == false (no constant-folding
+/// has happened at the AST stage, so server-local constants are still ASTFunction nodes here).
+bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (!function->name.empty() && function->name != "lambda")
+        {
+            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            if (!builder || !builder->isDeterministic())
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsNonDeterministicFunction(child, context))
+            return true;
+    }
+    return false;
+}
+
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
 /// If `column_names` is empty, check access to any columns and return names of accessible columns
@@ -1274,22 +1305,48 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// legacy unset case it is just a copy of query_context. Stays equal to
                 /// query_context whenever the pushdown does not apply.
                 ContextPtr effective_context = query_context;
-                const auto * view = query_context->getSettingsRef()[Setting::optimize_trivial_view_pushdown_to_distributed]
+                /// Only push down when the view is the sole table expression of the outer query.
+                /// The pushdown ships the whole outer query to shards (replacing the view with the
+                /// inlined body over the shard-local table), which is only meaningful when "the outer
+                /// query" is exactly "read the view". When the view is one input of a join, the outer
+                /// query references join columns by identifier (e.g. __table2.id) that the rewrite
+                /// would leave dangling, and the other side may be a local table that cannot be
+                /// shipped to shards at all. Joined queries fall back to the standard
+                /// StorageView::readImpl path.
+                const auto * view = (is_single_table_expression
+                                     && query_context->getSettingsRef()[Setting::optimize_trivial_view_pushdown_to_distributed])
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
                 if (view)
                 {
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
-                    /// Suppress the pushdown if the outer query references any non-deterministic
-                    /// or server-local function (hostName, serverUUID, nowInBlock, blockNumber,
-                    /// rand, now, ...). Without the optimization those are evaluated on the
-                    /// coordinator; with it they would be shipped to shards and evaluated per-shard,
-                    /// changing query semantics (`SELECT DISTINCT hostName() FROM v` is the canonical
-                    /// example). The view body needs no symmetric check: it is read through
-                    /// StorageDistributed::read in both the pushdown and non-pushdown paths, so any
-                    /// expressions inside the body are already evaluated on the shards either way.
-                    if (underlying_dist && containsNonDeterministicFunction(table_expression_query_info.query_tree))
-                        underlying_dist = nullptr;
+                    if (underlying_dist)
+                    {
+                        /// Suppress the pushdown if any expression the optimization would move from
+                        /// the coordinator onto the shards is non-deterministic or server-local
+                        /// (hostName, serverUUID, nowInBlock, blockNumber, rand, now, ...). Evaluated
+                        /// per-shard instead of once on the initiator, such expressions change results.
+                        /// Three sources are moved to the shards by the pushdown:
+                        ///   * the outer query (projections, WHERE, ...), shipped to the shards;
+                        ///   * the view's row policy, injected into the inner WHERE below (a
+                        ///     coordinator-side filter on the normal StorageView path);
+                        ///   * view-keyed additional_table_filters, folded into the outer WHERE below
+                        ///     (likewise coordinator-side normally).
+                        /// The view body itself needs no check: it is read through
+                        /// StorageDistributed::read in both paths, so its expressions run on the shards
+                        /// either way. Dist-keyed row policies are not enforced (see below) and
+                        /// dist-keyed additional_table_filters are propagated to shards in both paths,
+                        /// so neither contributes a divergence.
+                        const auto & view_id = storage->getStorageID();
+                        auto view_policy_for_check = query_context->getRowPolicyFilter(
+                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+                        if (containsNonDeterministicFunction(table_expression_query_info.query_tree)
+                            || (view_policy_for_check && !view_policy_for_check->isAlwaysTrue()
+                                && astContainsNonDeterministicFunction(view_policy_for_check->expression, query_context))
+                            || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context))
+                            underlying_dist = nullptr;
+                    }
                     if (underlying_dist)
                     {
                         const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;

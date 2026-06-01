@@ -57,6 +57,28 @@ WHERE
     AND query NOT LIKE '%system.query_log%'
 LIMIT 1;
 
+-- View in a join: the pushdown is suppressed (it only fires for a sole table
+-- expression), so the view falls back to the standard path. The view policy
+-- (id != 2) must still be enforced — the joined local row id=2 finds no matching
+-- view row and is null-extended (val = 0). Result must not depend on the setting.
+CREATE TABLE 04098_join_local (id UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO 04098_join_local VALUES (1), (2), (3);
+
+SELECT 04098_join_local.id, 04098_view.val
+FROM 04098_join_local LEFT JOIN 04098_view ON 04098_join_local.id = 04098_view.id
+ORDER BY 04098_join_local.id;
+
+DROP TABLE 04098_join_local;
+
+-- A non-deterministic view row policy suppresses the pushdown: the policy is a
+-- coordinator-side filter on the normal path, but the pushdown would inject it into
+-- the inner WHERE and evaluate it per-shard. The plan must keep the "VIEW subquery"
+-- steps (standard path) rather than inlining the body.
+CREATE ROW POLICY 04098_policy_nondet ON 04098_view USING rand() < 2 TO ALL;
+SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
+FROM (EXPLAIN SELECT id FROM 04098_view);
+DROP ROW POLICY 04098_policy_nondet ON 04098_view;
+
 DROP ROW POLICY 04098_policy_view  ON 04098_view;
 DROP VIEW 04098_view_alias;
 DROP VIEW 04098_view;
