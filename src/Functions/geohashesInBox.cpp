@@ -11,7 +11,6 @@
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
 
@@ -113,14 +112,15 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
-            const Float64 lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
-            const Float64 lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
-            const Float64 lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
+            const LonAndLatType lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
+            const LonAndLatType lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
+            const LonAndLatType lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
+            const LonAndLatType lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
             const PrecisionType precision_value = precision->getElement(precision_const ? 0 : row);
 
             const auto prepared_args = geohashesInBoxPrepare(
-                lon_min_value, lat_min_value, lon_max_value, lat_max_value,
+                static_cast<Float64>(lon_min_value), static_cast<Float64>(lat_min_value),
+                static_cast<Float64>(lon_max_value), static_cast<Float64>(lat_max_value),
                 precision_value);
 
             if (prepared_args.items_count > max_array_size)
