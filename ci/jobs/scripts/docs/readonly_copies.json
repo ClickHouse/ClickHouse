@@ -1,0 +1,11 @@
+{
+  "_comment": "Docs folders in this repo that are one-way copies of a canonical source living in another repository. Editing them here is overwritten by the next sync; the readonly-copies guard fails such edits and points contributors at the source. 'path' is repo-relative (as it appears in the PR diff).",
+  "sources": [
+    {
+      "path": "docs/integrations/language-clients/python",
+      "repo": "ClickHouse/clickhouse-connect",
+      "url": "https://github.com/ClickHouse/clickhouse-connect",
+      "subdir": "docs"
+    }
+  ]
+}
