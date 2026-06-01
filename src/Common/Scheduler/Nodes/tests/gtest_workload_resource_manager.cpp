@@ -21,6 +21,8 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/WorkloadResourceManager.h>
+#include <Common/Scheduler/WorkloadSettings.h>
+#include <base/getMemoryAmount.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -3175,6 +3177,51 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActi
         a.waitSync();
         b.setSize(0);
         b.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
+{
+    // `max_memory_ratio` alone — sets `max_memory` to `ratio * host_RAM`.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(0.001)), "");
+        ws.initFromChanges(changes);
+
+        Int64 host_ram = static_cast<Int64>(getMemoryAmountOrZero());
+        ASSERT_GT(host_ram, 0) << "Test host must report a non-zero memory amount";
+        Int64 expected = static_cast<Int64>(0.001 * static_cast<Float64>(host_ram));
+        EXPECT_GT(expected, 0);
+        EXPECT_EQ(ws.max_memory, expected);
+    }
+
+    // `max_memory` exact + small `max_memory_ratio` — the smaller one wins (the exact, here).
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory", Field(Int64(1024)), "");
+        changes.emplace_back("max_memory_ratio", Field(Float64(0.5)), "");
+        ws.initFromChanges(changes);
+        // `0.5 * host_RAM` is overwhelmingly larger than 1024, so the exact value wins.
+        EXPECT_EQ(ws.max_memory, 1024);
+    }
+
+    // No memory settings — stays unlimited.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
+    }
+
+    // `max_memory_ratio = 0` — does not constrain.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
     }
 }
 

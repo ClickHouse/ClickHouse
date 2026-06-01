@@ -1,4 +1,5 @@
 #include <limits>
+#include <base/getMemoryAmount.h>
 #include <Common/Scheduler/CostUnit.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/Scheduler/WorkloadSettings.h>
@@ -145,6 +146,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         std::optional<Int64> max_concurrent_queries;
         std::optional<Int64> max_waiting_queries;
         std::optional<Int64> max_memory;
+        std::optional<Float64> max_memory_ratio;
 
         static Float64 getFloat64(const String & name, const Field & field)
         {
@@ -255,6 +257,8 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
                 max_waiting_queries = getNotNegativeInt64(name, value);
             else if (name == "max_memory")
                 max_memory = getNotNegativeInt64(name, value);
+            else if (name == "max_memory_ratio")
+                max_memory_ratio = getNotNegativeFloat64(name, value);
             else if (throw_on_unknown_setting)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown workload setting '{}'", name);
         }
@@ -360,8 +364,25 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
     // Concurrent query queue size limit
     max_waiting_queries = get_value(specific.max_waiting_queries, regular.max_waiting_queries, max_waiting_queries, unlimited);
 
-    // Total memory reservation limit
-    max_memory = get_value(specific.max_memory, regular.max_memory, max_memory, unlimited);
+    // Compute total memory reservation limit as the minimum of two possible values:
+    // (1) exact limit `max_memory` and (2) ratio of total host RAM `max_memory_ratio * getMemoryAmount()`.
+    // Zero setting value means unlimited.
+    {
+        Int64 limit = unlimited;
+        Int64 exact_number = get_value(specific.max_memory, regular.max_memory, Int64(0));
+        Float64 ratio = get_value(specific.max_memory_ratio, regular.max_memory_ratio, 0.0);
+        if (exact_number > 0 && exact_number < limit)
+            limit = exact_number;
+        if (ratio > 0)
+        {
+            // `getMemoryAmountOrZero` already accounts for cgroups, so a container-level limit is respected.
+            // On platforms where physical memory cannot be determined the ratio is ignored.
+            Int64 value = static_cast<Int64>(ratio * static_cast<Float64>(getMemoryAmountOrZero()));
+            if (value > 0 && value < limit)
+                limit = value;
+        }
+        max_memory = limit;
+    }
 }
 
 }
