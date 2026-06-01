@@ -1826,7 +1826,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             /// When share_nested_offsets is disabled, dotted-name columns are independent
             /// and not part of a Nested group, so they can be freely renamed.
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+            if (merge_tree)
             {
                 if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
                 {
@@ -1837,8 +1838,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (from_nested && to_nested)
             {
+                /// Cross-parent Nested rename (n.x -> m.x) is only safe when the
+                /// table actively uses column IDs: the column-ID planning path
+                /// in `StorageMergeTree::prepareColumnIdMappingForAlter` handles
+                /// the shared Nested offsets stream, while the legacy mutation
+                /// rename path does not rename `n.size0` and would leave reads
+                /// looking for `m.size0` files that do not exist.  A `with_size`
+                /// session setting alone is not enough: the table must already
+                /// have an active mapping.  Activate column IDs in a separate
+                /// ALTER first.
                 if (from_nested_table_name != to_nested_table_name
-                    && !context->getSettingsRef()[Setting::allow_experimental_column_ids])
+                    && !(merge_tree && merge_tree->hasColumnIdMapping()))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
             }
