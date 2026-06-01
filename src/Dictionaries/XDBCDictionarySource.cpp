@@ -241,6 +241,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
     return QueryPipeline(std::move(format));
 }
 
+void registerDictionarySourceXDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -282,6 +283,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 }
 
 
+void registerDictionarySourceJDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
