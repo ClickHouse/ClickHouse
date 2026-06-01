@@ -308,7 +308,7 @@ public:
 private:
     DiskObjectStoragePtr disk;
     UInt64 size;
-    UInt64 unreserved_space;
+    UInt64 unreserved_space{};
     CurrentMetrics::Increment metric_increment;
 };
 
