@@ -43,12 +43,14 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     Array getParameters() const { return parameters; }
+    const Array & getParametersRef() const { return parameters; }
 
     bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr getReturnType() const;
     DataTypePtr getReturnTypeToPredict() const;
     DataTypes getArgumentsDataTypes() const { return argument_types; }
+    const DataTypes & getArgumentTypes() const { return argument_types; }
 
     MutableColumnPtr createColumn() const override;
 

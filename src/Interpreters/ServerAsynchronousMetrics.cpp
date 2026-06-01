@@ -26,6 +26,7 @@
 #endif
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #if CLICKHOUSE_CLOUD
@@ -334,6 +335,13 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_projection_index_granularity_bytes_in_memory = 0;
         size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
 
+        size_t total_merge_tree_metadata_bytes_allocated = 0;
+
+        auto add_part_metadata_metrics = [&](const IMergeTreeDataPart & part)
+        {
+            total_merge_tree_metadata_bytes_allocated += part.getMetadataBytesAllocated();
+        };
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -382,12 +390,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
                         total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
 
+                        add_part_metadata_metrics(*part);
+
                         for (const auto & [_, proj_part] : part->getProjectionParts())
                         {
                             total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
                             total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
                             total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
                             total_projection_index_granularity_bytes_in_memory_allocated += proj_part->getIndexGranularityAllocatedBytes();
+
+                            add_part_metadata_metrics(*proj_part);
                         }
                     }
                 }
@@ -468,6 +480,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
         new_values["TotalProjectionIndexGranularityBytesInMemory"] = { total_projection_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by projection index granularity (only takes active parts into account)." };
         new_values["TotalProjectionIndexGranularityBytesInMemoryAllocated"] = { total_projection_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for projection index granularity (only takes active parts into account)." };
+
+        new_values["TotalMergeTreeMetadataBytesInMemoryAllocated"] = { total_merge_tree_metadata_bytes_allocated, "Estimated bytes reserved by per-part `MergeTree` metadata for active regular parts and attached projection parts. Includes `ColumnsSubstreams`, `NamesAndTypesList`, `DataType` graphs, `SerializationInfo` objects, and serialization maps. Shared/cached objects may be counted once per retained reference; shared `ColumnsDescription` cache contents are excluded. Inactive/outdated parts are excluded." };
     }
 
     {

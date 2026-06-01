@@ -32,6 +32,9 @@ public:
     void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
+    size_t getBytesAllocated() const override;
+    size_t getTotalSerializationInfos() const override;
+
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
 

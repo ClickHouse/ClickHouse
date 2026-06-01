@@ -31,6 +31,7 @@ public:
 
     String getNameInStorage() const;
     String getSubcolumnName() const;
+    size_t getBytesAllocated() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
     const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
@@ -138,6 +139,8 @@ public:
     void readTextWithNamesInStorage(ReadBuffer & buf);
     /// Same as NamesAndTypesList::writeText, but includes `type_in_storage`.
     void writeTextWithNamesInStorage(WriteBuffer & buf) const;
+
+    size_t getBytesAllocated() const;
 };
 
 using NamesAndTypesLists = std::vector<NamesAndTypesList>;

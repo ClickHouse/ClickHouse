@@ -12,6 +12,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeMemoryAccounting.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -71,6 +72,8 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <type_traits>
+#include <unordered_map>
 
 
 namespace CurrentMetrics
@@ -698,7 +701,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     columns = new_columns;
-    serialization_infos = new_infos;
+    serialization_infos = new_infos.clone();
     metadata_version = new_metadata_version;
 
     serializations.clear();
@@ -1018,6 +1021,76 @@ UInt64 IMergeTreeDataPart::getIndexGranularityBytes() const
 UInt64 IMergeTreeDataPart::getIndexGranularityAllocatedBytes() const
 {
     return index_granularity->getBytesAllocated();
+}
+
+UInt64 IMergeTreeDataPart::getColumnsSubstreamsBytesAllocated() const
+{
+    return columns_substreams.getOwnedBytesAllocated();
+}
+
+UInt64 IMergeTreeDataPart::getColumnsSubstreamsLookupBytesAllocated() const
+{
+    return columns_substreams.getLookupBytesAllocated();
+}
+
+UInt64 IMergeTreeDataPart::getColumnsBytesAllocated() const
+{
+    size_t res = columns.getBytesAllocated();
+    static_assert(std::is_same_v<NameToNumber, std::unordered_map<std::string, size_t>>);
+    /// `column_name_to_position` is an unordered map: buckets are node-pointer slots,
+    /// and each entry gets one pointer-sized next-link estimate.
+    res += column_name_to_position.bucket_count() * sizeof(void *);
+    res += column_name_to_position.size() * (sizeof(decltype(column_name_to_position)::value_type) + sizeof(void *));
+    for (const auto & [column_name, _] : column_name_to_position)
+        res += column_name.capacity();
+
+    /// `columns_description` pointers reference the shared per-table cache maintained by
+    /// `MergeTreeData`, so the cache contents and pointer control blocks are intentionally
+    /// excluded from per-part column metadata bytes.
+    return res;
+}
+
+UInt64 IMergeTreeDataPart::getSerializationInfosBytesAllocated() const
+{
+    return serialization_infos.getBytesAllocated();
+}
+
+UInt64 IMergeTreeDataPart::getDataTypesBytesAllocated() const
+{
+    size_t res = 0;
+    for (const auto & column : columns)
+    {
+        res += getDataTypeBytesAllocated(*column.type);
+        if (column.isSubcolumn() && column.getTypeInStorage().get() != column.type.get())
+            res += getDataTypeBytesAllocated(*column.getTypeInStorage());
+    }
+    return res;
+}
+
+UInt64 IMergeTreeDataPart::getSerializationsBytesAllocated() const
+{
+    static_assert(std::is_same_v<SerializationByName, std::unordered_map<String, SerializationPtr>>);
+    /// `serializations` is an unordered map: buckets are node-pointer slots,
+    /// and each entry gets one pointer-sized next-link estimate.
+    size_t res = serializations.bucket_count() * sizeof(void *);
+    for (const auto & [serialization_name, serialization] : serializations)
+    {
+        res += sizeof(decltype(serializations)::value_type) + sizeof(void *);
+        res += serialization_name.capacity();
+        if (serialization)
+            res += serialization->allocatedBytes();
+    }
+    return res;
+}
+
+UInt64 IMergeTreeDataPart::getMetadataBytesAllocated() const
+{
+    return getColumnsSubstreamsBytesAllocated()
+        + getColumnsSubstreamsLookupBytesAllocated()
+        + getColumnsBytesAllocated()
+        + getSerializationInfosBytesAllocated()
+        + getDataTypesBytesAllocated()
+        + getSerializationsBytesAllocated();
 }
 
 void IMergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPartState> & affordable_states) const
