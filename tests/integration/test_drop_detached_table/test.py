@@ -358,6 +358,60 @@ def test_drop_detached_access_control(start_cluster):
     replica1.query("DROP USER IF EXISTS test_user")
 
 
+def test_drop_detached_rejects_non_table(start_cluster):
+    base_table = "test_reject_base"
+    view_name = "test_reject_view"
+    dict_name = "test_reject_dict"
+    dict_src = "test_reject_dict_src"
+
+    create_table(replica1, base_table)
+
+    replica1.query(
+        f"CREATE MATERIALIZED VIEW {view_name} ENGINE=MergeTree ORDER BY key "
+        f"AS SELECT key FROM {base_table}"
+    )
+    replica1.query(f"DETACH TABLE {view_name}")
+
+    try:
+        replica1.query(
+            f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {view_name} SYNC"
+        )
+        assert False, "Expected DROP DETACHED TABLE on a View to be rejected"
+    except Exception as e:
+        assert "is a View" in str(e) or "INCORRECT_QUERY" in str(
+            e
+        ), f"Expected View rejection, got: {e}"
+
+    replica1.query(
+        f"CREATE TABLE {dict_src} (key UInt64, value String) ENGINE=MergeTree ORDER BY key"
+    )
+    replica1.query(
+        f"CREATE DICTIONARY {dict_name} (key UInt64, value String) "
+        f"PRIMARY KEY key "
+        f"SOURCE(CLICKHOUSE(TABLE '{dict_src}' DB 'default')) "
+        f"LAYOUT(FLAT()) LIFETIME(0)"
+    )
+    replica1.query(f"DETACH DICTIONARY {dict_name}")
+
+    try:
+        replica1.query(
+            f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {dict_name} SYNC"
+        )
+        assert False, "Expected DROP DETACHED TABLE on a Dictionary to be rejected"
+    except Exception as e:
+        assert "is a Dictionary" in str(e) or "INCORRECT_QUERY" in str(
+            e
+        ), f"Expected Dictionary rejection, got: {e}"
+
+    replica1.query(f"ATTACH TABLE {view_name}")
+    replica1.query(f"ATTACH DICTIONARY {dict_name}")
+
+    replica1.query(f"DROP TABLE IF EXISTS {view_name} SYNC")
+    replica1.query(f"DROP DICTIONARY IF EXISTS {dict_name} SYNC")
+    replica1.query(f"DROP TABLE IF EXISTS {dict_src} SYNC")
+    replica1.query(f"DROP TABLE IF EXISTS {base_table} SYNC")
+
+
 def test_if_exists_behaviour(start_cluster):
     table_name = "test_table_if_exists"
 

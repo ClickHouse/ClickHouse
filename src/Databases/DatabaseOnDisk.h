@@ -125,7 +125,8 @@ protected:
     const String metadata_path;
     const String data_path;
 
-    UUID getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
+    boost::intrusive_ptr<ASTCreateQuery>
+    getCreateQueryFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const;
 };
 
 }

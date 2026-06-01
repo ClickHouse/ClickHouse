@@ -108,10 +108,11 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     tryCreateMetadataSymlink();
 }
 
-UUID DatabaseAtomic::getTableUUIDFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const
+boost::intrusive_ptr<ASTCreateQuery>
+DatabaseAtomic::getCreateQueryFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const
 {
     const String table_metadata_path = getObjectMetadataPath(table_name);
-    return DatabaseOnDisk::getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
+    return DatabaseOnDisk::getCreateQueryFromDetachedMetadata(local_context, table_metadata_path);
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -254,12 +255,12 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
 
     const String table_metadata_path = getObjectMetadataPath(table_name);
-    const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);
-    const StorageID storage_id{getDatabaseName(), table_name, uuid_table};
+    auto create_query = getCreateQueryFromDetachedMetadata(local_context, table_metadata_path);
+    const StorageID storage_id{getDatabaseName(), table_name, create_query->uuid};
 
-    QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+    QueryStatusPtr query_status = local_context->getProcessListElementSafe();
     waitDetachedTableNotInUse(
-        uuid_table,
+        create_query->uuid,
         [&]()
         {
             if (query_status)

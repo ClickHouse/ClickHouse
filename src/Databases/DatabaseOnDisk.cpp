@@ -408,13 +408,12 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     db_disk->removeFileIfExists(table_metadata_path_drop);
 }
 
-UUID DatabaseOnDisk::getTableUUIDFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+boost::intrusive_ptr<ASTCreateQuery>
+DatabaseOnDisk::getCreateQueryFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
 {
     auto db_disk = getDisk();
-    ASTPtr ast_detached = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
-    auto & create_detached = ast_detached->as<ASTCreateQuery &>();
-
-    return create_detached.uuid;
+    auto ast = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
+    return boost::static_pointer_cast<ASTCreateQuery>(ast);
 }
 
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const

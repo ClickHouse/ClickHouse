@@ -14,6 +14,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
@@ -232,7 +233,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
         }
 
-        UUID detached_table_uuid = actual_database->getTableUUIDFromDetachedMetadataByName(context_, table_name);
+        /// Make sure we're really dropping a table, since view or dict could also be referenced
+        auto detached_create = actual_database->getCreateQueryFromDetachedMetadataByName(context_, table_name);
+        if (detached_create->isView())
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Detached object {} is a View and cannot be removed with DROP DETACHED TABLE",
+                table_id.getNameForLogs());
+        if (detached_create->is_dictionary)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Detached object {} is a Dictionary and cannot be removed with DROP DETACHED TABLE",
+                table_id.getNameForLogs());
+
+        UUID detached_table_uuid = detached_create->uuid;
         StorageID detached_table_id(table_id.getDatabaseName(), table_name, detached_table_uuid);
 
         bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];

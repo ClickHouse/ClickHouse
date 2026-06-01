@@ -57,7 +57,8 @@ public:
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
-    UUID getTableUUIDFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const;
+    boost::intrusive_ptr<ASTCreateQuery>
+    getCreateQueryFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const;
 
     void drop(ContextPtr /*context*/) override;
 
