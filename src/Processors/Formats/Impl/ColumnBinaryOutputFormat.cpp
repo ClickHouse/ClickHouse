@@ -30,8 +30,7 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
     if (rows == 0 || block.columns() == 0)
         return std::nullopt;
 
-    uint32_t cursor = static_cast<uint32_t>(
-        ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES);
+    uint64_t cursor = ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES;
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
@@ -59,8 +58,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     uint32_t num_cols = static_cast<uint32_t>(std::min(chunk.getNumColumns(), header_->columns()));
 
     // Layout pass: build descriptors (compute offsets and total size).
-    uint32_t cursor = static_cast<uint32_t>(
-        ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES);
+    uint64_t cursor = ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES;
 
     std::vector<ColumnarV1::ColDescriptor> descs(num_cols);
     for (uint32_t i = 0; i < num_cols; ++i)

@@ -4,7 +4,7 @@
 ///
 /// CH→WASM (encoder, input direction):
 ///   desc.offsets_offset → outer uint32[N+1]  (row boundaries)
-///   desc.data_offset    → for Array(String): inner_offsets[M+1] + null-terminated chars
+///   desc.data_offset    → for Array(String): inner_offsets[M+1] + chars (no null terminators)
 ///                         for Array(fixed):  packed elements (M * elem_size)
 ///
 /// WASM→CH (decoder, output direction):
@@ -48,7 +48,7 @@ namespace
 std::vector<uint8_t> encodeCHColumn(const IColumn * col, uint32_t num_rows)
 {
     ColDescriptor desc{};
-    uint32_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    uint64_t cursor = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
     cursor = buildColDescriptor(col, /*is_const=*/false, /*is_nullable=*/false, num_rows, cursor, desc);
 
     std::vector<uint8_t> buf(cursor, 0);

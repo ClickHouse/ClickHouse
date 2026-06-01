@@ -13,10 +13,10 @@
 /// ── Wire layout ─────────────────────────────────────────────────────────────
 ///
 ///   [ 4 B num_rows | 4 B num_cols ]       ← COLUMNAR_HEADER_BYTES = 8
-///   [ ColDescriptor × num_cols    ]       ← COLUMNAR_DESC_BYTES = 20 each
+///   [ ColDescriptor × num_cols    ]       ← COLUMNAR_DESC_BYTES = 40 each
 ///   [ column data blobs ...       ]       ← at offsets given by descriptors
 ///
-/// ColDescriptor holds five uint32 fields (absolute byte offsets into the
+/// ColDescriptor holds five uint64 fields (absolute byte offsets into the
 /// buffer): type, null_offset, offsets_offset, data_offset, data_size.
 /// Offsets are 0 when the field is absent (e.g. null_offset=0 → not nullable).
 ///
@@ -53,9 +53,11 @@
 /// allows ColumnBinaryOutputFormat to pre-allocate the output buffer in a
 /// single pass before writing, avoiding reallocation.
 ///
-/// String offset narrowing: ColumnString stores offsets as uint64; the wire
-/// format uses uint32. The conversion is explicit and checked implicitly by
-/// the 4 GiB column-data limit imposed by the uint32 descriptor fields.
+/// String offset narrowing: ColumnString stores offsets as uint64; the inner
+/// per-string offset arrays in the data blob (COL_BYTES, Array(String)) are
+/// uint32. Individual columns are therefore limited to 4 GiB of string data.
+/// ColDescriptor fields are uint64 so the buffer as a whole is not bounded by
+/// this limit.
 /// COL_BYTES wire layout omits null terminators. ColumnString internally has
 /// no null terminators (see ColumnString.h); the wire matches exactly.
 
@@ -100,15 +102,15 @@ constexpr uint32_t COL_IS_NULLABLE  = 0x20u; // Nullable(T); null_offset carries
 constexpr uint32_t COL_IS_CONST     = 0x80u;
 
 constexpr uint32_t COLUMNAR_HEADER_BYTES = 8;
-constexpr uint32_t COLUMNAR_DESC_BYTES   = 20;
+constexpr uint32_t COLUMNAR_DESC_BYTES   = 40;
 
 struct ColDescriptor
 {
-    uint32_t type;
-    uint32_t null_offset;
-    uint32_t offsets_offset;
-    uint32_t data_offset;
-    uint32_t data_size;
+    uint64_t type;
+    uint64_t null_offset;
+    uint64_t offsets_offset;
+    uint64_t data_offset;
+    uint64_t data_size;
 };
 static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 
@@ -199,12 +201,12 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
 
 // Compute byte layout for a single column and fill in desc.
 // Returns the next free offset in the output buffer.
-inline uint32_t buildColDescriptor(
+inline uint64_t buildColDescriptor(
     const IColumn * col,
     bool is_const,
     bool is_nullable,
     uint32_t num_rows,
-    uint32_t write_cursor,
+    uint64_t write_cursor,
     ColDescriptor & desc)
 {
 
@@ -216,7 +218,7 @@ inline uint32_t buildColDescriptor(
     //     uint32 K                                   (number of present sub-variants)
     //     K × { uint8 global_discriminator           (4-byte aligned record)
     //           uint8[3] pad
-    //           ColDescriptor inner_desc }           (20 bytes, abs buffer offsets)
+    //           ColDescriptor inner_desc }           (40 bytes, abs buffer offsets)
     //     (sub-column data at positions given by inner_desc)
     if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
     {
@@ -225,11 +227,11 @@ inline uint32_t buildColDescriptor(
         desc.null_offset = write_cursor;
         write_cursor += num_rows;
 
-        write_cursor = (write_cursor + 3u) & ~3u;
+        write_cursor = (write_cursor + 3ull) & ~3ull;
         desc.offsets_offset = write_cursor;
         write_cursor += num_rows * sizeof(uint32_t);
 
-        write_cursor = (write_cursor + 3u) & ~3u;
+        write_cursor = (write_cursor + 3ull) & ~3ull;
         desc.data_offset = write_cursor;
 
         // Count non-empty sub-variants.
@@ -263,7 +265,7 @@ inline uint32_t buildColDescriptor(
         desc.type        = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset = 0;
 
-        write_cursor = (write_cursor + 3u) & ~3u;
+        write_cursor = (write_cursor + 3ull) & ~3ull;
         desc.offsets_offset = write_cursor;
         write_cursor += (num_rows + 1u) * sizeof(uint32_t);
 
@@ -310,7 +312,7 @@ inline uint32_t buildColDescriptor(
             desc.null_offset = 0;
         }
 
-        write_cursor = (write_cursor + 3u) & ~3u;
+        write_cursor = (write_cursor + 3ull) & ~3ull;
         desc.offsets_offset = write_cursor;
         write_cursor += (num_rows + 1u) * sizeof(uint32_t);
 
@@ -337,7 +339,7 @@ inline uint32_t buildColDescriptor(
     {
         desc.null_offset = write_cursor;
         write_cursor += num_rows;
-        write_cursor = (write_cursor + 3u) & ~3u; // 4-byte align data after null map
+        write_cursor = (write_cursor + 3ull) & ~3ull; // 4-byte align data after null map
     }
     else
     {
@@ -387,7 +389,7 @@ inline void writeColData(
         uint8_t * record_ptr = block + 4u;
 
         // Track where sub-column data starts (after header).
-        uint32_t sub_cursor = desc.data_offset + 4u + k * (4u + COLUMNAR_DESC_BYTES);
+        uint64_t sub_cursor = desc.data_offset + 4u + k * (4u + COLUMNAR_DESC_BYTES);
 
         for (uint32_t local = 0; local < num_variants; ++local)
         {
