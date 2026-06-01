@@ -296,6 +296,7 @@ AggregateFunctionPtr createAggregateFunctionGroupFormat(
 
 }
 
+void registerAggregateFunctionGroupFormat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupFormat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
