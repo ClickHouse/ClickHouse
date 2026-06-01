@@ -102,9 +102,20 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
+void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
+{
+    if (!node)
+        return;
+    if (node->type == ActionsDAG::ActionType::INPUT)
+        out.insert(node->result_name);
+    for (const auto * child : node->children)
+        collectFilterInputColumns(child, out);
+}
+
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
 bool tryEstimateWithStatistics(
     WhatIfIndexEstimator::IndexResult & result,
+    const MergeTreeIndexPtr & index_helper,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & parts,
@@ -118,6 +129,21 @@ bool tryEstimateWithStatistics(
 
     if (parts.empty())
         return false;
+
+    /// The filter may reference columns outside the index. Attributing their
+    /// selectivity to the hypothetical index would overestimate its skip ratio,
+    /// so fall through to `applicability_only` unless the filter is purely on
+    /// the index's columns
+    NameSet index_columns_set;
+    for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
+        index_columns_set.insert(col);
+
+    NameSet filter_input_columns;
+    collectFilterInputColumns(filter_node, filter_input_columns);
+
+    for (const auto & col : filter_input_columns)
+        if (!index_columns_set.contains(col))
+            return false;
 
     ConditionSelectivityEstimatorBuilder builder(context);
     bool has_any_stats = false;
@@ -387,7 +413,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     /// Fall back to column statistics
-    if (tryEstimateWithStatistics(result, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
+    if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
         return result;
 
     /// No estimation available

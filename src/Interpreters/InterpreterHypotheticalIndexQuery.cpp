@@ -107,7 +107,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 }
 
 
-void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory)
+static void registerInterpreterHypotheticalIndexQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)
     {

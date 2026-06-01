@@ -12,31 +12,38 @@ Lists every hypothetical (what-if) skip index defined in the current session. Se
 
 The contents are session-scoped: each connection sees only its own hypothetical indexes, and the table is empty when no indexes have been created in the current session.
 
+The current `(database, table)` are resolved by UUID at query time, so they reflect `RENAME TABLE` and entries for dropped tables are hidden automatically.
+
 ## Columns {#columns}
 
-| Column        | Type     | Description                                                  |
-|---------------|----------|--------------------------------------------------------------|
-| `name`        | `String` | Index name.                                                  |
-| `database`    | `String` | Target database.                                             |
-| `table`       | `String` | Target table.                                                |
-| `type`        | `String` | Index type (`minmax`, `set`, `bloom_filter`, etc.).          |
-| `expression`  | `String` | Index expression as written in `CREATE HYPOTHETICAL INDEX`.  |
-| `granularity` | `UInt64` | Number of data granules per index granule.                   |
+| Column        | Type     | Description                                                                                  |
+|---------------|----------|----------------------------------------------------------------------------------------------|
+| `database`    | `String` | Target database.                                                                             |
+| `table`       | `String` | Target table.                                                                                |
+| `name`        | `String` | Index name.                                                                                  |
+| `type`        | `String` | Index type (`minmax`, `set`, `bloom_filter`, etc.).                                          |
+| `type_full`   | `String` | Index type expression including arguments, e.g. `bloom_filter(0.01)`.                        |
+| `expression`  | `String` | Index expression as written in `CREATE HYPOTHETICAL INDEX`.                                  |
+| `granularity` | `UInt64` | Number of data granules per index granule.                                                   |
 
 ## Example {#example}
 
 ```sql
-CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX i1 ON t (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
+CREATE HYPOTHETICAL INDEX i2 ON t (b) TYPE bloom_filter(0.001) GRANULARITY 1;
 
-SELECT name, table, type, granularity
+SELECT database, table, name, type, type_full, expression, granularity
 FROM system.hypothetical_indexes;
 ```
 
 ```text
-┌─name──┬─table─┬─type───┬─granularity─┐
-│ idx_b │ t     │ minmax │           1 │
-└───────┴───────┴────────┴─────────────┘
+┌─database─┬─table─┬─name─┬─type─────────┬─type_full───────────┬─expression─┬─granularity─┐
+│ default  │ t     │ i1   │ bloom_filter │ bloom_filter(0.01)  │ b          │           1 │
+│ default  │ t     │ i2   │ bloom_filter │ bloom_filter(0.001) │ b          │           1 │
+└──────────┴───────┴──────┴──────────────┴─────────────────────┴────────────┴─────────────┘
 ```
+
+`type` is the base type name and `type_full` includes the arguments, so users can distinguish between parametrized variants like `bloom_filter(0.01)` and `bloom_filter(0.001)`.
 
 ## See also {#see-also}
 
