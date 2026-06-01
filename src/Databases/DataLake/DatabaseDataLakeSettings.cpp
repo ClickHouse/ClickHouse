@@ -63,10 +63,7 @@ DatabaseDataLakeSettings::DatabaseDataLakeSettings(const DatabaseDataLakeSetting
 {
 }
 
-DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept
-    : impl(std::make_unique<DatabaseDataLakeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept = default;
 
 DatabaseDataLakeSettings::~DatabaseDataLakeSettings() = default;
 

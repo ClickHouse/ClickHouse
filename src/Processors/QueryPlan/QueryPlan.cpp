@@ -55,7 +55,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
 void QueryPlan::checkInitialized() const
 {

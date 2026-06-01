@@ -43,18 +43,40 @@ private:
 
     static void fetchAndGroupSupportedAlgorithms()
     {
-        MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
+        /// The callback is invoked from OpenSSL C code (EVP_MD_do_all_sorted), so it must be
+        /// noexcept: a C++ exception (e.g. a memory limit hit while inserting) must not unwind
+        /// through the C frames. Capture it and rethrow once the C call has returned.
+        struct CallbackState
+        {
+            MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> algorithms_map;
+            std::exception_ptr exception;
+        };
+        CallbackState state;
 
         EVP_MD_do_all_sorted(
-            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg)
+            [](const EVP_MD * /* md */, const char * md_name, const char * alias, void * arg) noexcept
             {
-                auto * algos_map = static_cast<MapWithMemoryTracking<std::string, SetWithMemoryTracking<std::string>> *>(arg);
-                std::string primary_name = md_name;
-                (*algos_map)[primary_name].insert(primary_name);
-                if (alias)
-                    (*algos_map)[primary_name].insert(alias);
+                auto & cb_state = *static_cast<CallbackState *>(arg);
+                if (cb_state.exception)
+                    return;
+                try
+                {
+                    std::string primary_name = md_name;
+                    cb_state.algorithms_map[primary_name].insert(primary_name);
+                    if (alias)
+                        cb_state.algorithms_map[primary_name].insert(alias);
+                }
+                catch (...)
+                {
+                    cb_state.exception = std::current_exception();
+                }
             },
-            &algorithms_map);
+            &state);
+
+        if (state.exception)
+            std::rethrow_exception(state.exception);
+
+        auto & algorithms_map = state.algorithms_map;
 
         /// Filter out algorithms that cannot actually be fetched
         /// (e.g., non-approved algorithms when running in FIPS mode)

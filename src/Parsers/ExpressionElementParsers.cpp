@@ -245,8 +245,10 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::QuotedIdentifier)
     {
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
+        if (*pos->begin == '\xE2' && pos->size() >= 6)
         {
+            if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
+                return false;
             node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
             ++pos;
             return true;

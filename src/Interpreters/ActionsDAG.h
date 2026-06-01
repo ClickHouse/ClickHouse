@@ -331,7 +331,8 @@ public:
     );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
-    void decorrelate() noexcept;
+    /// Not noexcept: appends to the inputs vector, which can throw on allocation.
+    void decorrelate();
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
