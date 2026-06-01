@@ -333,9 +333,9 @@ INSERT INTO t_phys_flat_nested VALUES (2, [10, 20], ['a', 'b']);
 SELECT a, `n.x`, `n.y` FROM t_phys_flat_nested ORDER BY a;
 DROP TABLE t_phys_flat_nested;
 
--- Test 12: DROP + re-ADD same column in a single ALTER falls back to mutation
--- (reusing the same logical name means the column ID stays identity-mapped,
--- but the mutation rewrites data so the old values are replaced by the default).
+-- Test 12: DROP + re-ADD same column in a single ALTER is rejected under
+-- column IDs (cannot be made crash-safe between metadata commit and
+-- mutation start).  Workaround: two separate ALTERs.
 SELECT 'Test 12: drop and re-add in single ALTER';
 DROP TABLE IF EXISTS t_phys_drop_readd;
 CREATE TABLE t_phys_drop_readd (a UInt64, b String) ENGINE = MergeTree ORDER BY a
@@ -343,7 +343,9 @@ CREATE TABLE t_phys_drop_readd (a UInt64, b String) ENGINE = MergeTree ORDER BY 
     serialization_info_version = 'with_column_ids',
     activate_column_ids_for_existing_tables = 1;
 INSERT INTO t_phys_drop_readd VALUES (1, 'old_data');
-ALTER TABLE t_phys_drop_readd DROP COLUMN b, ADD COLUMN b String DEFAULT 'new_default';
+ALTER TABLE t_phys_drop_readd DROP COLUMN b, ADD COLUMN b String DEFAULT 'new_default'; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_phys_drop_readd DROP COLUMN b;
+ALTER TABLE t_phys_drop_readd ADD COLUMN b String DEFAULT 'new_default';
 INSERT INTO t_phys_drop_readd VALUES (2, 'inserted');
 SELECT a, b FROM t_phys_drop_readd ORDER BY a;
 SELECT column, column_id FROM system.parts_columns
@@ -353,9 +355,8 @@ OPTIMIZE TABLE t_phys_drop_readd FINAL;
 SELECT a, b FROM t_phys_drop_readd ORDER BY a;
 DROP TABLE t_phys_drop_readd;
 
--- Test 13: DROP + re-ADD Nested column in single ALTER forces mutation
--- Regression: previously, DROP COLUMN n (parent) was not detected in
--- new_col_names which contained expanded n.x, n.y — bypassing force_mutation.
+-- Test 13: DROP + re-ADD Nested column in single ALTER is rejected
+-- (same crash-window issue as plain DROP+re-ADD).  Workaround: two ALTERs.
 SELECT 'Test 13: drop and re-add Nested in single ALTER';
 DROP TABLE IF EXISTS t_phys_drop_readd_nested;
 CREATE TABLE t_phys_drop_readd_nested (a UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY a
@@ -363,7 +364,9 @@ CREATE TABLE t_phys_drop_readd_nested (a UInt64, n Nested(x UInt64, y String)) E
     serialization_info_version = 'with_column_ids',
     activate_column_ids_for_existing_tables = 1;
 INSERT INTO t_phys_drop_readd_nested VALUES (1, [10, 20], ['a', 'b']);
-ALTER TABLE t_phys_drop_readd_nested DROP COLUMN n, ADD COLUMN n Nested(x UInt64, y String);
+ALTER TABLE t_phys_drop_readd_nested DROP COLUMN n, ADD COLUMN n Nested(x UInt64, y String); -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_phys_drop_readd_nested DROP COLUMN n;
+ALTER TABLE t_phys_drop_readd_nested ADD COLUMN n Nested(x UInt64, y String);
 INSERT INTO t_phys_drop_readd_nested VALUES (2, [30, 40], ['c', 'd']);
 SELECT a, `n.x`, `n.y` FROM t_phys_drop_readd_nested ORDER BY a;
 OPTIMIZE TABLE t_phys_drop_readd_nested FINAL;

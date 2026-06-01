@@ -79,6 +79,7 @@ Test 12: drop and re-add in single ALTER
 1	new_default
 2	inserted
 b	b
+b	1
 1	new_default
 2	inserted
 Test 13: drop and re-add Nested in single ALTER

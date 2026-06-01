@@ -1,8 +1,10 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
--- Scenario: with column IDs active, `ALTER TABLE t DROP COLUMN x, ADD COLUMN x ...`
--- triggers a forced DROP+re-ADD mutation under the hood.  If the user has
--- `allow_non_metadata_alters = 0`, the column-IDs planning must respect it
--- and refuse the ALTER, not silently smuggle a data-rewrite through.
+-- Scenario: with column IDs active, single-ALTER DROP+re-ADD of the same
+-- column is rejected as crash-unsafe (the metadata commit happens before
+-- the cleanup mutation starts, so a crash in that window could expose the
+-- dropped column's old bytes through the re-added column).  The rejection
+-- fires independently of `allow_non_metadata_alters`; the workaround is to
+-- split into two separate ALTER statements (each fully durable).
 SET allow_experimental_column_ids = 1;
 
 DROP TABLE IF EXISTS t_force_mut_guard SYNC;
@@ -13,12 +15,15 @@ SETTINGS serialization_info_version = 'with_column_ids',
     min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_force_mut_guard VALUES (1, 'hello');
 
--- Force-mutation case rejected when the setting forbids data-rewriting alters.
+-- Rejected even with the permissive setting.
+ALTER TABLE t_force_mut_guard DROP COLUMN b, ADD COLUMN b String DEFAULT 'x'; -- { serverError NOT_IMPLEMENTED }
+-- Also rejected with the restrictive setting (no setting can override).
 ALTER TABLE t_force_mut_guard DROP COLUMN b, ADD COLUMN b String DEFAULT 'x'
-SETTINGS allow_non_metadata_alters = 0; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+SETTINGS allow_non_metadata_alters = 0; -- { serverError NOT_IMPLEMENTED }
 
--- Same ALTER without the setting is allowed (force-mutation path runs).
-ALTER TABLE t_force_mut_guard DROP COLUMN b, ADD COLUMN b String DEFAULT 'x';
+-- Two-ALTER workaround succeeds.
+ALTER TABLE t_force_mut_guard DROP COLUMN b;
+ALTER TABLE t_force_mut_guard ADD COLUMN b String DEFAULT 'x';
 SELECT a, b FROM t_force_mut_guard ORDER BY a;
 
 DROP TABLE t_force_mut_guard SYNC;

@@ -543,14 +543,20 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
         new_col_names.insert(col.name);
 
     /// Detect DROP + re-ADD of the same column in a single ALTER.
-    /// Cannot be made crash-safe as metadata-only (atomically swapping
-    /// the column ID is impossible), so force a mutation for these.
+    /// Cannot be made crash-safe as metadata-only: even with a force-mutation
+    /// queue entry, the metadata commit and the mutation start are not
+    /// atomic.  Between them, the on-disk part still has the dropped
+    /// column's bytes under the old physical name, and the mapping still
+    /// resolves the (re-added) logical name to that same name -- so a
+    /// reader after a crash in that window would expose the old data as
+    /// the newly-added column.  Reject the combination explicitly; the
+    /// caller can split it into two separate ALTERs, each fully durable.
     ///
     /// For Nested columns the detection must be parent-aware:
     /// `DROP COLUMN n` removes the parent, but after `commands.apply`
     /// the re-added `ADD COLUMN n Nested(x UInt64, y String)` is
     /// expanded into `n.x`, `n.y` in `new_col_names`.  The dropped
-    /// name "n" itself won't appear in `new_col_names` — we must also
+    /// name "n" itself won't appear in `new_col_names` -- we must also
     /// check for children with the "n." prefix.
     std::set<String> explicitly_dropped;
     for (const auto & command : commands)
@@ -576,6 +582,14 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
             }
         }
     }
+
+    if (!plan.force_mutation_columns.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER on column-IDs table: DROP COLUMN + re-ADD COLUMN of the same "
+            "name ('{}') in a single ALTER cannot be made crash-safe.  Split "
+            "into two separate ALTER statements (first DROP, then ADD); each is "
+            "fully durable.",
+            fmt::join(plan.force_mutation_columns, "', '"));
 
     /// Group newly added columns by Nested parent so flattened siblings
     /// (e.g. n.x, n.y from `ADD COLUMN n Nested(...)`) share a compound
