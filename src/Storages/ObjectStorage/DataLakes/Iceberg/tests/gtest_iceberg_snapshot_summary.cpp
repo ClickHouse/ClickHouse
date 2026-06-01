@@ -58,7 +58,7 @@ TEST(IcebergSnapshotSummary, DeleteSubtractsFromParent)
 
     SnapshotSummary del(
         DB::Iceberg::SnapshotSummaryUpdateDelete{
-            .removed_data_files = 1,
+            .deleted_data_files = 1,
             .removed_records = 2,
             .removed_files_size = 823,
             .removed_position_delete_files = 0,
@@ -77,10 +77,10 @@ TEST(IcebergSnapshotSummary, OverwriteAddsDeleteCounts)
 
     SnapshotSummary ow(
         DB::Iceberg::SnapshotSummaryUpdateOverwrite{
-            .added_delete_files = 1,
             .added_files_size = 100,
-            .num_partitions = 1,
-            .num_deleted_rows = 4},
+            .added_delete_files = 1,
+            .added_position_deletes = 4,
+            .num_partitions = 1},
         parent.getTotals());
 
     EXPECT_EQ(ow.getTotals().delete_files, 1);
@@ -95,7 +95,7 @@ TEST(IcebergSnapshotSummary, DeleteWithoutParentThrows)
 {
     EXPECT_THROW(
         SnapshotSummary(DB::Iceberg::SnapshotSummaryUpdateDelete{
-            .removed_data_files = 1,
+            .deleted_data_files = 1,
             .removed_records = 1,
             .removed_files_size = 100,
             .removed_position_delete_files = 0,
@@ -110,10 +110,10 @@ TEST(IcebergSnapshotSummary, OverwriteWithoutParentThrows)
 {
     EXPECT_THROW(
         SnapshotSummary(DB::Iceberg::SnapshotSummaryUpdateOverwrite{
-            .added_delete_files = 1,
             .added_files_size = 100,
-            .num_partitions = 1,
-            .num_deleted_rows = 1}),
+            .added_delete_files = 1,
+            .added_position_deletes = 1,
+            .num_partitions = 1}),
         DB::Exception);
 }
 #endif
@@ -149,7 +149,7 @@ TEST(IcebergSnapshotSummary, ToJSONDeleteFields)
 
     SnapshotSummary del(
         DB::Iceberg::SnapshotSummaryUpdateDelete{
-            .removed_data_files = 1,
+            .deleted_data_files = 1,
             .removed_records = 2,
             .removed_files_size = 823,
             .removed_position_delete_files = 0,
@@ -205,16 +205,16 @@ TEST(IcebergSnapshotSummary, DeletePositionDeletesRoundTrip)
 
     SnapshotSummary parent(
         DB::Iceberg::SnapshotSummaryUpdateOverwrite{
-            .added_delete_files = 2,
             .added_files_size = 100,
-            .num_partitions = 1,
-            .num_deleted_rows = 10},
+            .added_delete_files = 2,
+            .added_position_deletes = 10,
+            .num_partitions = 1},
         grandparent.getTotals());
     EXPECT_EQ(parent.getTotals().position_deletes, 10);
 
     SnapshotSummary del(
         DB::Iceberg::SnapshotSummaryUpdateDelete{
-            .removed_data_files = 0,
+            .deleted_data_files = 0,
             .removed_records = 0,
             .removed_files_size = 50,
             .removed_position_delete_files = 1,
@@ -245,7 +245,7 @@ TEST(IcebergSnapshotSummary, ReplaceAdjustsDataTotals)
             .added_files = 1,
             .added_records = 100,
             .added_files_size = 4000,
-            .removed_data_files = 5,
+            .deleted_data_files = 5,
             .removed_records = 100,
             .removed_files_size = 5000,
             .num_partitions = 3},
@@ -264,7 +264,7 @@ TEST(IcebergSnapshotSummary, ReplaceWithoutParentThrows)
             .added_files = 1,
             .added_records = 100,
             .added_files_size = 4000,
-            .removed_data_files = 5,
+            .deleted_data_files = 5,
             .removed_records = 100,
             .removed_files_size = 5000,
             .num_partitions = 3}),
@@ -281,7 +281,7 @@ TEST(IcebergSnapshotSummary, ToJSONReplaceFields)
             .added_files = 1,
             .added_records = 100,
             .added_files_size = 4000,
-            .removed_data_files = 5,
+            .deleted_data_files = 5,
             .removed_records = 100,
             .removed_files_size = 5000,
             .num_partitions = 3},
@@ -310,7 +310,7 @@ TEST(IcebergSnapshotSummary, ReplaceRoundTripThroughJSON)
             .added_files = 1,
             .added_records = 100,
             .added_files_size = 4000,
-            .removed_data_files = 5,
+            .deleted_data_files = 5,
             .removed_records = 100,
             .removed_files_size = 5000,
             .num_partitions = 3},

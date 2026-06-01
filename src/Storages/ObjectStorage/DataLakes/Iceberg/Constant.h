@@ -139,6 +139,11 @@ DEFINE_ICEBERG_FIELD_ALIAS(deleted_records, deleted-records);
 DEFINE_ICEBERG_FIELD_ALIAS(total_delete_files, total-delete-files);
 DEFINE_ICEBERG_FIELD_ALIAS(total_position_deletes, total-position-deletes);
 DEFINE_ICEBERG_FIELD_ALIAS(total_equality_deletes, total-equality-deletes);
+/// Engine/version markers written into the snapshot summary by the producing engine.
+DEFINE_ICEBERG_FIELD_ALIAS(app_id, app-id);
+DEFINE_ICEBERG_FIELD_ALIAS(engine_name, engine-name);
+DEFINE_ICEBERG_FIELD_ALIAS(engine_version, engine-version);
+DEFINE_ICEBERG_FIELD_ALIAS(iceberg_version, iceberg-version);
 DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
