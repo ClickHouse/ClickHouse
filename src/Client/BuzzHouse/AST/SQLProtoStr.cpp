@@ -8,8 +8,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
+#define CONV_FN(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) static void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -94,7 +94,7 @@ void AggregateParamToString(String & ret, const AggregateParam & p)
         ret += std::to_string(p.int_param());
 }
 
-void ClusterToString(String & ret, const bool clause, const Cluster & cl)
+static void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
     {
@@ -3043,7 +3043,7 @@ CONV_FN(FetchStatement, fet)
     ret += RowsKeyword_Name(fet.rows()).substr(4);
 }
 
-void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
+static void LimitStatementToString(String & ret, const bool has_offset, const LimitStatement & lim)
 {
     ret += "LIMIT ";
     ExprToString(ret, lim.limit());
@@ -3053,7 +3053,7 @@ void LimitStatementToString(String & ret, const bool has_offset, const LimitStat
     }
 }
 
-void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
+static void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
 {
     ret += (has_limit && off.comma()) ? "," : "OFFSET";
     ret += " ";
@@ -3315,7 +3315,7 @@ CONV_FN(BackupParam, bp)
     }
 }
 
-CONV_FN(BackupOut, bout)
+void BackupOutToString(String & ret, const BackupOut & bout)
 {
     const BackupOut_BackupOutput & output = bout.out();
 
@@ -3377,7 +3377,7 @@ CONV_FN(DatabaseEngine, deng)
     }
 }
 
-CONV_FN(CreateDatabase, create_database)
+void CreateDatabaseToString(String & ret, const CreateDatabase & create_database)
 {
     ret += "CREATE DATABASE ";
     if (create_database.if_not_exists())
@@ -3861,7 +3861,7 @@ CONV_FN(CreateTableSelect, create_table)
     ret += create_table.paren() ? ")" : "";
 }
 
-CONV_FN(CreateTable, create_table)
+void CreateTableToString(String & ret, const CreateTable & create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
@@ -6442,7 +6442,7 @@ CONV_FN(SingleSQLQuery, query)
     }
 }
 
-CONV_FN(SQLQuery, query)
+void SQLQueryToString(String & ret, const SQLQuery & query)
 {
     SingleSQLQueryToString(ret, query.single_query());
     for (int i = 0; i < query.parallel_queries_size(); i++)
