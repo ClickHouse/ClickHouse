@@ -42,8 +42,12 @@ SELECT EXTRACT(MICROSECOND FROM toDateTime64('2024-01-01 10:20:30.123456789', 9)
 SELECT EXTRACT(NANOSECOND  FROM toDateTime64('2024-01-01 10:20:30.123456789', 9));
 
 -- Interval through Dynamic: must not narrow back to UInt8 (would wrap 300 to 44).
+-- Both Dynamic Interval and Dynamic date/time inputs get stable Nullable(Int64).
+SET enable_dynamic_type = 1;
 SELECT toDayOfMonth(materialize(INTERVAL 300 DAY)::Dynamic);
 SELECT toYear(materialize(INTERVAL 70000 YEAR)::Dynamic);
+SELECT toTypeName(toDayOfMonth(materialize(INTERVAL 300 DAY)::Dynamic));
+SELECT toTypeName(toDayOfMonth(materialize(toDateTime('2024-01-15'))::Dynamic));
 
 -- Non-extractor functions sharing the same base class still reject Interval.
 SELECT toStartOfYear(INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

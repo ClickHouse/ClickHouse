@@ -44,10 +44,11 @@ class FunctionDateOrDateTimeBase : public IFunction
         return true;
     }
 
-    /// Calendar-field extractors registered via `FunctionDateOrDateTimeToSomething`
-    /// (`toYear`, `toMonth`, `toDayOfMonth`, ...) also accept an `Interval`
-    /// operand to support PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`.
-    /// Other `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
+protected:
+    /// True iff this function is a calendar-field extractor (`toYear`, `toMonth`,
+    /// `toDayOfMonth`, ...) that supports PostgreSQL-style
+    /// `EXTRACT(<unit> FROM INTERVAL ...)` on a matching-kind interval. Other
+    /// `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
     bool acceptsIntervalArgument() const
     {
@@ -60,7 +61,6 @@ class FunctionDateOrDateTimeBase : public IFunction
         return isDateOrDate32OrDateTimeOrDateTime64(type) || (accept_interval && isInterval(type));
     }
 
-protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
         const bool accept_interval = acceptsIntervalArgument();

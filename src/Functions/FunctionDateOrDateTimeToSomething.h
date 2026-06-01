@@ -108,10 +108,11 @@ public:
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
             return nullptr;
-        /// Extract-capable functions widen to Int64 for Interval; declaring the narrow type
-        /// here would have the Dynamic adaptor cast it back and wrap on out-of-range values.
+        /// Extract-capable functions widen to Int64 for Interval; the narrow `ToDataType`
+        /// would wrap an out-of-range interval, but returning nullptr (Dynamic) changes
+        /// downstream typing even for date/time inputs. Int64 fits every supported result.
         if (this->acceptsIntervalArgument())
-            return nullptr;
+            return std::make_shared<DataTypeInt64>();
         return std::make_shared<ToDataType>();
     }
 
