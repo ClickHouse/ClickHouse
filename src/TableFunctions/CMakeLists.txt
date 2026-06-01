@@ -12,6 +12,7 @@ extract_into_parent_list(clickhouse_table_functions_sources dbms_sources
     ITableFunction.cpp
     TableFunctionView.cpp
     TableFunctionFactory.cpp
+    TableFunctionRemote.cpp
 )
 extract_into_parent_list(clickhouse_table_functions_headers dbms_headers
     ITableFunction.h

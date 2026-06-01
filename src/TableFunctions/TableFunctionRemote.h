@@ -28,6 +28,8 @@ public:
 
     void setRemoteTableFunction(ASTPtr remote_table_function_ptr_) { remote_table_function_ptr = remote_table_function_ptr_; }
 
+    void setActualTableStructure(ColumnsDescription remote_table_columns_) { remote_table_columns = remote_table_columns_; }
+
 private:
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
@@ -44,6 +46,7 @@ private:
     StorageID remote_table_id = StorageID::createEmpty();
     ASTPtr remote_table_function_ptr;
     ASTPtr sharding_key = nullptr;
+    ColumnsDescription remote_table_columns;
 };
 
 }
