@@ -404,7 +404,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzePostings(postings_serialization, *postings_stream, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
-    analyzer->analyzeCardinalitiesAndBypassHints(settings[Setting::text_index_hint_max_selectivity], state.part.rows_count);
+    analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
 
     /// Capture the codec after the analysis — for Pre-WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
