@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # chunks at the source and decodes the trailing real chunk correctly.
 
 PAYLOAD_FILE="${CLICKHOUSE_TMP}/snappy_empty_chunks_payload.bin"
+trap 'rm -f "$PAYLOAD_FILE"' EXIT
 
 python3 - "$PAYLOAD_FILE" <<'PY'
 import struct
@@ -58,7 +59,6 @@ RESULT=$(${CLICKHOUSE_CURL} -sS --data-binary @"$PAYLOAD_FILE" \
 if [ "$RESULT" = "42" ]; then
     echo "OK: empty snappy chunks handled correctly"
 else
-    echo "FAIL: expected 42, got '$RESULT'" >&2
+    echo "FAIL: expected 42, got '$RESULT'"
+    exit 1
 fi
-
-rm -f "$PAYLOAD_FILE"
