@@ -91,8 +91,8 @@ namespace
 
         struct UploadPartTask
         {
-            size_t part_offset;
-            size_t part_size;
+            size_t part_offset{};
+            size_t part_size{};
             std::vector<std::string> block_ids;
             bool is_finished = false;
         };

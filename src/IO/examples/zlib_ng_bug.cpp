@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include <zlib.h>
+#include <Examples/clickhouse_examples.h>
 
 /// https://github.com/zlib-ng/zlib-ng/issues/494
 int mainEntryExampleZlibNgBug(int, char **)

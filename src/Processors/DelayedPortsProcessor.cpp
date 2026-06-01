@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-InputPorts createInputPorts(
+static InputPorts createInputPorts(
     SharedHeader header,
     size_t num_ports,
     std::vector<UInt64> delayed_ports,

@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromVector.h>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 
 static UInt64 rdtsc()

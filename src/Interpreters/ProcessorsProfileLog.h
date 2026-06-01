@@ -16,7 +16,7 @@ struct ProcessorProfileLogElement
     UInt64 id{};
     std::vector<UInt64> parent_ids;
 
-    UInt64 plan_step;
+    UInt64 plan_step{};
     UInt64 plan_group{};
     String plan_step_name;
     String plan_step_description;

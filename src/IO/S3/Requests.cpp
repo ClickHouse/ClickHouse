@@ -178,7 +178,7 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
 }
 
 
-size_t getAttemptFromInfo(const Aws::String & request_info)
+static size_t getAttemptFromInfo(const Aws::String & request_info)
 {
     static auto key = Aws::String("attempt=");
 
@@ -205,7 +205,7 @@ size_t getAttemptFromInfo(const Aws::String & request_info)
     }
 }
 
-String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
 {
     auto it = map.find(key);
     if (it == map.end())

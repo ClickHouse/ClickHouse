@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -407,9 +408,8 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
-            /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
+            /// The sort column node will be removed first from the DAG, hence remember the datatype of final result
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
-            const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
@@ -417,7 +417,14 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            if (need_cast)
+            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
+            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
+            {
+                auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
+                distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
+            }
+
+            if (!distance_node->result_type->equals(*result_type))
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);

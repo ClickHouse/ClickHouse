@@ -32,6 +32,8 @@
 
 using namespace DB;
 
+extern "C" int LLVMFuzzerInitialize(const int * argc, char *** argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 ContextMutablePtr context;
 
@@ -44,7 +46,7 @@ size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 size_t max_query_size = DBMS_DEFAULT_MAX_QUERY_SIZE;
 
 // Helper function to check if this is a merge run
-bool isMerge(int argc, char ** argv)
+static bool isMerge(int argc, char ** argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -58,7 +60,7 @@ bool isMerge(int argc, char ** argv)
 }
 
 // Helper function to parse settings from command line arguments
-std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+static std::unordered_map<std::string, std::string> parseSettingsFromArgs(int argc, char ** argv) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     std::unordered_map<std::string, std::string> settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     bool ignore_remaining = false;

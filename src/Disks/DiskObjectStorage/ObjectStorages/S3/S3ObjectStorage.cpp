@@ -426,7 +426,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-void putObjectsTagOnS3(
+static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & object_keys,

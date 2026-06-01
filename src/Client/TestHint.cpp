@@ -142,7 +142,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
                     continue;
                 if (token.type == TokenType::Number)
                 {
-                    int code;
+                    int code = 0;
                     auto [p, ec] = std::from_chars(token.begin, token.end, code);
                     if (p == token.begin)
                         throw DB::Exception(
