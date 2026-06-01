@@ -1,7 +1,6 @@
 Atomic	1	1
 Memory	1	1
-MySQL	1	1
-PostgreSQL	1	1
 Replicated	1	1
 1
 ['Replicated','Ordinary']
+1

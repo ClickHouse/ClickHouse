@@ -818,7 +818,7 @@ SELECT * FROM mysql_db.mysql_table
 ```
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'user', 'password')",
-        .related = {"MaterializedMySQL", "PostgreSQL"}});
+        .related = {"PostgreSQL"}});
 }
 }
 

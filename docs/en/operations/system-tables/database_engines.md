@@ -25,7 +25,7 @@ Contains the list of database engines supported by the server.
 ## Example {#example}
 
 ```sql title="Query"
-SELECT *
+SELECT name
 FROM system.database_engines
 WHERE name IN ('Atomic', 'Lazy', 'Ordinary')
 ```
