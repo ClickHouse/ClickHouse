@@ -114,7 +114,15 @@ find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
 # ~25s even with everything already local (no network) — it is the bottleneck of
 # this whole skill. Since the gitdirs are already hardlinked and their configs now
 # point at this worktree's contrib dirs, all we need per submodule is to write its
-# `.git` pointer file and check out the working tree.
+# `.git` pointer file, point its HEAD at the commit the superproject records, and
+# check out the working tree.
+#
+# The submodule SHA must come from the target worktree's superproject gitlink
+# (`git rev-parse "HEAD:<path>"`), NOT from the hardlinked gitdir's own `HEAD`. The
+# gitdir's `HEAD` reflects whatever the source repo happened to have checked out; if
+# the new worktree is for a branch that pins a submodule to a different commit, using
+# the gitdir `HEAD` would silently leave that submodule at the wrong dependency. We
+# detach the submodule `HEAD` to the recorded SHA and check that tree out.
 #
 # Two levels of parallelism are combined here. The outer `xargs -P` runs several
 # submodules at once. The inner `checkout.workers` parallelises the file writes
@@ -122,7 +130,7 @@ find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
 # boost, rust_vendor): without it, one huge submodule checks out single-threaded and
 # becomes the long pole while every other core sits idle. The outer-by-inner product
 # is kept near the core count to avoid oversubscription. Submodules with no
-# hardlinked gitdir are reported and skipped.
+# hardlinked gitdir, or not present at the superproject's HEAD, are reported and skipped.
 checkout_jobs=$(( $(nproc) / 8 )); [ "$checkout_jobs" -lt 1 ] && checkout_jobs=1
 export submodule_modules_dir=$GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
 export worktree_path=<WORKTREE_PATH>
@@ -133,14 +141,17 @@ git -C <WORKTREE_PATH> config -f .gitmodules --get-regexp 'submodule\..*\.path' 
         submodule_gitdir="$submodule_modules_dir/$submodule_path"
         submodule_tree="$worktree_path/$submodule_path"
         [ -d "$submodule_gitdir" ] || { echo "SKIP (no gitdir): $submodule_path"; exit 0; }
+        recorded_sha=$(git -C "$worktree_path" rev-parse "HEAD:$submodule_path" 2>/dev/null)
+        [ -n "$recorded_sha" ] || { echo "SKIP (not a submodule at HEAD): $submodule_path"; exit 0; }
         mkdir -p "$submodule_tree"
         printf "gitdir: %s\n" "$submodule_gitdir" > "$submodule_tree/.git"
+        git -C "$submodule_tree" update-ref --no-deref HEAD "$recorded_sha"
         git -C "$submodule_tree" -c checkout.workers=8 -c checkout.thresholdForParallelism=1 \
-            read-tree -u --reset HEAD 2>/dev/null || echo "SKIP: $submodule_path"
+            read-tree -u --reset "$recorded_sha" 2>/dev/null || echo "SKIP: $submodule_path"
       ' _ {}
 ```
 
-**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Writing the `.git` pointer file plus `git read-tree -u --reset HEAD` reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The per-submodule SHA still matches what the superproject records, because each hardlinked gitdir's `HEAD` is the SHA the main repo had checked out.
+**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Setting the submodule `HEAD` to the superproject-recorded SHA with `update-ref --no-deref` (matching the detached HEAD that `submodule update` leaves) and then `git read-tree -u --reset` of that same SHA reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The recorded SHA is read from the target worktree's gitlink rather than the source gitdir's `HEAD`, so a worktree whose branch pins a submodule to a different commit still gets the correct dependency.
 
 The contrib working trees total roughly 11GB, so this phase is bound by disk write bandwidth, not CPU; the two-level parallelism keeps all cores busy but the floor is the time to physically write the bytes (about 3.5s on a fast NVMe). Hardlinking the working trees from the main repo would dodge that write and be much faster, but it is deliberately avoided: hardlinked working-tree files share inodes with the main repo, so any in-place edit (`sed -i`, an appended `>>`, an in-place codegen step) would silently corrupt the main repo and every sibling worktree. The git object database is safe to hardlink only because git objects are immutable.
 
