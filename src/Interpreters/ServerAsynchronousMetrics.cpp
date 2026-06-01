@@ -158,11 +158,9 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     {
         vm_smaps.emplace("/proc/self/smaps");
     }
-    catch (...)
-    {
-        /// /proc/self/smaps may not exist (non-Linux, sandbox, etc.). The
-        /// thread-stack metrics will simply not be published in that case.
-    }
+    catch (...) /// Ok, /proc/self/smaps may not exist (non-Linux, sandbox,
+    {           /// etc.). The thread-stack metrics will simply not be
+    }           /// published in that case.
 #endif
 }
 
@@ -746,7 +744,7 @@ void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] Asynch
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         try { vm_smaps.emplace("/proc/self/smaps"); }
-        catch (...) { vm_smaps.reset(); }
+        catch (...) { vm_smaps.reset(); } /// Ok, re-open failed; disable on next call.
     }
 #endif
 }
