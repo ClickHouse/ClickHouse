@@ -548,7 +548,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
         {
             /// Allocate CPU slots from concurrency control with guaranteed master thread slot.
             /// Default path (lazy_allocation=true): start at max=master_threads and grow on
-            /// demand via setMax from the SHOULD_SPAWN handler. Zero-waste per idle pipeline.
+            /// demand via setMax from the upscaling block. Zero-waste per idle pipeline.
             /// Rollback (lazy_allocation=false): pre-branch eager allocation — request the
             /// full ceiling upfront and never call setMax.
             SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
@@ -566,7 +566,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    /// Capture the ceiling so the SHOULD_SPAWN handler can cap `setMax` at this value.
+    /// Capture the ceiling so the upscaling block can cap `setMax` at this value.
     max_pipeline_threads = num_threads;
 
     /// Read the flag ONCE. A config reload mid-initialization would otherwise split a
@@ -577,8 +577,8 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     cpu_slots = allocateCPU(num_threads, concurrency_control, lazy_allocation);
 
     /// If rollback flag is off, we used eager allocate(1, num_threads) and will not call
-    /// setMax in the SHOULD_SPAWN handler (nothing to grow). Initialize desired_threads
-    /// to the full ceiling so the growth check in the handler becomes a no-op.
+    /// setMax in the upscaling block (nothing to grow). Initialize desired_threads
+    /// to the full ceiling so the growth check in the block becomes a no-op.
     desired_threads = lazy_allocation ? 1 : num_threads;
 
     Queue queue;

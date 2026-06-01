@@ -95,7 +95,7 @@ private:
     size_t max_pipeline_threads = 1;
 
     /// Current setMax target. Written by initializeExecution before any worker thread exists,
-    /// then read and updated only under `spawn_mutex` from the SHOULD_SPAWN handler. Non-atomic
+    /// then read and updated only under `spawn_mutex` from the upscaling block. Non-atomic
     /// because all mutations are serialized by spawn_mutex and initial write happens-before
     /// any spawned worker via the ThreadPool barrier in initializeExecution.
     size_t desired_threads = 1;
