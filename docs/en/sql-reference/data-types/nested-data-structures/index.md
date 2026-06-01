@@ -72,6 +72,7 @@ SELECT
     Goals.EventTime
 FROM test.visits
 WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID
 LIMIT 10
 ```
 
@@ -109,12 +110,17 @@ It is easiest to think of a nested data structure as a set of multiple column ar
 
 Because each column of a `Nested` structure is stored as an `Array`, referencing it in a `WHERE` clause gives you the whole array for every row, not an individual element. You cannot compare a nested column directly to a scalar value so you must use [array functions](/sql-reference/functions/array-functions) instead.
 
-For example, this query **will not** find rows whose `Goals` contain the ID `591325`:
+For example, this query does **not** silently return no rows — it raises an exception, because `Goals.ID` has type `Array(UInt32)` and `equals(Array(UInt32), UInt32)` is not a valid comparison:
 
 ```sql
 -- WRONG: compares the entire Array to a scalar
 SELECT * FROM test.visits
 WHERE Goals.ID = 591325;
+```
+
+```text
+Code: 43. DB::Exception: Illegal types of arguments (`Array(UInt32)`, `UInt32`)
+of function `equals`. (ILLEGAL_TYPE_OF_ARGUMENT)
 ```
 
 Use [`has`](/sql-reference/functions/array-functions#has) to check whether an array contains a specific value:
@@ -160,6 +166,7 @@ SELECT
 FROM test.visits
 ARRAY JOIN Goals AS Goal
 WHERE CounterID = 101500 AND length(Goals.ID) < 5
+ORDER BY VisitID
 LIMIT 10
 ```
 
