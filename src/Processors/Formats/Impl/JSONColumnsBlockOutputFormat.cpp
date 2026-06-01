@@ -42,6 +42,7 @@ void JSONColumnsBlockOutputFormat::writeChunkEnd()
     writeChar('\n', *ostr);
 }
 
+void registerOutputFormatJSONColumns(FormatFactory & factory);
 void registerOutputFormatJSONColumns(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONColumns", [](

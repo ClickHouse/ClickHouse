@@ -183,7 +183,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column;
+        const IColumn * column = nullptr;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -315,7 +315,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
 
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column;
+        const IColumn * column = nullptr;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -504,7 +504,7 @@ struct HashMethodKeysFixed
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)
             {
-                assert(!has_low_cardinality && !has_nullable_keys);
+                chassert(!has_low_cardinality && !has_nullable_keys);
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
             }
 #endif
