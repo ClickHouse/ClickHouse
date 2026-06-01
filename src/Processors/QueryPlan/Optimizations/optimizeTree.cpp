@@ -412,19 +412,25 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
-            /// The local plan is the initiator's share of a parallel-replicas read. It must be optimized
-            /// exactly as the remote replicas optimize the subquery they receive — i.e. with the subquery's
-            /// own SETTINGS — otherwise plan-level decisions (e.g. read-in-order) diverge and the shared
-            /// coordinator observes conflicting coordination modes. The outer `optimization_settings` is
-            /// built once from the top-level query context and does not reflect those per-subquery settings,
-            /// so rebuild the settings from the subquery's context. The only thing the rebuild can't
-            /// reproduce is the EXPLAIN-introspection state, which lives outside the query settings — carry
-            /// it over explicitly (see `inheritExplainSettingsFrom`).
+            /// The local plan is the initiator's share of a parallel-replicas read. The only thing it must
+            /// agree on with the remote replicas is the coordination mode (Default / WithOrder / ReverseOrder)
+            /// announced to the shared coordinator — everything else stays local (each replica announces its
+            /// own ranges and the coordinator reconciles them). That mode is a pure function of
+            /// `query_info.input_order_info`, which is produced solely by the read-in-order optimizations.
+            ///
+            /// The remote replicas plan the subquery as a standalone query, so they derive the read-in-order
+            /// decision from the subquery's own SETTINGS; the initiator's local plan, being optimized as part
+            /// of the outer plan, would otherwise use the top-level query's settings and could pick a
+            /// different mode. So keep the outer `optimization_settings` (it carries the contracts this local
+            /// plan must be optimized under — deferred set building, reused index/PK analysis, etc.) and
+            /// override only the settings that feed `input_order_info` with the subquery's values.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
-                local_optimization_settings = QueryPlanOptimizationSettings(local_context);
-                local_optimization_settings.inheritExplainSettingsFrom(optimization_settings);
+                const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
+                local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
+                local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
+                local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
