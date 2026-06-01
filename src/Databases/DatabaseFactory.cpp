@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 

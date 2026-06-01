@@ -8,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Core/UUID.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/LoadingStrictnessLevel.h>
