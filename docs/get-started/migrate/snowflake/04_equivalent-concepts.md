@@ -25,7 +25,7 @@ in Snowflake.
 
 ## Schemas {#schemas}
 
-A Snowflake schema serves multiple roles and has no single equivalent in ClickHouse. The table below maps each role to its ClickHouse counterpart.
+A Snowflake schema serves multiple roles and has no single equivalent in ClickHouse.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
@@ -69,7 +69,7 @@ ClickHouse has no separate database-role tier, but ClickHouse Cloud can still gr
 
 ## Billing and pricing model {#billing}
 
-ClickHouse Cloud bills compute as RAM-minutes rather than credits scaled by warehouse size, storage as compressed bytes without Time Travel or Fail-safe overhead, and backups as their own line item rather than bundled into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse; [ClickPipes](/integrations/clickpipes) is the explicit exception and is [metered separately](/cloud/reference/billing/clickpipes). Both platforms charge for public internet egress and cross-region data transfer, and both offer committed-spend discounts. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates, tiers, and commitment options.
+ClickHouse Cloud meters compute as per-minute [compute units (8 GiB RAM, 2 vCPU)](/cloud/manage/billing/overview#how-is-compute-metered) rather than as credits scaled by warehouse size, charges for storage as compressed bytes without Time Travel or Fail-safe overhead, and bills backups as a separate line item rather than bundling them into retention windows. Most Snowflake "serverless compute" features (Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, Cortex) are bundled into service compute on ClickHouse; [ClickPipes](/integrations/clickpipes) is the explicit exception and is [metered separately](/cloud/reference/billing/clickpipes). As in Snowflake, ClickHouse Cloud charges for public internet egress and cross-region data transfer and offers committed-spend discounts. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates, tiers, and commitment options.
 
 ## Storage and tables {#storage-tables}
 
@@ -82,28 +82,25 @@ In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree
 | Temporary table (session-scoped) | [`CREATE TEMPORARY TABLE`](/sql-reference/statements/create/table#temporary-tables) | Session-scoped temporary tables exist in both; semantics are similar. |
 | External table | [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions for direct file access; [Iceberg engine](/engines/table-engines/integrations/iceberg) for open catalogs | Object storage and open-table formats are read directly through these functions and engines. |
 | Stage (internal / external / user / table) | Object storage referenced directly via [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions; [ClickPipes](/integrations/clickpipes) for managed staging on load | ClickHouse has no stage object: there's no managed internal storage layer for files awaiting load, and no `PUT` / `GET` equivalents for moving files in and out. Read from the bucket directly, or use ClickPipes to coordinate ingest. |
-| Iceberg table (managed or unmanaged) | [Iceberg engine](/engines/table-engines/integrations/iceberg) | Reads Iceberg tables stored in S3, Azure, HDFS, or local storage. Writes are not supported. See the engine page for the current list of supported features. |
+| Iceberg table (managed or unmanaged) | [Iceberg engine](/engines/table-engines/integrations/iceberg) | See the [data lake support matrix](/use-cases/data-lake/support-matrix) for read, write, and storage-backend support. |
 | Snowflake Open Catalog (Polaris) | [Iceberg engine](/engines/table-engines/integrations/iceberg) with REST catalog support | ClickHouse reads from a REST catalog but isn't itself a catalog server. |
 | Hybrid table (Unistore) | — | ClickHouse is OLAP-only; OLTP-style point reads and writes aren't a supported workload pattern. |
-| Dynamic table | [Refreshable MV](/materialized-view/refreshable-materialized-view) (scheduled) or [incremental MV](/materialized-view/incremental-materialized-view) (per-insert) | Dynamic tables target a lag SLA; ClickHouse MVs cover both the periodic-refresh and per-insert models. See the [Query model](#query-model) section for the MV mapping. |
+| Dynamic table | [Refreshable MV](/materialized-view/refreshable-materialized-view) | Maps to a scheduled Refreshable MV; see the [Query model](#query-model) section for the MV mapping. |
 | Column data type modes (`NOT NULL` / nullable) | [`Nullable(T)`](/sql-reference/data-types/nullable) for optional; omit for required | In ClickHouse, columns are non-nullable unless wrapped with `Nullable(T)`. Nullability has a small storage and query cost, so use it only when the column needs nulls. |
 | `VARIANT`, `OBJECT`, `ARRAY` (semi-structured) | [`JSON`](/sql-reference/data-types/newjson), [`Tuple`](/sql-reference/data-types/tuple), [`Nested`](/sql-reference/data-types/nested-data-structures/nested), [`Map`](/sql-reference/data-types/map), [`Array`](/sql-reference/data-types/array) | ClickHouse exposes typed alternatives instead of a single variant column. The [`JSON`](/sql-reference/data-types/newjson) type covers schemaless cases; see the [SQL translation reference](/migrations/snowflake-translation-reference#semi-structured-data) for the full mapping. |
 | Schema evolution (add / drop / modify columns) | [`ALTER TABLE ... ADD / DROP / MODIFY COLUMN`](/sql-reference/statements/alter/column) | Same DDL surface as Snowflake. Many column changes are metadata-only. |
 | Micro-partitions (auto-managed only) | Data parts (auto-managed) plus user-controlled [`PARTITION BY`](/engines/table-engines/mergetree-family/custom-partitioning-key) | Snowflake's micro-partitions are an internal storage detail with no user-facing knob. ClickHouse exposes `PARTITION BY` as an explicit clause, useful for retention (drop a partition) and pruning. |
 | Clustering key | [`ORDER BY`](/guides/best-practices/sparse-primary-indexes) columns in the table definition | Where Snowflake's clustering key is advisory and reorganized in the background, ClickHouse's `ORDER BY` is enforced at insert time and drives the sparse primary index. |
 | Data retention (table / database default) | [`TTL` clause](/sql-reference/statements/create/table#ttl-expression) on the table, column, or partition | `TTL` automatically deletes data older than a configured window. Set at table creation or via [`ALTER TABLE ... MODIFY TTL`](/sql-reference/statements/alter/ttl). |
-| Time Travel | Point-in-time [backup](/cloud/manage/backups/overview) restore into a new service | Granularity differs significantly; see the callout below. |
+| Time Travel | Point-in-time [backup](/cloud/manage/backups/overview) restore | Granularity differs significantly; see the callout below. |
 | Fail-safe | — | Recovery beyond the backup window goes through ClickHouse Cloud support, not a self-service tier. |
 | Zero-copy clone | [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table) within a service, or [backup](/cloud/manage/backups/overview) restore into a new service | `CLONE AS` hardlinks the source table's parts (part-level copy-on-write), so no data is physically copied. Copying across services still reads the source fully. |
-| Secure view | [View](/sql-reference/statements/create/view) with `SQL SECURITY DEFINER` (runs with the view-owner's privileges) | See [CREATE VIEW](/sql-reference/statements/create/view) for the syntax and the `INVOKER` / `DEFINER` / `NONE` modes. |
+| Secure view | [View](/sql-reference/statements/create/view) with `SQL SECURITY DEFINER` | `SQL SECURITY DEFINER` delegates privileges (the view runs as its owner) but isn't a full Secure View: the definition stays readable via `SHOW CREATE` by anyone who can query it. See [CREATE VIEW](/sql-reference/statements/create/view) for the `DEFINER` / `INVOKER` / `NONE` modes. |
 | Row access policy | [Row policy](/sql-reference/statements/create/row-policy) — a `WHERE`-style expression evaluated per user | Row policies apply transparently to every query against the table. |
-| Sequence | No direct equivalent — use [`generateSnowflakeID`](/sql-reference/functions/uuid-functions#generateSnowflakeID), [`generateUUIDv7`](/sql-reference/functions/uuid-functions#generateUUIDv7), or an external generator | ClickHouse has no auto-incrementing sequence object; generated IDs are produced per row at insert time. |
+| Sequence | [`generateSerialID`](/sql-reference/functions/other-functions#generateSerialID) for a Keeper-backed sequential counter; [`generateSnowflakeID`](/sql-reference/functions/uuid-functions#generateSnowflakeID) or [`generateUUIDv7`](/sql-reference/functions/uuid-functions#generateUUIDv7) for distributed unique IDs | `generateSerialID` is the closest match to an auto-incrementing sequence: a named, monotonic counter coordinated through ClickHouse Keeper. The UUID functions suit high-throughput unique IDs that don't need a shared counter. |
 
 :::note[Time Travel and backups]
-ClickHouse Cloud backups are per-service rather than per-table.
-Restoring creates a new service, historical state isn't queryable
-inline, and a single table can't be restored back into the original
-service.
+ClickHouse has no inline query of historical state like Snowflake Time Travel; point-in-time recovery goes through backups. Console-managed backups are per-service and restore into a new service. SQL [`BACKUP` / `RESTORE`](/operations/backup/overview#syntax) commands work at table or database granularity and can restore into an existing service.
 :::
 
 :::note[Updates and deletes]
@@ -115,7 +112,7 @@ rather than transactional row writes. Update patterns from Snowflake (`MERGE`,
 [dbt incremental](#transformation) updates) typically port to engine choice in ClickHouse:
 [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree)
 keeps the latest row by sort key, [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree)
-marks deletes inline, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
+cancels rows by inserting a matching row with `Sign = -1`, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
 maintains aggregated state. Engine choice is set at table creation and is
 non-trivial to change later.
 :::
@@ -130,15 +127,15 @@ Query acceleration in ClickHouse comes from three layers: primary-key ordering (
 | Foreign key (advisory) | Wide tables or [dictionaries](/dictionary) for lookups | ClickHouse doesn't accept foreign-key declarations even as advisory hints. |
 | Search Optimization Service | Secondary indexes — [bloom-filter](/engines/table-engines/mergetree-family/mergetree#bloom-filter), token-bloom, [minmax](/engines/table-engines/mergetree-family/mergetree#minmax) | ClickHouse asks you to pick the index type per column and tune its parameters; there's no automatic equivalent. |
 | Cortex Search / Snowflake Cortex Search | [Full-text index](/engines/table-engines/mergetree-family/textindexes) | Token index over string columns for in-database search. |
-| `VECTOR` data type and vector search | [`Array(Float32)`](/sql-reference/data-types/array) plus a [vector ANN index](/engines/table-engines/mergetree-family/annindexes) | ClickHouse has no dedicated `VECTOR` type. Embeddings are stored as `Array(Float32)` and accelerated with an ANN index for approximate nearest-neighbor lookups. |
+| `VECTOR` data type and vector search | [`Array(Float32)`](/sql-reference/data-types/array) or [`Array(BFloat16)`](/sql-reference/data-types/float#bfloat16) with a [vector ANN index](/engines/table-engines/mergetree-family/annindexes); or [`QBit`](/sql-reference/data-types/qbit) for tunable-precision search | ClickHouse has no dedicated `VECTOR` type. Embeddings store as `Array(Float32)`, or `Array(BFloat16)` to halve storage, with an ANN index accelerating approximate nearest-neighbor lookups. `QBit` keeps full precision while letting you trade bits for speed at query time. |
 | Materialized view | [Incremental MV](/materialized-view/incremental-materialized-view) — updates on each insert into a base table | Source-shape rules differ; review both before porting an existing MV. Cost is paid at insert time in ClickHouse. |
 | Dynamic table | [Refreshable MV](/materialized-view/refreshable-materialized-view) | Refreshable MVs run on a cron-style schedule. |
 | Result cache | [Query cache](/operations/query-cache) | ClickHouse's query cache lives in each replica's memory and is per-user by default; identical queries to different replicas don't share results. Not transactionally consistent. |
 | Task (scheduled SQL) | [Refreshable MV](/materialized-view/refreshable-materialized-view) for query-driven scheduled work; external orchestrator ([dbt](/integrations/dbt), Airflow) for procedural pipelines | Task DAGs have no direct equivalent; model dependencies in the orchestrator. |
 | Stream (CDC over a table) | [Materialized view](/materialized-views) over base-table inserts, or [ClickPipes](/integrations/clickpipes) for source-side CDC | ClickHouse MVs react on each insert; there's no offset/consume model. |
 | `EXPLAIN` / `EXPLAIN_JSON` | [`EXPLAIN`](/sql-reference/statements/explain) variants (`PLAN`, `PIPELINE`, `SYNTAX`, `ESTIMATE`) | `EXPLAIN ESTIMATE` reports rows, parts, and marks the query would read; other variants cover deeper plan inspection. |
-| External functions | No direct equivalent — closest options are [executable UDFs](/sql-reference/functions/udf) (local script invocation) or a [database engine](/engines/database-engines) attaching a live source | ClickHouse has no managed outbound HTTP call from SQL; the surrogates run locally or attach a database, not call an arbitrary service. |
-| Sessions / session variables | Per-statement execution; multi-step state managed in the client or an orchestrator | ClickHouse has no per-session variables or shared state. |
+| External functions | [URL table engine](/engines/table-engines/special/url) or [`url`](/sql-reference/table-functions/url) for remote HTTP/HTTPS I/O, [`remote`](/sql-reference/table-functions/remote) for another ClickHouse server, [executable UDFs](/sql-reference/functions/udf) for local scripts, or a [database engine](/engines/database-engines) to attach a live source | ClickHouse can read from and write to HTTP endpoints from SQL via the URL engine, but has no per-row remote function call with managed batching and auth like a Snowflake External Function. |
+| Sessions / session variables | [`SET`](/sql-reference/statements/set) for session-scoped settings and [query parameters](/sql-reference/statements/set#setting-query-parameters) | `SET name = value` applies a setting for the session's lifetime, and `SET param_name = value` defines query parameters referenced as `{name:Type}`. Free-form Snowflake-style variables (`$var`) and multi-step procedural state have no equivalent; keep those in the client or an orchestrator. |
 
 ## Transformation and modeling {#transformation}
 
@@ -156,10 +153,10 @@ Secure views and row access policies are listed under [Storage and tables](#stor
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Column masking policies (including tag-based) | Column-level [grants](/sql-reference/statements/grant) on specific columns of a table, or [data masking patterns](/cloud/guides/data-masking) | Grants apply at the column level. Snowflake's centralized tag/policy governance has no direct equivalent. |
-| Dynamic data masking (function-based) | Views, [row policies](/sql-reference/statements/create/row-policy), or function-based transforms; see [data masking patterns](/cloud/guides/data-masking) | No column-mask primitive; patterns are SQL-level. |
+| Column masking policies (including tag-based) | [`CREATE MASKING POLICY`](/sql-reference/statements/create/masking-policy) (ClickHouse Cloud), or column-level [grants](/sql-reference/statements/grant). See [data masking patterns](/cloud/guides/data-masking) | Masking policies cover the column-masking part. ClickHouse targets roles, not tags, so Snowflake's centralized tag-based governance has no direct equivalent. |
+| Dynamic data masking (function-based) | [`CREATE MASKING POLICY`](/sql-reference/statements/create/masking-policy) (ClickHouse Cloud); or [views](/sql-reference/statements/create/view) and [row policies](/sql-reference/statements/create/row-policy). See [data masking patterns](/cloud/guides/data-masking) | `CREATE MASKING POLICY` is a direct equivalent: function-based column masking applied at query time per role, without changing stored data. |
 | Network policies (IP allowlist) | IP allowlists and [private connectivity](/cloud/security/connectivity/private-networking) — PrivateLink (AWS, Azure) and Private Service Connect (GCP) for ingress restriction | Private connectivity is available across the three major clouds. |
-| Tri-Secret Secure (customer-managed keys) | [CMEK](/cloud/security/cmek) on the service | Available on AWS (KMS) and GCP, with rotation and revocation. |
+| Tri-Secret Secure (customer-managed keys) | [CMEK](/cloud/security/cmek) on the service | Supports key rotation and revocation. See the CMEK page for the current list of supported cloud providers. |
 | Object tagging (governance metadata) | — | ClickHouse exposes metadata via `system.*` tables rather than user-defined tags. |
 | Data classification (sensitive-data detection) | — | Not a managed feature; external tools (e.g. DataHub) cover this layer. |
 | Encryption functions (`ENCRYPT` / `DECRYPT`) | [Encryption functions](/sql-reference/functions/encryption-functions) (`encrypt` / `decrypt`) | Covers AES-128/256-CBC/GCM and AEAD modes. |
@@ -173,7 +170,7 @@ Secure views and row access policies are listed under [Storage and tables](#stor
 | Secure Data Sharing | Read access to a shared database, or a dedicated service with consumer-specific [row policies](/sql-reference/statements/create/row-policy) | ClickHouse has no zero-copy cross-account share; sharing uses standard access primitives. |
 | Snowflake Marketplace / Listings | — | ClickHouse has no in-product data marketplace. |
 | Reader accounts (provider-managed consumer) | Dedicated service per consumer, or shared service with row policies | Consumers must have their own ClickHouse Cloud account; no equivalent for serving non-customers under the provider's billing. |
-| Data Clean Rooms | [Row policies](/sql-reference/statements/create/row-policy) and [secure views](/sql-reference/statements/create/view) | No managed clean-room product. |
+| Data Clean Rooms | [Row policies](/sql-reference/statements/create/row-policy), [views](/sql-reference/statements/create/view), and [masking policies](/sql-reference/statements/create/masking-policy) (ClickHouse Cloud) | No managed clean-room product; build access controls from row policies, views, and query-time column masking. |
 
 ## Operations and ecosystem {#operations}
 
@@ -181,7 +178,7 @@ ClickHouse surfaces operational state through `system.*` tables (queries, sessio
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Snowpipe (continuous ingest from object storage) | [ClickPipes](/integrations/clickpipes) for S3, GCS, and Azure Blob Storage | Managed ingest from object storage. |
+| Snowpipe (continuous ingest from object storage) | [ClickPipes](/integrations/clickpipes) for object storage (S3, GCS, Azure Blob Storage) | Managed ingest from object storage. See [supported data sources](/integrations/clickpipes#supported-data-sources) for the full list. |
 | Snowpipe Streaming | [ClickPipes](/integrations/clickpipes) streaming sources (Kafka, Kinesis, Pub/Sub) | Managed low-latency streaming ingest. See [supported data sources](/integrations/clickpipes#supported-data-sources) for the full list. |
 | Openflow connectors | [ClickPipes](/integrations/clickpipes) and the broader [integrations library](/integrations) | ClickPipes is ClickHouse Cloud's managed connector platform; coverage spans streaming systems, OLTP sources, and object storage. See the integrations library for the current source list. |
 | Kafka connector | [ClickPipes for Kafka](/integrations/clickpipes/kafka), or the [Kafka table engine](/engines/table-engines/integrations/kafka) for self-managed pipelines | Same role; ClickPipes is the managed option. |
