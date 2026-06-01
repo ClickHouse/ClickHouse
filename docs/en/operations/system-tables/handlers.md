@@ -1,6 +1,8 @@
 ---
 description: 'Contains a list of all SQL-defined HTTP handlers created via CREATE HANDLER.'
 keywords: ['system table', 'handlers']
+sidebar_label: 'handlers'
+sidebar_position: 50
 slug: /operations/system-tables/handlers
 title: 'system.handlers'
 doc_type: 'reference'

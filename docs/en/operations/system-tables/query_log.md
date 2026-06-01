@@ -103,7 +103,7 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `distributed_depth` ([UInt64](/sql-reference/data-types/int-uint)) — How many times a query was forwarded between servers.
 - `revision` ([UInt32](/sql-reference/data-types/int-uint)) — ClickHouse revision.
 - `http_handler_name` ([String](/sql-reference/data-types/string)) — Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler.
-- `http_request_url` ([String](/sql-reference/data-types/string)) — The HTTP request URL (path and query string) that invoked the query. Empty for non-HTTP queries.
+- `http_request_url` ([String](/sql-reference/data-types/string)) — The HTTP request path (without the query string) that invoked the query. The query string is omitted so that sensitive request parameters are not persisted. Empty for non-HTTP queries.
 - `log_comment` ([String](/sql-reference/data-types/string)) — Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined.
 - `thread_ids` ([Array(UInt64)](/sql-reference/data-types/array)) — Thread ids that are participating in query execution. These threads may not have run simultaneously.
 - `peak_threads_usage` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum count of simultaneous threads executing the query.

@@ -140,6 +140,17 @@ def test_keeper_storage_replication(started_cluster):
     )
     assert http_get(replica2, "replicated") == "replicated"
 
+    # ALTER only changes the handler's data (not the set of handlers); it must still propagate
+    # to the other replica via the Keeper-backed storage.
+    replica1.query("ALTER HANDLER repl_h AS SELECT 'altered' FORMAT TSV")
+    replica2.query_with_retry(
+        "SELECT query FROM system.handlers WHERE name = 'repl_h'",
+        check_callback=lambda res: res.strip() == "SELECT 'altered' FORMAT TSV",
+        retry_count=30,
+        sleep_time=1,
+    )
+    assert http_get(replica2, "replicated") == "altered"
+
     replica1.query("DROP HANDLER repl_h")
 
     # The drop is replicated too.

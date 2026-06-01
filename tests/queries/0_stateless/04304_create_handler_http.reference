@@ -26,7 +26,7 @@ x-custom: yes
 A
 === PROTOCOL-scoped handler is not served on the default http port ===
 0
-=== query_log records handler name and request URL ===
+=== query_log records handler name and request path (query string stripped) ===
 1	1
 === authentication: credentials provided in the request ===
 1

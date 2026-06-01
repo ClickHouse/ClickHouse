@@ -166,7 +166,22 @@ void SQLDefinedHandlersFactory::createFromSQL(const ASTCreateHandlerQuery & quer
     auto handler = makeSQLDefinedHandler(query);
     checkAmbiguity(*handler, lock);
 
-    metadata_storage->store(query.handler_name, handler->create_statement, false);
+    try
+    {
+        metadata_storage->store(query.handler_name, handler->create_statement, /* replace */ false);
+    }
+    catch (const Exception & e)
+    {
+        /// With replicated (Keeper) storage another replica may have created the handler concurrently,
+        /// before it appeared in this replica's snapshot. Preserve the idempotent IF NOT EXISTS contract.
+        if (e.code() == ErrorCodes::HANDLER_ALREADY_EXISTS && query.if_not_exists)
+        {
+            loaded_handlers = metadata_storage->getAll();
+            rebuildSnapshot(lock);
+            return;
+        }
+        throw;
+    }
     loaded_handlers.emplace(query.handler_name, handler);
     rebuildSnapshot(lock);
 }
@@ -183,7 +198,9 @@ void SQLDefinedHandlersFactory::removeFromSQL(const ASTDropHandlerQuery & query)
         throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Cannot drop handler `{}`, because it doesn't exist", query.handler_name);
     }
 
-    metadata_storage->remove(query.handler_name);
+    /// Use removeIfExists so that a concurrent removal on another replica (Keeper storage) does not
+    /// turn this into a hard error: the local snapshot above already enforced the IF EXISTS contract.
+    metadata_storage->removeIfExists(query.handler_name);
     loaded_handlers.erase(query.handler_name);
     rebuildSnapshot(lock);
 }

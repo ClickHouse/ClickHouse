@@ -130,7 +130,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
 
         {"http_handler_name", std::make_shared<DataTypeString>(), "Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler."},
-        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request URL (path and query string) that invoked the query. Empty for non-HTTP queries."},
+        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request path (without the query string) that invoked the query. The query string is omitted so that sensitive request parameters are not persisted. Empty for non-HTTP queries."},
 
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
 

@@ -36,7 +36,12 @@ Handlers defined in the server configuration have priority over SQL-defined hand
 
 ## Parameters {#parameters}
 
-Any HTTP URL parameters in the query string, HTTP form variables in `POST`, and HTTP headers can be used as parameters for parameterized queries, just as with configuration-defined handlers. Named capture groups in a `URL REGEXP` are exposed as query parameters as well.
+Query parameters for parameterized queries are supplied, just as with configuration-defined handlers, from:
+
+- HTTP URL parameters in the query string, using the `param_<name>` convention (for example `?param_id=42` binds `{id:Type}`);
+- named capture groups in a `URL REGEXP` (for example `URL REGEXP '/users/(?P<id>\d+)'` binds `{id:Type}`).
+
+Standard ClickHouse HTTP headers (such as `X-ClickHouse-Database`, `X-ClickHouse-User`, `X-ClickHouse-Key`) are honored as usual when invoking a handler.
 
 The functions [`currentHandler`](/sql-reference/functions/other-functions#currentHandler) and [`currentRequestURL`](/sql-reference/functions/other-functions#currentRequestURL) can be used to customize query behavior depending on the invoked handler and request URL.
 
@@ -80,7 +85,7 @@ Drops the handler with the specified name.
 
 ## Introspection {#introspection}
 
-The [`system.handlers`](/operations/system-tables/handlers) table lists all SQL-defined handlers. The [`system.query_log`](/operations/system-tables/query_log) table records the handler name and the HTTP request URL of each query in the `http_handler_name` and `http_request_url` columns.
+The [`system.handlers`](/operations/system-tables/handlers) table lists all SQL-defined handlers. The [`system.query_log`](/operations/system-tables/query_log) table records the handler name and the HTTP request path (without the query string) of each query in the `http_handler_name` and `http_request_url` columns.
 
 ## Example {#example}
 

@@ -423,6 +423,16 @@ static UInt64 getQueryMetricLogInterval(ContextPtr context)
     return interval_milliseconds;
 }
 
+/// The HTTP request URL is persisted to the query_log without its query string and fragment,
+/// so that potentially sensitive request parameters (e.g. a `password` parameter or raw query
+/// text) are never stored in the logs. The full URL remains available at runtime via
+/// `currentRequestURL()`.
+static String httpRequestURLForLogging(const ContextPtr & context)
+{
+    const String & url = context->getHTTPRequestURL();
+    return url.substr(0, url.find_first_of("?#"));
+}
+
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
@@ -455,7 +465,7 @@ QueryLogElement logQueryStart(
 
     elem.client_info = context->getClientInfo();
     elem.http_handler_name = context->getHTTPHandlerName();
-    elem.http_request_url = context->getHTTPRequestURL();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.is_internal = internal;
 
@@ -909,7 +919,7 @@ void logExceptionBeforeStart(
 
     elem.client_info = context->getClientInfo();
     elem.http_handler_name = context->getHTTPHandlerName();
-    elem.http_request_url = context->getHTTPRequestURL();
+    elem.http_request_url = httpRequestURLForLogging(context);
 
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])

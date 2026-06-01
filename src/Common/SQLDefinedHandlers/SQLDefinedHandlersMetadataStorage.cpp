@@ -170,7 +170,10 @@ private:
     std::string root_path;
     mutable zkutil::ZooKeeperPtr zookeeper_client{nullptr};
     mutable Coordination::EventPtr wait_event;
-    mutable Int32 handlers_node_cversion = 0;
+    /// Version of the root node's data. It is bumped on every create/drop/alter (see `bumpVersion`),
+    /// so a single data-watch on the root notifies replicas of all kinds of changes - in particular
+    /// ALTER, which only changes a child's data and would not be observed by a children-list watch.
+    mutable Int32 root_version = 0;
 
 public:
     ZooKeeperStorage(ContextPtr context_, const std::string & path_)
@@ -212,7 +215,7 @@ public:
             chassert(false);
             return false;
         }
-        return stat.cversion != handlers_node_cversion;
+        return stat.version != root_version;
     }
 
     std::vector<std::string> list() const override
@@ -221,10 +224,13 @@ public:
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
+        /// Set a data-watch on the root node and remember its version. Every modification bumps the
+        /// root version (see `bumpVersion`), so this watch fires for create, drop and alter alike.
         Coordination::Stat stat;
-        auto children = getClient()->getChildren(root_path, &stat, wait_event);
-        handlers_node_cversion = stat.cversion;
-        return children;
+        getClient()->get(root_path, &stat, wait_event);
+        root_version = stat.version;
+
+        return getClient()->getChildren(root_path);
     }
 
     bool exists(const std::string & file_name) const override
@@ -244,20 +250,30 @@ public:
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::write");
         if (replace)
         {
-            getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
+            /// ALTER must update an existing handler only; using `set` (not create-or-update) prevents a
+            /// delayed ALTER from resurrecting a handler that was concurrently dropped on another replica.
+            auto code = getClient()->trySet(getPath(file_name), data);
+            if (code == Coordination::Error::ZNONODE)
+                throw Exception(ErrorCodes::HANDLER_DOESNT_EXIST, "Handler `{}` doesn't exist", file_name);
+            if (code != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(code, getPath(file_name));
         }
         else
         {
             auto code = getClient()->tryCreate(getPath(file_name), data, zkutil::CreateMode::Persistent);
             if (code == Coordination::Error::ZNODEEXISTS)
                 throw Exception(ErrorCodes::HANDLER_ALREADY_EXISTS, "Metadata file for handler already exists: {}", file_name);
+            if (code != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(code, getPath(file_name));
         }
+        bumpVersion();
     }
 
     void remove(const std::string & file_name) override
     {
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::remove");
         getClient()->remove(getPath(file_name));
+        bumpVersion();
     }
 
     bool removeIfExists(const std::string & file_name) override
@@ -265,13 +281,23 @@ public:
         auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::removeIfExists");
         auto code = getClient()->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
+        {
+            bumpVersion();
             return true;
+        }
         if (code == Coordination::Error::ZNONODE)
             return false;
         throw Coordination::Exception::fromPath(code, getPath(file_name));
     }
 
 private:
+    /// Bump the root node's data version to notify all replicas (including for ALTER, which only
+    /// changes child data and would otherwise be invisible to a children-list watch).
+    void bumpVersion()
+    {
+        getClient()->set(root_path, "");
+    }
+
     zkutil::ZooKeeperPtr getClient() const
     {
         if (!zookeeper_client || zookeeper_client->expired())

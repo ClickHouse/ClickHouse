@@ -96,11 +96,19 @@ echo "=== PROTOCOL-scoped handler is not served on the default http port ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HPROTO\` PROTOCOL some_other_protocol URL '${P}/proto' AS SELECT 'should_not_match' FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/proto" | grep -c 'should_not_match'
 
-echo "=== query_log records handler name and request URL ==="
+echo "=== query_log records handler name and request path (query string stripped) ==="
 QID="q_${DB}_$RANDOM"
-${CLICKHOUSE_CURL} -sS "${BASE}${P}/exact?query_id=${QID}" > /dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
-$CLICKHOUSE_CLIENT -q "SELECT http_handler_name = '${HA}' AS name_ok, http_request_url LIKE '%/exact%' AS url_ok FROM system.query_log WHERE query_id = '${QID}' AND type = 'QueryFinish' ORDER BY event_time DESC LIMIT 1"
+# Invoke the handler in this test's database so the logged row has current_database = currentDatabase().
+${CLICKHOUSE_CURL} -sS -H "X-ClickHouse-Database: ${DB}" "${BASE}${P}/exact?query_id=${QID}" > /dev/null
+# Retry to handle the race between the HTTP response and the log entry being written.
+# http_request_url must equal the path only: the query string (here `?query_id=...`) is not persisted.
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    res=$($CLICKHOUSE_CLIENT -q "SELECT http_handler_name = '${HA}' AS name_ok, http_request_url = '${P}/exact' AS url_is_path_only FROM system.query_log WHERE query_id = '${QID}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1")
+    [ -n "$res" ] && break
+    sleep 0.5
+done
+echo "$res"
 
 echo "=== authentication: credentials provided in the request ==="
 $CLICKHOUSE_CLIENT -q "CREATE USER \`$RUSER\` IDENTIFIED WITH plaintext_password BY 'pw'"
