@@ -2141,7 +2141,8 @@ void Context::resetToUserDefaults()
         /// name/id), so the reorder is safe.
         Settings prev_settings = *settings;
         auto prev_profiles = settings_constraints_and_current_profiles;
-        *settings = std::move(new_settings);
+        /// `Settings` has no move assignment, so these are copies regardless.
+        *settings = new_settings;
         settings_constraints_and_current_profiles = std::move(new_profiles_state);
         try
         {
@@ -2150,7 +2151,7 @@ void Context::resetToUserDefaults()
         }
         catch (...)
         {
-            *settings = std::move(prev_settings);
+            *settings = prev_settings;
             settings_constraints_and_current_profiles = std::move(prev_profiles);
             throw;
         }
