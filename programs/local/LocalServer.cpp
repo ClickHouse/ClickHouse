@@ -763,6 +763,8 @@ try
     /// After this point the global context must be stayed almost unchanged till shutdown,
     /// and all necessary changes must be made to the client context instead.
     initClientContext(Context::createCopy(global_context));
+    if (!query_id.empty())
+        client_context->setCurrentQueryId(query_id);
     /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
@@ -839,6 +841,8 @@ void LocalServer::processConfig()
     {
         echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
+
+        query_id = getClientConfiguration().getString("query_id", "");
     }
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
