@@ -657,6 +657,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     /// ClickHouse cloud setting
     {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", trueOrFalseSetting},
     /// ClickHouse cloud setting
+    {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", trueOrFalseSetting},
+    /// ClickHouse cloud setting
     {"shared_merge_tree_update_replica_flags_delay_ms", highRangeSetting},
     /// ClickHouse cloud setting
     {"shared_merge_tree_use_metadata_hints_cache", trueOrFalseSetting},

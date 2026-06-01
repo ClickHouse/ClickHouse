@@ -112,6 +112,7 @@
             <enable_materialized_cte>1</enable_materialized_cte>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
+            <enable_streaming_queries>1</enable_streaming_queries>
             <enable_time_time64_type>1</enable_time_time64_type>
             <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>

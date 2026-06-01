@@ -372,6 +372,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_respect_aliases", trueOrFalseSetting},
        {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
        {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
+       {"optimize_rewrite_has_to_in", trueOrFalseSetting},
        {"optimize_rewrite_like_perfect_affix", trueOrFalseSetting},
        {"optimize_rewrite_regexp_functions", trueOrFalseSetting},
        {"optimize_rewrite_sum_if_to_count_if", trueOrFalseSetting},
@@ -486,6 +487,15 @@ std::unordered_map<String, CHSetting> performanceSettings
                 return rg.pickRandomly(choices);
             },
             {"'lz4'", "'none'"},
+            false)},
+       {"text_index_posting_list_apply_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings choices = {"'materialize'", "'lazy'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'materialize'", "'lazy'"},
             false)},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
@@ -765,6 +775,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
+    {"file_like_engine_default_partition_strategy",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'wildcard'", "'hive'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"filesystem_cache_allow_background_download", trueOrFalseSettingNoOracle},
     {"filesystem_cache_enable_background_download_during_fetch", trueOrFalseSettingNoOracle},
     {"filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage", trueOrFalseSettingNoOracle},
@@ -1341,6 +1360,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_condition_cache_store_conditions_as_plaintext", trueOrFalseSettingNoOracle},
     {"query_plan_convert_join_to_in", trueOrFalseSettingNoOracle},
     {"query_plan_display_internal_aliases", trueOrFalseSettingNoOracle},
+    {"query_plan_max_limit_for_join_lazy_indexing",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
+         {"0", "1", "100", "1000"},
+         false)},
     {"query_plan_max_limit_for_top_k_optimization",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); },
@@ -1349,6 +1373,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_max_step_description_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
+    {"query_plan_min_columns_for_join_lazy_indexing",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); },
+         {"0", "1", "3", "5", "10"},
+         false)},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
     /// ClickHouse cloud setting
@@ -1474,6 +1503,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"table_function_remote_max_addresses",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
+    {"text_index_density_threshold", probRangeSetting},
     {"text_index_hint_max_selectivity", probRangeSetting},
     {"text_index_like_max_postings_to_read",
      CHSetting(
