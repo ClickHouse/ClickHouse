@@ -1,4 +1,8 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -8,10 +12,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -20,6 +29,19 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+}
+
+ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    size_t variant_argument_index_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+    }
 }
 
 /// Strip LowCardinality wrapper from nested function result if present.
@@ -47,6 +69,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[variant_argument_index].type);
     const auto & variant_types = variant_type.getVariants();
+
+    /// Helper: build function base for the given arguments, respecting throw_on_type_mismatch.
+    /// Returns nullptr if the type is incompatible and throwing is disabled; otherwise throws.
+    auto try_build = [&](const ColumnsWithTypeAndName & args) -> FunctionBasePtr
+    {
+        if (throw_on_type_mismatch)
+            return function_overload_resolver->build(args);
+
+        try
+        {
+            return function_overload_resolver->build(args);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
 
     /// We use default implementation for Variant type only when default implementation for NULLs is used.
     /// If current column contains only NULLs, result column will also contain only NULLs.
@@ -84,7 +126,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
         removeLowCardinalityFromResult(nested_result_type, nested_result);
@@ -195,7 +244,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
                             ->convertToFullColumnIfConst();
@@ -347,7 +403,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Create set of arguments for each variant using selector.
-    std::vector<ColumnsWithTypeAndName> variants_arguments;
+    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -369,8 +425,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    std::vector<ColumnPtr> variants_results;
-    std::vector<DataTypePtr> variants_result_types;
+    VectorWithMemoryTracking<ColumnPtr> variants_results;
+    VectorWithMemoryTracking<DataTypePtr> variants_result_types;
     variants_results.resize(variants.size());
     variants_result_types.resize(variants.size());
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
@@ -382,7 +438,13 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!variants[i].column)
             continue;
 
-        auto func_base = function_overload_resolver->build(variants_arguments[i]);
+        auto func_base = try_build(variants_arguments[i]);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results[i] = nullptr;
+            continue;
+        }
         auto nested_result_type = func_base->getResultType();
         auto nested_result
             = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
@@ -462,7 +524,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    std::unordered_set<String> result_type_names;
+    UnorderedSetWithMemoryTracking<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -495,7 +557,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto & result_variant = assert_cast<ColumnVariant &>(*result);
 
         /// Map each variant result to its discriminator in the result Variant
-        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+        VectorWithMemoryTracking<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
         for (size_t i = 0; i < num_variants; ++i)
         {
@@ -555,7 +617,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
     /// General path: cast each result to final Variant type to handle
     /// duplicate result types and nested Variants correctly
-    std::vector<ColumnPtr> casted_results(variants_results.size());
+    VectorWithMemoryTracking<ColumnPtr> casted_results(variants_results.size());
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -678,12 +740,38 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    /// If no valid result types were found, all alternatives are incompatible
-    /// Return Nullable(Nothing) to indicate NULL result for all rows
+    /// If no valid result types were found, all Variant alternatives are incompatible with the function.
+    /// When variant_throw_on_type_mismatch is enabled (the default), throw a clear error rather than
+    /// silently returning Nullable(Nothing), which would cause WHERE clauses to return 0 rows with no
+    /// diagnostic. When the setting is disabled, fall back to Nullable(Nothing) so that executeImpl
+    /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return;
+        bool throw_on_mismatch = true;
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+
+        if (!throw_on_mismatch)
+        {
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            return;
+        }
+
+        String alt_names;
+        for (const auto & alt : variant_alternatives)
+        {
+            if (!alt_names.empty())
+                alt_names += ", ";
+            alt_names += alt->getName();
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "None of the Variant alternatives ({}) are compatible with function '{}'",
+            alt_names,
+            function_overload_resolver->getName());
     }
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).

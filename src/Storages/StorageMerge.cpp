@@ -54,10 +54,13 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
@@ -79,6 +82,11 @@ namespace Setting
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -90,6 +98,7 @@ extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -554,7 +563,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     QueryPlanResourceHolder resources;
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
     auto modified_context = Context::createCopy(context);
@@ -652,6 +661,21 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
     auto logger = getLogger("StorageMerge");
 
+    /** Cache getModifiedQueryInfo results per column structure.
+      * For tables with identical columns, getModifiedQueryInfo produces functionally identical results
+      * (same cloned query tree, same aliases, same column names). The only differences are the table
+      * reference and storage pointer, which are handled separately by createPlanForTable.
+      * This avoids O(N * query_tree_size) cloning for N tables with the same structure.
+      */
+    struct CachedModifiedQueryInfo
+    {
+        SelectQueryInfo query_info;
+        Names column_names_as_aliases;
+        bool is_smallest_column_requested = false;
+        Aliases aliases;
+    };
+    std::unordered_map<String, CachedModifiedQueryInfo> query_info_cache;
+
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
     {
@@ -685,6 +709,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 /// (Assuming that view has empty list of columns if it's parameterized.)
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
+                else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
+                        storage->getStorageID().getNameForLogs(),
+                        storage_merge->getStorageID().getNameForLogs());
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
             }
@@ -710,8 +740,89 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 row_policy_data_opt->extendNames(real_column_names);
             }
 
-            auto modified_query_info
-                = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+            SelectQueryInfo modified_query_info;
+
+            /// Try to reuse cached modified_query_info for tables with the same column structure.
+            /// Skip caching for:
+            ///  - the non-analyzer path: getModifiedQueryInfo rewrites _table and _database
+            ///    directly into the cloned AST, so sharing it across tables is incorrect;
+            ///  - tables with row policies (they extend real_column_names differently);
+            ///  - Merge/Distributed/View storages (they interpret table_expression for
+            ///    query routing and nested plan building, so sharing a representative's
+            ///    table_expression would route reads to the wrong table);
+            ///  - when processed_stage > FetchColumns, because createPlanForTable will
+            ///    either convert query_tree->toAST() (analyzer path, referencing the wrong
+            ///    table) or call replaceDatabaseAndTable on the shared AST (non-analyzer
+            ///    path, corrupting the cache).
+            /// The cache key includes the database name because getModifiedQueryInfo injects
+            /// a _database constant into the query tree (analyzer path), so tables in
+            /// different databases must not share cached entries.
+            bool can_cache = query_info.table_expression
+                && !row_policy_data_opt
+                && common_processed_stage == QueryProcessingStage::FetchColumns
+                && !std::dynamic_pointer_cast<StorageMerge>(storage)
+                && !std::dynamic_pointer_cast<StorageDistributed>(storage)
+                && !storage->isView();
+            auto structure_key = can_cache
+                ? (std::get<0>(table) + "\n" + storage_metadata_snapshot->getColumns().toString(false))
+                : String{};
+            auto cache_it = can_cache ? query_info_cache.find(structure_key) : query_info_cache.end();
+
+            if (cache_it != query_info_cache.end())
+            {
+                /// Reuse cached query info. The shallow copy shares the query_tree
+                /// (which references the representative table), but that is fine: all tables
+                /// in the group have identical column structure, so filter/prewhere/key
+                /// conditions built from the shared query tree apply equally to every table.
+                auto & cached = cache_it->second;
+                modified_query_info = cached.query_info;
+                column_names_as_aliases = cached.column_names_as_aliases;
+                is_smallest_column_requested = cached.is_smallest_column_requested;
+                aliases = cached.aliases;
+
+                /// Deep-clone the AST `query` because `createPlanForTable` may mutate it
+                /// in-place via `modified_select.setFinal()` (e.g. when the underlying storage's
+                /// `needRewriteQueryWithFinal` returns true). Without this clone, one table
+                /// would flip `FINAL` on the shared AST for every subsequent table in this
+                /// cache bucket, making semantics depend on table iteration order.
+                if (modified_query_info.query)
+                    modified_query_info.query = modified_query_info.query->clone();
+
+                /// Rebind table_expression to the current table so that downstream code
+                /// (e.g. storage->read, getQueryProcessingStage) sees the correct table identity,
+                /// even though the shared query_tree internally still references the representative table.
+                const auto & storage_lock = std::get<2>(table);
+                auto replacement_table_expression = std::make_shared<TableNode>(storage, storage_lock, nested_storage_snapshot);
+                replacement_table_expression->setAlias(modified_query_info.table_expression->getAlias());
+                if (query_info.table_expression_modifiers)
+                    replacement_table_expression->setTableExpressionModifiers(*query_info.table_expression_modifiers);
+                modified_query_info.table_expression = replacement_table_expression;
+                if (modified_query_info.planner_context)
+                {
+                    /// Create a fresh PlannerContext for this table (just like getModifiedQueryInfo does)
+                    /// to avoid accumulating table expression data in the shared cached context.
+                    modified_query_info.planner_context = std::make_shared<PlannerContext>(modified_context, modified_query_info.planner_context);
+                    modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
+                }
+            }
+            else
+            {
+                modified_query_info
+                    = getModifiedQueryInfo(modified_context, table, nested_storage_snapshot, real_column_names, column_names_as_aliases, is_smallest_column_requested, aliases);
+
+                if (can_cache)
+                {
+                    /// Store a deep clone of the AST in the cache so that subsequent in-place
+                    /// mutation by `createPlanForTable` (e.g. `modified_select.setFinal`) on
+                    /// the first table does not leak into the cached baseline. Otherwise, later
+                    /// cache hits would clone an already-mutated AST and `FINAL` propagation
+                    /// would depend on the first table's `needRewriteQueryWithFinal` result.
+                    SelectQueryInfo cached_query_info = modified_query_info;
+                    if (cached_query_info.query)
+                        cached_query_info.query = cached_query_info.query->clone();
+                    query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases};
+                }
+            }
 
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -1073,7 +1184,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
     for (auto * child : node->children)
@@ -1384,7 +1495,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1553,12 +1664,17 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// Add missing columns for the resulting Merge table.
     {
+        bool inner_share_nested_offsets = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&snapshot->storage))
+            inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
         auto adding_missing_defaults_dag = addMissingDefaults(
             *child.plan.getCurrentHeader(),
             header.getNamesAndTypesList(),
             snapshot->getAllColumnsDescription(),
             local_context,
-            false);
+            false,
+            inner_share_nested_offsets);
 
         auto adding_missing_defaults_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(adding_missing_defaults_dag));
         child.plan.addStep(std::move(adding_missing_defaults_step));
@@ -1571,7 +1687,7 @@ const ReadFromMerge::StorageListWithLocks & ReadFromMerge::getSelectedTables()
     return selected_tables;
 }
 
-bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
+bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
 {
     filterTablesAndCreateChildrenPlans();
 
@@ -1580,10 +1696,10 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_)
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
 
-    auto request_read_in_order = [order_info_](ReadFromMergeTree & read_from_merge_tree)
+    auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(
-            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit);
+            order_info_->used_prefix_of_sorting_key_size, order_info_->direction, order_info_->limit, query_limit);
     };
 
     bool ok = true;
@@ -1617,6 +1733,18 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
     for (auto & child_plan : *child_plans)
         if (child_plan.plan.isInitialized())
             plans.push_back(&child_plan.plan);
+
+    return plans;
+}
+
+std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    std::vector<QueryPlan *> plans;
+    plans.reserve(child_plans->size());
+    for (auto & child_plan : *child_plans)
+        plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
 
     return plans;
 }
@@ -1701,6 +1829,7 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
