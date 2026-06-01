@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -34,7 +35,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
-    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
 }
 
@@ -115,33 +115,6 @@ void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
         out.insert(node->result_name);
     for (const auto * child : node->children)
         collectFilterInputColumns(child, out);
-}
-
-/// True if the filter contains an `or` whose branches mix index columns with
-/// columns outside the index. Real reads can combine multiple skip indexes for
-/// such disjunctions (when `use_skip_indexes_for_disjunctions = 1`), and the
-/// hypothetical estimator does not model that combination
-bool filterHasMixedDisjunction(const ActionsDAG::Node * node, const NameSet & index_columns)
-{
-    if (!node)
-        return false;
-    if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "or")
-    {
-        for (const auto * child : node->children)
-        {
-            NameSet child_inputs;
-            collectFilterInputColumns(child, child_inputs);
-            for (const auto & col : child_inputs)
-                if (!index_columns.contains(col))
-                    return true;
-        }
-    }
-    for (const auto * child : node->children)
-        if (filterHasMixedDisjunction(child, index_columns))
-            return true;
-    return false;
 }
 
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
@@ -393,12 +366,17 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     {
-        const auto & ignored = context->getSettingsRef()[Setting::ignore_data_skipping_indices].value;
-        if (!ignored.empty() && ignored.find(index_desc.name) != std::string::npos)
+        const auto & user_settings = context->getSettingsRef();
+        const auto & ignored_str = user_settings[Setting::ignore_data_skipping_indices].value;
+        if (!ignored_str.empty())
         {
-            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-            result.not_applicable_reason = "Index '" + index_desc.name + "' is listed in `ignore_data_skipping_indices`";
-            return result;
+            auto ignored_names = parseIdentifiersOrStringLiteralsToSet(ignored_str, user_settings);
+            if (ignored_names.contains(index_desc.name))
+            {
+                result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+                result.not_applicable_reason = "Index '" + index_desc.name + "' is listed in `ignore_data_skipping_indices`";
+                return result;
+            }
         }
     }
 
@@ -451,20 +429,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Query has no filter predicate";
         return result;
-    }
-
-    if (context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
-    {
-        NameSet index_columns_set;
-        for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
-            index_columns_set.insert(col);
-        if (filterHasMixedDisjunction(filter_dag->getOutputs().front(), index_columns_set))
-        {
-            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-            result.not_applicable_reason = "EXPLAIN WHATIF does not model disjunctive combination with other skip indexes "
-                                           "(use_skip_indexes_for_disjunctions)";
-            return result;
-        }
     }
 
     MergeTreeIndexConditionPtr condition;
@@ -568,6 +532,12 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     if (!analysis_ptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
+
+    /// A parent-table hypothetical index isn't materialized on projection parts,
+    /// so applying it to a projection-driven plan would mis-attribute pruning
+    if (analysis.readFromProjection())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "EXPLAIN WHATIF is not supported when the query is served from a projection");
 
     /// Pipeline build moved parts_with_ranges out of the analysis
     /// re-run selectRangesToRead to get a fresh copy of the filtered parts

@@ -24,7 +24,7 @@ The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no data is read or written �
 
 - `name` — index name; must be unique within `(database, table)` for this session.
 - `expression` — the column or expression to index.
-- `TYPE type` — any skip index type (`minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, etc.).
+- `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`. `text` and `vector_similarity` are not supported and rejected at `CREATE` time, because their real `ALTER TABLE ... ADD INDEX` validation depends on table-level settings the session-only store can't replicate.
 - `GRANULARITY value` — number of data granules per index granule. Defaults to 1.
 
 The target table must be a `MergeTree` family table.
@@ -71,11 +71,11 @@ Estimation:
   elapsed_us:       631
 ```
 
-To skip the in-memory empirical scan and estimate from [column statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), then disable the empirical path:
+To skip the in-memory empirical scan and estimate from [column statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), wait for the materialize mutation to finish, then disable the empirical path:
 
 ```sql
-ALTER TABLE t MODIFY COLUMN b SET STATISTICS (tdigest);
-ALTER TABLE t MATERIALIZE STATISTICS b;
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
 ```

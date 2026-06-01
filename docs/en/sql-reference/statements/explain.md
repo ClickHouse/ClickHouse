@@ -729,11 +729,11 @@ The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 
 
 **Statistical example**
 
-Column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) are off by default. To exercise the `statistical` path, define them on the relevant columns first:
+Column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) are off by default. To exercise the `statistical` path, define them on the relevant columns first and wait for the materialize mutation to finish:
 
 ```sql
-ALTER TABLE t MODIFY COLUMN b SET STATISTICS (tdigest);
-ALTER TABLE t MATERIALIZE STATISTICS b;
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 ```
 
 Then disable the empirical path so the estimator falls back to column statistics:
