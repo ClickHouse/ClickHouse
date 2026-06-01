@@ -1,0 +1,28 @@
+test 1: enabled has Concat
+1
+test 2: disabled no Concat
+0
+test 2: disabled has MergingSorted
+1
+test 3: DESC has Concat
+1
+test 4: no WHERE has Concat
+1
+test 5: prefix fixed has Concat
+1
+test 6: gap in prefix no Concat
+0
+test 7: no prefix no Concat
+0
+test 8: IN prefix no Concat
+0
+test 9: range prefix no Concat
+0
+test 10: non-monotonic no Concat
+0
+test 11: non-sort-key partition no Concat
+0
+test 12: multi-column partition key no Concat
+0
+test 13: toDate partition has Concat
+1
