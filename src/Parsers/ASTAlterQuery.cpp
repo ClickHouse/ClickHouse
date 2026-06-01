@@ -2,6 +2,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
 
@@ -658,6 +659,52 @@ bool ASTAlterQuery::isCommentAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::COMMENT_COLUMN) || isOneCommandTypeOnly(ASTAlterCommand::MODIFY_COMMENT);
 }
 
+namespace
+{
+
+/// `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `ASTAlterCommand::MODIFY_COLUMN`,
+/// but the resolved `AlterCommand::isCommentAlter` recognises it as comment-only
+/// (see `AlterCommand::isCommentAlter` in `src/Storages/AlterCommands.cpp`), so the
+/// storage layer skips the replicated log entry. The DDL routing layer must use the
+/// same recognition or distributed queries route leader-only and replicas diverge.
+///
+/// We are intentionally stricter than the resolved-side check: rejecting any extra
+/// column property or surrounding `MODIFY COLUMN` modifier means more shapes get
+/// routed to every replica, which is the safe default.
+bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
+{
+    if (command.type != ASTAlterCommand::MODIFY_COLUMN)
+        return false;
+
+    const auto * col_decl = command.col_decl ? command.col_decl->as<ASTColumnDeclaration>() : nullptr;
+    if (!col_decl || col_decl->getComment() == nullptr)
+        return false;
+
+    if (col_decl->getType() || col_decl->getDefaultExpression() || col_decl->getCodec()
+        || col_decl->getTTL() || col_decl->getStatisticsDesc() || col_decl->getSettings()
+        || col_decl->getCollation())
+        return false;
+
+    if (col_decl->null_modifier.has_value()
+        || col_decl->default_specifier != ColumnDefaultSpecifier::Empty
+        || col_decl->ephemeral_default
+        || col_decl->primary_key_specifier)
+        return false;
+
+    /// Surrounding `MODIFY COLUMN` modifiers (REMOVE / per-column MODIFY|RESET SETTING /
+    /// FIRST / AFTER) must not be present.
+    if (!command.remove_property.empty()
+        || command.settings_changes != nullptr
+        || command.settings_resets != nullptr
+        || command.column != nullptr
+        || command.first)
+        return false;
+
+    return true;
+}
+
+}
+
 bool ASTAlterQuery::isSettingsOrCommentAlter() const
 {
     if (!command_list || command_list->children.empty())
@@ -665,11 +712,20 @@ bool ASTAlterQuery::isSettingsOrCommentAlter() const
     for (const auto & child : command_list->children)
     {
         const auto & command = child->as<const ASTAlterCommand &>();
-        if (command.type != ASTAlterCommand::MODIFY_SETTING
-            && command.type != ASTAlterCommand::RESET_SETTING
-            && command.type != ASTAlterCommand::COMMENT_COLUMN
-            && command.type != ASTAlterCommand::MODIFY_COMMENT)
-            return false;
+        switch (command.type)
+        {
+            case ASTAlterCommand::MODIFY_SETTING:
+            case ASTAlterCommand::RESET_SETTING:
+            case ASTAlterCommand::COMMENT_COLUMN:
+            case ASTAlterCommand::MODIFY_COMMENT:
+                break;
+            case ASTAlterCommand::MODIFY_COLUMN:
+                if (!isCommentOnlyModifyColumn(command))
+                    return false;
+                break;
+            default:
+                return false;
+        }
     }
     return true;
 }

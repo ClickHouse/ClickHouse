@@ -273,7 +273,7 @@ public:
     bool isCommentAlter() const;
 
     /// All commands modify settings or comments (any mix of MODIFY SETTING /
-    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT).
+    /// RESET SETTING / COMMENT COLUMN / MODIFY COMMENT / comment-only MODIFY COLUMN).
     bool isSettingsOrCommentAlter() const;
 
     String getID(char) const override;

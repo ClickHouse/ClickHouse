@@ -94,3 +94,78 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
         database="test_db",
         sql="DROP TABLE mixed_alter ON CLUSTER 'cluster' SYNC",
     )
+
+
+def test_modify_column_comment_only_on_cluster(started_cluster):
+    # `ALTER ... MODIFY COLUMN c COMMENT 'x'` parses as `ASTAlterCommand::MODIFY_COLUMN`
+    # but the resolved `AlterCommand::isCommentAlter` treats it as comment-only, so the
+    # storage layer skips the replicated log entry. The DDL routing layer must agree, or
+    # leader-only routing leaves followers with stale comments.
+    ch1.query(
+        database="test_db",
+        sql="CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/modcol_comment', 'r1') ORDER BY id",
+    )
+    ch2.query(
+        database="test_db",
+        sql="CREATE TABLE modcol_comment (id UInt64, x String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/modcol_comment', 'r2') ORDER BY id",
+    )
+
+    # `MODIFY COLUMN ... COMMENT '...'` only.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-comment-v1'",
+    )
+
+    for node in [ch1, ch2]:
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-comment-v1" in show_create, (node.name, show_create)
+
+    # Mixed: `MODIFY COLUMN ... COMMENT '...'` + `MODIFY SETTING`.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-comment-v2', MODIFY SETTING old_parts_lifetime = 345",
+    )
+
+    for node in [ch1, ch2]:
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-comment-v2" in show_create, (node.name, show_create)
+        assert "old_parts_lifetime = 345" in show_create, (node.name, show_create)
+
+    # Mixed: `MODIFY COLUMN ... COMMENT '...'` + `MODIFY COMMENT '...'`.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x COMMENT 'modcol-comment-v3', MODIFY COMMENT 'table-comment-modcol'",
+    )
+
+    for node in [ch1, ch2]:
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-comment-v3" in show_create, (node.name, show_create)
+        assert "table-comment-modcol" in show_create, (node.name, show_create)
+
+    # Negative case: `MODIFY COLUMN` with a real type change must still route as a
+    # full replicated ALTER and converge across replicas through the replication log.
+    ch1.query(
+        database="test_db",
+        sql="ALTER TABLE modcol_comment ON CLUSTER 'cluster' MODIFY COLUMN x String COMMENT 'modcol-with-type'",
+    )
+
+    for node in [ch1, ch2]:
+        show_create = node.query(
+            database="test_db",
+            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        )
+        assert "modcol-with-type" in show_create, (node.name, show_create)
+
+    ch1.query(
+        database="test_db",
+        sql="DROP TABLE modcol_comment ON CLUSTER 'cluster' SYNC",
+    )
