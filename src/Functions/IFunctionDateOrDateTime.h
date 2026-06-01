@@ -51,7 +51,7 @@ class FunctionDateOrDateTimeBase : public IFunction
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
     bool acceptsIntervalArgument() const
     {
-        IntervalKind::Kind unused;
+        IntervalKind::Kind unused = IntervalKind::Kind::Second;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
     }
 

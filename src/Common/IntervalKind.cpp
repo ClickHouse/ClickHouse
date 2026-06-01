@@ -252,11 +252,10 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 
 bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result)
 {
-    /// Mirrors `toNameOfFunctionExtractTimePart`. `toNanosecond` / `toMicrosecond`
-    /// are listed there as well but no such ClickHouse functions exist, so we
-    /// don't recognise them here either - extraction on those interval kinds
-    /// would fail at function-resolution time anyway.
+    /// Mirrors `toNameOfFunctionExtractTimePart`.
     static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
+        {"toNanosecond",  IntervalKind::Kind::Nanosecond},
+        {"toMicrosecond", IntervalKind::Kind::Microsecond},
         {"toMillisecond", IntervalKind::Kind::Millisecond},
         {"toSecond",      IntervalKind::Kind::Second},
         {"toMinute",      IntervalKind::Kind::Minute},

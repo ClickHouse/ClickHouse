@@ -241,6 +241,48 @@ unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 s
 }
 
 
+unsigned int DateLUTImpl::toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
+{
+    constexpr Int64 microsecond_multiplier = 1'000'000;
+
+    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+    if (datetime.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+        --components.whole;
+    }
+    Int64 fractional = components.fractional;
+    if (scale_multiplier > microsecond_multiplier)
+        fractional = fractional / (scale_multiplier / microsecond_multiplier);
+    else if (scale_multiplier < microsecond_multiplier)
+        fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+    return static_cast<unsigned>(fractional);
+}
+
+
+unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
+{
+    constexpr Int64 nanosecond_multiplier = 1'000'000'000;
+
+    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+    if (datetime.value < 0 && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+        --components.whole;
+    }
+    Int64 fractional = components.fractional;
+    if (scale_multiplier > nanosecond_multiplier)
+        fractional = fractional / (scale_multiplier / nanosecond_multiplier);
+    else if (scale_multiplier < nanosecond_multiplier)
+        fractional = fractional * (nanosecond_multiplier / scale_multiplier);
+
+    return static_cast<unsigned>(fractional);
+}
+
+
 /// Prefer to load timezones from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
 /// This allows to avoid dependency on system tzdata.
