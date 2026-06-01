@@ -278,7 +278,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// Distributed cache is not yet wired into the executor — fall back to
     /// the legacy path when it's requested.
     if (distributed_cache)
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"),
+            "use_reader_executor: falling back to the legacy read path (distributed cache not supported by the executor)");
         return nullptr;
+    }
 
     /// Returns nullptr (so the caller falls back to the legacy path) for
     /// source variants the executor does not yet support.
@@ -322,7 +326,11 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     }
 
     if (!source_reader)
+    {
+        LOG_DEBUG(getLogger("ReadPipeline"),
+            "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
         return nullptr;
+    }
 
     VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> executor_caches;
 

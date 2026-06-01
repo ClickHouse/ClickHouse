@@ -756,7 +756,7 @@ Possible values:
     DECLARE(Bool, enable_hdfs_pread, true, R"(
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, use_reader_executor, false, R"(
-Use `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuffer` assembly. Experimental.)", EXPERIMENTAL) \
+Use the `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuffer` assembly. Experimental. Best-effort: the executor is used where supported and falls back to the legacy read path otherwise (for example with distributed cache, or source kinds the executor does not support yet), in which case no `system.reader_executor_log` row is emitted.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_window_size, 8388608, R"(
 Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_executor`) at normal memory pressure.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
