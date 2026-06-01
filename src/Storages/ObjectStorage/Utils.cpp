@@ -505,7 +505,7 @@ extern const SettingsUInt64 max_download_buffer_size;
 extern const SettingsBool use_cache_for_count_from_files;
 extern const SettingsString filesystem_cache_name;
 extern const SettingsUInt64 filesystem_cache_boundary_alignment;
-extern const SettingsBool s3_propagate_credentials_to_other_storages;
+extern const SettingsBool object_storage_propagate_credentials_to_other_storages;
 }
 
 #if USE_AVRO
@@ -675,8 +675,8 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         }
 
         /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
-        /// so different per-query values of `s3_propagate_credentials_to_other_storages` must not share an entry.
-        const bool propagate_creds = context->getSettingsRef()[Setting::s3_propagate_credentials_to_other_storages];
+        /// so different per-query values of `object_storage_propagate_credentials_to_other_storages` must not share an entry.
+        const bool propagate_creds = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
         const std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + endpoint_to_use
             + "#propagate=" + (propagate_creds ? "1" : "0");
 
@@ -691,9 +691,9 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 cfg.setString(config_prefix + ".endpoint", endpoint_to_use);
 
                 /// Copy credentials from base storage when the endpoint is the same or
-                /// `s3_propagate_credentials_to_other_storages` is enabled.
+                /// `object_storage_propagate_credentials_to_other_storages` is enabled.
                 if (base_storage->getType() == ObjectStorageType::S3
-                    && (context->getSettingsRef()[Setting::s3_propagate_credentials_to_other_storages]
+                    && (context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages]
                         || sameEndpoint(base_storage->getDescription(), endpoint_to_use)))
                 {
                     if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
@@ -784,6 +784,17 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             file_dir_path += '/';
         cache_key = "file://" + file_dir_path;
     }
+    else if (target_scheme_normalized == "abfs")
+    {
+        /// Whether the base Azure credentials may be reused for this account depends on
+        /// `object_storage_propagate_credentials_to_other_storages` (see the lambda below).
+        /// `configure_fn` runs only on a cache miss, so include the flag in the cache key to keep
+        /// queries with different values of the setting from sharing an entry.
+        const bool propagate_credentials
+            = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+        cache_key = target_scheme_normalized + "://" + target_decomposed.authority
+            + "#propagate=" + (propagate_credentials ? "1" : "0");
+    }
     else
     {
         cache_key = target_scheme_normalized + "://" + target_decomposed.authority;
@@ -833,6 +844,29 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                     {
                         const auto & conn_params = azure_storage->getConnectionParameters();
                         const auto & auth_method = azure_storage->getAzureBlobStorageAuthMethod();
+
+                        /// The base storage's `connection_string`/`storage_account_url` identify the base
+                        /// account, so copying them is only correct when the target URI names that same
+                        /// account. Doing it for a different account would point the secondary storage at the
+                        /// base account and silently serve the same container/key from the wrong account.
+                        /// Refuse that unless the user explicitly opts into propagating the base credentials.
+                        /// The base account is read from `account_name`, which is populated for
+                        /// `storage_account_url`/`account_name` auth. When it is unknown (for example, a base
+                        /// authenticated via `connection_string`), the check stays passive rather than risk
+                        /// rejecting a legitimate same-account read.
+                        const std::string & base_account_name = conn_params.endpoint.account_name;
+                        const bool different_account = !account_name.empty() && !base_account_name.empty()
+                            && account_name != base_account_name;
+                        const bool propagate_credentials
+                            = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+
+                        if (different_account && !propagate_credentials)
+                            throw DB::Exception(
+                                DB::ErrorCodes::BAD_ARGUMENTS,
+                                "Iceberg metadata references Azure storage account '{}', which differs from the table's "
+                                "base account '{}'. Enable setting `object_storage_propagate_credentials_to_other_storages` "
+                                "to reuse the base credentials for it, or configure access to account '{}'.",
+                                account_name, base_account_name, account_name);
 
                         if (std::holds_alternative<AzureBlobStorage::ConnectionString>(auth_method))
                         {
