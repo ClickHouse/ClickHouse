@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -134,6 +135,35 @@ struct LinfNorm
 };
 
 
+/// Auto-vectorized single-array norm reduction kernel, modeled after the `arrayDotProduct` kernel.
+/// Manual unrolling with independent accumulators breaks the FP dependency chain so the compiler can
+/// keep several SIMD registers in flight and (for `L2`/`L2Squared`) fuse `a*b + c` into FMA. The macro
+/// emits an `x86_64_v4` (AVX-512) variant and a default (SSE2/NEON) variant; the caller dispatches on the
+/// running CPU. Returns the pre-`finalize` reduction (e.g. the sum of squares for `L2`).
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
+    normImpl,
+    MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data, size_t count, const typename Kernel::ConstParams & params) {
+        constexpr size_t unroll_count = 16;
+        ResultType partial_results[unroll_count]{};
+
+        size_t i = 0;
+        const size_t unrolled_end = count / unroll_count * unroll_count;
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], data[i + s], params);
+
+        ResultType result = 0;
+        for (size_t s = 0; s < unroll_count; ++s)
+            result = Kernel::template combine<ResultType>(result, partial_results[s], params);
+
+        for (; i < count; ++i)
+            result = Kernel::template accumulate<ResultType>(result, data[i], params);
+
+        return result;
+    }))
+
+
 template <class Kernel>
 class FunctionArrayNorm final : public IFunction
 {
@@ -245,29 +275,45 @@ private:
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
         ColumnArray::Offset prev = 0;
-        size_t row = 0;
-        for (auto off : offsets)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 4;
-            ResultType results[VEC_SIZE] = {0};
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
-            {
-                for (size_t s = 0; s < VEC_SIZE; ++s)
-                    results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + s]), kernel_params);
-            }
+            const auto off = offsets[row];
+            const size_t array_size = off - prev;
 
-            ResultType result = 0;
-            for (const auto & other_state : results)
-                result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
-
-            /// Process the tail
-            for (; prev < off; ++prev)
+            if constexpr (std::is_same_v<ResultType, ArgumentType>
+                && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
             {
-                result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev]), kernel_params);
+                /// SIMD-optimized path for same-type floating point: runtime-dispatched to AVX-512 when
+                /// available, else the baseline variant. This is where `L2`/`L2Squared` pick up FMA.
+                ResultType result;
+#if USE_MULTITARGET_CODE
+                if (isArchSupported(TargetArch::x86_64_v4))
+                    result = normImpl_x86_64_v4<Kernel, ResultType>(data.data() + prev, array_size, kernel_params);
+                else
+#endif
+                    result = normImpl<Kernel, ResultType>(data.data() + prev, array_size, kernel_params);
+                result_data[row] = Kernel::finalize(result, kernel_params);
             }
-            result_data[row] = Kernel::finalize(result, kernel_params);
-            row++;
+            else
+            {
+                /// Scalar path for widened types (integers cast up to Float64, BFloat16 cast to Float32).
+                static constexpr size_t VEC_SIZE = 4;
+                ResultType results[VEC_SIZE] = {0};
+                size_t i = 0;
+                for (; i + VEC_SIZE < array_size; i += VEC_SIZE)
+                    for (size_t s = 0; s < VEC_SIZE; ++s)
+                        results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + i + s]), kernel_params);
+
+                ResultType result = 0;
+                for (const auto & other_state : results)
+                    result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
+
+                for (; i < array_size; ++i)
+                    result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev + i]), kernel_params);
+
+                result_data[row] = Kernel::finalize(result, kernel_params);
+            }
+            prev = off;
         }
         return result_col;
     }
