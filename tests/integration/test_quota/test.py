@@ -1802,6 +1802,13 @@ def test_quota_with_ip_prefix_bits_from_users_xml():
         "SELECT keys, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'myQuota'"
     ) == "['ip_address']\t24\t64\n"
 
+    # The forwarded-IP XML branch is a separate config path from keyed_by_ip and
+    # must also load prefix bits and expose them via system.quotas.
+    copy_quota_xml("keyed_by_forwarded_ip_with_prefix.xml")
+    assert instance.query(
+        "SELECT keys, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'myQuota'"
+    ) == "['forwarded_ip_address']\t24\t64\n"
+
     # Prefix bits on a non-IP key must be rejected on config load instead of
     # being silently ignored, mirroring the SQL path.
     copy_quota_xml("keyed_with_prefix_invalid.xml", reload_immediately=False)
