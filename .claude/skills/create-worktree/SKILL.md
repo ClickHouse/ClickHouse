@@ -41,19 +41,29 @@ Let `WORKTREE_PATH` be the chosen path (resolved to an absolute path).
 
 ### 4. Create the worktree
 
+Create the worktree with `--no-checkout` so git only writes the metadata, then
+populate the working tree in a separate parallel checkout. A plain `git worktree
+add` checks out all ~40k top-level files single-threaded; `--no-checkout` followed
+by a parallel `git checkout` (using `checkout.workers`) is noticeably faster.
+
 **If branch exists locally:**
 ```bash
-git -C <MAIN_REPO> worktree add <WORKTREE_PATH> <branch-name>
+git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> <branch-name>
 ```
 
 **If branch exists on remote only:**
 ```bash
-git -C <MAIN_REPO> worktree add <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
+git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
 ```
 
 **If branch does not exist (create new):**
 ```bash
-git -C <MAIN_REPO> worktree add -b <branch-name> <WORKTREE_PATH>
+git -C <MAIN_REPO> worktree add --no-checkout -b <branch-name> <WORKTREE_PATH>
+```
+
+Then populate the top-level working tree in parallel:
+```bash
+git -C <WORKTREE_PATH> -c checkout.workers=$(nproc) -c checkout.thresholdForParallelism=1 checkout
 ```
 
 ### 5. Decide whether to set up submodules
@@ -99,27 +109,40 @@ find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config -exec \
 find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
     sed -i "s|worktree = .*/contrib/|worktree = <WORKTREE_PATH>/contrib/|" {} +
 
-# Register and populate every submodule working tree in one parallel pass,
-# WITHOUT calling `git submodule update`. That command walks all ~130 submodules
-# serially and takes ~25s even with everything already local (no network) — it is
-# the bottleneck of this whole skill. Since the gitdirs are already hardlinked and
-# their configs now point at this worktree's contrib dirs, all we need per submodule
-# is to write its `.git` pointer file and check out the working tree. Fan that across
-# cores with `xargs -P`. Submodules with no hardlinked gitdir are reported and skipped.
-export MODROOT=$GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
-export WT=<WORKTREE_PATH>
+# Register and populate every submodule working tree, WITHOUT calling
+# `git submodule update`. That command walks all ~130 submodules serially and takes
+# ~25s even with everything already local (no network) — it is the bottleneck of
+# this whole skill. Since the gitdirs are already hardlinked and their configs now
+# point at this worktree's contrib dirs, all we need per submodule is to write its
+# `.git` pointer file and check out the working tree.
+#
+# Two levels of parallelism are combined here. The outer `xargs -P` runs several
+# submodules at once. The inner `checkout.workers` parallelises the file writes
+# within a single submodule, which matters for the giant ones (llvm-project, aws,
+# boost, rust_vendor): without it, one huge submodule checks out single-threaded and
+# becomes the long pole while every other core sits idle. The outer-by-inner product
+# is kept near the core count to avoid oversubscription. Submodules with no
+# hardlinked gitdir are reported and skipped.
+checkout_jobs=$(( $(nproc) / 8 )); [ "$checkout_jobs" -lt 1 ] && checkout_jobs=1
+export submodule_modules_dir=$GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
+export worktree_path=<WORKTREE_PATH>
 git -C <WORKTREE_PATH> config -f .gitmodules --get-regexp 'submodule\..*\.path' \
     | awk '{print $2}' \
-    | xargs -P "$(nproc)" -I {} sh -c '
-        p="$1"; gd="$MODROOT/$p"; wt="$WT/$p"
-        [ -d "$gd" ] || { echo "SKIP (no gitdir): $p"; exit 0; }
-        mkdir -p "$wt"
-        printf "gitdir: %s\n" "$gd" > "$wt/.git"
-        (git -C "$wt" read-tree HEAD && git -C "$wt" checkout -- .) 2>/dev/null || echo "SKIP: $p"
+    | xargs -P "$checkout_jobs" -I {} sh -c '
+        submodule_path="$1"
+        submodule_gitdir="$submodule_modules_dir/$submodule_path"
+        submodule_tree="$worktree_path/$submodule_path"
+        [ -d "$submodule_gitdir" ] || { echo "SKIP (no gitdir): $submodule_path"; exit 0; }
+        mkdir -p "$submodule_tree"
+        printf "gitdir: %s\n" "$submodule_gitdir" > "$submodule_tree/.git"
+        git -C "$submodule_tree" -c checkout.workers=8 -c checkout.thresholdForParallelism=1 \
+            read-tree -u --reset HEAD 2>/dev/null || echo "SKIP: $submodule_path"
       ' _ {}
 ```
 
-**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Writing the `.git` pointer file plus `git read-tree HEAD && git checkout -- .` reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The per-submodule SHA still matches what the superproject records, because each hardlinked gitdir's `HEAD` is the SHA the main repo had checked out.
+**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Writing the `.git` pointer file plus `git read-tree -u --reset HEAD` reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The per-submodule SHA still matches what the superproject records, because each hardlinked gitdir's `HEAD` is the SHA the main repo had checked out.
+
+The contrib working trees total roughly 11GB, so this phase is bound by disk write bandwidth, not CPU; the two-level parallelism keeps all cores busy but the floor is the time to physically write the bytes (about 3.5s on a fast NVMe). Hardlinking the working trees from the main repo would dodge that write and be much faster, but it is deliberately avoided: hardlinked working-tree files share inodes with the main repo, so any in-place edit (`sed -i`, an appended `>>`, an in-place codegen step) would silently corrupt the main repo and every sibling worktree. The git object database is safe to hardlink only because git objects are immutable.
 
 This pass is non-recursive (top-level submodules only), which matches what the ClickHouse build needs. If you ever do need nested submodules, run `git -C <WORKTREE_PATH> submodule update --init --recursive` afterwards (slower, and may hit the network for any submodule not already present locally).
 
