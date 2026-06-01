@@ -6,7 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-
 namespace DB
 {
 
@@ -60,6 +59,15 @@ inline auto checkedDivision(A a, B b)
         return a / static_cast<A>(b);
     else if constexpr (!is_floating_point<A> && is_floating_point<B>)
         return static_cast<B>(a) / b;
+    else if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+        /// Both operands are floating-point; promote to the higher-precision type
+        /// explicitly so that mixed `Float32`/`Float64` calls do not implicitly widen.
+        if constexpr (sizeof(A) >= sizeof(B))
+            return a / static_cast<A>(b);
+        else
+            return static_cast<B>(a) / b;
+    }
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -106,8 +114,15 @@ struct DivideIntegralImpl
             auto res = checkedDivision(CastA(a), CastB(b));
 
             if constexpr (is_floating_point<decltype(res)>)
+            {
+                /// `std::numeric_limits<Result>::max()` for 64-bit integer Result types does not
+                /// fit precisely in `Float32`, so promote `res` to `double` for the bounds check.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
                 if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
                     throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division, because it will produce infinite or too large number");
+#pragma clang diagnostic pop
+            }
 
             return static_cast<Result>(res);
         }
@@ -149,7 +164,7 @@ struct ModuloImpl
         if constexpr (is_floating_point<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
-            return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
+            return static_cast<ResultType>(a) - std::trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
         }
         else
         {
@@ -226,12 +241,26 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
             if (res < 0)
             {
                 if constexpr (is_unsigned_v<B>)
-                    res += static_cast<OriginResultType>(b);
+                {
+                    if constexpr (is_integer<OriginResultType>)
+                    {
+                        /// Perform the addition in unsigned arithmetic to avoid
+                        /// undefined behavior when b does not fit in the signed OriginResultType.
+                        /// This is correct because mathematically 0 <= res + b < b.
+                        return static_cast<ResultType>(
+                            static_cast<make_unsigned_t<OriginResultType>>(res) + static_cast<make_unsigned_t<OriginResultType>>(b));
+                    }
+                    else
+                    {
+                        return static_cast<ResultType>(res + static_cast<OriginResultType>(b));
+                    }
+                }
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
                         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
-                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                    return static_cast<ResultType>(
+                        res + (b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b)));
                 }
             }
         }

@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -48,7 +49,7 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     TokensWithPosition search_tokens;
-    std::vector<String> tokens_array;
+    VectorWithMemoryTracking<String> tokens_array;
 
     if (needles_field.getType() == Field::Types::String)
     {
@@ -447,6 +448,12 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+:::note
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAnyTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
+The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+This inconsistency is tolerated to improve the usability of full-text search.
+:::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
 hasAnyTokens(input, needles)
@@ -454,7 +461,7 @@ hasAnyTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, `sparseGrams`, and `unicodeWord`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAnyTokens = {"Returns `1`, if there was at least one match. `0`, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAnyTokens = {
@@ -582,6 +589,12 @@ If the `needle` argument is of type [Array(String)](../../sql-reference/data-typ
 
 Duplicate tokens are ignored.
 For example, needles = ['ClickHouse', 'ClickHouse'] is treated the same as ['ClickHouse'].
+
+:::note
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasAllTokens` applies it to `input` and, when `needles` is a [String](../../sql-reference/data-types/string.md), to `needles` before tokenization. When `needles` is an [Array(String)](../../sql-reference/data-types/array.md), its elements are passed through as-is and the preprocessor is not applied to them.
+The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+This inconsistency is tolerated to improve the usability of full-text search.
+:::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
 hasAllTokens(input, needles)
@@ -589,7 +602,7 @@ hasAllTokens(input, needles)
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, `sparseGrams`, and `unicodeWord`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_hasAllTokens = {"Returns 1, if all needles match. 0, otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples_hasAllTokens = {

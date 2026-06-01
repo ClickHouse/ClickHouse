@@ -49,6 +49,7 @@
 
 #include <boost/range/algorithm.hpp>
 #include <boost/range/algorithm_ext.hpp>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -190,6 +191,36 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 make_intrusive<ASTLiteral>(settings_str));
             result_node = buildSelectFromTableFunction(view_explain);
         }
+    }
+    else if (ParserKeyword(Keyword::VALUES).ignore(pos, expected))
+    {
+        /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
+        /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+
+        auto args = make_intrusive<ASTExpressionList>();
+        ParserExpression expr_parser;
+
+        ASTPtr value_expr;
+        if (!expr_parser.parse(pos, value_expr, expected))
+            return false;
+        args->children.push_back(std::move(value_expr));
+
+        while (pos->type == TokenType::Comma)
+        {
+            ++pos;
+            if (!expr_parser.parse(pos, value_expr, expected))
+                return false;
+            args->children.push_back(std::move(value_expr));
+        }
+
+        auto values_func = make_intrusive<ASTFunction>();
+        values_func->name = "SQLStandardValues";
+        values_func->arguments = args;
+        values_func->children.push_back(values_func->arguments);
+
+        result_node = buildSelectFromTableFunction(values_func);
     }
     else
     {
@@ -357,7 +388,7 @@ protected:
     }
 
 private:
-    size_t last_array_level;
+    size_t last_array_level{};
 };
 
 }
@@ -368,6 +399,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -426,6 +458,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     ParserKeyword s_uuid(Keyword::UUID);
     UUID uuid = UUIDHelpers::Nil;
+    bool has_uuid_clause = false;
 
     if (table_name_with_optional_uuid)
     {
@@ -439,11 +472,13 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             if (!uuid_p.parse(pos, ast_uuid, expected))
                 return false;
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+            has_uuid_clause = true;
         }
 
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
+        node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }
     else
         node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
@@ -455,7 +490,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 {
     /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX) && name[0] != char(SpecialDelimiter::JSON_PATH_COMBINED))
         || name[1] != '`' || name.back() != '`')
         return std::nullopt;
 
@@ -476,7 +511,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
@@ -520,7 +555,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
@@ -1088,7 +1123,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto try_read_float = [&](const char * it, const char * end)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
-        char * str_end;
+        char * str_end = nullptr;
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
@@ -1340,7 +1375,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
+        chassert(heredoc_size != std::string_view::npos);
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
@@ -1652,6 +1687,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "STREAM",
     "UNION",
     "USING",
     "WHERE",
@@ -2475,7 +2511,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    TTLMode mode;
+    TTLMode mode = {};
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 

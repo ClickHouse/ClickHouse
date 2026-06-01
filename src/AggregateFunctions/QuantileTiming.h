@@ -1,9 +1,7 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <base/sort.h>
@@ -247,7 +245,7 @@ namespace detail
 
     /** For a large number of values. The size is about 22 680 bytes.
       */
-    class QuantileTimingLarge
+    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset in the constructor
     {
     private:
         /// Total number of values.
@@ -309,7 +307,7 @@ namespace detail
         };
 
     public:
-        QuantileTimingLarge()
+        QuantileTimingLarge() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset
         {
             memset(this, 0, sizeof(*this));
         }
@@ -392,6 +390,8 @@ namespace detail
                     readBinaryLittleEndian(index, buf);
                     if (index == BIG_THRESHOLD)
                         break;
+                    if (index - SMALL_THRESHOLD >= BIG_SIZE)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} in 'large' kind of quantileTiming deserialization", index);
 
                     UInt64 elem_count = 0;
                     readBinaryLittleEndian(elem_count, buf);
@@ -492,7 +492,7 @@ template <typename>     /// Unused template parameter is for AggregateFunctionQu
 class QuantileTiming : private boost::noncopyable
 {
 private:
-    union
+    union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `tiny.count` is initialized in `QuantileTiming` ctor
     {
         detail::QuantileTimingTiny tiny;
         detail::QuantileTimingMedium medium;
@@ -553,7 +553,7 @@ private:
     }
 
 public:
-    QuantileTiming()
+    QuantileTiming() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - union members are mutually exclusive; only `tiny.count` needs initialization
     {
         tiny.count = 0;
     }
@@ -706,7 +706,7 @@ public:
     /// Called for an empty object.
     void deserialize(ReadBuffer & buf)
     {
-        Kind kind;
+        Kind kind = {};
         readBinaryLittleEndian(kind, buf);
 
         if (kind == Kind::Tiny)

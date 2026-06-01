@@ -138,7 +138,8 @@ public:
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
 
-            global_ctx->data_settings = global_ctx->data->getSettings(global_ctx->projection);
+            global_ctx->data_settings
+                = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -170,6 +171,11 @@ public:
         return res;
     }
 
+    std::map<String, UInt64> grabProjectionsMergeTime()
+    {
+        return std::move(global_ctx->projections_merge_time);
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -196,7 +202,7 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder;
+        TableLockHolder * holder{};
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -226,11 +232,13 @@ private:
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_key_columns{};
+        NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
+        NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
+        NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
@@ -266,6 +274,8 @@ private:
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
 
+        std::map<String, UInt64> projections_merge_time;
+
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
         WrittenOffsetSubstreams written_offset_substreams{};
@@ -273,7 +283,7 @@ private:
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix;
+        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
@@ -307,6 +317,7 @@ private:
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
+        std::map<String, UInt64> projections_rebuild_elapsed_ns;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
         BuildStatisticsTransformMap build_statistics_transforms;
 
@@ -518,6 +529,11 @@ private:
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
+
+        /// Accumulate per-projection merge time in nanoseconds to avoid truncation
+        /// when individual execute() steps take less than 1ms.
+        /// Converted to milliseconds only when a projection finishes.
+        std::map<String, UInt64> projections_merge_elapsed_ns;
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;

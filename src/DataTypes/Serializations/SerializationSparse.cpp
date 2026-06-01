@@ -135,7 +135,7 @@ size_t deserializeOffsets(
         ++total_rows;
     }
 
-    size_t group_size;
+    size_t group_size = 0;
     while (!istr.eof())
     {
         readVarUInt(group_size, istr);
@@ -564,6 +564,21 @@ void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_nu
 {
     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+
+void SerializationSparse::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextRaw(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextRaw(nested_column, istr, settings);
+    });
 }
 
 void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings)

@@ -55,7 +55,7 @@ namespace ErrorCodes
 template <typename T>
 void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T element;
+    T element{};
     readBinaryLittleEndian<T>(element, in);
     data.emplace_back(std::move(element));
 }
@@ -70,6 +70,12 @@ template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
 template <typename T>
@@ -352,12 +358,15 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
-        /// Disabled for floating point:
-        /// * floating point: We don't deal with nan_direction_hint
-        /// * stability::Stable: We might return any value, not the first
-        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
+        /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
+        /// stability::Stable: We might return any value, not the first.
+        const bool nan_direction_ok = !is_floating_point<T>
+            || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
+            || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable) && nan_direction_ok)
         {
             std::optional<size_t> index;
             if (direction == IColumn::PermutationSortDirection::Ascending)
@@ -588,7 +597,7 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
         if constexpr (std::is_same_v<T, UInt8>)
         {
             /// It's also possible to insert boolean values into UInt8 column.
-            bool boolean_value;
+            bool boolean_value = false;
             if (x.tryGet<bool>(boolean_value))
             {
                 data.push_back(static_cast<T>(boolean_value));
@@ -632,7 +641,7 @@ static inline UInt64 blsr(UInt64 mask)
 
 /// If mask is a number of this kind: [0]*[1]* function returns the length of the cluster of 1s.
 /// Otherwise it returns the special value: 0xFF.
-uint8_t prefixToCopy(UInt64 mask)
+static uint8_t prefixToCopy(UInt64 mask)
 {
     if (mask == 0)
         return 0;
@@ -646,7 +655,7 @@ uint8_t prefixToCopy(UInt64 mask)
     return 0xFF;
 }
 
-uint8_t suffixToCopy(UInt64 mask)
+static uint8_t suffixToCopy(UInt64 mask)
 {
     const auto prefix_to_copy = prefixToCopy(~mask);
     return prefix_to_copy >= 64 ? prefix_to_copy : 64 - prefix_to_copy;

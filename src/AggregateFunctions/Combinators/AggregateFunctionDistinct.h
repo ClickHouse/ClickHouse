@@ -1,8 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
-#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -73,7 +73,7 @@ struct AggregateFunctionDistinctGenericData
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
             history.insert(readStringBinaryInto(*arena, buf));
@@ -86,8 +86,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        Set::LookupResult it;
-        bool inserted;
+        Set::LookupResult it = nullptr;
+        bool inserted = false;
         history.emplace(key_holder, it, inserted);
 
         return inserted;
@@ -98,8 +98,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            Set::LookupResult it;
-            bool inserted;
+            Set::LookupResult it = nullptr;
+            bool inserted = false;
             history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
 
             if (inserted)
@@ -121,8 +121,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
-        Set::LookupResult it;
-        bool inserted;
+        Set::LookupResult it = nullptr;
+        bool inserted = false;
         history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
 
         return inserted;
@@ -135,8 +135,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             const auto & value = elem.getValue();
             if (!history.contains(value))
             {
-                Set::LookupResult it;
-                bool inserted;
+                Set::LookupResult it = nullptr;
+                bool inserted = false;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
@@ -190,7 +190,7 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        assert(!argument_columns.empty());
+        chassert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 
@@ -301,7 +301,44 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        /// Distinct state contains a history of unique values and can be merged across
+        /// variants without reading the nested function state from rhs
+        return this->haveSameDefinition(rhs);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place,
+        const IAggregateFunction & /*rhs*/,
+        ConstAggregateDataPtr rhs_place,
+        Arena * arena) const override
+    {
+        merge(place, rhs_place, arena);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
+        /// which changed the default null adapter for Tuple-returning functions:
+        ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).
+        ///   - multi-arg: from `<false, true>` to `<true, true>` (flag byte was already present).
+        /// Only single-arg functions are affected because the multi-arg (variadic) Null combinator
+        /// always serialized the flag byte unconditionally, so its serialization format did not change.
+        /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
+        /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
+        /// functions, so that future functions with the same shape get the correct new behavior
+        /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
+        if (nested_func->getName() == "sumCount")
+            return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+        return nullptr;
+    }
 };
 
 }
