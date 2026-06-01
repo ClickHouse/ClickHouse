@@ -43,6 +43,13 @@
 
 #if USE_AVRO
 
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event IcebergMetadataFilesCacheSkipped;
+}
+
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
