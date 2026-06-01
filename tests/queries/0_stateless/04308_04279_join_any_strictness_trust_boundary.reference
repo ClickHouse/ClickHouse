@@ -1,0 +1,10 @@
+-- ALL inner join: trusted estimate propagates upstream
+Join: sub[1000] ⋈ o[100]
+ResultRows: 100
+Join: a[1000] ⋈ b[1000]
+ResultRows: 1000
+-- ANY inner join: estimate is non-representative and hidden from upstream
+Join: o[100] ⋈ sub
+ResultRows: unknown
+Join: a[1000] ⋉ b[1000]
+ResultRows: 1000
