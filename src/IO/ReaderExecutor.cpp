@@ -501,6 +501,12 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
     if (logical_end == read_extent_end)
         return;
 
+    /// The extent only advances or clears; it must not move below the read cursor,
+    /// which would strand already-buffered bytes beyond the new bound. MergeTree
+    /// advances the mark-range end per task and never rewinds it; a backward shrink
+    /// would need explicit buffer trimming, which the executor does not support.
+    chassert(!logical_end || *logical_end >= position);
+
     /// Drain any in-flight prefetch before changing the extent: the prefetch
     /// worker reads `read_extent_end` to bound its source connection, so mutating
     /// it underneath the worker would race, and a prefetch issued for the old
