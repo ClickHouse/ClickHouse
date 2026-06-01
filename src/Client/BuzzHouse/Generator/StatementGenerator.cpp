@@ -1676,7 +1676,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
         const String tname_idx = t.getBaseName();
         const uint32_t nidxs = is_mt ? fc.tableCountIndexes(dname_idx, tname_idx) : 0;
         const uint32_t nprojs = is_mt ? fc.tableCountProjections(dname_idx, tname_idx) : 0;
-        const uint32_t nconstrs = is_mt ? fc.tableCountConstraints(dname_idx, tname_idx) : 0;
+        const uint32_t nconstrs = fc.tableCountConstraints(dname_idx, tname_idx);
         const bool has_idxs = nidxs > 0;
         const bool has_projs = nprojs > 0;
         const bool has_constrs = nconstrs > 0;

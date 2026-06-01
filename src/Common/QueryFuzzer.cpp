@@ -2299,7 +2299,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Data lake HDFS cluster variants
         {"icebergHDFSCluster", "paimonHDFSCluster"},
         /// MergeTree introspection
-        {"mergeTreeAnalyzeIndexes", "mergeTreeIndex", "mergeTreeParts", "mergeTreeProjection", "mergeTreeTextIndex"},
+        {"mergeTreeAnalyzeIndexes", "mergeTreeIndex", "mergeTreeProjection", "mergeTreeTextIndex"},
         /// External relational databases (host, port, db, table, user, password)
         {"mysql", "postgresql"},
         /// External databases with connection-style args
