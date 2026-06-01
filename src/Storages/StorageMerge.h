@@ -87,6 +87,11 @@ public:
     using DatabaseTablesIterators = std::vector<DatabaseTablesIteratorPtr>;
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
 
+    /// True if any of the underlying tables is a `Distributed` table.
+    /// Used by the planner to decide whether filter analysis must be run for
+    /// shard-skipping inside a `Merge`.
+    bool hasDistributedTable() const;
+
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
         const String & source_database_name_or_regexp,

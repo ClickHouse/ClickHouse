@@ -56,6 +56,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -265,6 +266,19 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         {
             collect_filters = true;
             break;
+        }
+        /// `Merge` is itself agnostic to shard skipping, but if any of the underlying
+        /// tables is `Distributed`, the filter from above the `Merge` must still reach
+        /// `StorageDistributed::skipUnusedShardsWithAnalyzer` via `query_info`.
+        /// The dummy-plan trick captures the WHERE clause for the `Merge` table
+        /// expression, which `StorageMerge` then forwards to each child storage.
+        if (const auto * storage_merge = typeid_cast<const StorageMerge *>(storage.get()))
+        {
+            if (storage_merge->hasDistributedTable())
+            {
+                collect_filters = true;
+                break;
+            }
         }
     }
 
