@@ -712,48 +712,48 @@ CONV_FN(SpecialVal, val)
             ret += "*";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_OVERLONG:
-            ret += "'\\xC0\\xAF'";
+            ret += R"('\xC0\xAF')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_CONTINUATION:
-            ret += "'\\x80\\xBF\\xC3\\x28'";
+            ret += R"('\x80\xBF\xC3\x28')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_TRUNCATED:
-            ret += "'\\xE2\\x82'";
+            ret += R"('\xE2\x82')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_SURROGATE:
-            ret += "'\\xED\\xA0\\x80'";
+            ret += R"('\xED\xA0\x80')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_BEYOND_RANGE:
-            ret += "'\\xF4\\x90\\x80\\x80'";
+            ret += R"('\xF4\x90\x80\x80')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_INVALID_FE_FF:
-            ret += "'\\xFE\\xFF'";
+            ret += R"('\xFE\xFF')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_UTF8_BOM:
-            ret += "'\\xEF\\xBB\\xBF'";
+            ret += R"('\xEF\xBB\xBF')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_MIXED:
-            ret += "'hello\\xC0\\xAFworld\\xED\\xA0\\x80\\xF4\\x90\\x80\\x80'";
+            ret += R"('hello\xC0\xAFworld\xED\xA0\x80\xF4\x90\x80\x80')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_CONTROL_CHARS:
-            ret += "'\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\x0E\\x0F\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1A\\x1C\\x1D\\x"
-                   "1E\\x1F'";
+            ret += R"('\x01\x02\x03\x04\x05\x06\x07\x08\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1C\x1D\x1E\x1F')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ANSI_ESCAPE:
-            ret += "'\\x1B[31mRED\\x1B[0m'";
+            ret += R"('\x1B[31mRED\x1B[0m')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_SPACE:
-            ret += "'a\\xE2\\x80\\x8Bb'";
+            ret += R"('a\xE2\x80\x8Bb')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_JOINER:
             // Split to avoid style-check matching "Db" across the hex boundary
-            ret += "'a\\xE2\\x80\\x8D" "b'";
+            ret += R"('a\xE2\x80\x8D)"
+                   "b'";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BIDI_OVERRIDE:
-            ret += "'\\xE2\\x80\\xAEabc\\xE2\\x80\\xAC'";
+            ret += R"('\xE2\x80\xAEabc\xE2\x80\xAC')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MAX_CODEPOINT:
-            ret += "'\\xF4\\x8F\\xBF\\xBF'";
+            ret += R"('\xF4\x8F\xBF\xBF')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_NULL:
             ret += "[NULL]";
