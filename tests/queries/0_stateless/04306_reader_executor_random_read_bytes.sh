@@ -44,9 +44,11 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT --query "
     WITH
         (SELECT ProfileEvents['ReaderExecutorBytesFromSource'] FROM system.query_log
-         WHERE query_id = '$POINT' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1) AS point_bytes,
+         WHERE current_database = currentDatabase() AND query_id = '$POINT' AND type = 'QueryFinish'
+         ORDER BY event_time_microseconds DESC LIMIT 1) AS point_bytes,
         (SELECT ProfileEvents['ReaderExecutorBytesFromSource'] FROM system.query_log
-         WHERE query_id = '$FULL' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1) AS full_bytes
+         WHERE current_database = currentDatabase() AND query_id = '$FULL' AND type = 'QueryFinish'
+         ORDER BY event_time_microseconds DESC LIMIT 1) AS full_bytes
     SELECT
         point_bytes > 0 AS point_read_something,
         point_bytes < 1048576 AS point_about_one_granule,
