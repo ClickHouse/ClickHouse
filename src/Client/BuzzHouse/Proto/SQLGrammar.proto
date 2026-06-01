@@ -1639,7 +1639,6 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
-    STAT_NullCount = 5;
 }
 
 message ColumnStatistics {
