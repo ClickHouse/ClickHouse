@@ -2184,9 +2184,22 @@ void registerStorageRemote(StorageFactory & factory)
         if (args.storage_def->settings)
             distributed_settings.loadFromQuery(*args.storage_def);
 
+        /// When the structure is not specified, infer it from the remote table under the user's
+        /// context. `StorageDistributed` stores only the global context and would otherwise infer
+        /// the structure under it, bypassing the `SHOW_COLUMNS` access check in
+        /// `getStructureOfRemoteTableInShard` for a local shard — that would let a user who can
+        /// create a `Remote` table read the schema of a local table they are not allowed to describe.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty())
+            columns = getStructureOfRemoteTable(
+                *parsed.cluster,
+                parsed.remote_table_id,
+                args.getLocalContext(),
+                parsed.remote_table_function_ptr);
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             parsed.remote_table_id.database_name,
