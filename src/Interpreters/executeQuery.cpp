@@ -1866,7 +1866,10 @@ static BlockIO executeQueryImpl(
                                         context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(),
                                         /* is_subquery = */ false);
                                     QueryResultCacheReader reader = query_result_cache->createReader(read_key);
-                                    if (reader.hasCacheEntryForKey())
+                                    /// This probe is an internal IN_PROGRESS-wait fast path, not a user-visible
+                                    /// query cache lookup. The pipeline below already accounts for hits and misses,
+                                    /// so do not double-count via `ProfileEvents`.
+                                    if (reader.hasCacheEntryForKey(/*update_profile_events=*/ false))
                                     {
                                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
                                         result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
