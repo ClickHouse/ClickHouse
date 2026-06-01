@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -105,7 +106,14 @@ struct PatternInfo
         /// Can use multiSearchAny only if:
         /// 1. All patterns are pure substring matches
         /// 2. All patterns have the same case sensitivity (not mixed)
-        return all_substrings && !(has_case_sensitive && has_case_insensitive);
+        /// 3. The number of needles fits the `multiSearchAny` runtime limit. `MultiSearchImpl`
+        ///    throws `TOO_MANY_ARGUMENTS_FOR_FUNCTION` for constant needle arrays larger than
+        ///    `UInt8::max` (255). Without this guard a default-on rewrite of a long substring
+        ///    `OR LIKE` chain would turn a previously-working query into an exception; instead we
+        ///    fall through to the `multiMatchAny`/combined-`match` path, which has no such cap.
+        return all_substrings
+            && !(has_case_sensitive && has_case_insensitive)
+            && patterns.size() <= std::numeric_limits<UInt8>::max();
     }
 
     bool needsCaseInsensitive() const
