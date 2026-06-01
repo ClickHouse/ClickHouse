@@ -1006,14 +1006,34 @@ StorageMetadataHandle::StorageMetadataHandle(StorageMetadataPtr metadata_)
 {
 }
 
-StorageMetadataPtr & StorageMetadataHandle::ptr() &
+const StorageInMemoryMetadata * StorageMetadataHandle::operator->() const &
+{
+    return metadata.get();
+}
+
+const StorageInMemoryMetadata & StorageMetadataHandle::operator*() const &
+{
+    return *metadata;
+}
+
+const StorageInMemoryMetadata * StorageMetadataHandle::get() const &
+{
+    return metadata.get();
+}
+
+StorageMetadataHandle::operator const StorageMetadataPtr &() const &
 {
     return metadata;
 }
 
-const StorageInMemoryMetadata * StorageMetadataHandle::operator->() &
+StorageMetadataHandle::operator StorageMetadataPtr() &&
 {
-    return metadata.get();
+    return std::move(metadata);
+}
+
+StorageMetadataHandle::operator bool() const
+{
+    return metadata != nullptr;
 }
 
 }

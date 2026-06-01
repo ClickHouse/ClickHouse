@@ -346,15 +346,22 @@ struct StorageInMemoryMetadata
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using MultiVersionStorageMetadataPtr = MultiVersion<StorageInMemoryMetadata>;
 
-/// Lifetime-safe wrapper
+/// Lifetime-safe wrapper.
 class [[nodiscard]] StorageMetadataHandle
 {
 public:
     StorageMetadataHandle() = default;
+    StorageMetadataHandle(std::nullptr_t) {} /// NOLINT(google-explicit-constructor)
     StorageMetadataHandle(StorageMetadataPtr metadata_); /// NOLINT(google-explicit-constructor)
 
-    StorageMetadataPtr & ptr() &;
-    const StorageInMemoryMetadata * operator->() &;
+    const StorageInMemoryMetadata * operator->() const &;
+    const StorageInMemoryMetadata & operator*() const &;
+    const StorageInMemoryMetadata * get() const &;
+
+    operator const StorageMetadataPtr &() const &; /// NOLINT(google-explicit-constructor)
+    operator StorageMetadataPtr() &&; /// NOLINT(google-explicit-constructor)
+
+    explicit operator bool() const;
 
 private:
     StorageMetadataPtr metadata;
