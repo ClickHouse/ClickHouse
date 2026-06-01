@@ -140,18 +140,18 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     auto * data_buffer = stream->getDataBuffer();
 
     /// Read the segment header.
-    UInt64 codec_type;
+    UInt64 codec_type = 0;
     readVarUInt(codec_type, *data_buffer);
 
     if (codec_type != static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy cursor: expected codec type Bitpacking, got {}", codec_type);
 
-    UInt64 payload_bytes;
+    UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, *data_buffer);
-    UInt64 seg_cardinality;
+    UInt64 seg_cardinality = 0;
     readVarUInt(seg_cardinality, *data_buffer);
-    UInt64 first_row_id;
+    UInt64 first_row_id = 0;
     readVarUInt(first_row_id, *data_buffer);
 
     segment_doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
@@ -202,7 +202,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     /// Index Section follows immediately after the payload in the .pst stream.
     /// No additional seek needed — just continue reading.
-    UInt64 num_blocks;
+    UInt64 num_blocks = 0;
     readVarUInt(num_blocks, *data_buffer);
 
     if (num_blocks == 0)
@@ -217,7 +217,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     for (size_t i = 0; i < num_blocks; ++i)
     {
-        UInt64 v;
+        UInt64 v = 0;
         readVarUInt(v, *data_buffer);
         block_last_row_ids[i] = requireUInt32(v, "block_last_row_id");
 
@@ -232,7 +232,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     for (size_t i = 0; i < num_blocks; ++i)
     {
-        UInt64 v;
+        UInt64 v = 0;
         readVarUInt(v, *data_buffer);
         block_offsets[i] = v;
 
@@ -1189,7 +1189,7 @@ void lazyIntersectPostingLists(
         min_density = std::min(min_density, cursors[i]->density());
 
     /// n < 256: brute-force uses UInt8 counters per row — would overflow with 256+ cursors.
-    if (n < 256 && min_density >= density_threshold)
+    if (n < 256 && min_density >= static_cast<double>(density_threshold))
     {
         ProfileEvents::increment(ProfileEvents::TextIndexLazyBruteForceIntersections);
         intersectBruteForce(out, cursors, row_offset, num_rows);

@@ -329,7 +329,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
-    size_t from_row;
+    size_t from_row = 0;
     if (continue_reading)
     {
         from_mark = current_mark;

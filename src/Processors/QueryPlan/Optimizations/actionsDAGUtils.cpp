@@ -317,7 +317,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
 }
 
 /// Check whether all the function in chain are monotonic
-bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)
@@ -544,7 +544,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            assert(node->children.size() == 1);
+            chassert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -592,7 +592,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                assert(node->children.size() == 1);
+                chassert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:
