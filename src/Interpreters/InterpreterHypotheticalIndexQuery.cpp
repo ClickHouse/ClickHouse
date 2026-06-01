@@ -10,6 +10,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -94,6 +95,18 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// Reject unknown index types and invalid arguments at CREATE time,
     /// matching ALTER TABLE ... ADD INDEX semantics
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
+
+    /// Run storage-level ADD_INDEX checks (old-syntax MergeTree rejection)
+    /// so we never store a hypothetical that a real ALTER could not materialize
+    {
+        AlterCommand alter_cmd;
+        alter_cmd.type = AlterCommand::ADD_INDEX;
+        alter_cmd.index_name = index_desc.name;
+        alter_cmd.index_decl = query.index_decl->clone();
+        AlterCommands alter_commands;
+        alter_commands.emplace_back(std::move(alter_cmd));
+        table->checkAlterIsPossible(alter_commands, context);
+    }
 
     /// Reject index types whose real `ALTER TABLE ... ADD INDEX` validation needs
     /// table-level constraints that the hypothetical store cannot replicate
