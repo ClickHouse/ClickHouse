@@ -394,18 +394,11 @@ ALWAYS_INLINE void encodeW<16>(
     auto       * __restrict__ d = reinterpret_cast<uint8_t *>(dst);
 
 #ifdef __x86_64__
-    if (__builtin_cpu_supports("avx2"))
-    {
+    if (isArchSupported(TargetArch::x86_64_v3))
         encode16_AVX2(s, d, num_elements);
-        return;
-    }
-    if (__builtin_cpu_supports("sse2"))
-    {
+    else
         encode16_SSE2(s, d, num_elements);
-        return;
-    }
-#endif
-
+#else
     // Fallback: packs 8 scattered bytes into a uint64_t per write
     // to reduce store count.
     if constexpr (std::endian::native == std::endian::little)
@@ -443,6 +436,7 @@ ALWAYS_INLINE void encodeW<16>(
             for (int64_t b = 0; b < 16; ++b)
                 d[b * num_elements + i] = s[i * 16 + b];
     }
+#endif
 }
 
 /// Runtime-W encode for widths not handled by encodeW<W> specialisations.
@@ -528,18 +522,13 @@ ALWAYS_INLINE void decodeW<16>(
     auto       * __restrict__ d = reinterpret_cast<uint8_t *>(dst);
 
 #ifdef __x86_64__
-    if (__builtin_cpu_supports("avx2"))
-    {
+    /// SSE2 is part of the x86_64 baseline (every x86_64 CPU has it),
+    /// so no runtime check is needed before taking the SSE2 path.
+    if (isArchSupported(TargetArch::x86_64_v3))
         decode16_AVX2(s, d, num_elements);
-        return;
-    }
-    if (__builtin_cpu_supports("sse2"))
-    {
+    else
         decode16_SSE2(s, d, num_elements);
-        return;
-    }
-#endif
-
+#else
     // Fallback: tiled 16×16 gather into a local buffer to improve
     // cache locality vs the naive scattered-read loop.
     alignas(32) uint8_t tile[16 * 16];
@@ -556,6 +545,7 @@ ALWAYS_INLINE void decodeW<16>(
     for (int64_t i = T * 16; i < num_elements; ++i)
         for (int b = 0; b < 16; ++b)
             d[i * 16 + b] = s[static_cast<int64_t>(b) * num_elements + i];
+#endif
 }
 
 /// Runtime-W decode for widths not handled by decodeW<W> specialisations.
@@ -872,6 +862,9 @@ void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
                     "ByteStreamSplit element byte width must be at most {}, "
                     "given {}",
                     MAX_ELEMENT_WIDTH, user_size);
+
+            if (column_type)
+                getElementBytesSize(column_type);
 
             return std::make_shared<CompressionCodecByteStreamSplit>(
                 static_cast<Int32>(user_size));

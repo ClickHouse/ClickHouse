@@ -162,6 +162,17 @@ CREATE TABLE tab (v String CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY t
 -- LowCardinality(String) is not fixed-size, must be rejected
 CREATE TABLE tab (v LowCardinality(String) CODEC(ByteStreamSplit)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+-- An explicit element width does not bypass the column-type check: the
+-- column type itself must still be a fixed-size type whose element size is
+-- at least 2 bytes, otherwise the codec would happily accept incompatible
+-- definitions.
+
+-- Non-fixed-size column with explicit width: must be rejected.
+CREATE TABLE tab (v String CODEC(ByteStreamSplit(4), LZ4)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+-- 1-byte column with explicit width: must be rejected.
+CREATE TABLE tab (v UInt8 CODEC(ByteStreamSplit(2), LZ4)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
 -- Too many codec arguments (accepts at most 1)
 CREATE TABLE tab (v Float32 CODEC(ByteStreamSplit(4, 4))) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_SYNTAX_FOR_CODEC_TYPE }
 
