@@ -27,7 +27,17 @@
            * On the prewarm run, the QCC is empty and the full table is
              scanned. On every subsequent measured run, the QCC tells the
              reader to skip all granules, so the query returns immediately
-             — that's the speedup the QCC-enabled query measures here. -->
+             — that's the speedup the QCC-enabled query measures here.
+
+         The table must be a single, fully-merged, merge-frozen part *before*
+         the measured runs. QCC entries are keyed on `(table_uuid, part_name,
+         condition_hash)`, so a background merge that consolidates the freshly
+         inserted parts into a new part renames them and silently invalidates
+         every entry the prewarm run populated — the measured runs then read the
+         new part, miss the cache, and re-pay the full scan, hiding the speedup.
+         `OPTIMIZE TABLE ... FINAL` collapses the table into one stable part and
+         `SYSTEM STOP MERGES` freezes its name, so the prewarm-primed entries
+         stay valid through every measured run. -->
 
     <create_query>
         CREATE TABLE qcc_topk_test (id UInt32, v UInt32, payload FixedString(256)) ENGINE = MergeTree ORDER BY id
@@ -43,6 +53,13 @@
         SELECT rand(), number, randomFixedString(256)
         FROM numbers(10000000)
     </fill_query>
+
+    <!-- Collapse into a single part so the prewarm-primed QCC entries are not
+         invalidated by a background merge before the measured runs. -->
+    <fill_query>OPTIMIZE TABLE qcc_topk_test FINAL</fill_query>
+
+    <!-- Freeze the part name for the rest of the test. -->
+    <fill_query>SYSTEM STOP MERGES qcc_topk_test</fill_query>
 
     <settings>
         <enable_analyzer>1</enable_analyzer>
