@@ -209,6 +209,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAll"
         || function_name == "like"
         || function_name == "ilike"
+        || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match";
