@@ -304,7 +304,6 @@ using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHold
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -354,7 +353,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
