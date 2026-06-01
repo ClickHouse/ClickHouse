@@ -50,7 +50,8 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
     auto * view = storage->as<StorageView>();
     if (!view || !view->isParameterizedView())
         return nullptr;
-    return view->getInMemoryMetadataPtr(nullptr, false)->getSelectQuery().inner_query;
+    auto metadata_snapshot = view->getInMemoryMetadataPtr(nullptr, false);
+    return metadata_snapshot->getSelectQuery().inner_query;
 }
 
 }
