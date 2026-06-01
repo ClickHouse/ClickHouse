@@ -17,8 +17,7 @@ def generate_cluster_def(port):
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        f.write(
-            f"""<clickhouse>
+        f.write(f"""<clickhouse>
     <named_collections>
         <azure_conf1>
             <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
@@ -66,8 +65,7 @@ def generate_cluster_def(port):
         </policies>
     </storage_configuration>
 </clickhouse>
-"""
-        )
+""")
     return path
 
 
@@ -164,6 +162,14 @@ def put_azure_file_content(filename, port, data):
     blob_client = container_client.get_blob_client(filename)
     buf = io.BytesIO(data)
     blob_client.upload_blob(buf)
+
+
+def get_profile_event_count(node, event):
+    return int(
+        node.query(
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        ).strip()
+    )
 
 
 def test_backup_restore(cluster):
@@ -327,7 +333,9 @@ def test_backup_restore_with_sql_named_collection_azure(cluster):
         )
 
         backup_name = new_backup_name()
-        backup_destination = f"AzureBlobStorage(sql_azure_backup_collection, '{backup_name}')"
+        backup_destination = (
+            f"AzureBlobStorage(sql_azure_backup_collection, '{backup_name}')"
+        )
         azure_query(
             node,
             f"BACKUP TABLE test_sql_nc_backup TO {backup_destination}",
@@ -374,7 +382,9 @@ def test_backup_restore_with_sql_named_collection_azure_with_overrides(cluster):
 
         backup_name = new_backup_name()
         # Override the blob_path via key-value argument
-        backup_destination = f"AzureBlobStorage(sql_azure_backup_override, blob_path='{backup_name}')"
+        backup_destination = (
+            f"AzureBlobStorage(sql_azure_backup_override, blob_path='{backup_name}')"
+        )
         azure_query(
             node,
             f"BACKUP TABLE test_sql_nc_override_backup TO {backup_destination}",
@@ -419,6 +429,59 @@ def test_backup_restore_on_merge_tree(cluster):
     )
     azure_query(node, f"DROP TABLE test_simple_merge_tree")
     azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
+
+
+def test_backup_restore_native_copy_default(cluster):
+    # The `blob_storage_disk` in this test does NOT configure `use_native_copy`, so this
+    # verifies that Azure native copy is used by default (driven by `allow_azure_native_copy`,
+    # which defaults to true), without requiring a per-endpoint server config to enable it -
+    # matching the behavior of `allow_s3_native_copy` for S3.
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        """
+        DROP TABLE IF EXISTS test_native_copy;
+        CREATE TABLE test_native_copy(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
+        """,
+    )
+    azure_query(node, f"INSERT INTO test_native_copy VALUES (1, 'a')")
+
+    # RESTORE with default settings must use native copy.
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(node, f"BACKUP TABLE test_native_copy TO {backup_destination}")
+    azure_query(node, f"DROP TABLE IF EXISTS test_native_copy_restored")
+
+    before = get_profile_event_count(node, "AzureCopyObject")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_native_copy AS test_native_copy_restored FROM {backup_destination};",
+    )
+    after = get_profile_event_count(node, "AzureCopyObject")
+    assert after > before, "RESTORE must use Azure native copy by default"
+    assert azure_query(node, f"SELECT * from test_native_copy_restored") == "1\ta\n"
+
+    # RESTORE with `allow_azure_native_copy = 0` must fall back to buffered copy.
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(node, f"BACKUP TABLE test_native_copy TO {backup_destination}")
+    azure_query(node, f"DROP TABLE IF EXISTS test_native_copy_restored_no_native")
+
+    before = get_profile_event_count(node, "AzureCopyObject")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_native_copy AS test_native_copy_restored_no_native FROM {backup_destination} SETTINGS allow_azure_native_copy = 0;",
+    )
+    after = get_profile_event_count(node, "AzureCopyObject")
+    assert (
+        after == before
+    ), "RESTORE with allow_azure_native_copy = 0 must not use native copy"
+    assert (
+        azure_query(node, f"SELECT * from test_native_copy_restored_no_native")
+        == "1\ta\n"
+    )
+
+    azure_query(node, f"DROP TABLE test_native_copy")
+    azure_query(node, f"DROP TABLE test_native_copy_restored")
+    azure_query(node, f"DROP TABLE test_native_copy_restored_no_native")
 
 
 def test_backup_restore_correct_block_ids(cluster):

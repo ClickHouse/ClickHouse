@@ -170,7 +170,7 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool allow_native_copy);
 std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings_ref);
 
 }

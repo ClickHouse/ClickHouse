@@ -627,15 +627,18 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     return settings;
 }
 
-std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy)
+std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool allow_native_copy)
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
-    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
-    if (endpoint_settings)
-        settings->use_native_copy = endpoint_settings->use_native_copy;
+    /// The backup/restore-level `allow_azure_native_copy` setting (default true) drives native copy,
+    /// mirroring `allow_s3_native_copy` for S3. A per-endpoint server config may still force it off
+    /// (e.g. for an endpoint where server-side copy is undesirable), but config is no longer required
+    /// to turn it on.
+    settings->use_native_copy = allow_native_copy;
 
-    if (!use_native_copy)
+    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
+    if (endpoint_settings && !endpoint_settings->use_native_copy)
         settings->use_native_copy = false;
 
     return settings;
