@@ -387,6 +387,10 @@ namespace Net
         /// Returns true iff the socket's connection is secure
         /// (using SSL or TLS).
 
+        virtual bool supportsExternalPolling() const;
+        /// Returns true iff an external poller can drive this socket's
+        /// readiness (the non-blocking / EAGAIN model).
+
         int socketError();
         /// Returns the value of the SO_ERROR socket option.
 

@@ -4,8 +4,6 @@
 
 #include <Common/Exception.h>
 
-#include <base/scope_guard.h>
-
 #include <Poco/Exception.h>
 #include <Poco/Net/StreamSocket.h>
 
@@ -43,39 +41,26 @@ void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address)
 void FiberStreamSocketImpl::connect(const Poco::Net::SocketAddress & address, const Poco::Timespan & timeout)
 {
     init(address.af());
-    setBlocking(false);
-    SCOPE_EXIT({ setBlocking(true); });
 
-    int r = ::connect(sockfd(), address.addr(), address.length());
-    if (r < 0)
+    silk::FiberScheduler::IoFuture future;
+    silk::FiberScheduler::connect(sockfd(), address.addr(), address.length(), &future);
+
+    int r;
+    const Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
+    if (timeout_us >= 0)
     {
-        r = errno;
-        if (r != EINPROGRESS)
-            error(r, address.toString());
-
-        silk::FiberScheduler::IoFuture poll_future;
-        silk::FiberScheduler::poll(sockfd(), POLLOUT, nullptr, &poll_future);
-
-        Poco::Timestamp::TimeDiff timeout_us = timeout.totalMicroseconds();
-        if (timeout_us >= 0)
+        r = silk::FiberFuture::waitWithTimeout(&future, static_cast<uint64_t>(timeout_us) * 1000);
+        if (r == ETIMEDOUT)
         {
-            r = silk::FiberFuture::waitWithTimeout(&poll_future, static_cast<uint64_t>(timeout_us) * 1000);
-            if (r == ETIMEDOUT)
-            {
-                poll_future.cancel();
-                (void)poll_future.wait();
-            }
+            future.cancel();
+            (void)future.wait();
         }
-        else
-        {
-            r = poll_future.wait();
-        }
-
-        if (r)
-            error(r, address.toString());
+    }
+    else
+    {
+        r = future.wait();
     }
 
-    r = socketError();
     if (r)
         error(r, address.toString());
 }

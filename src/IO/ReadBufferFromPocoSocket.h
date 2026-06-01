@@ -31,7 +31,7 @@ public:
 
     bool poll(size_t timeout_microseconds) const;
 
-    void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
+    void setAsyncCallback(AsyncCallback async_callback_);
 
     ssize_t socketReceiveBytesImpl(char * ptr, size_t size);
 

@@ -14,6 +14,7 @@ public:
     explicit SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context);
 
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
+    bool supportsExternalPolling() const override { return false; }
 };
 
 }
