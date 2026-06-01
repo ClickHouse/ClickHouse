@@ -57,7 +57,7 @@ class FunctionDateOrDateTimeBase : public IFunction
 
     static bool isAcceptableFirstArgument(const DataTypePtr & type, bool accept_interval)
     {
-        return isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type) || (accept_interval && isInterval(type));
+        return isDateOrDate32OrDateTimeOrDateTime64(type) || (accept_interval && isInterval(type));
     }
 
 protected:
@@ -65,8 +65,8 @@ protected:
     {
         const bool accept_interval = acceptsIntervalArgument();
         const char * expected = accept_interval
-            ? "Date, Date32, Time, Time64, DateTime, DateTime64 or Interval"
-            : "Date, Date32, Time, Time64, DateTime or DateTime64";
+            ? "Date, Date32, DateTime, DateTime64 or Interval"
+            : "Date, Date32, DateTime or DateTime64";
         if (arguments.size() == 1)
         {
             if (!isAcceptableFirstArgument(arguments[0].type, accept_interval))

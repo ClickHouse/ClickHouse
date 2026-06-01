@@ -11,12 +11,12 @@ using FunctionToNanosecond = FunctionDateOrDateTimeToSomething<DataTypeUInt32, T
 REGISTER_FUNCTION(ToNanosecond)
 {
     FunctionDocumentation::Description description = R"(
-Returns the nanosecond component (0-999999999) of a `DateTime64` or `Time64` value.
+Returns the nanosecond component (0-999999999) of a `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax = "toNanosecond(datetime)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Date with time to get the nanosecond from.", {"DateTime64", "Time64"}}
+        {"datetime", "Date with time to get the nanosecond from.", {"DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the nanosecond in the second (0 - 999999999) of `datetime`.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {

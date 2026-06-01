@@ -11,12 +11,12 @@ using FunctionToMicrosecond = FunctionDateOrDateTimeToSomething<DataTypeUInt32, 
 REGISTER_FUNCTION(ToMicrosecond)
 {
     FunctionDocumentation::Description description = R"(
-Returns the microsecond component (0-999999) of a `DateTime64` or `Time64` value.
+Returns the microsecond component (0-999999) of a `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax = "toMicrosecond(datetime)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"datetime", "Date with time to get the microsecond from.", {"DateTime64", "Time64"}}
+        {"datetime", "Date with time to get the microsecond from.", {"DateTime64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the microsecond in the second (0 - 999999) of `datetime`.", {"UInt32"}};
     FunctionDocumentation::Examples examples = {
