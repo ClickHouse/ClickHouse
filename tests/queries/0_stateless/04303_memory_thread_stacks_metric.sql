@@ -1,5 +1,5 @@
--- Tags: no-darwin
--- no-darwin: MemoryThreadStacks* metrics are read from /proc/self/smaps on Linux only.
+-- Tags: linux
+-- linux: MemoryThreadStacks* metrics are read from /proc/self/smaps, available on Linux only.
 
 -- All three metrics are exposed.
 SELECT count() = 3
