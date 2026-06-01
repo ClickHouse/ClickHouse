@@ -4,3 +4,7 @@ merge_func	1
 merge_func	1
 merge_engine	1
 merge_engine	1
+merge_view	1
+merge_view	1
+merge_view_func	1
+merge_view_func	1

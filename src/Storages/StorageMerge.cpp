@@ -301,13 +301,12 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
-bool StorageMerge::hasDistributedTable() const
+bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predicate) const
 {
-    auto first_distributed = traverseTablesUntil([](const StoragePtr & table)
+    return traverseTablesUntil([&predicate](const StoragePtr & table)
     {
-        return table && typeid_cast<const StorageDistributed *>(table.get());
-    });
-    return first_distributed != nullptr;
+        return table && predicate(table);
+    }) != nullptr;
 }
 
 bool StorageMerge::supportsPrewhere() const

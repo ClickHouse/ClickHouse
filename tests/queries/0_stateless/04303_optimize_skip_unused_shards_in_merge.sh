@@ -31,6 +31,10 @@ CREATE TABLE ${DB}.dist2 AS ${DB}.data2 ENGINE = Distributed(test_cluster_two_sh
 
 CREATE TABLE ${DB}.merge_dist AS ${DB}.data1 ENGINE = Merge(${DB}, '^dist[12]\$');
 
+-- View wrapping a \`Distributed\` table; covers the \`Merge\` → \`View\` → \`Distributed\` chain.
+CREATE VIEW ${DB}.view1 AS SELECT * FROM ${DB}.dist1;
+CREATE TABLE ${DB}.merge_view AS ${DB}.data1 ENGINE = Merge(${DB}, '^view1\$');
+
 SET enable_analyzer = 1;
 SET optimize_skip_unused_shards = 1;
 
@@ -47,6 +51,13 @@ SELECT 'merge_func', count() FROM merge(${DB}, '^dist[12]\$') WHERE k = 5 SETTIN
 -- Same via the \`Merge\` table engine.
 SELECT 'merge_engine', count() FROM ${DB}.merge_dist WHERE k = 5;
 SELECT 'merge_engine', count() FROM ${DB}.merge_dist WHERE k = 5 SETTINGS force_optimize_skip_unused_shards = 2;
+
+-- \`Merge\` over a \`View\` that itself wraps a \`Distributed\`: the planner must
+-- still trigger filter analysis so that the inner \`Distributed\` can prune.
+SELECT 'merge_view', count() FROM ${DB}.merge_view WHERE k = 5;
+SELECT 'merge_view', count() FROM ${DB}.merge_view WHERE k = 5 SETTINGS force_optimize_skip_unused_shards = 2;
+SELECT 'merge_view_func', count() FROM merge(${DB}, '^view1\$') WHERE k = 5;
+SELECT 'merge_view_func', count() FROM merge(${DB}, '^view1\$') WHERE k = 5 SETTINGS force_optimize_skip_unused_shards = 2;
 
 DROP DATABASE ${DB};
 "
