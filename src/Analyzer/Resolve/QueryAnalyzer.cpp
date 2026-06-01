@@ -4507,27 +4507,31 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        /// If the identifier resolved to a same-named column of this table expression
-        /// (e.g. an `ALIAS` column shadowing a Nested prefix like `loc` vs `loc.x`/`loc.y`)
-        /// and the resulting type is not an Array/Map, retry by expanding the identifier
-        /// as a Nested prefix over the per-field columns of the same table. This restores
-        /// the legacy analyzer's behavior for `ARRAY JOIN <nested_prefix>` when an `ALIAS`
-        /// column happens to occupy the same name.
+        /// If the identifier resolved to a same-named column of a table that participates
+        /// in the ARRAY JOIN's input join tree (e.g. an `ALIAS` column shadowing a Nested
+        /// prefix like `loc` vs `loc.x`/`loc.y`) and the resulting type is not Array/Map,
+        /// retry by expanding the identifier as a Nested prefix over the per-field columns
+        /// of that same source table. This restores the legacy analyzer's behavior for
+        /// `ARRAY JOIN <nested_prefix>` when an `ALIAS` column occupies the same name.
         ///
-        /// The retry is intentionally gated on the resolved node being a `ColumnNode` whose
-        /// source is the inner table expression — without this gate, a `WITH` alias, a
-        /// projection alias, or any other expression that `resolveExpressionNode` may pick
-        /// up would silently be rewritten into a row-multiplying `nested(...)` over the
-        /// table's prefix columns, turning a `TYPE_MISMATCH` into wrong results.
+        /// The retry is gated on the resolved node being a `ColumnNode` whose source is
+        /// contained in the ARRAY JOIN's input join tree — without this gate, a `WITH`
+        /// alias, a projection alias, or any other expression `resolveExpressionNode` may
+        /// pick up would silently be rewritten into a row-multiplying `nested(...)` over
+        /// the table's prefix columns, turning a `TYPE_MISMATCH` into wrong results. The
+        /// source-table lookup uses the resolved column's source (not the ARRAY JOIN's
+        /// immediate child), so the retry also fires when the ARRAY JOIN wraps a join
+        /// tree, e.g. `FROM s JOIN t ON ... ARRAY JOIN s.loc`.
         if (auto * resolved_column_node = array_join_expression->as<ColumnNode>())
         {
             auto current_result_type = resolved_column_node->getResultType();
             if (current_result_type && !isArray(current_result_type) && !isMap(current_result_type))
             {
-                const auto & inner_table_expression = array_join_node_typed.getTableExpression();
-                if (resolved_column_node->getColumnSourceOrNull() == inner_table_expression)
+                auto column_source = resolved_column_node->getColumnSourceOrNull();
+                const auto & array_join_input = array_join_node_typed.getTableExpression();
+                if (column_source && hasTableExpressionInJoinTree(array_join_input, column_source))
                 {
-                    auto data_it = scope.table_expression_node_to_data.find(inner_table_expression);
+                    auto data_it = scope.table_expression_node_to_data.find(column_source);
                     if (data_it != scope.table_expression_node_to_data.end())
                     {
                         Identifier column_identifier(resolved_column_node->getColumnName());

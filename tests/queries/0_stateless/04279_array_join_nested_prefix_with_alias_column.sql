@@ -36,6 +36,16 @@ FROM t_array_join_alias_nested
 ARRAY JOIN t_array_join_alias_nested.loc
 SETTINGS enable_analyzer = 1;
 
+-- ARRAY JOIN over a join tree: the column source is the inner `s` TableNode,
+-- not the enclosing JoinNode that the ARRAY JOIN immediately wraps. The retry
+-- must still recognize `s.loc` as resolving from a table participating in the
+-- input join tree and expand it as a Nested prefix.
+SELECT s.loc.x
+FROM t_array_join_alias_nested AS s
+JOIN system.one ON 1
+ARRAY JOIN s.loc
+SETTINGS enable_analyzer = 1;
+
 -- A `WITH` alias that shadows the Nested prefix must NOT be silently rewritten
 -- into `nested(['x','y'], loc.x, loc.y)`. The non-Array alias should surface
 -- `TYPE_MISMATCH` instead of producing row-multiplied results.
