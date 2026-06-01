@@ -312,6 +312,14 @@ enum class Dialect : uint8_t
 
 DECLARE_SETTING_ENUM(Dialect)
 
+enum class SqlCompatibilityMode : uint8_t
+{
+    default_,
+    standard,
+};
+
+DECLARE_SETTING_ENUM(SqlCompatibilityMode)
+
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 enum class AlterUpdateMode : uint8_t

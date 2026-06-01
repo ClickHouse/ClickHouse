@@ -6673,6 +6673,34 @@ However, the compatibility setting can be overridden at the user, role, profile,
 :::
 )", 0) \
     \
+    DECLARE(SqlCompatibilityMode, sql_compatibility_mode, SqlCompatibilityMode::default_, R"(
+Selects a curated bundle of session settings that align ClickHouse behavior with a SQL standard dialect.
+
+Possible values:
+
+- `default` — ClickHouse native behavior; no settings are overridden.
+- `standard` — flips the following settings to their SQL-standard-compliant values:
+
+| Setting | `standard` value |
+|---|---|
+| `data_type_default_nullable` | `true` |
+| `group_by_use_nulls` | `true` |
+| `intersect_default_mode` | `DISTINCT` |
+| `except_default_mode` | `DISTINCT` |
+| `joined_subquery_requires_alias` | `true` |
+| `join_use_nulls` | `true` |
+| `union_default_mode` | `DISTINCT` |
+| `aggregate_functions_null_for_empty` | `true` |
+| `cast_keep_nullable` | `true` |
+| `prefer_column_name_to_alias` | `true` |
+
+Settings that the user has changed manually are never overridden by `sql_compatibility_mode`. Switching back to `default` reverts only the settings that this setting itself changed, leaving other manual overrides intact. Composes with [compatibility](#compatibility): independent tracking, last-set wins for overlapping keys.
+
+:::note
+This setting is currently in **beta**. Its curated list of overrides may change as the SQL-compatibility surface evolves.
+:::
+)", BETA) \
+    \
     DECLARE(Map, additional_table_filters, "", R"(
 An additional filter expression that is applied after reading
 from the specified table.
@@ -8406,8 +8434,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
+    void applySqlCompatibilityMode(SqlCompatibilityMode mode);
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
+    std::unordered_set<std::string_view> settings_changed_by_sql_compatibility_mode;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8531,15 +8561,78 @@ void SettingsImpl::set(std::string_view name, const Field & value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.safeGet<String>());
     }
-    /// If we change setting that was changed by compatibility setting before
-    /// we should remove it from settings_changed_by_compatibility_setting,
-    /// otherwise the next time we will change compatibility setting
-    /// this setting will be changed too (and we don't want it).
-    /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+    else if (name == "sql_compatibility_mode")
+    {
+        if (value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'sql_compatibility_mode'. Expected String, got {}", value.getTypeName());
+        SettingFieldSqlCompatibilityMode parsed;
+        parsed.parseFromString(value.safeGet<String>());
+        applySqlCompatibilityMode(parsed.value);
+    }
+    /// If we change a setting that was changed by `compatibility` or `sql_compatibility_mode` before
+    /// we should remove it from the corresponding tracking set, otherwise the next time
+    /// we change the supersetting this setting will be reverted too (and we don't want it).
+    /// Resolve aliases so the lookup matches the canonical names stored in the sets.
+    else
+    {
+        auto final_name = SettingsTraits::resolveName(name);
         settings_changed_by_compatibility_setting.erase(final_name);
+        settings_changed_by_sql_compatibility_mode.erase(final_name);
+    }
 
     BaseSettings::set(name, value);
+}
+
+void SettingsImpl::applySqlCompatibilityMode(SqlCompatibilityMode mode)
+{
+    /// First, revert all changes applied by the previous mode value
+    for (const auto & setting_name : settings_changed_by_sql_compatibility_mode)
+        resetToDefault(setting_name);
+    settings_changed_by_sql_compatibility_mode.clear();
+
+    /// `default` clears overrides and leaves everything at the user-resolved value
+    if (mode == SqlCompatibilityMode::default_)
+        return;
+
+    /// Convert typed enum values to the String Field expected by enum-backed settings.
+    auto setOpMode = [](SetOperationMode value) -> Field
+    {
+        return SettingFieldSetOperationMode(value).toString();
+    };
+
+    /// Curated overrides for each non-default mode. Adding a new mode = adding a branch here.
+    std::vector<std::pair<std::string_view, Field>> overrides;
+    if (mode == SqlCompatibilityMode::standard)
+    {
+        overrides = {
+            {"data_type_default_nullable",         true},
+            {"group_by_use_nulls",                 true},
+            {"intersect_default_mode",             setOpMode(SetOperationMode::DISTINCT)},
+            {"except_default_mode",                setOpMode(SetOperationMode::DISTINCT)},
+            {"joined_subquery_requires_alias",     true},
+            {"join_use_nulls",                     true},
+            {"union_default_mode",                 setOpMode(SetOperationMode::DISTINCT)},
+            {"aggregate_functions_null_for_empty", true},
+            {"cast_keep_nullable",                 true},
+            {"prefer_column_name_to_alias",        true},
+        };
+    }
+
+    for (const auto & [name, value] : overrides)
+    {
+        auto final_name = SettingsTraits::resolveName(name);
+
+        /// If the user already changed this setting manually, leave it alone.
+        if (isChanged(final_name) && !settings_changed_by_sql_compatibility_mode.contains(final_name))
+            continue;
+
+        /// Don't mark as changed if the value wouldn't actually change.
+        if (get(final_name) == value)
+            continue;
+
+        BaseSettings::set(final_name, value);
+        settings_changed_by_sql_compatibility_mode.insert(final_name);
+    }
 }
 
 void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)

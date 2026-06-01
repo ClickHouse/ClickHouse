@@ -1,0 +1,82 @@
+--- default value ---
+default
+--- standard mode flips all curated settings ---
+standard
+1
+1
+DISTINCT
+DISTINCT
+1
+1
+DISTINCT
+1
+1
+1
+--- revert to default restores originals ---
+0
+0
+ALL
+ALL
+1
+0
+Unspecified
+0
+0
+0
+--- manual override before mode switch wins ---
+0
+1
+--- manual change after mode switch is preserved on revert ---
+0
+0
+--- normal SQL still works under standard mode ---
+2
+10
+CLICKHOUSE
+6
+42
+3
+4
+0	3
+1	3
+4
+3
+--- per-setting behavioral: join_use_nulls ---
+0	UInt8
+\N	Nullable(UInt8)
+--- per-setting behavioral: union_default_mode ---
+1
+1
+1
+--- per-setting behavioral: intersect_default_mode ---
+1
+1
+2
+1
+2
+--- per-setting behavioral: except_default_mode ---
+1
+1
+1
+--- per-setting behavioral: aggregate_functions_null_for_empty ---
+0	UInt64
+\N	Nullable(UInt64)
+--- per-setting behavioral: cast_keep_nullable ---
+UInt32
+Nullable(UInt32)
+--- per-setting behavioral: data_type_default_nullable ---
+UInt32
+Nullable(UInt32)
+--- per-setting behavioral: group_by_use_nulls ---
+0
+1
+1
+\N
+--- per-setting behavioral: prefer_column_name_to_alias ---
+10
+2
+3
+2
+3
+4
+--- invalid value rejected ---
