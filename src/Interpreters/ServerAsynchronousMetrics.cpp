@@ -158,9 +158,9 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     {
         vm_smaps.emplace("/proc/self/smaps");
     }
-    catch (...) /// Ok, /proc/self/smaps may not exist (non-Linux, sandbox,
-    {           /// etc.). The thread-stack metrics will simply not be
-    }           /// published in that case.
+    catch (...) /// NOLINT(bugprone-empty-catch) Ok, /proc/self/smaps may not exist (non-Linux, sandbox, etc.).
+    {           /// The thread-stack metrics will simply not be published in that case
+    }
 #endif
 }
 
