@@ -1,8 +1,9 @@
 CSV	1
 JSONEachRow	1
 Native	1
-Parquet	1
 Pretty	1
+TabSeparated	1
 1
 NDJSON	['JSONEachRow']
 TSV	['TabSeparated']
+0

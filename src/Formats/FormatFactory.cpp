@@ -927,7 +927,16 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
 
 void FormatFactory::setDocumentation(const String & name, Documentation documentation)
 {
-    getOrCreateCreators(name).documentation = std::move(documentation);
+    /// Attach documentation only to a format that is actually registered in this build.
+    /// Many formats depend on optional libraries (`Avro`, `Arrow`, `Parquet`, ...) and are
+    /// absent from some builds (for example, the fast-test build). We must not create a phantom
+    /// entry for such a format: it would make the format appear "known but not usable" (turning
+    /// an `UNKNOWN_FORMAT` error into `FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT`) and would pollute
+    /// `system.formats` with rows for formats that this build cannot read or write.
+    auto it = dict.find(boost::to_lower_copy(name));
+    if (it == dict.end())
+        return;
+    it->second.documentation = std::move(documentation);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
