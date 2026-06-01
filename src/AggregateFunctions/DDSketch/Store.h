@@ -4,6 +4,7 @@
 #include <limits>
 #include <vector>
 #include <base/types.h>
+#include <base/arithmeticOverflow.h>
 
 #include <AggregateFunctions/DDSketch/DDSketchEncoding.h>
 #include <IO/ReadHelpers.h>
@@ -157,7 +158,8 @@ public:
     {
         count = 0;
 
-        /// Accumulate keys in Int64 so a crafted delta sequence can't overflow before we check it
+        /// Keys/deltas are varint64; keep them in Int64 and only narrow to int once check_key has
+        /// accepted the real value. A narrowing read would let a huge key wrap into the valid range
         const auto check_key = [&](Int64 key)
         {
             if (key < min_valid_key || key > max_valid_key)
@@ -165,25 +167,29 @@ public:
                     "DDSketch bin key {} is out of the valid range [{}, {}] for this mapping",
                     key, min_valid_key, max_valid_key);
         };
+        const auto advance = [](Int64 & key, Int64 delta)
+        {
+            if (common::addOverflow(key, delta, key))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "DDSketch bin key overflow while decoding");
+        };
 
-        UInt8 encoding_mode;
+        UInt8 encoding_mode = 0;
         readBinary(encoding_mode, buf);
         if (encoding_mode == enc.BinEncodingContiguousCounts)
         {
-            UInt64 num_bins;
+            UInt64 num_bins = 0;
             readVarUInt(num_bins, buf);
             if (num_bins > max_bins_deserialize)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch dense store: {}", num_bins);
 
-            int start_key;
-            readVarInt(start_key, buf);
-            int index_delta;
+            Int64 key = 0;
+            readVarInt(key, buf);
+            Int64 index_delta = 0;
             readVarInt(index_delta, buf);
 
-            Int64 key = start_key;
             for (UInt64 i = 0; i < num_bins; ++i)
             {
-                Float64 bin_count;
+                Float64 bin_count = 0;
                 readFloatBinary(bin_count, buf);
                 if (!std::isfinite(bin_count) || bin_count < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch dense store: {}", bin_count);
@@ -192,30 +198,30 @@ public:
                     check_key(key);
                     add(static_cast<int>(key), bin_count);
                 }
-                key += index_delta;
+                advance(key, index_delta);
             }
         }
         else if (encoding_mode == enc.BinEncodingIndexDeltasAndCounts)
         {
-            UInt64 num_non_empty_bins;
+            UInt64 num_non_empty_bins = 0;
             readVarUInt(num_non_empty_bins, buf);
             if (num_non_empty_bins > max_bins_deserialize)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch sparse store: {}", num_non_empty_bins);
 
-            Int64 previous_index = 0;
+            Int64 key = 0;
             for (UInt64 i = 0; i < num_non_empty_bins; ++i)
             {
-                int index_delta;
+                Int64 index_delta = 0;
                 readVarInt(index_delta, buf);
-                Float64 bin_count;
+                Float64 bin_count = 0;
                 readFloatBinary(bin_count, buf);
                 if (!std::isfinite(bin_count) || bin_count < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch sparse store: {}", bin_count);
-                previous_index += index_delta;
+                advance(key, index_delta);
                 if (bin_count > 0)
                 {
-                    check_key(previous_index);
-                    add(static_cast<int>(previous_index), bin_count);
+                    check_key(key);
+                    add(static_cast<int>(key), bin_count);
                 }
             }
         }
