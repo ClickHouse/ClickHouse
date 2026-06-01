@@ -77,6 +77,9 @@ Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     using namespace Azure::Storage::Files::DataLake;
     auto datalake_options = toDataLakeOptions(blob_client_options);
 
+    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
+        return DataLakeFileClient(buildAdlsGen2FileUrl(endpoint, blob_path), datalake_options);
+
     return std::visit(
         [&]<typename T>(const T & auth) -> DataLakeFileClient
         {
