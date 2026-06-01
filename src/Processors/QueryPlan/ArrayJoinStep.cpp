@@ -134,6 +134,7 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_lazy_columns_replication]);
 }
 
+void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);

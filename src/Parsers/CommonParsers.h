@@ -2,7 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 
-#include <cassert>
 #include <string_view>
 #include <unordered_set>
 
@@ -137,6 +136,7 @@ namespace DB
     MR_MACROS(CURRENT_ROW, "CURRENT ROW") \
     MR_MACROS(CURRENT_TRANSACTION, "CURRENT TRANSACTION") \
     MR_MACROS(CURRENTUSER, "CURRENTUSER") \
+    MR_MACROS(CURSOR, "CURSOR") \
     MR_MACROS(D, "D") \
     MR_MACROS(DATA, "DATA") \
     MR_MACROS(DATABASE, "DATABASE") \
@@ -527,6 +527,7 @@ namespace DB
     MR_MACROS(STATISTICS, "STATISTICS") \
     MR_MACROS(STEP, "STEP") \
     MR_MACROS(STORAGE, "STORAGE") \
+    MR_MACROS(STREAM, "STREAM") \
     MR_MACROS(STRICT, "STRICT") \
     MR_MACROS(SUBPARTITION_BY, "SUBPARTITION BY") \
     MR_MACROS(SUBPARTITION, "SUBPARTITION") \
@@ -677,7 +678,7 @@ class ParserKeyword : public IParserBase
 private:
     std::string_view s;
 
-    explicit ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
+    explicit ParserKeyword(std::string_view s_): s(s_) { chassert(!s.empty()); }
 
 public:
     static ParserKeyword createDeprecated(std::string_view s_)

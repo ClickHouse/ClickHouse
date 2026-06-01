@@ -2396,6 +2396,7 @@ void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextP
         args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
+void registerStorageFile(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{

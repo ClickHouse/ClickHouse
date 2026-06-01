@@ -272,6 +272,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
+    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -2231,6 +2232,7 @@ struct FunctionsStressTestThread
 
 extern "C" {
 #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 {

@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
@@ -190,7 +191,7 @@ void BaseDaemon::closeFDs()
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        std::vector<int> fds;
+        VectorWithMemoryTracking<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
             fds.push_back(parse<int>(path.path().filename()));
 
@@ -362,18 +363,26 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
+        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
+        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
+#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+#pragma clang diagnostic pop
     }
 
     /// Change path for logging.

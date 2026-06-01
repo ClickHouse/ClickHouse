@@ -433,6 +433,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 
 }
 
+void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};

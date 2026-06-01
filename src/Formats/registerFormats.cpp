@@ -163,6 +163,7 @@ void registerSQLiteSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
+void registerFormats();
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();

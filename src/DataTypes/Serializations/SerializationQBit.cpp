@@ -466,7 +466,7 @@ DECLARE_DEFAULT_CODE(
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -493,7 +493,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     })
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    static void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -554,7 +554,7 @@ namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
-    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    static void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);

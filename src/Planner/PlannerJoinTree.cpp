@@ -348,12 +348,13 @@ bool applyTrivialCountIfPossible(
     /// can't apply if FINAL
     if (table_node && table_node->getTableExpressionModifiers().has_value() &&
         (table_node->getTableExpressionModifiers()->hasFinal() || table_node->getTableExpressionModifiers()->hasSampleSizeRatio() ||
-         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+         table_node->getTableExpressionModifiers()->hasSampleOffsetRatio() || table_node->getTableExpressionModifiers()->hasStream()))
         return false;
     if (table_function_node && table_function_node->getTableExpressionModifiers().has_value()
         && (table_function_node->getTableExpressionModifiers()->hasFinal()
             || table_function_node->getTableExpressionModifiers()->hasSampleSizeRatio()
-            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()))
+            || table_function_node->getTableExpressionModifiers()->hasSampleOffsetRatio()
+            || table_function_node->getTableExpressionModifiers()->hasStream()))
         return false;
 
     // TODO: It's possible to optimize count() given only partition predicates
@@ -887,7 +888,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * static_cast<double>(settings[Setting::max_streams_to_max_threads_ratio]);
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else

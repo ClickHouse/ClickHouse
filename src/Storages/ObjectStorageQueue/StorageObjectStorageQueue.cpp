@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -1231,7 +1232,7 @@ static std::string normalizeSetting(const std::string & name)
     return name;
 }
 
-void checkNormalizedSetting(const std::string & name)
+static void checkNormalizedSetting(const std::string & name)
 {
     if (name.starts_with("s3queue_"))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);

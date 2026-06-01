@@ -98,7 +98,7 @@ public:
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data().insertResultInto(col.getNestedColumn(), result_type);
+            data().insertResultInto(col.getNestedColumn(), removeNullable(result_type));
         }
     }
 };
@@ -175,7 +175,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, result_type, arena);
+        data(place).read(buf, *serialization, value_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
@@ -198,6 +198,7 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
 
 }
 
+void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_singleValueOrNull = R"(

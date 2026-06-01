@@ -30,7 +30,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,
-          false,    // oneof_presence
+          /* oneof_presence = */ false,
           *reader))
 {
 }
@@ -44,7 +44,13 @@ void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
 void ProtobufListInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    (*serializer).reset();
+    /// ProtobufSerializerEnvelope carries across-rows state (the
+    /// "have we opened the envelope yet" flag), and the reader keeps the
+    /// envelope's message-bounds stack — rewind both so the next readRow
+    /// opens a fresh envelope. This also recovers from a partially-read
+    /// envelope after an exception.
+    reader->resetState();
+    serializer->resetState();
 }
 
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
@@ -131,6 +137,7 @@ NamesAndTypesList ProtobufListSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerInputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -157,6 +164,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
         });
 }
 
+void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerProtobufListSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("ProtobufList", [](const FormatSettings & settings)
@@ -172,6 +180,8 @@ void registerProtobufListSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatProtobufList(FormatFactory &);
+void registerProtobufListSchemaReader(FormatFactory &);
 void registerInputFormatProtobufList(FormatFactory &) {}
 void registerProtobufListSchemaReader(FormatFactory &) {}
 }

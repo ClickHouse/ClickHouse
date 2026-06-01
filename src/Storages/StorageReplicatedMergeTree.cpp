@@ -31,6 +31,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
@@ -364,6 +365,12 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeperAndAssertNotStaticS
     auto res = getZooKeeper();
     assertNotStaticStorage();
     return res;
+}
+
+CursorPromotersMap StorageReplicatedMergeTree::buildPromoters()
+{
+    auto zookeeper = getZooKeeper();
+    return queue.buildPromoters(zookeeper);
 }
 
 String StorageReplicatedMergeTree::getEndpointName() const
@@ -1496,7 +1503,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         /// Remove "host" node first to mark replica as dropped (the choice is arbitrary,
         /// it could be any node without children that exists since ancient server versions and not re-created on startup)
         [[maybe_unused]] auto code = zookeeper->tryRemove(fs::path(remote_replica_path) / "host");
-        assert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
+        chassert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
 
         /// Then try to remove paths that are known to be flat (all children are leafs)
         Strings flat_nodes = {"flags", "queue"};
@@ -2079,7 +2086,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
+    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * static_cast<double>((*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts]);
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
         "{} rows of {} total rows in filesystem are suspicious. "
@@ -2339,8 +2346,8 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Error e;
         {
 
-            Coordination::SimpleFaultInjection fault((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit],
-                                                     (*getSettings())[MergeTreeSetting::fault_probability_after_part_commit], "part commit");
+            Coordination::SimpleFaultInjection fault(static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit]),
+                                                     static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_after_part_commit]), "part commit");
             ThreadFuzzer::maybeInjectSleep();
             e = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         }
@@ -3592,7 +3599,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
             if (res.error == Coordination::Error::ZNONODE)
                 continue;
 
-            assert(res.error == Coordination::Error::ZOK);
+            chassert(res.error == Coordination::Error::ZOK);
             source_queue.emplace_back();
             auto & info = source_queue.back();
             info.data = std::move(res.data);
@@ -3831,7 +3838,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     size_t total_entries_to_copy = 0;
     for (const auto & entry_info : source_queue)
     {
-        assert(!entry_info.data.empty());
+        chassert(!entry_info.data.empty());
         if (entry_info.parsed_entry && !entry_info.parsed_entry->new_part_name.empty())
         {
             const String & part_name = entry_info.parsed_entry->new_part_name;
@@ -4030,7 +4037,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         /// Replica is not lost and we can clone it. Let's calculate approx replication lag.
         size_t source_log_pointer = get_log_pointer.data.empty() ? 0 : parse<UInt64>(get_log_pointer.data);
-        assert(source_log_pointer <= max_log_entry);
+        chassert(source_log_pointer <= max_log_entry);
         size_t replica_queue_lag = max_log_entry - source_log_pointer;
         size_t replica_queue_size = get_queue.stat.numChildren;
         size_t replication_lag = replica_queue_lag + replica_queue_size;
@@ -5847,7 +5854,7 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
         auto zookeeper = getZooKeeper();
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
-        assert(prev_ptr == nullptr);
+        chassert(prev_ptr == nullptr);
 
         /// The endpoint id:
         ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
@@ -6004,6 +6011,7 @@ void StorageReplicatedMergeTree::partialShutdown()
         auto merge_lock = merger_mutator.merges_blocker.cancel();
         auto move_lock = parts_mover.moves_blocker.cancel();
         background_operations_assignee.finish();
+        background_streaming_assignee.finish();
     }
 
     LOG_TRACE(log, "Threads finished");
@@ -6553,7 +6561,7 @@ bool StorageReplicatedMergeTree::optimize(
             return true;
         }
 
-        assert(try_no == max_retries);
+        chassert(try_no == max_retries);
         static constexpr const char * message_fmt = "Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries";
         return handle_noop(message_fmt, try_no);
     };
@@ -7382,7 +7390,7 @@ void StorageReplicatedMergeTree::checkTableCanBeRenamed(const StorageID & new_na
                         "If you really want to rename table, you should edit metadata file first and restart server or reattach the table.");
     }
 
-    assert(zookeeper_info.renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
+    chassert(zookeeper_info.renaming_restrictions == RenamingRestrictions::ALLOW_PRESERVING_UUID);
     if (!new_name.hasUUID() && getStorageID().hasUUID())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot move Replicated table to Ordinary database, because zookeeper_path contains implicit "
@@ -9031,7 +9039,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
         }
 
-        assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+        chassert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
 
         scope_guard intent_guard;
         if (replace)
@@ -10049,7 +10057,7 @@ void StorageReplicatedMergeTree::dropAllPartsInPartitions(
         else
             zkutil::KeeperMultiException::check(code, ops, responses);
 
-        assert(entries.size() == log_entry_ops_idx.size());
+        chassert(entries.size() == log_entry_ops_idx.size());
         for (size_t i = 0; i < entries.size(); ++i)
         {
             String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses[log_entry_ops_idx[i]]).path_created;

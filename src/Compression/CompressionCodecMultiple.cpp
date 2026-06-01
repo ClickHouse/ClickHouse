@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Common/PODArray.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/WriteHelpers.h>
@@ -130,9 +131,9 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     return decompressed_size;
 }
 
-std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
+VectorWithMemoryTracking<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
 {
-    std::vector<uint8_t> result;
+    VectorWithMemoryTracking<uint8_t> result;
     uint8_t compression_methods_size = source[0];
     result.reserve(compression_methods_size);
 

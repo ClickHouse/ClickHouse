@@ -13,6 +13,7 @@
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -124,6 +125,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         "statement"}})));
 }
 
+void registerInterpreterShowCreateQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

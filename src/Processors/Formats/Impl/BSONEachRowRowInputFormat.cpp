@@ -1081,6 +1081,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     return {!in.eof(), number_of_rows};
 }
 
+void registerInputFormatBSONEachRow(FormatFactory & factory);
 void registerInputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -1090,11 +1091,13 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 
+void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("BSONEachRow", &fileSegmentationEngineBSONEachRow);
 }
 
+void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("BSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)

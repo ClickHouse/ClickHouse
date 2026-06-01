@@ -336,6 +336,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(
 
 }
 
+void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
