@@ -1,7 +1,7 @@
--- Row policies at the view and distributed table levels must be enforced
--- when optimize_trivial_view_pushdown_to_distributed fires.
--- id=2: hidden by view policy, id=3: by dist policy.
--- id=1, id=4 and id=5 must always be visible.
+-- The VIEW-level row policy must be enforced when
+-- optimize_trivial_view_pushdown_to_distributed fires, including when the view
+-- projects a computed alias that the policy references.
+-- id=2 is hidden by the view policy; id=1, id=3, id=4 and id=5 stay visible.
 --
 -- Tags: distributed
 
@@ -14,7 +14,6 @@ DROP TABLE IF EXISTS 04098_dist;
 DROP VIEW IF EXISTS 04098_view;
 DROP VIEW IF EXISTS 04098_view_alias;
 DROP ROW POLICY IF EXISTS 04098_policy_view  ON 04098_view;
-DROP ROW POLICY IF EXISTS 04098_policy_dist  ON 04098_dist;
 
 CREATE TABLE 04098_local (id UInt32, val Int32)
 ENGINE = MergeTree ORDER BY id;
@@ -34,9 +33,8 @@ SYSTEM FLUSH DISTRIBUTED 04098_dist;
 SELECT count() FROM 04098_view;
 
 CREATE ROW POLICY 04098_policy_view  ON 04098_view  USING id != 2 TO ALL;
-CREATE ROW POLICY 04098_policy_dist  ON 04098_dist  USING id != 3 TO ALL;
 
--- View and dist policies enforced: id=1, id=4 and id=5 survive.
+-- View policy enforced: id=2 hidden, id=1, id=3, id=4 and id=5 survive.
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 SELECT id, val FROM 04098_view ORDER BY id;
 
@@ -46,7 +44,7 @@ CREATE ROW POLICY 04098_policy_view_alias ON 04098_view_alias USING v != 400 TO 
 SELECT id, v FROM 04098_view_alias ORDER BY id;
 DROP ROW POLICY 04098_policy_view_alias ON 04098_view_alias;
 
--- View and dist policies must appear in system.query_log.used_row_policies.
+-- The view policy must appear in system.query_log.used_row_policies.
 SYSTEM FLUSH LOGS query_log;
 SELECT arraySort(arrayFilter(p -> p NOT LIKE '%04098_local%', used_row_policies))
 FROM system.query_log
@@ -60,7 +58,6 @@ WHERE
 LIMIT 1;
 
 DROP ROW POLICY 04098_policy_view  ON 04098_view;
-DROP ROW POLICY 04098_policy_dist  ON 04098_dist;
 DROP VIEW 04098_view_alias;
 DROP VIEW 04098_view;
 DROP TABLE 04098_dist;

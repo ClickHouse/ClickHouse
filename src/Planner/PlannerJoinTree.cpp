@@ -1305,14 +1305,33 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         /// Analyze the view's inner query to obtain its query tree.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
-                        /// Row policies for the view and the underlying distributed table must be injected
-                        /// into the inner query's WHERE clause. The normal where_filters path is skipped
-                        /// when StorageDistributed returns a processing stage other than FetchColumns.
-                        /// Both policy expressions are resolvable inside the inner query: the view policy
-                        /// may reference view aliases (resolved by the analyzer), and the distributed table
-                        /// policy references original column names (visible before aliasing).
+                        /// The VIEW's row policy is injected into the inner query's WHERE clause so it
+                        /// is enforced under the pushdown (the normal where_filters path is a no-op
+                        /// here: StorageDistributed returns a processing stage other than FetchColumns).
+                        /// The view policy lives in the view's namespace, so the inner SELECT's aliases
+                        /// are exactly the columns it refers to.
+                        ///
+                        /// The underlying DISTRIBUTED table's policy is intentionally NOT enforced: it
+                        /// is not enforced on the non-pushdown path either (ClickHouse does not propagate
+                        /// Distributed-table row policies to shards — see issue #28334), and injecting it
+                        /// into the view SELECT would be unsound, because a policy on e.g. `secret` would
+                        /// resolve against a `0 AS secret` view alias instead of the source column. We
+                        /// still register it in used_row_policies to match the bookkeeping of the
+                        /// non-pushdown path (whose inner planner calls buildRowPolicyFilterIfNeeded for
+                        /// the Distributed table).
                         ASTPtr effective_inner_query_ast = inner_query_ast;
                         {
+                            auto register_used_policies = [&](const RowPolicyFilterPtr & policy)
+                            {
+                                for (const auto & row_policy : policy->policies)
+                                {
+                                    auto name = row_policy->getFullName().toString();
+                                    if (query_context->hasQueryContext())
+                                        query_context->getQueryContext()->addUsedRowPolicy(name);
+                                    used_row_policies.emplace(std::move(name));
+                                }
+                            };
+
                             const auto & view_id = storage->getStorageID();
                             auto view_row_policy = query_context->getRowPolicyFilter(
                                 view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
@@ -1321,25 +1340,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             auto dist_row_policy = inner_context->getRowPolicyFilter(
                                 dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
+                            /// Distributed table policy: register for query_log only, do not enforce.
+                            if (dist_row_policy && !dist_row_policy->isAlwaysTrue())
+                                register_used_policies(dist_row_policy);
+
+                            /// View policy: register and enforce by injecting into the inner WHERE.
                             ASTPtr combined_policy;
-                            for (const auto * policy : {&view_row_policy, &dist_row_policy})
+                            if (view_row_policy && !view_row_policy->isAlwaysTrue())
                             {
-                                if (*policy && !(*policy)->isAlwaysTrue())
-                                {
-                                    /// Register policy names so they appear in system.query_log.used_row_policies,
-                                    /// matching what buildRowPolicyFilterIfNeeded does on the normal path.
-                                    for (const auto & row_policy : (*policy)->policies)
-                                    {
-                                        auto name = row_policy->getFullName().toString();
-                                        if (query_context->hasQueryContext())
-                                            query_context->getQueryContext()->addUsedRowPolicy(name);
-                                        used_row_policies.emplace(std::move(name));
-                                    }
-                                    auto expr = (*policy)->expression->clone();
-                                    combined_policy = combined_policy
-                                        ? makeASTFunction("and", std::move(combined_policy), std::move(expr))
-                                        : std::move(expr);
-                                }
+                                register_used_policies(view_row_policy);
+                                combined_policy = view_row_policy->expression->clone();
                             }
 
                             if (combined_policy)
@@ -1451,6 +1461,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 additional_filter_ast = nullptr;
                             }
 
+                            /// additional_table_filters keyed by the underlying Distributed table are
+                            /// parsed here so StorageDistributed::read can propagate them to the
+                            /// shard-local table, exactly as the non-pushdown path does (its inner
+                            /// planner parses the filter while planning the Distributed table). The
+                            /// early parseAdditionalFilterAstIfNeeded ran only for the view's identifiers,
+                            /// so a filter keyed by the Distributed table would otherwise be lost. This
+                            /// runs after the view-keyed handling above cleared additional_filter_ast,
+                            /// and parseAdditionalFilterAstIfNeeded is a no-op when no entry matches.
+                            parseAdditionalFilterAstIfNeeded(
+                                underlying_dist, dist_table_node->getAlias(), table_expression_query_info, inner_context);
+
                             /// Replace the view's table expression in the outer query with the
                             /// inlined inner query tree. StorageDistributed will then replace
                             /// the distributed table node (now deep inside the subquery) with
@@ -1469,8 +1490,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 if (!select_query_options.build_logical_plan)
                 {
+                    /// Use effective_context (not query_context) so the processing stage is computed
+                    /// under the same SQL-security context the read runs in. For SQL SECURITY NONE the
+                    /// pushdown reads via the no-user override context (effective_context); computing the
+                    /// stage from the caller's context could otherwise return a stage inconsistent with
+                    /// that read (e.g. settings like distributed_group_by_no_merge differing between the
+                    /// two contexts, leading the initiator to skip a merge the read expects). When the
+                    /// pushdown does not fire, effective_context == query_context, so this is unchanged.
                     till_stage = effective_storage->getQueryProcessingStage(
-                        query_context, select_query_options.to_stage, effective_snapshot, table_expression_query_info);
+                        effective_context, select_query_options.to_stage, effective_snapshot, table_expression_query_info);
                 }
 
                 if (select_query_options.build_logical_plan)

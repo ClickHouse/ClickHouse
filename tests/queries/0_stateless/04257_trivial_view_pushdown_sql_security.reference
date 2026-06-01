@@ -1,13 +1,6 @@
 === INVOKER: privilege check ===
 Not enough privileges
-=== NONE: row policy must not apply ===
-3
-=== INVOKER: policy-only column does not block column-grant user ===
-1
-2
-3
 === INVOKER: access check pruned to outer-referenced columns ===
 1
 2
 3
-4

@@ -135,24 +135,25 @@ FROM (EXPLAIN SELECT * FROM 04092_view_asterisk_except);
 DROP VIEW 04092_view_asterisk_except;
 
 -- -----------------------------------------------------------------------
--- Test 6: additional_table_filters keyed by the view name are honored
--- under the pushdown, including for views that rename columns.
--- Before the fix, StorageDistributed::read forwarded the view-namespace
--- AST to shards keyed by the shard-local table — that path failed with
--- "Unknown identifier" for aliased views and accidentally worked for
--- unaliased ones. The filter is now applied as a coordinator-side
--- FilterStep on top of the read output (view namespace), so both work.
--- 04092_dist_replacing carries 3 rows with id values {1, 1, 2}, so
--- the filter "id != 2" / "aid != 2" must keep 2 of them.
+-- Test 6: additional_table_filters are honored under the pushdown, whether
+-- keyed by the view name or by the underlying Distributed table name,
+-- matching the non-pushdown path.
+--   * View-keyed filters are folded into the outer query's WHERE before the
+--     view body is inlined, so they ride along inside the shard query (and
+--     resolve against the view's namespace, including renamed columns).
+--   * Distributed-table-keyed filters are parsed for the underlying table so
+--     StorageDistributed propagates them to the shard-local table.
+-- 04092_dist_replacing carries 3 rows with id values {1, 1, 2}, so a filter
+-- "id != 2" / "aid != 2" must keep 2 of them.
 -- -----------------------------------------------------------------------
 SET optimize_trivial_view_pushdown_to_distributed = 1;
 SET prefer_localhost_replica = 0;
 
--- Unaliased view: filter references the view's own column name.
+-- View-keyed, unaliased view: filter references the view's own column name.
 SELECT count() FROM 04092_view_replacing
 SETTINGS additional_table_filters = {'04092_view_replacing': 'id != 2'};
 
--- Aliased view: filter references the view's alias, which has no
+-- View-keyed, aliased view: filter references the view's alias, which has no
 -- counterpart on the shard-local table.
 CREATE VIEW 04092_view_aliased AS SELECT id AS aid FROM 04092_dist_replacing;
 
@@ -160,6 +161,11 @@ SELECT count() FROM 04092_view_aliased
 SETTINGS additional_table_filters = {'04092_view_aliased': 'aid != 2'};
 
 DROP VIEW 04092_view_aliased;
+
+-- Distributed-table-keyed: filter references the underlying dist table by name.
+-- The non-pushdown path applies it (propagated to the shard); the pushdown must too.
+SELECT count() FROM 04092_view_replacing
+SETTINGS additional_table_filters = {'04092_dist_replacing': 'id != 2'};
 
 DROP VIEW 04092_view_replacing;
 DROP TABLE 04092_dist_replacing;
