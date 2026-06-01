@@ -251,7 +251,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    assert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+    chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
 
     const String table_metadata_path = getObjectMetadataPath(table_name);
     const UUID uuid_table = getTableUUIDFromDetachedMetadata(local_context, table_metadata_path);

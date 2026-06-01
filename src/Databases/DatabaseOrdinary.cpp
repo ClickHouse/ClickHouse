@@ -790,6 +790,7 @@ void DatabaseOrdinary::removeTableFromPermanentlyDetachedTables(const UUID & uui
         permanently_detached_tables.end());
 }
 
+void registerDatabaseOrdinary(DatabaseFactory & factory);
 void registerDatabaseOrdinary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
