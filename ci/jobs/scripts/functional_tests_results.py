@@ -30,7 +30,13 @@ STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXI
 # worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
 # parent terminates re-broadcasts SIGTERM to the whole process group via
 # `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
-# also covers external kills like job-level timeouts and runner shutdown).
+# also covers runner shutdown).
+#
+# A job-level wall-clock timeout also kills the runner with SIGTERM, but the
+# server is healthy in that case and the completed per-test results are
+# authoritative. That is handled separately via the `timed_out` flag in `run`
+# (reported as a `Timeout`, not `Server died`), which takes precedence over
+# this set.
 #
 # Both `128 + N` (bash's convention when its child died from signal N) and
 # the negative form `-N` are included: `Shell.run` wraps the command in
@@ -207,7 +213,12 @@ class FTResultsProcessor:
 
         return s
 
-    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
+    def run(
+        self,
+        task_name="Tests",
+        runner_exit_code: Optional[int] = None,
+        timed_out: bool = False,
+    ):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
@@ -220,6 +231,21 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+            )
+        elif timed_out:
+            # The runner was killed by the job-level wall-clock budget (SIGTERM
+            # from `Shell._check_timeout`), not by a crash. The server is healthy
+            # and the per-test results that completed are authoritative, so keep
+            # them as-is (no UNKNOWN demotion) and report a timeout rather than a
+            # spurious `Server died`. Both arrive as a SIGTERM exit code, so this
+            # branch must precede the `ABORTED_RUN_EXIT_CODES` one.
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    "Timeout",
+                    Result.Status.FAIL,
+                    info="The test run exceeded its time budget and was terminated",
+                )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL

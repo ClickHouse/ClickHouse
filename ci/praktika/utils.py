@@ -280,13 +280,23 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, timeout_status=None) -> None:
         if not timeout:
             return
         time.sleep(timeout)
+        if process.poll() is not None:
+            # The process finished on its own within the budget; nothing to kill.
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
+        # The process group was alive when the budget elapsed: this kill is a
+        # wall-clock timeout, not a crash. Record it before signalling so callers
+        # can tell a budget timeout apart from a genuine abort (both surface as
+        # SIGTERM in the exit code). Set before `killpg` to avoid racing the
+        # caller's `proc.wait()`.
+        if timeout_status is not None:
+            timeout_status.append(True)
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -322,6 +332,7 @@ class Shell:
         timeout=None,
         retries=1,
         retry_errors: Union[List[str], str] = "",
+        timeout_status=None,
         **kwargs,
     ):
         if retry_errors and retries < 2:
@@ -368,7 +379,10 @@ class Shell:
 
                     # Start the timeout thread if specified
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout,
+                            args=(timeout, proc, timeout_status),
+                        )
                         t.daemon = True
                         t.start()
 

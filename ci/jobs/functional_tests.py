@@ -104,9 +104,18 @@ def run_tests(
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    return Shell.run(
-        command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None
+    # `timeout_status` is populated by `Shell._check_timeout` only when the
+    # wall-clock budget elapsed and it killed a still-running runner. That lets
+    # us report a timeout instead of a (false) server death, since both arrive
+    # as a SIGTERM exit code.
+    timeout_status: list = []
+    exit_code = Shell.run(
+        command,
+        verbose=True,
+        timeout=global_time_limit if global_time_limit > 0 else None,
+        timeout_status=timeout_status,
     )
+    return exit_code, bool(timeout_status)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -585,6 +594,7 @@ def main():
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
         global_time_limit = 0
+        runner_timed_out = False
         if is_flaky_check:
             FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
             global_time_limit = max(
@@ -596,7 +606,7 @@ def main():
                 f" remaining: {global_time_limit}s)"
             )
 
-            runner_exit_code = run_tests(
+            runner_exit_code, runner_timed_out = run_tests(
                 batch_num=0,
                 batch_total=0,
                 tests=list(tests) if tests else tests,
@@ -617,7 +627,7 @@ def main():
                 f" remaining: {global_time_limit}s)"
             )
 
-            runner_exit_code = run_tests(
+            runner_exit_code, runner_timed_out = run_tests(
                 batch_num=0,
                 batch_total=0,
                 tests=list(tests) if tests else tests,
@@ -628,7 +638,7 @@ def main():
             )
 
         else:
-            runner_exit_code = run_tests(
+            runner_exit_code, runner_timed_out = run_tests(
                 batch_num=batch_num,
                 batch_total=total_batches,
                 tests=list(tests) if tests else tests,
@@ -638,7 +648,9 @@ def main():
                 global_time_limit=global_time_limit,
             )
 
-        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+        test_result = ft_res_processor.run(
+            runner_exit_code=runner_exit_code, timed_out=runner_timed_out
+        )
 
         if not info.is_local_run:
             CH.stop_log_exports()
