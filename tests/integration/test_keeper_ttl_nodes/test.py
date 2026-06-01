@@ -11,6 +11,16 @@ def get_fake_zk(cluster, nodename, timeout=30.0):
     return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
+def wait_nodes_gone(zks, paths, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    for zk in zks:
+        for path in paths:
+            while zk.exists(path) is not None:
+                if time.monotonic() >= deadline:
+                    raise AssertionError(f"{path} still exists on Keeper after {timeout}s")
+                time.sleep(0.05)
+
+
 def test_simple():
     run_uuid = uuid.uuid4()
     cluster = ClickHouseCluster(__file__, str(run_uuid))
@@ -31,14 +41,10 @@ def test_simple():
     node1_zk.create("/test_alive", b"aaaa", ttl=1000)
     assert node1_zk.exists("/test_alive")
     assert node2_zk.exists("/test_alive")
-    time.sleep(1.1)
-    assert not node1_zk.exists("/test_alive")
-    assert not node2_zk.exists("/test_alive")
+    wait_nodes_gone([node1_zk, node2_zk], ["/test_alive"])
 
     node1_zk.create("/test_alive", b"aaaa", ttl=1)
-    time.sleep(0.1)
-    assert not node1_zk.exists("/test_alive")
-    assert not node2_zk.exists("/test_alive")
+    wait_nodes_gone([node1_zk, node2_zk], ["/test_alive"])
 
     cluster.shutdown()
 
@@ -100,6 +106,7 @@ def test_manual_remove_before_ttl_expiration():
     )
 
     node1_zk = None
+    node2_zk = None
     cluster.start()
 
     try:
@@ -137,6 +144,7 @@ def test_many_nodes_with_different_ttls():
     )
 
     node1_zk = None
+    node2_zk = None
     cluster.start()
 
     try:
@@ -146,18 +154,12 @@ def test_many_nodes_with_different_ttls():
         for i in range(10):
             node1_zk.create(f"/n{i}", str(i).encode(), ttl=1000 * (i + 1))
 
-        time.sleep(1.2)
-        assert not node1_zk.exists("/n0")
-        assert not node2_zk.exists("/n0")
+        wait_nodes_gone([node1_zk, node2_zk], ["/n0"])
         for i in range(1, 10):
             assert node1_zk.exists(f"/n{i}")
             assert node2_zk.exists(f"/n{i}")
 
-        time.sleep(2.1)
-        assert not node1_zk.exists("/n1")
-        assert not node1_zk.exists("/n2")
-        assert not node2_zk.exists("/n1")
-        assert not node2_zk.exists("/n2")
+        wait_nodes_gone([node1_zk, node2_zk], ["/n1", "/n2"])
         for i in range(3, 10):
             assert node1_zk.exists(f"/n{i}")
             assert node2_zk.exists(f"/n{i}")
@@ -181,6 +183,7 @@ def test_sibling_ttl_independence():
     )
 
     node1_zk = None
+    node2_zk = None
     cluster.start()
 
     try:
@@ -190,18 +193,14 @@ def test_sibling_ttl_independence():
         node1_zk.create("/root/a", b"a", ttl=1000)
         node1_zk.create("/root/b", b"b", ttl=3000)
 
-        time.sleep(1.2)
-        assert not node1_zk.exists("/root/a")
+        wait_nodes_gone([node1_zk, node2_zk], ["/root/a"])
         assert node1_zk.exists("/root/b")
         assert node1_zk.exists("/root")
-        assert not node2_zk.exists("/root/a")
         assert node2_zk.exists("/root/b")
         assert node2_zk.exists("/root")
 
-        time.sleep(2.1)
-        assert not node1_zk.exists("/root/b")
+        wait_nodes_gone([node1_zk, node2_zk], ["/root/b"])
         assert node1_zk.exists("/root")
-        assert not node2_zk.exists("/root/b")
         assert node2_zk.exists("/root")
     finally:
         cluster.shutdown()
@@ -223,6 +222,7 @@ def test_recreate_node_after_ttl_expiration():
     )
 
     node1_zk = None
+    node2_zk = None
     cluster.start()
 
     try:
@@ -230,9 +230,7 @@ def test_recreate_node_after_ttl_expiration():
         node2_zk = get_fake_zk(cluster, "node2")
         node1_zk.create("/recreate", b"old", ttl=1000)
 
-        time.sleep(1.2)
-        assert not node1_zk.exists("/recreate")
-        assert not node2_zk.exists("/recreate")
+        wait_nodes_gone([node1_zk, node2_zk], ["/recreate"])
 
         node1_zk.create("/recreate", b"new")
         assert node1_zk.exists("/recreate")

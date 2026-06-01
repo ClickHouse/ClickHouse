@@ -309,7 +309,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
             is_sequential = true;
             break;
         case CreateMode::CONTAINER:
-            break;
+            throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
+                "Container nodes are not supported");
         case CreateMode::PERSISTENT_WITH_TTL:
             include_ttl = true;
             break;

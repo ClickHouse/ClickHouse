@@ -305,6 +305,13 @@ uint64_t calculateDigest(std::string_view path, const Node & node)
     hash.update(node.numChildren());
     hash.update(node.stats.pzxid);
 
+    hash.update(node.destroy_time.has_value());
+    if (node.destroy_time.has_value())
+        hash.update(*node.destroy_time);
+    hash.update(node.ttl.has_value());
+    if (node.ttl.has_value())
+        hash.update(*node.ttl);
+
     auto digest = hash.get64();
 
     /// 0 means no cached digest
