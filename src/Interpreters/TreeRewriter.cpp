@@ -756,7 +756,10 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            chassert(analyzed_join.oneDisjunct());
+            /// Exactly one disjunct is added here. The clause may still be empty (e.g. an ASOF inequality
+            /// without an equality key, or a single-table condition); that case is reported below as a
+            /// proper exception, so we only assert the number of clauses, not their non-emptiness.
+            chassert(analyzed_join.getClauses().size() == 1);
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
