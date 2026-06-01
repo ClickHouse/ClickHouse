@@ -458,7 +458,7 @@ private:
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
-    std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
+    std::array<char, MAX_ARGS> is_nullable{};    /// Plain array is better than std::vector due to one indirection less.
 };
 
 class AggregateFunctionIfRespectNulls final : public IAggregateFunctionHelper<AggregateFunctionIfRespectNulls>
@@ -735,7 +735,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
     const Array & params, const AggregateFunctionProperties & properties) const
 {
-    assert(!arguments.empty());
+    chassert(!arguments.empty());
 
     DataTypes nested_arguments(arguments.begin(), arguments.end() - 1);
     bool has_nullable_payload = std::any_of(
@@ -795,6 +795,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
+void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
