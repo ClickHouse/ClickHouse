@@ -100,6 +100,14 @@ Rope PageCacheHandle::get(ByteRange range)
 
 size_t PageCacheHandle::put(ByteRange range, Rope data)
 {
+    /// Bypass mode (`read_from_page_cache_if_exists_otherwise_bypass_cache`) is a
+    /// read-only probe: a miss must not populate the shared cache. Skip entirely -
+    /// a detached cell is never registered and never read again (the executor
+    /// already has the source bytes), so allocating/copying it is pure waste, and
+    /// counting it as pushed-to-cache would be wrong.
+    if (bypass_if_missing)
+        return 0;
+
     size_t bytes_written = 0;
     for (auto & block : blocks)
     {

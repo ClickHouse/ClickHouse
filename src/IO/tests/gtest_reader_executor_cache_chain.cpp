@@ -305,14 +305,15 @@ public:
         const std::shared_ptr<PageCache> & page_cache,
         const String & file_path,
         size_t block_size,
-        size_t file_size)
+        size_t file_size,
+        bool bypass_if_missing = false)
     {
         PageCacheFile page_file;
         page_file.path = file_path;
         page_file.file_version = "v1";
         return std::make_shared<PageCacheProvider>(
             page_cache, page_file, block_size,
-            /*inject_eviction=*/false, /*bypass_if_missing=*/false,
+            /*inject_eviction=*/false, bypass_if_missing,
             /*file_size_in_bytes=*/file_size);
     }
 
@@ -668,6 +669,50 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
         << "no filesystem cache is in the chain";
     EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - src_before, 0u)
         << "the source must not be touched on a page hit";
+}
+
+
+/// Bypass mode (`read_from_page_cache_if_exists_otherwise_bypass_cache`): a page
+/// miss must serve correct bytes from the source but never populate the cache -
+/// `put` returns 0, nothing is counted as pushed, and a second reader on the same
+/// provider still misses entirely.
+TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
+{
+    constexpr size_t block_size = 64;
+    constexpr size_t file_size = 4 * block_size;   // 256 bytes
+    const String content = makePattern(file_size);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto page_provider = makePageProvider(page_cache, "obj", block_size, file_size, /*bypass_if_missing=*/true);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(page_provider);
+
+    auto & counters = CurrentThread::getProfileEvents();
+    const auto pushed_before = counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
+
+    /// Cold read in bypass mode: serves the file from the source, populates nothing.
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        EXPECT_EQ(drainAll(executor), content);
+        EXPECT_GT(executor.getSourceRequestsCount(), 0u) << "a cold bypass read hits the source";
+    }
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - pushed_before, 0u)
+        << "bypass mode must not push (or count) any bytes to the cache";
+
+    /// A second reader on the same provider still misses - bypass populated nothing.
+    {
+        ReaderExecutor executor(source, objects, caches, /*window_size=*/block_size, /*min_bytes_for_seek=*/0);
+        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
+        EXPECT_EQ(drainAll(executor), content);
+        EXPECT_GT(executor.getSourceRequestsCount(), 0u)
+            << "bypass populated nothing, so the second read still misses";
+    }
 }
 
 
