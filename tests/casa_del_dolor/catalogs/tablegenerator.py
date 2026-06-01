@@ -76,6 +76,125 @@ class LakeTableGenerator:
     ) -> str:
         return ""
 
+    # Safe type promotions supported by Iceberg, Delta, and Paimon
+    _TYPE_PROMOTIONS: dict[type, list[str]] = {
+        sp.ByteType: ["SMALLINT", "INT", "BIGINT"],
+        sp.ShortType: ["INT", "BIGINT"],
+        sp.IntegerType: ["BIGINT"],
+        sp.FloatType: ["DOUBLE"],
+    }
+
+    def _pick_type_promotion(self, col_type: sp.DataType) -> typing.Optional[str]:
+        candidates = self._TYPE_PROMOTIONS.get(type(col_type))
+        if candidates:
+            return random.choice(candidates)
+        if isinstance(col_type, sp.DecimalType):
+            new_prec = min(col_type.precision + random.randint(1, 5), 38)
+            new_scale = col_type.scale
+            if new_prec > col_type.precision:
+                return f"DECIMAL({new_prec},{new_scale})"
+        return None
+
+    def generate_common_alter_statements(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+    ) -> str:
+        next_operation = random.randint(1, 1000)
+        tpath = table.get_table_full_path()
+
+        if next_operation <= 200:
+            # Set random properties
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {tpath} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+        elif next_operation <= 400:
+            # Unset a property
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {tpath} UNSET TBLPROPERTIES ('{key}');"
+        elif next_operation <= 475:
+            # Add a column
+            col_name = f"c_added_{random.randint(1, 1000)}"
+            col_type = self.type_mapper.generate_random_spark_sql_type()
+            stmt = f"ALTER TABLE {tpath} ADD COLUMNS ({col_name} {col_type});"
+            spark.sql(stmt)
+            from pyspark.sql.types import _parse_datatype_string
+
+            table.columns[col_name] = SparkColumn(
+                col_name, _parse_datatype_string(col_type), True, False
+            )
+            return ""
+        elif next_operation <= 550:
+            # Drop a column
+            flat_cols = list(table.flat_columns().keys())
+            if len(flat_cols) > 1:
+                col = random.choice(flat_cols)
+                stmt = f"ALTER TABLE {tpath} DROP COLUMN {col};"
+                spark.sql(stmt)
+                top_level = col.split(".")[0].strip("`")
+                table.columns.pop(top_level, None)
+                return ""
+        elif next_operation <= 625:
+            # Rename a column
+            cols = list(table.columns.keys())
+            if cols:
+                old_name = random.choice(cols)
+                new_name = f"c_renamed_{random.randint(1, 1000)}"
+                if new_name not in table.columns:
+                    stmt = (
+                        f"ALTER TABLE {tpath} RENAME COLUMN {old_name} TO {new_name};"
+                    )
+                    spark.sql(stmt)
+                    sc = table.columns.pop(old_name)
+                    sc.column_name = new_name
+                    table.columns[new_name] = sc
+                    return ""
+        elif next_operation <= 700:
+            # Alter column comment
+            flat_cols = list(table.flat_columns().keys())
+            if flat_cols:
+                col = random.choice(flat_cols)
+                from .datagenerator import SOME_STRINGS
+
+                comment = random.choice(SOME_STRINGS).replace("'", "\\'")
+                return f"ALTER TABLE {tpath} ALTER COLUMN {col} COMMENT '{comment}';"
+        elif next_operation <= 775 and self.get_format() != "paimon":
+            # Alter column SET/DROP NOT NULL (not supported by Paimon)
+            cols = list(table.columns.keys())
+            if cols:
+                col_name = random.choice(cols)
+                sc = table.columns[col_name]
+                action = "DROP" if sc.nullable else "SET"
+                spark.sql(
+                    f"ALTER TABLE {tpath} ALTER COLUMN {col_name} {action} NOT NULL;"
+                )
+                sc.nullable = not sc.nullable
+                return ""
+        elif next_operation <= 850:
+            # Widen column type (numeric promotion)
+            cols = list(table.columns.items())
+            random.shuffle(cols)
+            for col_name, sc in cols:
+                new_type_str = self._pick_type_promotion(sc.spark_type)
+                if new_type_str:
+                    stmt = f"ALTER TABLE {tpath} ALTER COLUMN {col_name} TYPE {new_type_str};"
+                    spark.sql(stmt)
+                    from pyspark.sql.types import _parse_datatype_string
+
+                    sc.spark_type = _parse_datatype_string(new_type_str)
+                    return ""
+        return ""
+
+    def generate_alter_table_statements(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+    ) -> str:
+        return self.generate_common_alter_statements(spark, table)
+
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
         flattened_columns = table.flat_columns()
@@ -209,62 +328,6 @@ class LakeTableGenerator:
     ) -> str:
         return ""
 
-    def generate_alter_table_statements(
-        self,
-        table: SparkTable,
-    ) -> str:
-        """Generate random ALTER TABLE statements for testing"""
-        next_operation = random.randint(
-            1, 1000 if self.get_format() == "iceberg" else 500
-        )
-
-        if next_operation <= 250:
-            # Set random properties
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
-        elif next_operation <= 500:
-            # Unset a property
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
-        elif next_operation <= 600:
-            # Add or drop partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
-        elif next_operation <= 700:
-            # Replace partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset1 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            random.shuffle(partition_clauses)
-            random_subset2 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {table.get_table_full_path()} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
-        elif next_operation <= 800:
-            # Set ORDER BY
-            if random.randint(1, 2) == 1:
-                return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
-            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([' LOCALLY', ''])} ORDERED BY {self.random_ordered_columns(table, True)}"
-        elif next_operation <= 900:
-            # Set distribution
-            if random.randint(1, 2) == 1:
-                return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION"
-            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
-        elif next_operation <= 1000:
-            # Set identifier fields
-            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['SET', 'DROP'])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
-        return ""
-
     @abstractmethod
     def generate_extra_statement(
         self,
@@ -281,6 +344,61 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "iceberg"
+
+    def generate_alter_table_statements(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+    ) -> str:
+        if random.randint(1, 2) == 1:
+            return self.generate_common_alter_statements(spark, table)
+
+        next_operation = random.randint(1, 12)
+        tpath = table.get_table_full_path()
+
+        if next_operation <= 2:
+            # Add or drop partition field
+            partition_clauses = self.add_partition_clauses(table)
+            random.shuffle(partition_clauses)
+            random_subset = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE {tpath} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
+        elif next_operation <= 4:
+            # Replace partition field
+            partition_clauses = self.add_partition_clauses(table)
+            random.shuffle(partition_clauses)
+            random_subset1 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            random.shuffle(partition_clauses)
+            random_subset2 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE {tpath} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+        elif next_operation <= 6:
+            # Set ORDER BY
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {tpath} WRITE UNORDERED"
+            return f"ALTER TABLE {tpath} WRITE{random.choice([' LOCALLY', ''])} ORDERED BY {self.random_ordered_columns(table, True)}"
+        elif next_operation <= 8:
+            # Set distribution
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {tpath} WRITE DISTRIBUTED BY PARTITION"
+            return f"ALTER TABLE {tpath} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
+        elif next_operation <= 10:
+            # Set identifier fields
+            return f"ALTER TABLE {tpath} {random.choice(['SET', 'DROP'])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
+        elif next_operation <= 12:
+            # Reorder columns (FIRST / AFTER)
+            cols = list(table.columns.keys())
+            if len(cols) > 1:
+                col = random.choice(cols)
+                if random.randint(1, 2) == 1:
+                    return f"ALTER TABLE {tpath} ALTER COLUMN {col} FIRST;"
+                other = random.choice([c for c in cols if c != col])
+                return f"ALTER TABLE {tpath} ALTER COLUMN {col} AFTER {other};"
+        return ""
 
     def set_basic_properties(self) -> dict[str, str]:
         properties = {}
@@ -1062,34 +1180,29 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
 
     def generate_alter_table_statements(
         self,
+        spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_operation = random.randint(1, 750)
-
-        if next_operation <= 250:
-            # Set random properties
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
-        elif next_operation <= 500:
-            # Unset a property
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
-        elif next_operation <= 625:
-            # Add a column
-            col_name = f"c_added_{random.randint(1, 1000)}"
-            col_type = self.type_mapper.generate_random_spark_sql_type()
-            return f"ALTER TABLE {table.get_table_full_path()} ADD COLUMNS ({col_name} {col_type});"
-        elif next_operation <= 750:
-            # Drop a column
+        if random.randint(1, 4) == 1:
+            # Delta-specific: ADD/DROP CHECK CONSTRAINT
+            tpath = table.get_table_full_path()
             flat_cols = list(table.flat_columns().keys())
-            if len(flat_cols) > 1:
-                col = random.choice(flat_cols)
-                return f"ALTER TABLE {table.get_table_full_path()} DROP COLUMN {col};"
-        return ""
+            if flat_cols:
+                cname = f"chk_{random.randint(1, 100)}"
+                if random.randint(1, 2) == 1:
+                    col = random.choice(flat_cols)
+                    expr = random.choice(
+                        [
+                            f"{col} IS NOT NULL",
+                            f"length({col}) > 0",
+                            f"{col} >= 0",
+                            f"{col} <> ''",
+                        ]
+                    )
+                    return f"ALTER TABLE {tpath} ADD CONSTRAINT {cname} CHECK ({expr});"
+                else:
+                    return f"ALTER TABLE {tpath} DROP CONSTRAINT IF EXISTS {cname};"
+        return self.generate_common_alter_statements(spark, table)
 
     def generate_extra_statement(
         self,
