@@ -36,6 +36,10 @@ BlockIO InterpreterResetSessionQuery::execute()
     return {};
 }
 
+/// Declared in `registerInterpreters.cpp`; repeated here so the definition has a
+/// visible prototype when this file is compiled outside the unity build.
+void registerInterpreterResetSessionQuery(InterpreterFactory & factory);
+
 void registerInterpreterResetSessionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
