@@ -190,7 +190,7 @@ void calculateHashTableCacheKeys(
     }
 }
 
-void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
 {
     std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(root, cache_keys, raw_hashes);
