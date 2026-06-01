@@ -4250,7 +4250,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
                 if (table_function_argument_function_name == "eval")
                 {
-                    auto & eval_arguments = table_function_node_to_resolve_typed->getArguments().getNodes();
+                    auto & eval_arguments = table_function_node_to_resolve->as<TableFunctionNode &>().getArguments().getNodes();
                     if (!(eval_arguments.size() == 1 && isSubqueryNodeType(eval_arguments[0]->getNodeType())))
                     {
                         for (auto & eval_argument : eval_arguments)
