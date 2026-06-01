@@ -413,6 +413,20 @@ Fortunately, there is a special case where ClickHouse can leverage the inverted 
 
 See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
 
+#### `multiSearchAny` and `multiMatchAny` {#functions-example-multisearchany-multimatchany}
+
+[multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny) and its UTF-8 variant [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8) test whether any of several literal substrings occurs in the haystack, and [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny) tests whether any of several regular expressions matches.
+These functions use the text index under the same conditions as `LIKE` and `match` (see above): ClickHouse must be able to extract complete tokens from each needle, and the list of needles must be constant.
+A granule is read if any needle may be present in it.
+
+For `multiMatchAny`, if a single pattern cannot be reduced to a token requirement (for example `.*`, which matches any document), the text index cannot be used and the query falls back to a full scan.
+
+Example for the text index with `splitByNonAlpha` tokenizer:
+
+```sql
+SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' support ']);
+```
+
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
 Similar to `LIKE`, functions [startsWith](/sql-reference/functions/string-functions.md/#startsWith) and [endsWith](/sql-reference/functions/string-functions.md/#endsWith) can only use a text index, if complete tokens can be extracted from the search term.

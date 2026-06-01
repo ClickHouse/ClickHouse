@@ -1,0 +1,31 @@
+-- multiMatchAny returns the same rows with and without the index
+1	Well, Hello ClickHouse !
+5	Its An OLAP Database
+1	Well, Hello ClickHouse !
+5	Its An OLAP Database
+Granules: 6/6
+Granules: 2/6
+-- a pattern with alternations is handled like match()
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+Granules: 6/6
+Granules: 2/6
+-- the index is recognized by force_data_skipping_indices
+3
+-- a catch-all pattern disables pruning, but results stay correct
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+6	True World Champion
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+6	True World Champion
+Granules: 6/6
+-- a catch-all pattern cannot satisfy force_data_skipping_indices

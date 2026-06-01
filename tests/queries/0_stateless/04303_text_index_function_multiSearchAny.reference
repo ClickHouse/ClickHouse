@@ -1,0 +1,32 @@
+-- multiSearchAny returns the same rows with and without the index
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+Granules: 6/6
+Granules: 3/6
+-- multiSearchAnyUTF8 behaves identically
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+6	True World Champion
+Granules: 6/6
+Granules: 3/6
+-- a needle that is absent everywhere prunes all granules
+Granules: 6/6
+Granules: 0/6
+-- the index is recognized by force_data_skipping_indices
+3
+-- a single-word needle has no complete token, so it cannot prune, but results stay correct
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+4	Say Hello !
+1	Well, Hello ClickHouse !
+2	Well, Hello World !
+4	Say Hello !
+Granules: 6/6
+Granules: 6/6
+-- an empty needle array is always false
+0
+0
