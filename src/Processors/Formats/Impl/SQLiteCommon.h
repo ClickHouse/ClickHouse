@@ -49,16 +49,16 @@ inline void checkSQLiteStatus(sqlite3 * db, int status, std::string_view message
     }
 }
 
-inline SQLitePtr openSQLiteDatabase(const String & path)
+inline SQLitePtr openSQLiteDatabaseWithFlags(const String & path, int flags, std::string_view message)
 {
     sqlite3 * db = nullptr;
-    int status = sqlite3_open(path.c_str(), &db);
+    int status = sqlite3_open_v2(path.c_str(), &db, flags, nullptr);
     if (status != SQLITE_OK)
     {
-        String message = db ? sqlite3_errmsg(db) : sqlite3_errstr(status);
+        String sqlite_message = db ? sqlite3_errmsg(db) : sqlite3_errstr(status);
         if (db)
             sqlite3_close(db);
-        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot open SQLite database {}. Status: {}. Message: {}", path, status, message);
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "{} {}. Status: {}. Message: {}", message, path, status, sqlite_message);
     }
 
     SQLitePtr result(db, sqlite3_close);
@@ -72,6 +72,16 @@ inline SQLitePtr openSQLiteDatabase(const String & path)
         "Cannot disable SQLite DQS in DML statements");
 
     return result;
+}
+
+inline SQLitePtr openSQLiteDatabase(const String & path)
+{
+    return openSQLiteDatabaseWithFlags(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, "Cannot open SQLite database");
+}
+
+inline SQLitePtr openSQLiteDatabaseReadOnly(const String & path)
+{
+    return openSQLiteDatabaseWithFlags(path, SQLITE_OPEN_READONLY, "Cannot open read-only SQLite database");
 }
 
 inline SQLiteDatabase openSQLiteDatabaseFromMemory(ReadBuffer & in)
@@ -105,7 +115,7 @@ inline SQLiteDatabase openSQLiteDatabaseForRead(ReadBuffer & in, const FormatSet
             if (file_in->isRegularLocalFile(&view_offset) && view_offset == 0)
             {
                 SQLiteDatabase result;
-                result.db = openSQLiteDatabase(file_in->getFileName());
+                result.db = openSQLiteDatabaseReadOnly(file_in->getFileName());
                 return result;
             }
         }
