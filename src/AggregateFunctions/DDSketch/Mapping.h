@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <base/types.h>
 
 #include <IO/ReadHelpers.h>
@@ -47,6 +49,15 @@ public:
     }
 
     Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
+
+    /// Keys a real value could produce, so we can reject corrupted bins on deserialize
+    /// Clamped to int because that's how keys are stored
+    std::pair<Int64, Int64> validKeyRange() const
+    {
+        const auto lo = std::max<Int64>(std::numeric_limits<int>::min(), static_cast<Int64>(std::floor(logGamma(min_possible) + offset)));
+        const auto hi = std::min<Int64>(std::numeric_limits<int>::max(), static_cast<Int64>(std::floor(logGamma(max_possible) + offset)));
+        return {lo, hi};
+    }
 
     Float64 logGamma(Float64 value) const { return std::log(value) * multiplier; }
 

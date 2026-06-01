@@ -77,7 +77,7 @@ public:
         }
 
         Float64 rank = quantile * (count - 1);
-        Float64 quantile_value = 0;
+        Float64 quantile_value;
         if (rank < negative_store->count)
         {
             Float64 reversed_rank = negative_store->count - rank - 1;
@@ -179,20 +179,23 @@ public:
         }
         mapping->deserialize(buf);
 
+        /// reject bins with impossible keys now, otherwise they only blow up later during a merge
+        const auto [min_valid_key, max_valid_key] = mapping->validKeyRange();
+
         // Read the positive and negative stores
         readBinary(flag, buf);
         if (flag != enc.FlagTypePositiveStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for positive store");
         }
-        store->deserialize(buf);
+        store->deserialize(buf, min_valid_key, max_valid_key);
 
         readBinary(flag, buf);
         if (flag != enc.FlagTypeNegativeStore)
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag for negative store");
         }
-        negative_store->deserialize(buf);
+        negative_store->deserialize(buf, min_valid_key, max_valid_key);
 
         // Read the zero count
         readBinary(flag, buf);
