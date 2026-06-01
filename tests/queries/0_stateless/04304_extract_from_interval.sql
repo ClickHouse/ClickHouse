@@ -36,10 +36,16 @@ SELECT EXTRACT(DAY   FROM INTERVAL 5 MONTH); -- { serverError ILLEGAL_TYPE_OF_AR
 SELECT EXTRACT(HOUR  FROM materialize(INTERVAL 5 DAY)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT EXTRACT(DAY FROM toIntervalHour(number)) FROM numbers(0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Sub-second extraction also works on DateTime64.
+-- Sub-second extraction also works on DateTime64 and Time64.
 SELECT EXTRACT(MILLISECOND FROM toDateTime64('2024-01-01 10:20:30.123456789', 9));
 SELECT EXTRACT(MICROSECOND FROM toDateTime64('2024-01-01 10:20:30.123456789', 9));
 SELECT EXTRACT(NANOSECOND  FROM toDateTime64('2024-01-01 10:20:30.123456789', 9));
+SELECT toMicrosecond(toTime64('00:00:01.123456', 6));
+SELECT toNanosecond(toTime64('00:00:01.123456789', 9));
+
+-- Interval through Dynamic: must not narrow back to UInt8 (would wrap 300 to 44).
+SELECT toDayOfMonth(materialize(INTERVAL 300 DAY)::Dynamic);
+SELECT toYear(materialize(INTERVAL 70000 YEAR)::Dynamic);
 
 -- Non-extractor functions sharing the same base class still reject Interval.
 SELECT toStartOfYear(INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

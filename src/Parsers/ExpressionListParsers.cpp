@@ -1657,17 +1657,17 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
                     make_intrusive<ASTLiteral>(UInt64(1000))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
         case ExtractUnit::TimezoneHour:
-            /// PostgreSQL TIMEZONE_HOUR: signed hour part of the UTC offset (e.g. +5:30 -> 5, -3:30 -> -3)
+            /// Int64 divisor so a negative `timezoneOffset` stays signed (e.g. -3:30 -> -3).
             return makeASTFunction("intDiv",
                 makeASTFunction("timezoneOffset", expr),
-                make_intrusive<ASTLiteral>(UInt64(3600)));
+                make_intrusive<ASTLiteral>(Int64(3600)));
         case ExtractUnit::TimezoneMinute:
-            /// PostgreSQL TIMEZONE_MINUTE: signed minute part of the UTC offset (e.g. +5:30 -> 30, -3:30 -> -30)
+            /// Int64 divisors so `modulo(-12600, 3600)` returns -1800 (signed), not a wrapped UInt64.
             return makeASTFunction("intDiv",
                 makeASTFunction("modulo",
                     makeASTFunction("timezoneOffset", expr),
-                    make_intrusive<ASTLiteral>(UInt64(3600))),
-                make_intrusive<ASTLiteral>(UInt64(60)));
+                    make_intrusive<ASTLiteral>(Int64(3600))),
+                make_intrusive<ASTLiteral>(Int64(60)));
         case ExtractUnit::None:
             UNREACHABLE();
     }

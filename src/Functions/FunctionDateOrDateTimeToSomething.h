@@ -106,9 +106,13 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
-        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeTime> && !std::is_same_v<ToDataType, DataTypeDateTime64> && !std::is_same_v<ToDataType, DataTypeTime64>)
-            return std::make_shared<ToDataType>();
-        return nullptr;
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+            return nullptr;
+        /// Extract-capable functions widen to Int64 for Interval; declaring the narrow type
+        /// here would have the Dynamic adaptor cast it back and wrap on out-of-range values.
+        if (this->acceptsIntervalArgument())
+            return nullptr;
+        return std::make_shared<ToDataType>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
