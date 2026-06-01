@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Core/Types.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -36,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -341,9 +341,12 @@ void PrometheusHTTPProtocolAPI::getSeries(
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
 
-    /// Build query: SELECT metric_name, tags FROM <tags_table> [WHERE metric_name LIKE match]
+    /// Build query: SELECT DISTINCT metric_name, tags FROM <tags_table> [WHERE metric_name = match]
+    /// The tags target is usually `AggregatingMergeTree`/`ReplacingMergeTree` and stores a row per write,
+    /// so the same series can be present multiple times until parts are merged. `DISTINCT` deduplicates
+    /// by series identity (metric name + full label set).
     String query = fmt::format(
-        "SELECT {}, {} FROM {}",
+        "SELECT DISTINCT {}, {} FROM {}",
         TimeSeriesColumnNames::MetricName,
         TimeSeriesColumnNames::Tags,
         tags_table_id.getFullTableName());
@@ -356,8 +359,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
             TimeSeriesColumnNames::MetricName,
             quoteString(match_param));
     }
-
-    query += " LIMIT 10000";
 
     LOG_TRACE(log, "Prometheus series query: {}", query);
 
@@ -386,26 +387,25 @@ void PrometheusHTTPProtocolAPI::getSeries(
             writeString(R"({"__name__":)", response);
             writeJSONString(metric_name_col->getDataAt(i), response, format_settings);
 
-            /// Write tags from the Map column
-            if (const auto * array_column = typeid_cast<const ColumnArray *>(tags_col.get()))
+            /// The `tags` column is a `Map(String, String)`, which materializes as `ColumnMap`.
+            /// `ColumnMap` wraps a `ColumnArray(ColumnTuple(keys, values))`, so read the nested array
+            /// to enumerate the key-value pairs of each row.
+            const auto & map_column = typeid_cast<const ColumnMap &>(*tags_col);
+            const auto & array_column = map_column.getNestedColumn();
+            const auto & offsets = array_column.getOffsets();
+            size_t start = (i == 0) ? 0 : offsets[i - 1];
+            size_t end = offsets[i];
+
+            const auto & tuple_column = map_column.getNestedData();
+            const auto & key_column = tuple_column.getColumn(0);
+            const auto & value_column = tuple_column.getColumn(1);
+
+            for (size_t j = start; j < end; ++j)
             {
-                const auto & offsets = array_column->getOffsets();
-                size_t start = (i == 0) ? 0 : offsets[i - 1];
-                size_t end = offsets[i];
-
-                if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(&array_column->getData()))
-                {
-                    const auto & key_column = tuple_column->getColumn(0);
-                    const auto & value_column = tuple_column->getColumn(1);
-
-                    for (size_t j = start; j < end; ++j)
-                    {
-                        writeString(",", response);
-                        writeJSONString(key_column.getDataAt(j), response, format_settings);
-                        writeString(":", response);
-                        writeJSONString(value_column.getDataAt(j), response, format_settings);
-                    }
-                }
+                writeString(",", response);
+                writeJSONString(key_column.getDataAt(j), response, format_settings);
+                writeString(":", response);
+                writeJSONString(value_column.getDataAt(j), response, format_settings);
             }
 
             writeString("}", response);
