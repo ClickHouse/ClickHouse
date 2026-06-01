@@ -354,7 +354,7 @@ static void writeMetadataFiles(
     for (const auto & history_record : plan.history)
     {
         /// Compaction rewrites the data snapshots, which are appends. Skip everything else.
-        const auto * append = history_record.snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        const auto * append = history_record.snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
         if (!append || append->added_files == 0)
         {
             new_snapshots.push_back(MetadataGenerator::NextMetadataResult{});
@@ -490,7 +490,7 @@ static void writeMetadataFiles(
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_list_renamings;
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        const auto * append = plan.history[i].snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        const auto * append = plan.history[i].snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
         if (!append || append->added_files == 0)
             continue;
 
@@ -499,7 +499,7 @@ static void writeMetadataFiles(
 
     for (size_t i = 0; i < plan.history.size(); ++i)
     {
-        const auto * append = plan.history[i].snapshot_summary.asUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
+        const auto * append = plan.history[i].snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
         if (!append || append->added_files == 0)
             continue;
 

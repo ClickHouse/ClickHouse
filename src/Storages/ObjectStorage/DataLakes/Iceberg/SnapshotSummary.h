@@ -6,9 +6,8 @@
 
 #include <optional>
 #include <variant>
-#include <Poco/JSON/Object.h>
 #include <base/types.h>
-
+#include <Poco/JSON/Object.h>
 
 namespace DB::Iceberg
 {
@@ -76,39 +75,34 @@ enum class SnapshotSummaryOperation
     REPLACE
 };
 
-/// getHistory() -> snapshot_summary.getOperation() -> std::optional<operation>
-struct SnapshotSummary
+class SnapshotSummary
 {
-    template <typename UpdateType>
-    UpdateType * asUpdate()
-    {
-        return std::get_if<UpdateType>(&update);
-    }
-
-    template <typename UpdateType>
-    const UpdateType * asUpdate() const
-    {
-        return std::get_if<UpdateType>(&update);
-    }
-
-    /// The operation this summary describes, derived from the active `update` alternative.
-    Iceberg::SnapshotSummaryOperation getOperation() const;
-
-    void applyTotals(std::optional<SnapshotSummaryTotals> other_totals);
-
-    Poco::JSON::Object::Ptr toJSON() const;
-
-    static SnapshotSummary fromJSON(const Poco::JSON::Object & obj);
-
+public:
     SnapshotSummary() = default;
 
-    explicit SnapshotSummary(SnapshotSummaryUpdate update_)
-        : update(std::move(update_))
+    explicit SnapshotSummary(SnapshotSummaryUpdate update_, std::optional<SnapshotSummaryTotals> parent_totals = std::nullopt);
+
+    template <typename UpdateType>
+    UpdateType * getUpdate()
     {
+        return std::get_if<UpdateType>(&update);
     }
 
+    template <typename UpdateType>
+    const UpdateType * getUpdate() const
+    {
+        return std::get_if<UpdateType>(&update);
+    }
+
+    Iceberg::SnapshotSummaryOperation getOperation() const;
+    SnapshotSummaryTotals getTotals() const;
+
+    Poco::JSON::Object::Ptr toJSON() const;
+    static SnapshotSummary fromJSON(const Poco::JSON::Object & obj);
+
+private:
     SnapshotSummaryUpdate update;
-    std::optional<SnapshotSummaryTotals> totals;
+    SnapshotSummaryTotals totals;
 };
 
 }
