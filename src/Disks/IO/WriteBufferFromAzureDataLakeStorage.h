@@ -43,7 +43,11 @@ public:
 private:
     void ensureCreated();
     void appendBufferedData();
-    void runWithRetries(const std::function<void()> & op, const char * what);
+    void runWithRetries(
+        const std::function<void()> & op,
+        const char * what,
+        BlobStorageLogElement::EventType event_type,
+        size_t data_size);
 
     LoggerPtr log;
 
@@ -55,6 +59,8 @@ private:
     bool file_created = false;
     bool is_prefinalized = false;
     int64_t bytes_appended = 0;
+
+    char fake_buffer_when_prefinalized[1] = {};
 
     String container_for_logging;
     BlobStorageLogWriterPtr blob_log;

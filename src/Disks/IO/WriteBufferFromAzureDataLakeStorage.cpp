@@ -129,8 +129,27 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
     }
 }
 
-void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<void()> & op, const char * what)
+void WriteBufferFromAzureDataLakeStorage::runWithRetries(
+    const std::function<void()> & op,
+    const char * what,
+    BlobStorageLogElement::EventType event_type,
+    size_t data_size)
 {
+    auto log_event = [&](Int32 error_code, const String & error_message, size_t elapsed_us)
+    {
+        if (blob_log)
+            blob_log->addEvent(
+                event_type,
+                /* bucket */ container_for_logging,
+                /* remote_path */ blob_path,
+                /* local_path */ {},
+                /* data_size */ data_size,
+                /* elapsed_microseconds */ elapsed_us,
+                error_code,
+                error_message);
+    };
+
+    Stopwatch watch;
     size_t backoff_ms = 100;
     for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
@@ -138,6 +157,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
         try
         {
             op();
+            log_event(/*error_code=*/ 0, /*error_message=*/ {}, watch.elapsedMicroseconds());
             LOG_INFO(log, "ADLS Gen2 {} attempt {} for `{}` succeeded", what, attempt, blob_path);
             return;
         }
@@ -146,6 +166,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
             const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
             if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
+                log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());
                 throw Exception(
                     ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                     "ADLS Gen2 {} failed for `{}`: HTTP {}: {}",
@@ -162,6 +183,7 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
             backoff_ms *= 2;
         }
     }
+    log_event(static_cast<Int32>(ErrorCodes::AZURE_BLOB_STORAGE_ERROR), "retries exhausted", watch.elapsedMicroseconds());
     throw Exception(
         ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
         "ADLS Gen2 {} failed for `{}`",
@@ -181,7 +203,11 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
         create_options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
 
     LOG_INFO(log, "Entering Create for ADLS Gen2 file `{}` (url={})", blob_path, file_client.GetUrl());
-    runWithRetries([&]() { file_client.Create(create_options); }, "Create");
+    runWithRetries(
+        [&]() { file_client.Create(create_options); },
+        "Create",
+        BlobStorageLogElement::EventType::MultiPartUploadCreate,
+        /*data_size=*/ 0);
     file_created = true;
     LOG_INFO(log, "Created ADLS Gen2 file `{}`", blob_path);
 }
@@ -206,7 +232,9 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
             Azure::Core::IO::MemoryBodyStream stream(data_ptr, to_append);
             file_client.Append(stream, offset_for_append);
         },
-        "Append");
+        "Append",
+        BlobStorageLogElement::EventType::MultiPartUploadWrite,
+        to_append);
 
     bytes_appended += static_cast<int64_t>(to_append);
     LOG_INFO(log, "Appended for `{}`: bytes_appended={}", blob_path, bytes_appended);
@@ -231,8 +259,13 @@ void WriteBufferFromAzureDataLakeStorage::preFinalize()
 
     LOG_INFO(log, "Entering preFinalize for ADLS Gen2 file `{}`", blob_path);
     appendBufferedData();
+    WriteBuffer::set(fake_buffer_when_prefinalized, sizeof(fake_buffer_when_prefinalized));
     ensureCreated();
-    runWithRetries([&]() { file_client.Flush(bytes_appended); }, "Flush");
+    runWithRetries(
+        [&]() { file_client.Flush(bytes_appended); },
+        "Flush",
+        BlobStorageLogElement::EventType::MultiPartUploadComplete,
+        /*data_size=*/ 0);
     LOG_INFO(log, "Flushed ADLS Gen2 file `{}` ({} bytes)", blob_path, bytes_appended);
 }
 
