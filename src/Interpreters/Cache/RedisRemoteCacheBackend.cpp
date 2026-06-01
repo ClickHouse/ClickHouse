@@ -152,7 +152,6 @@ void RedisRemoteCacheBackend::ensureScriptsLoaded(Poco::Redis::Client & client)
     sha_set           = load(SET_SCRIPT);
     sha_clear_by_tag  = load(CLEAR_BY_TAG_SCRIPT);
     sha_release_lock  = load(RELEASE_LOCK_SCRIPT);
-    sha_renew_lock    = load(RENEW_LOCK_SCRIPT);
     sha_dump          = load(DUMP_SCRIPT);
     sha_count         = load(COUNT_SCRIPT);
     sha_set_if_valid  = load(SET_IF_VALID_SCRIPT);
@@ -168,7 +167,6 @@ RedisRemoteCacheBackend::ScriptShas RedisRemoteCacheBackend::getScriptShas() con
     shas.set = sha_set;
     shas.clear_by_tag = sha_clear_by_tag;
     shas.release_lock = sha_release_lock;
-    shas.renew_lock = sha_renew_lock;
     shas.dump = sha_dump;
     shas.count = sha_count;
     shas.set_if_valid = sha_set_if_valid;
@@ -564,25 +562,6 @@ try
 catch (...)
 {
     LOG_WARNING(logger, "Failed to release lock for key {}: {}", redis_key, getCurrentExceptionMessage(false));
-}
-
-bool RedisRemoteCacheBackend::renewLock(const std::string & redis_key, const String & token, std::chrono::milliseconds ttl)
-try
-{
-    return execute([&](Poco::Redis::Client & client)
-    {
-        return executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
-        {
-            Poco::Redis::Command cmd("EVALSHA");
-            cmd << shas.renew_lock << "1" << redis_key << token << std::to_string(ttl.count());
-            return client.execute<Poco::Int64>(cmd) != 0;
-        });
-    });
-}
-catch (...)
-{
-    LOG_WARNING(logger, "Failed to renew lock for key {}: {}", redis_key, getCurrentExceptionMessage(false));
-    return false;
 }
 
 /// Check lock existence via `EXISTS`. Returns false on error.

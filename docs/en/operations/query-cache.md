@@ -325,11 +325,13 @@ To avoid this redundant work, the Redis backend implements an `IN_PROGRESS` lock
 3. Once the writer stores the result, it deletes the lock key. Polling nodes find the result and return it directly without running the query.
 4. If the lock expires (e.g. the writer node crashed), polling nodes stop waiting and execute the query themselves, preventing a permanent stall.
 
+The lock is a fixed-TTL advisory lease: it is **not** renewed while the query runs. `lock_ttl_ms` therefore bounds the window during which a query is protected from stampede. A query that runs longer than `lock_ttl_ms` is still cached when it finishes (the result write does not depend on still holding the lock), but during the part of its execution that extends beyond `lock_ttl_ms` other nodes may stop waiting and recompute the same query. Set `lock_ttl_ms` to at least the duration of the slowest query you want fully protected.
+
 The three lock parameters in `query_cache.redis` control this behaviour:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `lock_ttl_ms` | `30000` | Lock key TTL in milliseconds. Must be longer than the slowest expected query. |
+| `lock_ttl_ms` | `30000` | Lock key TTL in milliseconds. Bounds the stampede-protection window (the lock is not renewed); set it to at least the duration of the slowest query you want protected. |
 | `lock_poll_interval_ms` | `200` | How long each waiting node sleeps between Redis polls. |
 | `lock_max_wait_ms` | `lock_ttl_ms` | Maximum total time a node will wait before degrading to executing the query itself. |
 

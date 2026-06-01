@@ -12,6 +12,8 @@
             <receive_timeout_ms>1000</receive_timeout_ms>
             <max_retries>1</max_retries>
             <retry_delay_ms>50</retry_delay_ms>
+            <!-- Fixed-TTL advisory lease (not renewed): bounds the stampede-protection window.
+                 A query slower than this is still cached on completion. -->
             <lock_ttl_ms>5000</lock_ttl_ms>
             <lock_poll_interval_ms>100</lock_poll_interval_ms>
             <lock_max_wait_ms>5000</lock_max_wait_ms>

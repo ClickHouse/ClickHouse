@@ -376,6 +376,12 @@ public:
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
     void finalizeWrite();
+
+    /// True if, at writer construction time, a non-stale result was already available
+    /// (a concurrent local writer inserted it, or — for the remote cache — another node
+    /// computed it while we waited on the `IN_PROGRESS` lock). The caller uses this to
+    /// serve the result from the cache instead of executing the freshly built pipeline.
+    bool hasEntryAlreadyAvailable() const { return entry_already_available; }
 private:
     std::mutex mutex;
     IQueryResultCacheStorage & storage;
@@ -390,6 +396,9 @@ private:
     std::shared_ptr<QueryResultCache::Entry> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     std::atomic<bool> was_finalized = false;
+    /// Set once in the constructor; read once on the constructing thread before the writer
+    /// is attached to the pipeline, so a plain `bool` is sufficient.
+    bool entry_already_available = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(

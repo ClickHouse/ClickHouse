@@ -1854,14 +1854,45 @@ static BlockIO executeQueryImpl(
                                     settings[Setting::max_block_size],
                                     settings[Setting::query_cache_max_size_in_bytes],
                                     settings[Setting::query_cache_max_entries]);
-                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(std::move(query_result_cache_writer_value));
-                                res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
-                                query_result_cache_usage = QueryResultCacheUsage::Write;
+
+                                if (query_result_cache_writer_value.hasEntryAlreadyAvailable())
+                                {
+                                    /// While building this query we waited on an `IN_PROGRESS` lock and another node
+                                    /// (or a concurrent local writer) produced the result. Serve it from the cache
+                                    /// instead of executing the freshly built pipeline. Re-read with a read-path key
+                                    /// (it maps to the same cache entry) so access and staleness checks are applied.
+                                    QueryResultCache::Key read_key(
+                                        out_ast, context->getCurrentDatabase(), *settings_copy,
+                                        context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(),
+                                        /* is_subquery = */ false);
+                                    QueryResultCacheReader reader = query_result_cache->createReader(read_key);
+                                    if (reader.hasCacheEntryForKey())
+                                    {
+                                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+                                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+
+                                        QueryPipeline pipeline;
+                                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                                        res.pipeline = std::move(pipeline);
+                                        query_result_cache_usage = QueryResultCacheUsage::Read;
+                                    }
+                                    /// else: the entry vanished after the wait (e.g. concurrent `SYSTEM CLEAR QUERY CACHE`) -
+                                    /// fall through and execute the already-built pipeline normally. No write happens
+                                    /// because this node does not hold the `IN_PROGRESS` lock.
+                                }
+                                else
+                                {
+                                    auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(std::move(query_result_cache_writer_value));
+                                    res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
+                                    query_result_cache_usage = QueryResultCacheUsage::Write;
+                                }
                             }
 
                             /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
-                            if (settings[Setting::enable_reads_from_query_cache])
+                            /// If we served the result from the cache above (Read), keep the cached entry's real
+                            /// expiry instead of overwriting it with this node's would-be write expiry.
+                            if (settings[Setting::enable_reads_from_query_cache] && query_result_cache_usage != QueryResultCacheUsage::Read)
                                 result_details.query_cache_entry_expires_at = expires_at;
                     }
                 }

@@ -109,9 +109,6 @@ public:
     /// if the stored value matches the given token. Best-effort, never throws.
     void releaseLock(const std::string & redis_key, const String & token);
 
-    /// Renew the lock TTL if the token still matches.
-    bool renewLock(const std::string & redis_key, const String & token, std::chrono::milliseconds ttl);
-
     /// Returns true if the lock key exists. Never throws (returns false on error).
     bool lockExists(const std::string & redis_key);
 
@@ -149,7 +146,6 @@ private:
         std::string set;
         std::string clear_by_tag;
         std::string release_lock;
-        std::string renew_lock;
         std::string dump;
         std::string count;
         std::string set_if_valid;
@@ -250,13 +246,6 @@ private:
         "    return 0 "
         "end";
 
-    static constexpr std::string_view RENEW_LOCK_SCRIPT =
-        "if redis.call('GET', KEYS[1]) == ARGV[1] then "
-        "    return redis.call('PEXPIRE', KEYS[1], ARGV[2]) "
-        "else "
-        "    return 0 "
-        "end";
-
     static constexpr std::string_view DUMP_SCRIPT =
         "local cursor = '0' "
         "local result = {} "
@@ -288,11 +277,12 @@ private:
         "until cursor == '0' "
         "return result";
 
+    /// Generation checks guard the `SYSTEM CLEAR QUERY CACHE` race; the write no longer
+    /// depends on still holding the `IN_PROGRESS` lock, so a query that ran longer than the
+    /// lock TTL (whose lock already expired) can still populate the cache. The lock is only
+    /// cleaned up if it is still ours, so we never delete a lock another node re-acquired
+    /// after our TTL expired.
     static constexpr std::string_view SET_IF_VALID_SCRIPT =
-        "local lock_value = redis.call('GET', KEYS[2]) "
-        "if lock_value ~= ARGV[1] then "
-        "    return 0 "
-        "end "
         "local global_generation = tonumber(redis.call('GET', KEYS[3]) or '0') "
         "if global_generation ~= tonumber(ARGV[2]) then "
         "    return 0 "
@@ -302,7 +292,9 @@ private:
         "    return 0 "
         "end "
         "redis.call('SET', KEYS[1], ARGV[4], 'PX', ARGV[5]) "
-        "redis.call('DEL', KEYS[2]) "
+        "if redis.call('GET', KEYS[2]) == ARGV[1] then "
+        "    redis.call('DEL', KEYS[2]) "
+        "end "
         "return 1";
 
     /// Atomically GET the data key; if it exists return it, otherwise try to
@@ -367,7 +359,6 @@ private:
     std::string sha_set;
     std::string sha_clear_by_tag;
     std::string sha_release_lock;
-    std::string sha_renew_lock;
     std::string sha_dump;
     std::string sha_count;
     std::string sha_set_if_valid;

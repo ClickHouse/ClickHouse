@@ -41,17 +41,10 @@ RemoteQueryResultCache::RemoteQueryResultCache(
 
 RemoteQueryResultCache::~RemoteQueryResultCache()
 {
-    std::vector<HeldLockInfo> locks_to_stop;
-    {
-        std::lock_guard lock(mutex);
-        locks_to_stop.reserve(held_locks.size());
-        for (auto & [redis_key, lock_info] : held_locks)
-            locks_to_stop.emplace_back(std::move(lock_info));
-        held_locks.clear();
-    }
-
-    for (auto & lock_info : locks_to_stop)
-        stopHeartbeat(lock_info);
+    std::lock_guard lock(mutex);
+    /// No heartbeat threads to stop. Any locks still held by this node are left to expire by
+    /// their TTL in Redis (same behavior as before, just without the renewal threads).
+    held_locks.clear();
 }
 
 /// Fetch the cached result from Redis, verify access rights and
@@ -135,56 +128,6 @@ std::string RemoteQueryResultCache::lockKey(const std::string & redis_key)
     return redis_key + ":lock";
 }
 
-void RemoteQueryResultCache::startHeartbeat(const std::string & redis_key, const String & token)
-{
-    const auto interval = std::max(std::chrono::milliseconds(1), lock_ttl / 3);
-    const auto state = std::make_shared<HeartbeatState>();
-    const auto lk = lockKey(redis_key);
-
-    std::thread heartbeat([this, lk, token, state, interval]
-    {
-        std::unique_lock state_lock(state->mutex);
-        while (!state->stop)
-        {
-            /// Sleep up to `interval`, but return early if `stop` is set so that
-            /// query teardown does not wait for the next sleep boundary.
-            if (state->cv.wait_for(state_lock, interval, [&]{ return state->stop; }))
-                break;
-
-            /// Release the heartbeat lock while talking to Redis so that a
-            /// concurrent `stopHeartbeat` does not block on the network round-trip.
-            state_lock.unlock();
-            const bool renewed = backend.renewLock(lk, token, lock_ttl);
-            state_lock.lock();
-
-            if (!renewed)
-            {
-                LOG_TRACE(logger, "Stopped renewing `IN_PROGRESS` lock {} because it is no longer owned by this writer", lk);
-                break;
-            }
-        }
-    });
-
-    {
-        std::lock_guard lock(mutex);
-        auto it = held_locks.find(redis_key);
-        if (it == held_locks.end())
-        {
-            std::lock_guard state_lock(state->mutex);
-            state->stop = true;
-            state->cv.notify_all();
-        }
-        else
-        {
-            it->second.heartbeat_state = state;
-            it->second.heartbeat_thread = std::move(heartbeat);
-            return;
-        }
-    }
-
-    heartbeat.join();
-}
-
 std::optional<RemoteQueryResultCache::HeldLockInfo> RemoteQueryResultCache::takeHeldLockInfo(const std::string & redis_key)
 {
     std::lock_guard lock(mutex);
@@ -195,19 +138,6 @@ std::optional<RemoteQueryResultCache::HeldLockInfo> RemoteQueryResultCache::take
     HeldLockInfo info = std::move(it->second);
     held_locks.erase(it);
     return info;
-}
-
-void RemoteQueryResultCache::stopHeartbeat(HeldLockInfo & info)
-{
-    if (info.heartbeat_state)
-    {
-        std::lock_guard state_lock(info.heartbeat_state->mutex);
-        info.heartbeat_state->stop = true;
-        info.heartbeat_state->cv.notify_all();
-    }
-
-    if (info.heartbeat_thread.joinable())
-        info.heartbeat_thread.join();
 }
 
 /// Poll Redis until a valid entry appears, the lock disappears
@@ -299,11 +229,8 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
         auto fallback_token = backend.tryAcquireLock(lk, lock_ttl);
         if (!fallback_token.empty())
         {
-            {
-                std::lock_guard lock(mutex);
-                held_locks.emplace(redis_key, HeldLockInfo{fallback_token, std::this_thread::get_id(), {}, {}});
-            }
-            startHeartbeat(redis_key, fallback_token);
+            std::lock_guard lock(mutex);
+            held_locks.emplace(redis_key, HeldLockInfo{fallback_token, std::this_thread::get_id()});
             LOG_TRACE(logger, "Acquired IN_PROGRESS lock for query {} after stale entry (remote cache)", doubleQuoteString(key.query_string));
             return false;
         }
@@ -315,11 +242,8 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
     if (gor.status == 2)
     {
         /// Lock acquired — this node becomes the writer.
-        {
-            std::lock_guard lock(mutex);
-            held_locks.emplace(redis_key, HeldLockInfo{token, std::this_thread::get_id(), {}, {}});
-        }
-        startHeartbeat(redis_key, token);
+        std::lock_guard lock(mutex);
+        held_locks.emplace(redis_key, HeldLockInfo{token, std::this_thread::get_id()});
         LOG_TRACE(logger, "Acquired IN_PROGRESS lock for query {} (remote cache)", doubleQuoteString(key.query_string));
         return false;
     }
@@ -355,14 +279,10 @@ void RemoteQueryResultCache::setEntry(const Key & key, std::shared_ptr<Entry> en
     if (!lock_info.has_value())
         return;
 
-    /// Keep the heartbeat renewing the lock until `setIfValid` returns. Serializing the entry and the
-    /// Redis round trip can take longer than the remaining lock TTL; if we stopped the heartbeat first,
-    /// the lock could expire mid-write, a waiter could start duplicate work, and `setIfValid` would then
-    /// reject this writer because its token is gone. The Lua write deletes the lock on success, so a
-    /// later heartbeat renewal simply fails and stops once ownership is lost.
+    /// The lock is a fixed-TTL advisory lease (no heartbeat). `setIfValid` no longer depends on
+    /// the lock still being held, so a write that outlives the lock TTL still succeeds; the Lua
+    /// script cleans up the lock only when the token still matches.
     const bool stored = backend.setIfValid(key, *entry, redis_key, ttl, write_context, lock_info->token);
-
-    stopHeartbeat(*lock_info);
 
     if (!stored)
         backend.releaseLock(lockKey(redis_key), lock_info->token);
@@ -379,7 +299,6 @@ void RemoteQueryResultCache::cancelWrite(const Key & key, const QueryResultCache
     if (!lock_info.has_value())
         return;
 
-    stopHeartbeat(*lock_info);
     backend.releaseLock(lockKey(redis_key), lock_info->token);
 }
 
@@ -441,10 +360,7 @@ void RemoteQueryResultCache::clear(const std::optional<String> & tag)
     }
 
     for (auto & [redis_key, lock_info] : locks_to_release)
-    {
-        stopHeartbeat(lock_info);
         backend.releaseLock(lockKey(redis_key), lock_info.token);
-    }
 }
 
 void RemoteQueryResultCache::updateConfiguration(

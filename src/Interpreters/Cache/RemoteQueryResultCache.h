@@ -4,7 +4,6 @@
 #include <Interpreters/Cache/RedisRemoteCacheBackend.h>
 
 #include <chrono>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -80,23 +79,14 @@ private:
 
     mutable std::mutex mutex;
 
-    /// Synchronization primitives shared between the cache and the per-lock heartbeat thread.
-    /// A `condition_variable` is used (rather than a plain sleep) so that `stopHeartbeat`
-    /// can wake the heartbeat thread immediately on cancellation instead of waiting up
-    /// to a full heartbeat interval.
-    struct HeartbeatState
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        bool stop = false;
-    };
-
+    /// Bookkeeping for an `IN_PROGRESS` lock acquired by this node. The lock is a fixed-TTL
+    /// advisory lease (no renewal): the local entry — not the Redis key — is what authorizes
+    /// the eventual write, and `owner_thread_id` enables the re-entrant check in
+    /// `hasNonStaleEntry`. The token is passed to `releaseLock` for compare-and-delete.
     struct HeldLockInfo
     {
         String token;
         std::thread::id owner_thread_id;
-        std::shared_ptr<HeartbeatState> heartbeat_state;
-        std::thread heartbeat_thread;
     };
 
     /// Per-query execution counter. Used to implement query_cache_min_query_runs.
@@ -117,9 +107,7 @@ private:
     /// Returns true if a valid entry was found.
     bool pollForResult(const Key & key, const std::string & redis_key);
 
-    void startHeartbeat(const std::string & redis_key, const String & token);
     std::optional<HeldLockInfo> takeHeldLockInfo(const std::string & redis_key);
-    void stopHeartbeat(HeldLockInfo & info);
 
     LoggerPtr logger = getLogger("RemoteQueryResultCache");
 };

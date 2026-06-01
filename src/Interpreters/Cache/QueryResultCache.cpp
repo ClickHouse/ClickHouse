@@ -944,6 +944,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     if (storage.hasNonStaleEntry(key, write_context))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        entry_already_available = true; /// Caller may serve the existing result instead of executing
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
 }
@@ -966,6 +967,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(QueryResultCacheWriter && other)
     }())
     , skip_insert(other.skip_insert.load(std::memory_order_relaxed))
     , was_finalized(other.was_finalized.load(std::memory_order_relaxed))
+    , entry_already_available(other.entry_already_available)
 {
     other.skip_insert.store(true, std::memory_order_relaxed);
     other.was_finalized.store(true, std::memory_order_relaxed);
@@ -1043,7 +1045,7 @@ void QueryResultCacheWriter::finalizeWrite()
 
     /// Until the entry is stored, ensure that any exception propagating out of this
     /// function (or any early-exit) releases the remote IN_PROGRESS lock. Otherwise
-    /// other nodes would keep waiting on this key while the heartbeat renews the lock.
+    /// other nodes would keep waiting on this key until the lock's TTL expires.
     bool stored = false;
     SCOPE_EXIT({
         if (!stored)

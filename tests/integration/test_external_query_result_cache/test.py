@@ -468,42 +468,101 @@ def test_lock_ttl_expiry_allows_progress(started_cluster):
 
 
 def test_no_stampede_concurrent(started_cluster):
-    """Two concurrent nodes must produce only one cache entry (no stampede)."""
+    """Two concurrent nodes: only one computes the result, the other waits and serves it
+    from the cache instead of re-executing the query (the point of stampede protection)."""
     import threading
 
     r = get_redis_client()
     flush_redis(r)
 
-    # Use a sleep() inside the query to widen the race window so node2 starts
-    # while node1 is still computing and holds the lock.
-    query = "SELECT sleep(0.5), 9876 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    # A sleep() inside the query widens the in-flight window so the second node starts
+    # while the first is still computing and holds the `IN_PROGRESS` lock.
+    query = (
+        "SELECT sleep(1), 9876 SETTINGS use_query_cache = true,"
+        " query_cache_share_between_users = 1, query_cache_min_query_duration = 0"
+    )
 
     results = {}
+    qids = {"node1": "stampede_n1", "node2": "stampede_n2"}
 
     def run(node, name):
-        results[name] = node.query(query, timeout=30)
+        results[name] = node.query(query, query_id=qids[name], timeout=60)
 
     t1 = threading.Thread(target=run, args=(node1, "node1"))
     t2 = threading.Thread(target=run, args=(node2, "node2"))
 
     t1.start()
-    # Give node1 a 50 ms head start so it acquires the lock first.
-    time.sleep(0.05)
+    # Give node1 a 100 ms head start so it is the one that acquires the lock first.
+    time.sleep(0.1)
     t2.start()
 
     t1.join()
     t2.join()
 
-    # Both threads must have returned a result.
+    # Both threads must have returned the same result.
     assert "node1" in results and "node2" in results, "One of the threads did not finish"
+    assert results["node1"] == results["node2"], (
+        f"Both nodes must agree on the result: {results}"
+    )
 
-    # Exactly one cache entry should exist (the other node hit the cache or waited).
-    # Allow up to 2 keys in case the lock key lingers briefly, but at most 1 data key.
-    all_keys = r.keys("*")
-    data_keys = [k for k in all_keys if b":lock" not in k]
+    # Exactly one data entry should exist in Redis (the other node reused it).
+    data_keys = [k for k in r.keys("*") if b":lock" not in k]
     assert len(data_keys) == 1, (
         f"Expected exactly 1 data cache entry, found {len(data_keys)}: {data_keys}"
     )
+
+    # Decisive check: one node computed and wrote the result, the other waited on the lock
+    # and served it from the cache (query_cache_usage = 'Read') rather than re-executing.
+    # Before the fix the waiter would re-run the query and show no 'Read'.
+    node1.query("SYSTEM FLUSH LOGS")
+    node2.query("SYSTEM FLUSH LOGS")
+
+    def cache_usage(node, query_id):
+        return node.query(
+            "SELECT query_cache_usage FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish' "
+            "ORDER BY event_time_microseconds DESC LIMIT 1"
+        ).strip()
+
+    usages = sorted([cache_usage(node1, qids["node1"]), cache_usage(node2, qids["node2"])])
+    assert usages == ["Read", "Write"], (
+        f"Expected exactly one writer and one cache-reader, got query_cache_usage={usages}"
+    )
+
+
+def test_slow_query_longer_than_lock_ttl_is_cached(started_cluster):
+    """A query that runs longer than `lock_ttl_ms` must still be cached on completion.
+
+    The IN_PROGRESS lock is a fixed-TTL advisory lease (no renewal), so the lock expires
+    mid-computation for a slow query. The result write must not depend on still holding the
+    lock — otherwise such queries would never be cacheable. With the test config
+    lock_ttl_ms=5000, sleep(6) outlives the lock by ~1s.
+    """
+    r = get_redis_client()
+    flush_redis(r)
+
+    node1.query(
+        "SELECT sleep(6), 7777"
+        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0",
+        query_id="slow_ttl_write",
+        timeout=30,
+    )
+
+    # The result must have been written even though the lock expired during execution.
+    data_keys = [k for k in r.keys("*") if b":lock" not in k]
+    assert len(data_keys) == 1, (
+        f"Slow query (> lock_ttl) should still be cached, found data keys: {data_keys}"
+    )
+
+    # A second run must read it from the cache instead of executing the 6s query again.
+    node1.query(
+        "SELECT sleep(6), 7777"
+        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0",
+        query_id="slow_ttl_read",
+        timeout=30,
+    )
+    usage = query_log_value(node1, "query_cache_usage", "query_id = 'slow_ttl_read'")
+    assert usage == "Read", f"Second run should hit the cache, got query_cache_usage={usage!r}"
 
 
 # ---------------------------------------------------------------------------
