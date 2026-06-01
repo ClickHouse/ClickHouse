@@ -282,6 +282,7 @@ private:
 
 }
 
+void registerOutputFormatSQLite(FormatFactory & factory);
 void registerOutputFormatSQLite(FormatFactory & factory)
 {
     factory.registerOutputFormat(

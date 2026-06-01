@@ -148,6 +148,7 @@ private:
 
 }
 
+void registerInputFormatSQLite(FormatFactory & factory);
 void registerInputFormatSQLite(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -160,6 +161,7 @@ void registerInputFormatSQLite(FormatFactory & factory)
     factory.registerFileExtension("sqlite3", "SQLite");
 }
 
+void registerSQLiteSchemaReader(FormatFactory & factory);
 void registerSQLiteSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
