@@ -55,14 +55,14 @@ static std::string avxEncode64(std::string_view src)
 
 struct TestData32
 {
-    int id;
+    int id = 0;
     std::string_view decoded; /// 32 bytes
     std::string_view encoded; /// base58
 };
 
 struct TestData64
 {
-    int id;
+    int id = 0;
     std::string_view decoded; /// 64 bytes
     std::string_view encoded; /// base58
 };

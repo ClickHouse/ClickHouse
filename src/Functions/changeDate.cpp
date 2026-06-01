@@ -164,7 +164,7 @@ public:
             const auto & date_lut = DateLUT::instance();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 time;
+                Int64 time = 0;
                 if (isDate(input_type))
                     time = static_cast<Int64>(date_lut.toNumYYYYMMDD(DayNum(static_cast<UInt16>(date_time_col_data[i])))) * 1'000'000;
                 else
@@ -267,7 +267,7 @@ public:
                 break;
         }
 
-        Int64 result;
+        Int64 result = 0;
         if (isDate(result_type) || isDate32(result_type))
             result = date_lut.makeDayNum(year, month, day);
         else if (isDateTime(result_type))

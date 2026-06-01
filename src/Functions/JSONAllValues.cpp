@@ -186,7 +186,7 @@ private:
             temp_column.popBack(1);
         };
 
-        char type_index;
+        char type_index = 0;
         if (!buf.peek(type_index))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse shared data value of JSON: no type index found");
 

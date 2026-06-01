@@ -406,7 +406,7 @@ private:
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
-        IColumn * result_offset_column_raw;
+        IColumn * result_offset_column_raw{};
         /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
     };

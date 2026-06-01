@@ -277,7 +277,7 @@ public:
 
         struct PlanNode
         {
-            NodeKind kind;
+            NodeKind kind = NodeKind::Leaf;
             IColumn * dest = nullptr;           /// destination column for this node
             size_t array_size = 0;              /// for Array nodes: constant number of elements
             IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
@@ -566,7 +566,7 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
@@ -640,7 +640,7 @@ public:
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool function_json_value_return_type_allow_complex)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
 
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
@@ -733,7 +733,7 @@ public:
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
 
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         bool success = false;
         const char * array_begin = "[";
         const char * array_end = "]";

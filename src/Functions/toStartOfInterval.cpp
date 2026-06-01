@@ -84,7 +84,7 @@ public:
         if (overload == ToStartOfIntervalOverload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
@@ -349,8 +349,8 @@ public:
             DateTime64
         };
 
-        ResultType result_type;
-        ToStartOfIntervalOverload overload;
+        ResultType result_type = ResultType::Date;
+        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
         auto check_second_argument = [&]
         {
             const DataTypePtr & type_arg2 = arguments[1].type;

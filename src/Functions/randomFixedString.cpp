@@ -55,7 +55,7 @@ public:
         if (input_rows_count == 0)
             return col_to;
 
-        size_t total_size;
+        size_t total_size = 0;
         if (common::mulOverflow(input_rows_count, n, total_size))
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 

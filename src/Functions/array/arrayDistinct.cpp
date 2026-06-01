@@ -88,7 +88,7 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
 
     const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
 
-    const IColumn * inner_col;
+    const IColumn * inner_col = nullptr;
 
     if (nullable_col)
     {

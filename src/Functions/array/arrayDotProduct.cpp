@@ -438,6 +438,7 @@ The return type is determined by the type of the arguments. If Arrays or Tuples 
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp
+FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
 FunctionPtr createFunctionArrayDotProduct(ContextPtr context_)
 {
     return FunctionArrayDotProduct::create(context_);

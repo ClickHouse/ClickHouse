@@ -174,7 +174,7 @@ struct BernoulliDistribution
 
     static void generate(Float64 p, ColumnUInt8::Container & container, const DistributionLimits &)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
 
         auto distribution = std::bernoulli_distribution(p);
@@ -191,7 +191,7 @@ struct BinomialDistribution
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
@@ -210,7 +210,7 @@ struct NegativeBinomialDistribution
 
     static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
     {
-        if (p < 0.0f || p > 1.0f)
+        if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
@@ -283,7 +283,7 @@ public:
         DistributionLimits limits_
         {
             .max_trials = context->getSettingsRef()[Setting::max_rand_distribution_trials],
-            .max_parameter = context->getSettingsRef()[Setting::max_rand_distribution_parameter],
+            .max_parameter = static_cast<double>(context->getSettingsRef()[Setting::max_rand_distribution_parameter]),
         };
         return std::make_shared<FunctionRandomDistribution<Distribution>>(limits_);
     }

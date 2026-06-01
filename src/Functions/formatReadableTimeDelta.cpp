@@ -139,7 +139,7 @@ public:
                 /// To output separators between parts: ", " and " and ".
                 bool has_output = false;
 
-                Float64 whole_part;
+                Float64 whole_part = 0;
                 std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
 
                 switch (max_unit) /// A kind of Duff Device.

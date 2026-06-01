@@ -589,7 +589,7 @@ public:
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
 
-        size_t size;
+        size_t size = 0;
 
         if constexpr (op_case == OpCase::LeftConstant)
             size = b.size();
@@ -1309,11 +1309,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnDateTime64 * col;
+            const ColumnDateTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val;
-            bool is_const;
-            UInt64 scale;
+            UInt64 const_val{};
+            bool is_const{};
+            UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -1408,11 +1408,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnTime64 * col;
+            const ColumnTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val;
-            bool is_const;
-            UInt64 scale;
+            UInt64 const_val{};
+            bool is_const{};
+            UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());

@@ -86,7 +86,7 @@ public:
     /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
-        size_t upper_bound;
+        size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
             upper_bound = col_str->getChars().size();
