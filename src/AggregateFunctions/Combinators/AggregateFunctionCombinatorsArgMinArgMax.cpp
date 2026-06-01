@@ -250,12 +250,12 @@ public:
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<true>>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMin`), it aggregates the first argument's values that correspond to the minimum of the second argument.",
-        .syntax = "<aggregate_function>ArgMin(arg, val)",
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMin`), it adds an extra trailing argument that should be any comparable expression. The nested aggregate function processes only the rows that have the minimum value of that extra expression, using all of the preceding arguments (which may be zero, one, or several, e.g. `countArgMin(key)`, `sumArgMin(x, key)`, `corrArgMin(x, y, key)`).",
+        .syntax = "<aggregate_function>ArgMin([arg, ...], key)",
         .related = {"ArgMax"}});
     factory.registerCombinator(std::make_shared<CombinatorArgMinArgMax<false>>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMax`), it aggregates the first argument's values that correspond to the maximum of the second argument.",
-        .syntax = "<aggregate_function>ArgMax(arg, val)",
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumArgMax`), it adds an extra trailing argument that should be any comparable expression. The nested aggregate function processes only the rows that have the maximum value of that extra expression, using all of the preceding arguments (which may be zero, one, or several, e.g. `countArgMax(key)`, `sumArgMax(x, key)`, `corrArgMax(x, y, key)`).",
+        .syntax = "<aggregate_function>ArgMax([arg, ...], key)",
         .related = {"ArgMin"}});
 }
 
