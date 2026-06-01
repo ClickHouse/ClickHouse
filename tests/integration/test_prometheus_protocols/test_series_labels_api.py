@@ -59,6 +59,7 @@ def get_json_from_api(path):
 def setup(request):
     try:
         cluster.start()
+        node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
         send_test_data()
         # Wait for data to be available
         assert_eq_with_retry(
@@ -120,3 +121,76 @@ def test_label_values_for_nonexistent_label():
     data = get_json_from_api("/api/v1/label/nonexistent/values")
     assert isinstance(data, list)
     assert len(data) == 0
+
+
+def test_series_includes_real_labels():
+    """GET /api/v1/series must return the full label set, not only __name__.
+
+    The tags column is a Map, so each returned series should contain the real labels
+    (e.g. host, datacenter) that were written, deduplicated by series identity.
+    """
+    data = get_json_from_api("/api/v1/series")
+    cpu_series = [entry for entry in data if entry.get("__name__") == "cpu_usage"]
+    assert len(cpu_series) == 2, f"Expected 2 cpu_usage series, got: {cpu_series}"
+
+    # Each series must carry its full label set, not just __name__.
+    for entry in cpu_series:
+        assert "host" in entry
+        assert "datacenter" in entry
+
+    hosts = {entry["host"] for entry in cpu_series}
+    assert hosts == {"server1", "server2"}
+
+
+def test_series_match_filter():
+    """GET /api/v1/series?match[]=<metric> should filter by metric name.
+
+    Exercises that match[] is treated as an endpoint parameter (not a ClickHouse setting).
+    """
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage")
+    assert len(data) > 0
+    metric_names = {entry["__name__"] for entry in data if "__name__" in entry}
+    assert metric_names == {"cpu_usage"}
+
+
+def test_label_values_with_match_filter():
+    """GET /api/v1/label/<name>/values?match[]=<metric> should route correctly with a query string.
+
+    The query string must not break path routing (the endpoint used to fall through to 404).
+    """
+    data = get_json_from_api("/api/v1/label/host/values?match[]=memory_usage")
+    assert isinstance(data, list)
+    assert "server1" in data
+    assert "server2" not in data
+
+
+def test_series_deduplicated():
+    """Re-writing the same series must not produce duplicate entries in /api/v1/series.
+
+    The tags target is AggregatingMergeTree and stores a row per write, so the same
+    series appears as multiple rows until parts are merged; /api/v1/series must
+    deduplicate by series identity. Merges are stopped so the duplicate rows persist.
+    """
+    series = [
+        (
+            {"__name__": "dedup_metric", "host": "serverX"},
+            {1000: 1.0},
+        ),
+    ]
+    protobuf = convert_time_series_to_protobuf(series)
+
+    node.query("SYSTEM STOP MERGES")
+    try:
+        send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+        send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+        # Wait until both writes have produced separate (un-merged) rows in the tags table.
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM timeSeriesTags(prometheus) WHERE metric_name = 'dedup_metric'",
+            "2",
+        )
+        data = get_json_from_api("/api/v1/series?match[]=dedup_metric")
+        assert len(data) == 1, f"Expected exactly 1 deduplicated series, got: {data}"
+        assert data[0]["host"] == "serverX"
+    finally:
+        node.query("SYSTEM START MERGES")
