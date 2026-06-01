@@ -407,6 +407,34 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
+// Regression: `ConstraintsBranch::updateSchedulingSettings` must keep the
+// constraint chain (`throttler -> semaphore -> branch_root`) intact when topology
+// changes. Adding a semaphore to a workload that already has a throttler must
+// leave the semaphore reattached under the throttler. Without the fix the
+// throttler's child becomes null and the new `semaphore -> queue` subtree is
+// orphaned (parent == nullptr), so requests submitted to that workload can never
+// be admitted.
+TEST(SchedulerWorkloadResourceManager, UpdateAddSemaphoreToWorkloadWithThrottler)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE io (WRITE DISK d, READ DISK d)");
+    // Throttler only — semaphore not present yet.
+    t.query("CREATE WORKLOAD all SETTINGS max_bytes_per_second = 1000000");
+    // Add semaphore while the throttler is still there.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_bytes_per_second = 1000000, max_io_requests = 5");
+
+    ISchedulerNode * semaphore = nullptr;
+    t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+    {
+        if (node->basename == "semaphore")
+            semaphore = node;
+    });
+    ASSERT_NE(semaphore, nullptr);
+    EXPECT_NE(semaphore->parent, nullptr)
+        << "semaphore subtree is orphaned (semaphore->parent == nullptr) after adding a semaphore while a throttler is present";
+}
+
 TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 {
     ResourceTest t;

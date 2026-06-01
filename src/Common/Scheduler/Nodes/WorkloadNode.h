@@ -579,39 +579,54 @@ protected:
         {
             branch.updateSchedulingSettings(self, event_queue_, new_settings);
 
-            NodePtr node = branch.getRoot();
-
+            // First create/destroy/update constraint nodes; deferred re-linking happens below.
+            // For removals, detach the constraint's child first so it does not end up with a
+            // dangling parent pointer to a node we are about to drop our reference to.
             if (!Traits::hasSemaphore(settings, unit) && Traits::hasSemaphore(new_settings, unit)) // Add
             {
                 semaphore = Traits::makeSemaphore(self, event_queue_, new_settings, unit);
-                reparent(node, semaphore);
-                node = semaphore;
             }
             else if (Traits::hasSemaphore(settings, unit) && !Traits::hasSemaphore(new_settings, unit)) // Remove
             {
+                detach(branch.getRoot()); // unhook branch_root from semaphore before semaphore is dropped
                 detach(semaphore);
                 semaphore.reset();
             }
             else if (Traits::hasSemaphore(settings, unit) && Traits::hasSemaphore(new_settings, unit)) // Update
             {
                 Traits::updateSemaphore(semaphore, new_settings, unit);
-                node = semaphore;
             }
 
             if (!Traits::hasThrottler(settings, unit) && Traits::hasThrottler(new_settings, unit)) // Add
             {
                 throttler = Traits::makeThrottler(self, event_queue_, new_settings, unit);
-                reparent(node, throttler);
-                node = throttler;
             }
             else if (Traits::hasThrottler(settings, unit) && !Traits::hasThrottler(new_settings, unit)) // Remove
             {
+                // Whatever sat directly under throttler (semaphore if present, else branch_root)
+                // must be unhooked first, otherwise its parent pointer will dangle.
+                detach(semaphore ? semaphore : branch.getRoot());
                 detach(throttler);
                 throttler.reset();
             }
             else if (Traits::hasThrottler(settings, unit) && Traits::hasThrottler(new_settings, unit)) // Update
             {
                 Traits::updateThrottler(throttler, new_settings, unit);
+            }
+
+            // Re-link the chain `branch_root -> [semaphore] -> [throttler]` from the bottom up.
+            // This restores any link that the topology changes above invalidated (e.g. adding a
+            // semaphore between an existing throttler and branch_root) and is a no-op for
+            // unchanged links.
+            NodePtr node = branch.getRoot();
+            if (semaphore)
+            {
+                reparent(node, semaphore);
+                node = semaphore;
+            }
+            if (throttler)
+            {
+                reparent(node, throttler);
                 node = throttler;
             }
 
