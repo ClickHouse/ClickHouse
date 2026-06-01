@@ -5,7 +5,7 @@
 
 using namespace DB;
 
-MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & values)
+static MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & values)
 {
     MutableColumnPtr nested_column = ColumnString::create();
     for (const auto & value : values)
@@ -13,7 +13,7 @@ MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & val
     return nested_column;
 }
 
-ColumnReplicated::MutablePtr createColumn(const VectorWithMemoryTracking<String> & values, const VectorWithMemoryTracking<size_t> & indexes)
+static ColumnReplicated::MutablePtr createColumn(const VectorWithMemoryTracking<String> & values, const VectorWithMemoryTracking<size_t> & indexes)
 {
     MutableColumnPtr nested_column = createNestedColumn(values);
     MutableColumnPtr indexes_column = ColumnUInt8::create();
@@ -23,7 +23,7 @@ ColumnReplicated::MutablePtr createColumn(const VectorWithMemoryTracking<String>
     return ColumnReplicated::create(std::move(nested_column), std::move(indexes_column));
 }
 
-void checkColumn(const ColumnReplicated & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
+static void checkColumn(const ColumnReplicated & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
 {
     const auto & nested_column = column.getNestedColumn();
     ASSERT_EQ(nested_column->size(), expected_values.size());
@@ -36,7 +36,7 @@ void checkColumn(const ColumnReplicated & column, const VectorWithMemoryTracking
         ASSERT_EQ((*indexes)[i], Field(expected_indexes[i]));
 }
 
-void checkColumn(const IColumn & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
+static void checkColumn(const IColumn & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
 {
     checkColumn(assert_cast<const ColumnReplicated &>(column), expected_values, expected_indexes);
 }
