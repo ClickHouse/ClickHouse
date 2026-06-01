@@ -54,6 +54,17 @@ public:
             " OR (DateTime | DateTime64, [const tz String]) -> Date";
     }
 
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Preserve the legacy rejection of an explicitly provided empty timezone for the
+        /// DateTime/DateTime64 inputs that accept the optional 2nd argument.
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                this->getName());
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();

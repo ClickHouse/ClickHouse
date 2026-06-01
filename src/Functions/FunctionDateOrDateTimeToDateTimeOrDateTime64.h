@@ -50,6 +50,18 @@ public:
             " OR (DateOrDateTime, const tz String) -> DateTime(tz)";
     }
 
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Preserve the legacy rejection of an explicitly provided empty timezone; the DSL
+        /// `DateTime(tz)` / `DateTime64(scale, tz)` type functions silently fall back to the
+        /// server timezone when tz == ''.
+        if (arguments.size() == 2 && extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false).empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                this->getName());
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
