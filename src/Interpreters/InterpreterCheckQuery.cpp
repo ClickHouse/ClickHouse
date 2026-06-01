@@ -396,7 +396,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {
@@ -474,7 +474,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport;
+    OutputPort * resize_outport = nullptr;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -488,7 +488,7 @@ BlockIO InterpreterCheckQuery::execute()
             connect(*worker_ports[i], *resize_inport_it);
         processors->emplace_back(resize_processor);
 
-        assert(resize_processor->getOutputs().size() == 1);
+        chassert(resize_processor->getOutputs().size() == 1);
         resize_outport = &resize_processor->getOutputs().front();
     }
 
@@ -513,6 +513,7 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
+void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
