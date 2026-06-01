@@ -51,3 +51,10 @@ SELECT toTypeName(toDayOfMonth(materialize(toDateTime('2024-01-15'))::Dynamic));
 
 -- Non-extractor functions sharing the same base class still reject Interval.
 SELECT toStartOfYear(INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Extract-only units (computed as arithmetic over toYear) must reject Interval
+-- operands too - otherwise EXTRACT(CENTURY FROM INTERVAL 5 YEAR) would silently
+-- compute (5-1)/100+1 = 1, bypassing the same-kind contract.
+SELECT EXTRACT(CENTURY    FROM INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT EXTRACT(DECADE     FROM INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT EXTRACT(MILLENNIUM FROM INTERVAL 5 YEAR); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -1639,35 +1639,40 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
             return makeASTFunction("toISOYear", expr);
         case ExtractUnit::Century:
             /// century = (year - 1) / 100 + 1
+            /// `__toYearCalendarOnly` rejects `Interval` operands; the plain `toYear`
+            /// accepts `IntervalYear` (used by `EXTRACT(YEAR FROM INTERVAL ...)`),
+            /// which would otherwise let `EXTRACT(CENTURY FROM INTERVAL 5 YEAR)` slip
+            /// through the same-kind contract and silently compute `(5-1)/100+1 = 1`.
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(100))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
         case ExtractUnit::Decade:
             /// decade = year / 10
             return makeASTFunction("intDiv",
-                makeASTFunction("toYear", expr),
+                makeASTFunction("__toYearCalendarOnly", expr),
                 make_intrusive<ASTLiteral>(UInt64(10)));
         case ExtractUnit::Millennium:
             /// millennium = (year - 1) / 1000 + 1
             return makeASTFunction("plus",
                 makeASTFunction("intDiv",
-                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    makeASTFunction("minus", makeASTFunction("__toYearCalendarOnly", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(1000))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
         case ExtractUnit::TimezoneHour:
-            /// Int64 divisor so a negative `timezoneOffset` stays signed (e.g. -3:30 -> -3).
+            /// `toInt64(...)` keeps the divisor signed without using a bare `Int64` literal,
+            /// which would format as plain "3600" and re-parse as UInt64, breaking the AST
+            /// roundtrip check.
             return makeASTFunction("intDiv",
                 makeASTFunction("timezoneOffset", expr),
-                make_intrusive<ASTLiteral>(Int64(3600)));
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600))));
         case ExtractUnit::TimezoneMinute:
-            /// Int64 divisors so `modulo(-12600, 3600)` returns -1800 (signed), not a wrapped UInt64.
             return makeASTFunction("intDiv",
                 makeASTFunction("modulo",
                     makeASTFunction("timezoneOffset", expr),
-                    make_intrusive<ASTLiteral>(Int64(3600))),
-                make_intrusive<ASTLiteral>(Int64(60)));
+                    makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(3600)))),
+                makeASTFunction("toInt64", make_intrusive<ASTLiteral>(UInt64(60))));
         case ExtractUnit::None:
             UNREACHABLE();
     }
