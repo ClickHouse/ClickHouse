@@ -151,4 +151,56 @@ FROM t_sumif_proj
 GROUP BY grp ORDER BY grp
 SETTINGS optimize_use_projections = 1, query_plan_max_set_size_for_projection_match = 0;
 
+-- -----------------------------------------------------------------------
+-- Duplicate-values robustness. `Set::getTotalRowCount` is the deduplicated
+-- size, so the size pre-filter must agree with the content hash on every
+-- duplicate-input shape: equal sets despite duplicates ⇒ match, and equal
+-- deduplicated sizes with differing contents ⇒ non-match (no false hit).
+-- -----------------------------------------------------------------------
+
+-- Duplicates that dedup to the projection's set: projection must be used.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'a', 'b')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Same deduplicated size (2) as the projection but different contents:
+-- the size check is ambiguous on its own, but the content hash forces
+-- the matcher to reject. Projection must NOT be used.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'c')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Different deduplicated size: projection must NOT be used (size early-exit).
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Duplicates that dedup to a different set than the projection: projection
+-- must NOT be used.
+SELECT trimLeft(explain) FROM (
+    EXPLAIN projections = 1
+    SELECT grp, sumIf(val1, col IN ('a', 'a', 'c')) AS m1
+    FROM t_sumif_proj GROUP BY grp
+    SETTINGS optimize_use_projections = 1
+) WHERE explain LIKE '%ReadFromMergeTree%';
+
+-- Correctness: result with the projection used (duplicates in the query) must
+-- match the result computed against the base table.
+SELECT grp, sumIf(val1, col IN ('a', 'a', 'b')) AS m1
+FROM t_sumif_proj GROUP BY grp ORDER BY grp
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT grp, sumIf(val1, col IN ('a', 'a', 'b')) AS m1
+FROM t_sumif_proj GROUP BY grp ORDER BY grp
+SETTINGS optimize_use_projections = 0;
+
 DROP TABLE t_sumif_proj;
