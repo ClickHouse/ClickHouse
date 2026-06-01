@@ -27,3 +27,8 @@ ${CLICKHOUSE_CLIENT} --echo --echo-formatted=false --query="select 1+1"
 # --echo-query-id prints the query_id; the value is non-deterministic so we only count the lines.
 echo '--- echo-query-id (count) ---'
 ${CLICKHOUSE_CLIENT} --echo-query-id --query="select 1+1" 2>&1 | grep -c '^Query id:'
+
+# A user-fixed --query_id must be preserved (printed before execution and used for execution),
+# including in clickhouse-local. See https://github.com/ClickHouse/ClickHouse/pull/106191.
+echo '--- local: fixed query_id is preserved with echo-query-id ---'
+${CLICKHOUSE_LOCAL} --query_id="04308_fixed_id" --echo-query-id --query="SELECT currentQueryID()"
