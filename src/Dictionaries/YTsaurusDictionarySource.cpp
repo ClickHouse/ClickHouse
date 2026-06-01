@@ -110,7 +110,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 
     factory.registerSource("ytsaurus", create_dictionary_source, Documentation{
         .description = "Reads dictionary data from a YTsaurus cluster.",
-        .syntax = "SOURCE(YTSAURUS(http_proxy_url 'url' cypress_path '//path' oauth_token 'token'))",
+        .syntax = "SOURCE(YTSAURUS(http_proxy_urls 'url' cypress_path '//path' oauth_token 'token'))",
         .related = {}});
 }
 

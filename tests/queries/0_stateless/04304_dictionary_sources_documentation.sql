@@ -14,3 +14,8 @@ ORDER BY name;
 SELECT related
 FROM system.dictionary_sources
 WHERE name = 'clickhouse';
+
+-- The ytsaurus syntax must use the real configuration key `http_proxy_urls`, not `http_proxy_url`.
+SELECT name, position(syntax, 'http_proxy_urls') > 0 AS uses_correct_key
+FROM system.dictionary_sources
+WHERE name = 'ytsaurus';
