@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings
+# Tags: no-fasttest, no-random-settings, no-distributed-cache
 #
 # no-fasttest -- needs an S3-backed disk
 # no-random-settings -- pins use_reader_executor and reader_executor_window_size
+# no-distributed-cache -- with distributed cache the executor falls back to the
+#                         legacy path, emitting no ReaderExecutor source-byte counters
 
 # A single-granule point read through the ReaderExecutor must pull about ONE
 # granule from object storage, not a full reader_executor_window_size (8 MiB)
