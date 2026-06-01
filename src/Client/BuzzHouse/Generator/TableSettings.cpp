@@ -875,9 +875,12 @@ static std::unordered_map<String, CHSetting> fileTableSettings
 static std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", trueOrFalseSetting},
        {"background_insert_split_batch_on_failure", trueOrFalseSetting},
+       {"bytes_to_delay_insert", bytesRangeSetting},
+       {"bytes_to_throw_insert", bytesRangeSetting},
        {"flush_on_detach", trueOrFalseSetting},
        {"fsync_after_insert", trueOrFalseSetting},
        {"fsync_directories", trueOrFalseSetting},
+       {"max_delay_to_insert", highRangeSetting},
        {"skip_unavailable_shards", trueOrFalseSetting}};
 
 static std::unordered_map<String, CHSetting> memoryTableSettings
@@ -890,6 +893,43 @@ static std::unordered_map<String, CHSetting> memoryTableSettings
 static std::unordered_map<String, CHSetting> setTableSettings = {{"persistent", trueOrFalseSettingNoOracle}};
 
 static std::unordered_map<String, CHSetting> joinTableSettings = {{"persistent", trueOrFalseSettingNoOracle}};
+
+static std::unordered_map<String, CHSetting> executableTableSettings = {
+    {"check_exit_code", trueOrFalseSetting},
+    {"command_read_timeout", highRangeSetting},
+    {"command_termination_timeout", highRangeSetting},
+    {"command_write_timeout", highRangeSetting},
+    {"max_command_execution_time", highRangeSetting},
+    {"pool_size", highRangeSetting},
+    {"send_chunk_header", trueOrFalseSetting},
+    {"stderr_reaction",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'none'", "'log'", "'log_first'", "'log_last'", "'throw'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'none'", "'log'", "'log_first'", "'log_last'", "'throw'"},
+         false)},
+};
+
+static std::unordered_map<String, CHSetting> hiveTableSettings = {
+    {"enable_orc_file_minmax_index", trueOrFalseSetting},
+    {"enable_orc_stripe_minmax_index", trueOrFalseSetting},
+    {"enable_parquet_rowgroup_minmax_index", trueOrFalseSetting},
+};
+
+static std::unordered_map<String, CHSetting> ytsaurusTableSettings = {
+    {"check_table_schema", trueOrFalseSetting},
+    {"enable_heavy_proxy_redirection", trueOrFalseSetting},
+    {"encode_utf8", trueOrFalseSetting},
+    {"force_read_table", trueOrFalseSetting},
+    {"max_streams", highRangeSetting},
+    {"min_rows_for_spawn_stream", rowsRangeSetting},
+    {"skip_unknown_columns", trueOrFalseSetting},
+    {"transaction_timeout_ms", highRangeSetting},
+    {"use_lock", trueOrFalseSetting},
+};
 
 static std::unordered_map<String, CHSetting> embeddedRocksDBTableSettings = {
     {"optimize_for_bulk_insert", trueOrFalseSetting},
@@ -1159,11 +1199,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'keep'", "'delete'", "'move'", "'tag'"},
                 false)},
-           {"buckets",
-            CHSetting(
-                [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
-                {"0", "1", "2", "8", "10", "100", "1000"},
-                false)},
+           {"after_processing_retries", highRangeSetting},
            {"bucketing_mode",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
@@ -1173,6 +1209,13 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'path'", "'partition'"},
                 false)},
+           {"buckets",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
+                {"0", "1", "2", "8", "10", "100", "1000"},
+                false)},
+           {"cleanup_interval_max_ms", highRangeSetting},
+           {"cleanup_interval_min_ms", highRangeSetting},
            {"commit_on_select", trueOrFalseSettingNoOracle},
            {"deduplication_v2", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
@@ -1182,17 +1225,16 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
                 {"0", "1", "2", "8", "10", "100", "1000"},
                 false)},
+           {"loading_retries", highRangeSetting},
            {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
            {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
            {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
+           {"max_processing_time_sec_before_commit", highRangeSetting},
            {"metadata_cache_size_bytes", CHSetting(bytesRange, {}, false)},
            {"metadata_cache_size_elements", CHSetting(rowsRange, {}, false)},
-           {"min_insert_block_size_rows_for_materialized_views", CHSetting(rowsRange, {}, false)},
            {"min_insert_block_size_bytes_for_materialized_views", CHSetting(bytesRange, {}, false)},
+           {"min_insert_block_size_rows_for_materialized_views", CHSetting(rowsRange, {}, false)},
            {"parallel_inserts", trueOrFalseSetting},
-           {"polling_backoff_ms", CHSetting(highRange, {}, false)},
-           {"polling_max_timeout_ms", CHSetting(highRange, {}, false)},
-           {"polling_min_timeout_ms", CHSetting(highRange, {}, false)},
            {"partitioning_mode",
             CHSetting(
                 [](RandomGenerator & rg, FuzzConfig &)
@@ -1202,7 +1244,12 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 },
                 {"'none'", "'hive'", "'regex'"},
                 false)},
+           {"persistent_processing_node_ttl_seconds", highRangeSetting},
+           {"polling_backoff_ms", CHSetting(highRange, {}, false)},
+           {"polling_max_timeout_ms", CHSetting(highRange, {}, false)},
+           {"polling_min_timeout_ms", CHSetting(highRange, {}, false)},
            {"processing_threads_num", threadSetting},
+           {"tracked_file_ttl_sec", highRangeSetting},
            {"tracked_files_limit", CHSetting(rowsRange, {}, false)},
            {"use_hive_partitioning", trueOrFalseSetting},
            {"use_persistent_processing_nodes", trueOrFalseSettingNoOracle}};
@@ -1295,15 +1342,15 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Alias, {}},
          {TimeSeries, {}},
          {HDFS, {}},
-         {Hive, {}},
+         {Hive, hiveTableSettings},
          {JDBC, {}},
          {Kafka, kafkaTableSettings},
          {NATS, natsTableSettings},
          {ODBC, {}},
          {RabbitMQ, rabbitMQTableSettings},
-         {YTsaurus, {}},
-         {Executable, {}},
-         {ExecutablePool, {}},
+         {YTsaurus, ytsaurusTableSettings},
+         {Executable, executableTableSettings},
+         {ExecutablePool, executableTableSettings},
          {FileLog, fileLogTableSettings}});
 
     allColumnSettings.insert(
