@@ -3,6 +3,7 @@
 #include <atomic>
 #include <mutex>
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <boost/intrusive/list.hpp>
 
@@ -10,21 +11,20 @@
 namespace DB
 {
 
-class UntrackedMemoryCounter : public boost::intrusive::list_base_hook<>
+class ThreadLocalCounter
 {
 public:
-    UntrackedMemoryCounter();
-    ~UntrackedMemoryCounter();
+    ThreadLocalCounter() = default;
 
-    UntrackedMemoryCounter(const UntrackedMemoryCounter &) = delete;
-    UntrackedMemoryCounter & operator=(const UntrackedMemoryCounter &) = delete;
-    UntrackedMemoryCounter(UntrackedMemoryCounter &&) = delete;
-    UntrackedMemoryCounter & operator=(UntrackedMemoryCounter &&) = delete;
+    ThreadLocalCounter(const ThreadLocalCounter &) = delete;
+    ThreadLocalCounter & operator=(const ThreadLocalCounter &) = delete;
+    ThreadLocalCounter(ThreadLocalCounter &&) = delete;
+    ThreadLocalCounter & operator=(ThreadLocalCounter &&) = delete;
 
-    Int64 load() const noexcept { return value.load(std::memory_order_relaxed); }
-    void store(Int64 v) noexcept { value.store(v, std::memory_order_relaxed); }
+    ALWAYS_INLINE inline Int64 load() const noexcept { return value.load(std::memory_order_relaxed); }
+    ALWAYS_INLINE inline void store(Int64 v) noexcept { value.store(v, std::memory_order_relaxed); }
 
-    Int64 add(Int64 delta) noexcept
+    ALWAYS_INLINE inline Int64 add(Int64 delta) noexcept
     {
         /// Not a real atomic RMW for performance considerations.
         /// All writes (add, store) come from a single thread, so this is fine.
@@ -35,6 +35,14 @@ public:
 
 private:
     std::atomic<Int64> value{0};
+};
+
+
+class UntrackedMemoryCounter : public boost::intrusive::list_base_hook<>, public ThreadLocalCounter
+{
+public:
+    UntrackedMemoryCounter();
+    ~UntrackedMemoryCounter();
 };
 
 
