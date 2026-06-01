@@ -185,6 +185,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     checkInitialized();
     if (do_optimize)
         optimize(optimization_settings);
+    else
+        QueryPlanOptimizations::assignRowsAfterWhereCounters(*root);
 
     struct Frame
     {
@@ -725,6 +727,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
+    QueryPlanOptimizations::assignRowsAfterWhereCounters(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns) const

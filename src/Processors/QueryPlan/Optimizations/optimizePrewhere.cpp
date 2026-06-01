@@ -157,14 +157,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (typeid_cast<ReadFromMerge *>(child_node->step.get()))
         return;
 
-    /// Check early if the child is ReadFromMergeTree so we can set RowsAfterWhere counting flags.
-    /// Pessimistic default: assume the FilterStep will remain (WHERE not fully pushed), so count at FilterStep.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step)
-    {
-        filter_step->setCountOutputRows(true);
-        read_from_merge_tree_step->setCountOutputRows(false);
-    }
 
     const auto & storage_snapshot = source_step_with_filter->getStorageSnapshot();
     const auto & storage = storage_snapshot->storage;
@@ -287,19 +280,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             filter_step->getFilterColumnName(),
             filter_step->removesFilterColumn());
 
-        /// Remaining WHERE stays as FilterStep -- it should count RowsAfterWhere.
-        if (read_from_merge_tree_step)
-            new_filter_step->setCountOutputRows(true);
+        new_filter_step->setCountOutputRows(filter_step->countsOutputRows());
 
         new_step = std::move(new_filter_step);
     }
     else
     {
-        /// WHERE fully pushed to PREWHERE -- re-enable counting at ReadFromMergeTree
-        /// since the old FilterStep (which had the flag) is about to be destroyed.
-        if (read_from_merge_tree_step)
-            read_from_merge_tree_step->setCountOutputRows(true);
-
         /// Have to keep this expression to change column names to column identifiers
         new_step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),

@@ -272,6 +272,8 @@ void FilterStep::serialize(Serialization & ctx) const
     UInt8 flags = 0;
     if (remove_filter_column)
         flags |= 1;
+    if (count_output_rows)
+        flags |= 2;
     writeIntBinary(flags, ctx.out);
 
     writeStringBinary(filter_column_name, ctx.out);
@@ -288,13 +290,16 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     readIntBinary(flags, ctx.in);
 
     bool remove_filter_column = bool(flags & 1);
+    bool count_output_rows = bool(flags & 2);
 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
-    return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    auto step = std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+    step->setCountOutputRows(count_output_rows);
+    return step;
 }
 
 bool FilterStep::canRemoveUnusedColumns() const

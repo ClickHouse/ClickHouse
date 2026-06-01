@@ -39,6 +39,7 @@ public:
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
     void setCountOutputRows(bool v) { count_output_rows = v; }
+    bool countsOutputRows() const { return count_output_rows; }
 
     static bool canUseType(const DataTypePtr & type);
 

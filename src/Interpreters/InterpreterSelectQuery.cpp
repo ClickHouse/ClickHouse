@@ -2911,6 +2911,7 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsA
     auto where_step = std::make_unique<FilterStep>(
         query_plan.getCurrentHeader(), std::move(dag), getSelectQuery().where()->getColumnName(), remove_filter);
 
+    where_step->setCountOutputRows(true);
     where_step->setStepDescription("WHERE");
     query_plan.addStep(std::move(where_step));
 }

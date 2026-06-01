@@ -1,6 +1,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -13,7 +15,9 @@
 #include <Common/Exception.h>
 
 #include <memory>
+#include <optional>
 #include <stack>
+#include <vector>
 
 namespace DB
 {
@@ -46,6 +50,92 @@ extern const int PROJECTION_NOT_USED;
 
 namespace QueryPlanOptimizations
 {
+
+namespace
+{
+
+struct RowsAfterWhereState
+{
+    std::vector<ReadFromMergeTree *> reads;
+    FilterStep * filter = nullptr;
+    bool valid = false;
+};
+
+void finalizeRowsAfterWhereState(RowsAfterWhereState & state)
+{
+    if (!state.valid)
+        return;
+
+    if (state.filter)
+    {
+        state.filter->setCountOutputRows(true);
+        for (auto * read : state.reads)
+            read->setCountOutputRows(false);
+    }
+
+    state = {};
+}
+
+RowsAfterWhereState assignRowsAfterWhereCountersImpl(QueryPlan::Node & node)
+{
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node.step.get()))
+    {
+        read_from_merge_tree->setCountOutputRows(true);
+        return {.reads = {read_from_merge_tree}, .valid = true};
+    }
+
+    std::optional<RowsAfterWhereState> child_state;
+    if (node.children.size() == 1)
+    {
+        child_state = assignRowsAfterWhereCountersImpl(*node.children.front());
+    }
+    else
+    {
+        for (auto * child : node.children)
+        {
+            auto state = assignRowsAfterWhereCountersImpl(*child);
+            finalizeRowsAfterWhereState(state);
+        }
+    }
+
+    if (auto * filter = typeid_cast<FilterStep *>(node.step.get()))
+    {
+        const bool count_output_rows = filter->countsOutputRows();
+        filter->setCountOutputRows(false);
+
+        if (child_state && child_state->valid)
+        {
+            if (count_output_rows)
+            {
+                child_state->filter = filter;
+                return *child_state;
+            }
+
+            finalizeRowsAfterWhereState(*child_state);
+        }
+
+        return {};
+    }
+
+    if (child_state && child_state->valid)
+    {
+        const auto * transforming_step = typeid_cast<const ITransformingStep *>(node.step.get());
+        if (transforming_step && transforming_step->getTransformTraits().preserves_number_of_rows)
+            return *child_state;
+
+        finalizeRowsAfterWhereState(*child_state);
+    }
+
+    return {};
+}
+
+}
+
+void assignRowsAfterWhereCounters(QueryPlan::Node & root)
+{
+    auto state = assignRowsAfterWhereCountersImpl(root);
+    finalizeRowsAfterWhereState(state);
+}
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {

@@ -80,6 +80,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
+        filter->setCountOutputRows(parent_filter->countsOutputRows());
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             filter->setPreventInputRemoval();
@@ -133,6 +134,7 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    std::move(child_actions),
                                                    condition.result_name,
                                                    true);
+        filter->setCountOutputRows(parent_filter->countsOutputRows() || child_filter->countsOutputRows());
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
