@@ -217,6 +217,7 @@ void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
 void registerCodecALP(CompressionCodecFactory & factory);
+void registerCodecPco(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -233,6 +234,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecFPC(*this);
     registerCodecGCD(*this);
     registerCodecALP(*this);
+    registerCodecPco(*this);
 
     default_codec = get("LZ4", {});
 }
