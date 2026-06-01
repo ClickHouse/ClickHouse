@@ -553,7 +553,7 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes, const std::optional<Reservation
             }
 
             /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
+            if (constraints->min_ratio > 0.0f)
             {
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)
@@ -782,8 +782,8 @@ void DiskObjectStorage::prepareRead(
 
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
+        && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
         && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
@@ -791,7 +791,7 @@ void DiskObjectStorage::prepareRead(
 #endif
 
     if (prefer_bigger_buffer_size)
-        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
+        read_settings.remote_fs_settings.buffer_size = std::max<size_t>(read_settings.remote_fs_settings.buffer_size, read_settings.remote_fs_settings.large_buffer_size);
 
     /// Object storage files may be split across multiple blobs — gather joins them.
     pipeline.needGather();
@@ -805,7 +805,7 @@ void DiskObjectStorage::prepareRead(
 
     /// Memory cache (page cache).
     const bool use_page_cache =
-        read_settings.page_cache
+        read_settings.page_cache_settings.cache
         && (use_distributed_cache
             ? read_settings.use_page_cache_with_distributed_cache
             : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
@@ -819,7 +819,7 @@ void DiskObjectStorage::prepareRead(
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
 
-        pipeline.needMemoryCache(read_settings.page_cache, std::move(cache_path_prefix), read_settings.getPageCacheSettings());
+        pipeline.needMemoryCache(std::move(cache_path_prefix), read_settings.page_cache_settings);
     }
 
     /// Async prefetch.
@@ -827,7 +827,7 @@ void DiskObjectStorage::prepareRead(
     /// prefetching: it maintains the position/seek/setReadUntilPosition contract that upstream
     /// buffers (e.g. `ReadBufferFromEncryptedFile`) rely on. `ReadBufferFromDistributedCache`
     /// does not implement this contract on its own.
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool || use_distributed_cache)
+    if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool || use_distributed_cache)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         pipeline.needAsyncPrefetch(
