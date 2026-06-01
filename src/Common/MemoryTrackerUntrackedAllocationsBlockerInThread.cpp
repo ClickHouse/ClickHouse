@@ -1,7 +1,7 @@
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <cstdint>
 
-static thread_local uint64_t MemoryTrackerUntrackedAllocationsBlockerInThreadCounter;
+static thread_local constinit uint64_t MemoryTrackerUntrackedAllocationsBlockerInThreadCounter = 0;
 
 MemoryTrackerUntrackedAllocationsBlockerInThread::MemoryTrackerUntrackedAllocationsBlockerInThread()
 {
