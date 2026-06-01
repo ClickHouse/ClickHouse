@@ -480,6 +480,7 @@ class MergeTreeIndexText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         MergeTreeIndexTextParams params_,
         std::unique_ptr<ITokenizer> tokenizer_,

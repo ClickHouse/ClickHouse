@@ -401,7 +401,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
         if (is_virtual_column_index(index))
             continue;
 
-        indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+        indices.emplace_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index));
     }
 
     return indices;

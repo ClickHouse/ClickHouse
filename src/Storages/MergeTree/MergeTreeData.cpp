@@ -10954,7 +10954,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices()),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,

@@ -463,9 +463,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
-    const IndexDescription & index)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index)
 {
-    return std::make_shared<MergeTreeIndexMinMax>(index);
+    return std::make_shared<MergeTreeIndexMinMax>(std::move(metadata_snapshot), index);
 }
 
 void minmaxIndexValidator(const IndexDescription & index, bool attach)

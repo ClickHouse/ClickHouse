@@ -265,7 +265,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     if (it->type != "minmax")
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
 
-    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, *it);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
     if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
         return {};

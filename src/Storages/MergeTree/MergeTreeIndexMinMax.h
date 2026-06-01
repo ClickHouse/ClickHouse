@@ -74,8 +74,8 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
-        : IMergeTreeIndex(index_)
+    MergeTreeIndexMinMax(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     {}
 
     ~MergeTreeIndexMinMax() override = default;

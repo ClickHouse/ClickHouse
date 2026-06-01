@@ -1032,10 +1032,11 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
+    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     size_t bits_per_row_,
     size_t hash_functions_)
-    : IMergeTreeIndex(index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , bits_per_row(bits_per_row_)
     , hash_functions(hash_functions_)
 {
@@ -1078,6 +1079,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr bloomFilterIndexCreator(
+    StorageMetadataPtr metadata_snapshot,
     const IndexDescription & index)
 {
     double false_positive_rate = 0.025;
@@ -1091,7 +1093,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
 
     return std::make_shared<MergeTreeIndexBloomFilter>(
-        index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+        std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
 }
 
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach)

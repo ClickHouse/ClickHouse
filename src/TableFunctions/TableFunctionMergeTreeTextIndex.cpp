@@ -108,7 +108,7 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
             "Got index '{}' of type '{}', expected 'text'",
             source_index_name, index_desc.type);
 
-    auto text_index = MergeTreeIndexFactory::instance().get(index_desc);
+    auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc);
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 

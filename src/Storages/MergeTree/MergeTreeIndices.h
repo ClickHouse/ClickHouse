@@ -241,8 +241,9 @@ using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 
 struct IMergeTreeIndex
 {
-    explicit IMergeTreeIndex(const IndexDescription & index_)
-        : index(index_)
+    IMergeTreeIndex(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+        : metadata_snapshot(std::move(metadata_snapshot_))
+        , index(index_)
     {
     }
 
@@ -293,6 +294,7 @@ struct IMergeTreeIndex
 
     Names getColumnsRequiredForIndexCalc() const;
 
+    StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
 
@@ -317,15 +319,12 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
-
     using Validator = std::function<void(const IndexDescription & index, bool attach)>;
-
     void validate(const IndexDescription & index, bool attach) const;
 
-    MergeTreeIndexPtr get(const IndexDescription & index) const;
-
-    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
+    using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index)>;
+    MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index) const;
+    MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices) const;
 
     void registerCreator(const std::string & index_type, Creator creator);
     void registerValidator(const std::string & index_type, Validator validator);
@@ -342,27 +341,27 @@ private:
     Validators validators;
 };
 
-MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
+MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 #if USE_USEARCH
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void ginIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
+MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index);
 void textIndexValidator(const IndexDescription & index, bool attach);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
