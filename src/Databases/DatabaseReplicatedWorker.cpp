@@ -2,10 +2,8 @@
 #include <base/sleep.h>
 
 #include <filesystem>
-#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>

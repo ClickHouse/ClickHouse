@@ -272,7 +272,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
-    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -1453,10 +1452,6 @@ struct FunctionsStressTestThread
             }
         }
 
-        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
-        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
-        /// keep the destructor's id-vs-context invariant happy.
-        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {

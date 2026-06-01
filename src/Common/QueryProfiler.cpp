@@ -15,8 +15,6 @@
 #include <Common/thread_local_rng.h>
 #include <csignal>
 
-#include "config.h"
-
 
 namespace CurrentMetrics
 {
@@ -88,17 +86,17 @@ namespace
         UNUSED(info);
 #endif
 
+        const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         std::optional<StackTrace> stack_trace;
 
-#if defined(THREAD_SANITIZER)
-        /// Under TSan, use abseil's frame-pointer-based unwinding (via the default
-        /// StackTrace constructor) instead of the ucontext_t constructor which uses libunwind.
-        UNUSED(context);
-        stack_trace.emplace();
+#if defined(SANITIZER)
+        constexpr bool sanitizer = true;
 #else
-        const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
+        constexpr bool sanitizer = false;
+#endif
+
         asynchronous_stack_unwinding = true;
-        if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        if (sanitizer || 0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
         {
             stack_trace.emplace(signal_context);
         }
@@ -107,7 +105,6 @@ namespace
             ProfileEvents::incrementNoTrace(ProfileEvents::QueryProfilerErrors);
         }
         asynchronous_stack_unwinding = false;
-#endif
 
         if (stack_trace)
             TraceSender::send(trace_type, *stack_trace, {});
@@ -238,14 +235,12 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
     [[maybe_unused]] UInt64 thread_id, [[maybe_unused]] int clock_type, [[maybe_unused]] UInt64 period, [[maybe_unused]] int pause_signal_)
     : log(getLogger("QueryProfiler")), pause_signal(pause_signal_)
 {
-#if defined(SIGEV_THREAD_ID)
-    /// Under TSan we use frame-pointer-based unwinding (via abseil) which does not
-    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed for
-    /// stack capture. Symbolization happens later in a normal thread context.
-#if !defined(THREAD_SANITIZER)
+#if defined(SANITIZER)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(SIGEV_THREAD_ID)
+    /// Sanity check.
     if (!hasPHDRCache())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache in this build");
-#endif
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache, that is not available for TSan build");
 
     struct sigaction sa{};
     sa.sa_sigaction = ProfilerImpl::signalHandler;
@@ -280,7 +275,9 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::setPeriod([[maybe_unused]] UInt64 period_)
 {
-#if defined(SIGEV_THREAD_ID)
+#if defined(SANITIZER)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler disabled because they cannot work under sanitizers");
+#elif defined(SIGEV_THREAD_ID)
     timer.set(period_);
 #else
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler requires SIGEV_THREAD_ID");

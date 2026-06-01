@@ -151,7 +151,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
         /// Add non sargable reference
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
-        sfc->mutable_func()->set_catalog_func(rg.pickRandomly(this->one_arg_funcs).fname);
+        sfc->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
         expr = sfc->add_args()->mutable_expr();
     }
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
@@ -295,9 +295,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitRandStr: {
-            static const DB::Strings sfuncs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
+            static const DB::Strings funcs = {"randomString", "randomFixedString", "randomPrintableASCII", "randomStringUTF8"};
 
-            lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(sfuncs), rg.nextStrlen()));
+            lv->set_no_quote_str(fmt::format("{}({})", rg.pickRandomly(funcs), rg.nextStrlen()));
         }
         break;
         case LitOp::LitUUID:
@@ -380,7 +380,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
         SQLFuncCall * fcall = expr->mutable_comp_expr()->mutable_func_call();
 
-        fcall->mutable_func()->set_catalog_func("map");
+        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCmap);
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
@@ -505,14 +505,22 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
 {
     /// Use search functions more often
     SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-    static const std::vector<std::string> searchFuncs
-        = {"endsWith", "has", "hasToken", "hasTokenOrNull", "mapContains", "match", "hasAllTokens", "hasAnyTokens", "startsWith"};
+    static const std::vector<SQLFunc> searchFuncs
+        = {SQLFunc::FUNCendsWith,
+           SQLFunc::FUNChas,
+           SQLFunc::FUNChasToken,
+           SQLFunc::FUNChasTokenOrNull,
+           SQLFunc::FUNCmapContains,
+           SQLFunc::FUNCmatch,
+           SQLFunc::FUNChasAllTokens,
+           SQLFunc::FUNChasAnyTokens,
+           SQLFunc::FUNCstartsWith};
     const auto & nfunc = rg.pickRandomly(searchFuncs);
 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if ((nfunc == "hasAnyTokens" || nfunc == "hasAllTokens") && rg.nextBool())
+    if ((nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens) && rg.nextBool())
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
@@ -754,19 +762,26 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
 void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
+    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : this->deterministic_funcs_limit;
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < (this->inside_projection ? 3 : 7));
+    const uint32_t nfuncs = static_cast<uint32_t>(
+        (nallow_funcs ? funcs_size : 0)
+        + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : this->deterministic_aggrs_limit) : 0));
+    std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
-    bool has_lambda = false;
+    uint32_t n_lambda = 0;
     uint32_t min_args = 0;
     uint32_t max_args = 0;
     const uint32_t avail_width = this->width < this->fc.max_width ? this->fc.max_width - this->width : 0;
 
     chassert(nallow_funcs || allow_aggr);
-    if (allow_aggr && (!nallow_funcs || rg.nextSmallNumber() < 7))
+    const uint32_t nopt = next_dist(rg.generator);
+    if (!nallow_funcs || nopt >= static_cast<uint32_t>(funcs_size))
     {
         /// Aggregate
-        const CHAggregate & agg = rg.pickRandomly(
-            this->allow_not_deterministic && !nondet_aggrs.empty() && rg.nextSmallNumber() < 4 ? this->nondet_aggrs : this->det_aggrs);
+        const uint32_t next_off
+            = rg.nextSmallNumber() < 2 ? (rg.nextLargeNumber() % 5) : (nopt - static_cast<uint32_t>(nallow_funcs ? funcs_size : 0));
+        const CHAggregate & agg = CHAggrs[next_off];
         const uint32_t ncombinators = rg.nextSmallNumber() < 4 ? std::min(avail_width, rg.randomInt<uint32_t>(1, 3)) : 0;
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
@@ -795,7 +810,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         /// Most of the times disallow nested aggregates, and window functions inside aggregates
         this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
         this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
-        if (agg.fname == "estimateCompressionRatio" && rg.nextSmallNumber() < 9)
+        if (agg.fnum == SQLFunc::FUNCestimateCompressionRatio && rg.nextSmallNumber() < 9)
         {
             func_call->add_params()->mutable_lit_val()->set_no_quote_str("'" + generateNextCodecString(rg) + "'");
             if (rg.nextBool())
@@ -898,31 +913,34 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         {
             func_call->set_fnulls(rg.nextBool() ? FuncNulls::NRESPECT : FuncNulls::NIGNORE);
         }
-        func_call->mutable_func()->set_catalog_func(agg.fname);
+        func_call->mutable_func()->set_catalog_func(static_cast<SQLFunc>(agg.fnum));
     }
     else
     {
         /// Function
         SQLFuncName * sfn = func_call->mutable_func();
 
-        if (!this->functions.empty() && this->peer_query != PeerQuery::ClickHouseOnly && this->allow_not_deterministic
+        if (!this->functions.empty() && this->peer_query != PeerQuery::ClickHouseOnly
+            && (this->allow_not_deterministic || collectionHas<SQLFunction>(StatementGenerator::funcDeterministicLambda))
             && rg.nextSmallNumber() < 3)
         {
             /// Use a function from the user
-            const SQLFunction & func = rg.pickValueRandomlyFromMap(this->functions);
+            const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
+                ? std::ref<const SQLFunction>(rg.pickValueRandomlyFromMap(this->functions))
+                : rg.pickRandomly(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
 
-            min_args = max_args = (rg.nextLargeNumber() < 21 ? rg.randomInt<uint32_t>(0, 3) : func.nargs);
-            func.setName(sfn->mutable_function());
+            min_args = max_args = (rg.nextLargeNumber() < 21 ? rg.randomInt<uint32_t>(0, 3) : func.get().nargs);
+            func.get().setName(sfn->mutable_function());
         }
         else
         {
             /// Use a default catalog function
-            const CHFunction & func = rg.pickRandomly(
-                this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
-                    ? this->nondet_funcs
-                    : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs));
+            const CHFunction & func = rg.nextMediumNumber() < 10 ? rg.pickRandomly(CommonCHFuncs) : CHFuncs[nopt];
 
-            has_lambda = func.lambda_kind == LambdaKind::Required || (func.lambda_kind == LambdaKind::Optional && rg.nextBool());
+            n_lambda = ((func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 1)
+                        || (func.max_lambda_param == 1 && rg.nextBool()))
+                ? 1
+                : 0;
             if (rg.nextLargeNumber() < 21)
             {
                 /// Go random
@@ -934,53 +952,34 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                 min_args = func.min_args;
                 const uint32_t max_possible_args = std::min(func.max_args, UINT32_C(5));
                 max_args = std::min(avail_width, max_possible_args);
-                if (has_lambda && func.lambda_kind == LambdaKind::Required && min_args > 0)
-                    min_args--;
-                if (has_lambda && max_args > 0)
-                    max_args--;
             }
-            sfn->set_catalog_func(func.fname);
+            sfn->set_catalog_func(static_cast<SQLFunc>(func.fnum));
         }
 
-        const uint32_t nfunc_args
-            = (max_args > 0 && max_args >= min_args) ? std::uniform_int_distribution<uint32_t>(min_args, max_args)(rg.generator) : min_args;
-
-        if (has_lambda)
+        if (n_lambda > 0)
         {
-            const uint32_t lambda_arity = std::max(nfunc_args, UINT32_C(1));
-            const auto arity_filter = [lambda_arity](const CHFunction & f)
-            { return f.lambda_kind == LambdaKind::None && f.min_args <= lambda_arity && lambda_arity <= f.max_args; };
-
-            if (rg.nextBool())
-            {
-                const auto & source = this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
-                    ? this->nondet_funcs
-                    : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs);
-                const auto it = std::find_if(source.begin(), source.end(), arity_filter);
-
-                if (it != source.end())
-                {
-                    std::vector<std::reference_wrapper<const CHFunction>> candidates;
-                    std::copy_if(source.begin(), source.end(), std::back_inserter(candidates), arity_filter);
-                    func_call->add_args()->set_func_name(rg.pickRandomly(candidates).get().fname);
-                }
-                else
-                {
-                    generateLambdaCall(rg, lambda_arity, func_call->add_args()->mutable_lambda());
-                }
-            }
-            else
-            {
-                generateLambdaCall(rg, lambda_arity, func_call->add_args()->mutable_lambda());
-            }
+            generateLambdaCall(rg, rg.nextBool() ? 1 : rg.randomInt<uint32_t>(1, 3), func_call->add_args()->mutable_lambda());
             this->width++;
             generated_params++;
         }
-        for (uint32_t i = 0; i < nfunc_args; i++)
+        if (max_args > 0 && max_args >= min_args)
         {
-            this->generateExpression(rg, func_call->add_args()->mutable_expr());
-            this->width++;
-            generated_params++;
+            std::uniform_int_distribution<uint32_t> nparams(min_args, max_args);
+            const uint32_t nfunc_args = nparams(rg.generator);
+
+            for (uint32_t i = 0; i < nfunc_args; i++)
+            {
+                this->generateExpression(rg, func_call->add_args()->mutable_expr());
+                this->width++;
+                generated_params++;
+            }
+        }
+        else if (min_args > 0)
+        {
+            for (uint32_t i = 0; i < min_args; i++)
+            {
+                generateLiteralValue(rg, true, func_call->add_args()->mutable_expr());
+            }
         }
     }
     this->width -= generated_params;
@@ -991,12 +990,13 @@ void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFun
 {
     const size_t funcs_size = CHTableFuncs.size();
     std::uniform_int_distribution<size_t> next_dist(0, funcs_size - 1);
-    const CHTableFunction & func = CHTableFuncs[next_dist(rg.generator)];
+    const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     uint32_t generated_params = 0;
     uint32_t min_args = 0;
     uint32_t max_args = 0;
 
     tfunc_call->set_func(static_cast<SQLTableFunc>(func.fnum));
+    chassert(func.min_lambda_param == func.max_lambda_param && func.max_lambda_param == 0);
     if (rg.nextBool())
     {
         /// Completely random
@@ -1434,7 +1434,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             /// Use count(*) in projections more often
             SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
-            sfc->mutable_func()->set_catalog_func("count");
+            sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCcount);
         }
         break;
         case ExpOp::DictExpr: {
@@ -1467,7 +1467,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             const uint32_t nkeys
                 = std::max<uint32_t>(1, std::min<uint32_t>(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)));
 
-            sfc->mutable_func()->set_catalog_func(rg.nextBool() ? "joinGet" : "joinGetOrNull");
+            sfc->mutable_func()->set_catalog_func(rg.nextBool() ? SQLFunc::FUNCjoinGet : SQLFunc::FUNCjoinGetOrNull);
             sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + t.getFullName(true) + "'");
             flatTableColumnPath(
                 flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
@@ -1498,32 +1498,53 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             ///           deserializer robustness against garbage input)
 
             /// Functions whose state is compatible with SimpleAggregateFunction
-            static const std::vector<std::string> simple_funcs = {
-                "any",
-                "anyLast",
-                "groupBitAnd",
-                "groupBitOr",
-                "groupBitXor",
-                "max",
-                "min",
-                "sum",
-                "sumWithOverflow",
+            static const std::vector<SQLFunc> simple_funcs = {
+                SQLFunc::FUNCany,
+                SQLFunc::FUNCanyLast,
+                SQLFunc::FUNCgroupBitAnd,
+                SQLFunc::FUNCgroupBitOr,
+                SQLFunc::FUNCgroupBitXor,
+                SQLFunc::FUNCmax,
+                SQLFunc::FUNCmin,
+                SQLFunc::FUNCsum,
+                SQLFunc::FUNCsumWithOverflow,
             };
 
             /// Full list for plain AggregateFunction / -If combinator
-            static const std::vector<std::string> aggr_funcs = {
-                "any",          "anyLast",        "avg",       "count",    "entropy",       "groupBitAnd",      "groupBitOr",
-                "groupBitXor",  "kurtSamp",       "max",       "min",      "quantileExact", "quantileExactLow", "quantileExactHigh",
-                "skewSamp",     "stddevSamp",     "sum",       "sumCount", "sumKahan",      "sumWithOverflow",  "uniq",
-                "uniqCombined", "uniqCombined64", "uniqExact", "varSamp",
+            static const std::vector<SQLFunc> aggr_funcs = {
+                SQLFunc::FUNCany,
+                SQLFunc::FUNCanyLast,
+                SQLFunc::FUNCavg,
+                SQLFunc::FUNCcount,
+                SQLFunc::FUNCentropy,
+                SQLFunc::FUNCgroupBitAnd,
+                SQLFunc::FUNCgroupBitOr,
+                SQLFunc::FUNCgroupBitXor,
+                SQLFunc::FUNCkurtSamp,
+                SQLFunc::FUNCmax,
+                SQLFunc::FUNCmin,
+                SQLFunc::FUNCquantileExact,
+                SQLFunc::FUNCquantileExactLow,
+                SQLFunc::FUNCquantileExactHigh,
+                SQLFunc::FUNCskewSamp,
+                SQLFunc::FUNCstddevSamp,
+                SQLFunc::FUNCsum,
+                SQLFunc::FUNCsumCount,
+                SQLFunc::FUNCsumKahan,
+                SQLFunc::FUNCsumWithOverflow,
+                SQLFunc::FUNCuniq,
+                SQLFunc::FUNCuniqCombined,
+                SQLFunc::FUNCuniqCombined64,
+                SQLFunc::FUNCuniqExact,
+                SQLFunc::FUNCvarSamp,
             };
 
             /// Dimension 2: modifier
             const uint32_t modifier = rg.nextSmallNumber(); /// 0-9
             const bool use_simple = modifier < 2; /// ~20%: SimpleAggregateFunction
             const bool use_if = !use_simple && modifier < 5; /// ~30%: -If combinator
-            const std::string aggr = use_simple ? rg.pickRandomly(simple_funcs) : rg.pickRandomly(aggr_funcs);
-            const String & base_name = aggr;
+            const SQLFunc aggr = use_simple ? rg.pickRandomly(simple_funcs) : rg.pickRandomly(aggr_funcs);
+            const String base_name = SQLFunc_Name(aggr).substr(4);
             /// Dimension 3: mode
             String hex_bytes;
             const bool use_random_bytes = rg.nextBool();
@@ -1540,7 +1561,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             constexpr uint64_t scalar_mask = allow_unsigned_int | allow_int8 | allow_int16 | allow_int64 | allow_float32 | allow_float64
                 | allow_strings | allow_dates | allow_datetimes | allow_decimals | allow_nullable | allow_low_cardinality;
 
-            if (!use_simple && !use_if && aggr == "count")
+            if (!use_simple && !use_if && aggr == SQLFunc::FUNCcount)
             {
                 /// count has no subtype
                 expr->mutable_lit_val()->set_no_quote_str(
