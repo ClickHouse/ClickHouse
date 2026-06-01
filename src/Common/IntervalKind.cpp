@@ -247,6 +247,61 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 }
 
 
+bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result)
+{
+    /// Mirrors `toNameOfFunctionExtractTimePart`. `toNanosecond` / `toMicrosecond`
+    /// are listed there as well but no such ClickHouse functions exist, so we
+    /// don't recognise them here either - extraction on those interval kinds
+    /// would fail at function-resolution time anyway.
+    if (name == "toMillisecond")
+    {
+        result = IntervalKind::Kind::Millisecond;
+        return true;
+    }
+    if (name == "toSecond")
+    {
+        result = IntervalKind::Kind::Second;
+        return true;
+    }
+    if (name == "toMinute")
+    {
+        result = IntervalKind::Kind::Minute;
+        return true;
+    }
+    if (name == "toHour")
+    {
+        result = IntervalKind::Kind::Hour;
+        return true;
+    }
+    if (name == "toDayOfMonth")
+    {
+        result = IntervalKind::Kind::Day;
+        return true;
+    }
+    if (name == "toISOWeek")
+    {
+        result = IntervalKind::Kind::Week;
+        return true;
+    }
+    if (name == "toMonth")
+    {
+        result = IntervalKind::Kind::Month;
+        return true;
+    }
+    if (name == "toQuarter")
+    {
+        result = IntervalKind::Kind::Quarter;
+        return true;
+    }
+    if (name == "toYear")
+    {
+        result = IntervalKind::Kind::Year;
+        return true;
+    }
+    return false;
+}
+
+
 bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
 {
     if ("nanosecond" == kind)

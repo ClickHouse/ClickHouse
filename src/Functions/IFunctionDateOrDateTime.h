@@ -1,7 +1,9 @@
 #pragma once
+#include <Common/IntervalKind.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -42,26 +44,50 @@ class FunctionDateOrDateTimeBase : public IFunction
         return true;
     }
 
+    /// Calendar-field extractors registered via `FunctionDateOrDateTimeToSomething`
+    /// (`toYear`, `toMonth`, `toDayOfMonth`, ...) also accept an `Interval`
+    /// operand to support PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`.
+    /// Other `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
+    /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
+    bool acceptsIntervalArgument() const
+    {
+        IntervalKind::Kind unused;
+        return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
+    }
+
+    static bool isAcceptableFirstArgument(const DataTypePtr & type, bool accept_interval)
+    {
+        return isDateOrDate32OrDateTimeOrDateTime64(type) || (accept_interval && isInterval(type));
+    }
+
 protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
+        const bool accept_interval = acceptsIntervalArgument();
+        const char * expected = accept_interval
+            ? "Date, Date32, DateTime, DateTime64 or Interval"
+            : "Date, Date32, DateTime or DateTime64";
         if (arguments.size() == 1)
         {
-            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+            if (!isAcceptableFirstArgument(arguments[0].type, accept_interval))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
+                    "Illegal type {} of argument of function {}. Should be {}",
+                    arguments[0].type->getName(), getName(), expected);
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+            if (!isAcceptableFirstArgument(arguments[0].type, accept_interval))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
+                    "Illegal type {} of argument of function {}. Should be {}",
+                    arguments[0].type->getName(), getName(), expected);
             if (!isString(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} supports 1 or 2 arguments. The optional 2nd argument must be "
                     "a constant string with a timezone name",
+                    getName());
+            if (isInterval(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} is not allowed when the 1st argument is an Interval",
                     getName());
             if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

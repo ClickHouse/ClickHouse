@@ -1611,6 +1611,8 @@ enum class ExtractUnit : uint8_t
     Century,
     Decade,
     Millennium,
+    TimezoneHour,
+    TimezoneMinute,
 };
 
 /// Builds the AST corresponding to `EXTRACT(unit FROM expr)` /
@@ -1654,6 +1656,18 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
                     makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
                     make_intrusive<ASTLiteral>(UInt64(1000))),
                 make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::TimezoneHour:
+            /// PostgreSQL TIMEZONE_HOUR: signed hour part of the UTC offset (e.g. +5:30 -> 5, -3:30 -> -3)
+            return makeASTFunction("intDiv",
+                makeASTFunction("timezoneOffset", expr),
+                make_intrusive<ASTLiteral>(UInt64(3600)));
+        case ExtractUnit::TimezoneMinute:
+            /// PostgreSQL TIMEZONE_MINUTE: signed minute part of the UTC offset (e.g. +5:30 -> 30, -3:30 -> -30)
+            return makeASTFunction("intDiv",
+                makeASTFunction("modulo",
+                    makeASTFunction("timezoneOffset", expr),
+                    make_intrusive<ASTLiteral>(UInt64(3600))),
+                make_intrusive<ASTLiteral>(UInt64(60)));
         case ExtractUnit::None:
             UNREACHABLE();
     }
@@ -1755,6 +1769,10 @@ static bool tryParseExtractUnitFromString(const std::string & unit_lower, Interv
         extract_unit = ExtractUnit::Decade;
     else if (unit_lower == "millennium")
         extract_unit = ExtractUnit::Millennium;
+    else if (unit_lower == "timezone_hour")
+        extract_unit = ExtractUnit::TimezoneHour;
+    else if (unit_lower == "timezone_minute")
+        extract_unit = ExtractUnit::TimezoneMinute;
     else
         return false;
 
@@ -1853,6 +1871,10 @@ private:
             extract_unit = ExtractUnit::Decade;
         else if (ParserKeyword(Keyword::MILLENNIUM).ignore(pos, expected))
             extract_unit = ExtractUnit::Millennium;
+        else if (ParserKeyword(Keyword::TIMEZONE_HOUR).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneHour;
+        else if (ParserKeyword(Keyword::TIMEZONE_MINUTE).ignore(pos, expected))
+            extract_unit = ExtractUnit::TimezoneMinute;
         else
             return false;
 

@@ -1,5 +1,8 @@
 #pragma once
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionDateOrDateTime.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -21,6 +24,14 @@ public:
     {
         constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
         this->checkArguments(arguments, result_is_date_or_date32);
+
+        /// For Interval operands, we return the raw stored value as Int64. The
+        /// function's natural return type (e.g. UInt8 for `toDayOfMonth`) is
+        /// sized for a calendar field range (1..31), not for arbitrary interval
+        /// magnitudes or negative values, so widening to Int64 avoids silent
+        /// overflow/wrap.
+        if (isInterval(arguments[0].type))
+            return std::make_shared<DataTypeInt64>();
 
         /// For DateTime results, if time zone is specified, attach it to type.
         /// If the time zone is specified but empty, throw an exception.
@@ -84,6 +95,8 @@ public:
     {
         const IDataType * from_type = arguments[0].type.get();
 
+        if (isInterval(from_type))
+            return executeOnInterval(arguments, result_type, input_rows_count);
         if (isDate(from_type))
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         if (isDate32(from_type))
@@ -113,6 +126,34 @@ public:
             this->getName());
     }
 
+private:
+    /// PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`: when this function
+    /// is the calendar-field extractor matching the interval's kind (e.g.
+    /// `toDayOfMonth` on `IntervalDay`), return the underlying Int64 values cast
+    /// to the function's result type. ClickHouse intervals are single-kind, so
+    /// a request for any other unit (e.g. `toHour` on `IntervalDay`) is
+    /// rejected rather than silently converted via average-seconds.
+    ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    {
+        IntervalKind::Kind required;
+        if (!IntervalKind::tryParseFromNameOfFunctionExtractTimePart(this->getName(), required))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} does not support Interval arguments",
+                this->getName());
+
+        const auto & interval_type = static_cast<const DataTypeInterval &>(*arguments[0].type);
+        if (interval_type.getKind() != required)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Cannot extract {} from {}: the interval's unit does not match the requested unit",
+                IntervalKind(required).toLowercasedKeyword(),
+                interval_type.getName());
+
+        return castColumn(arguments[0], result_type);
+    }
+
+public:
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
     FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
