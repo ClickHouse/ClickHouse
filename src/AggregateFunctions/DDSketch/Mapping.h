@@ -49,17 +49,19 @@ public:
 
     Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
 
-    /// Keys a real value could produce, so we can reject corrupted bins on deserialize
-    /// Clamped to int because that's how keys are stored
+    /// Keys a real value could produce, used to reject corrupted bins on deserialize
+    /// Bounded well inside the int range — the store overflows centering bins near INT_MIN/MAX —
+    /// and clamped in floating point so a corrupted inf/NaN bound can't make the cast UB
     std::pair<Int64, Int64> validKeyRange() const
     {
+        static constexpr Int64 key_bound = Int64(1) << 30;
         const auto to_key = [](Float64 v) -> Int64
         {
             v = std::floor(v);
-            if (!(v >= static_cast<Float64>(std::numeric_limits<int>::min()))) // also catches NaN
-                return std::numeric_limits<int>::min();
-            if (v > static_cast<Float64>(std::numeric_limits<int>::max()))
-                return std::numeric_limits<int>::max();
+            if (!(v >= -static_cast<Float64>(key_bound))) // also catches NaN
+                return -key_bound;
+            if (v > static_cast<Float64>(key_bound))
+                return key_bound;
             return static_cast<Int64>(v);
         };
         return {to_key(logGamma(min_possible) + offset), to_key(logGamma(max_possible) + offset)};

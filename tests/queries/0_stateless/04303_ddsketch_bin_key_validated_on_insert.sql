@@ -19,4 +19,8 @@ SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000
 -- Corrupted mapping with a huge (but finite) offset
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02000000000000004000C84E676DC1AB4301040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
 
+-- gamma ~ 1 (nextafter(1.0, 2.0)) with a bin at INT_MIN, rejected before the store overflows centering the bins
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02010000000000F03F0000000000000000010401FFFFFFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA
+}
+
 DROP TABLE t_ddsketch_bad;
