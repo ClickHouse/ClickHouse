@@ -82,12 +82,12 @@ If genuinely unsure, use `AskUserQuestion`: "Will you build or run tests in this
 
 Only do this step if step 5 selected the build/test path. Instead of cloning each submodule from the network, hardlink the git modules directory from the main repo. This gives each worktree an independent copy of the submodule git data (safe to modify independently) without using extra disk space for the object files, and without any network access.
 
-Determine `GIT_DIR` — the `.git` directory of the main repo. For a regular repo this is `<MAIN_REPO>/.git`. For a worktree it may differ; use `git -C <MAIN_REPO> rev-parse --git-common-dir` to get the correct path.
+Determine `GIT_DIR` — the `.git` directory of the main repo. For a regular repo this is `<MAIN_REPO>/.git`. For a worktree it may differ; use `git -C <MAIN_REPO> rev-parse --path-format=absolute --git-common-dir` to get the correct path. The `--path-format=absolute` flag is important: without it `--git-common-dir` returns a path relative to `<MAIN_REPO>` (just `.git`), which breaks every later `$GIT_DIR/...` reference the moment the shell's working directory is not `<MAIN_REPO>`. The flag must come before `--git-common-dir`.
 
 Determine `WORKTREE_ENTRY` — the name git uses for this worktree's entry in `$GIT_DIR/worktrees/`. This is `$(basename <WORKTREE_PATH>)`.
 
 ```bash
-GIT_DIR=$(git -C <MAIN_REPO> rev-parse --git-common-dir)
+GIT_DIR=$(git -C <MAIN_REPO> rev-parse --path-format=absolute --git-common-dir)
 WORKTREE_ENTRY=$(basename <WORKTREE_PATH>)
 
 # Hardlink-copy the modules directory from the main repo
