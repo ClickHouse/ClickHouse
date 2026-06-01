@@ -50,7 +50,6 @@ Upcoming meetups
 * [AI Demo Night NY](https://luma.com/zi2360cm) - May 21st, 2026
 * [Toronto Meetup](https://luma.com/d5sytpvo) - June 3rd, 2026
 * [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/314862596/) - June 9th, 2026
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/314863232/) - June 11, 2026
 
 Recent meetups
 * [Chicago Meetup](https://luma.com/c5evgnbc) - May 19th, 2026
