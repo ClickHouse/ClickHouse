@@ -9,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnVector.h>
@@ -51,8 +50,8 @@ public:
     /// If there are two samples with the same timestamp, the one with bigger value is stored
     struct Data
     {
-        ValueType values[2];            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
-        TimestampType timestamps[2];    /// Timestamps might be stored as DateTime64, DateTime32 or even as 16-bit delta from the base timestamp of the grid
+        ValueType values[2]{};            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
+        TimestampType timestamps[2]{};    /// Timestamps might be stored as DateTime64, DateTime32 or even as 16-bit delta from the base timestamp of the grid
         UInt16 filled = 0;              /// Number of samples stored: 0, 1 or 2
 
         void add(TimestampType timestamp, ValueType value)
@@ -297,7 +296,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)

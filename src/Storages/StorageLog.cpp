@@ -45,7 +45,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
-#include <cassert>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -580,12 +579,12 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
             : default_codec;
     };
 
-    const auto & columns = metadata_snapshot->getColumns();
+    const auto & columns = metadata_snapshot->columns;
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    const auto & virtual_columns = metadata_snapshot->virtuals;
+    if (const auto * virtual_desc = virtual_columns.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -735,8 +734,8 @@ StorageLog::StorageLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
@@ -845,7 +844,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         {
             for (auto & data_file : data_files)
             {
-                Mark mark;
+                Mark mark{};
                 mark.read(*marks_rb);
                 data_file.marks[i] = mark;
             }
@@ -921,7 +920,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
+    chassert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -1114,7 +1113,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 
     ColumnSizeByName column_sizes;
 
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    for (const auto & column : getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical())
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
@@ -1218,7 +1217,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)
@@ -1307,7 +1306,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             {
                 for (size_t j = 0; j != num_data_files; ++j)
                 {
-                    Mark mark;
+                    Mark mark{};
                     mark.read(*marks_rb);
                     mark.rows += old_num_rows[j];     /// Adjust the number of rows.
                     mark.offset += old_data_sizes[j]; /// Adjust the offset.
@@ -1354,6 +1353,7 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

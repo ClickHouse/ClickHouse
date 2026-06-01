@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -179,6 +180,7 @@ QueryPlanStepPtr LimitRangeStep::deserialize(Deserialization & ctx)
         limit_value);
 }
 
+void registerLimitRangeStep(QueryPlanStepRegistry & registry);
 void registerLimitRangeStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("LimitRange", LimitRangeStep::deserialize);
