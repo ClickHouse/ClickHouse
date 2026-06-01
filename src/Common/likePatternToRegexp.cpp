@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
+    extern const int BAD_ARGUMENTS;
 }
 
 String likePatternToRegexp(std::string_view pattern)
@@ -203,6 +204,15 @@ String similarToPatternToRegexp(std::string_view pattern)
                 else
                     res += *pos;
                 break;
+            /// Reject re2 extension groups such as `(?:...)`, `(?i:...)`. In SIMILAR TO, `(` only
+            /// opens a group and `?` is a quantifier that must follow an atom, so `(?` is not valid.
+            /// If passed through unchanged, re2 would interpret it as a flag/extension group and could
+            /// silently change matching semantics (e.g. `(?i:...)` enabling case-insensitive matching).
+            case '(':
+                if (!in_bracket && !maybe_in_class && pos + 1 < end && pos[1] == '?')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid SIMILAR TO pattern '{}': '(?' is not allowed", pattern);
+                res += *pos;
+                break;
             /// Handle escape sequence
             case '\\':
                 if (pos + 1 == end)
@@ -228,9 +238,21 @@ String similarToPatternToRegexp(std::string_view pattern)
                         res += "\\\\";
                         ++pos;
                         break;
-                    /// Unknown escape sequence treated literally: as backslash (which must be quoted in re2) + the following character
                     default:
-                        res += "\\\\";
+                        if (in_bracket || maybe_in_class)
+                        {
+                            /// Inside a bracket expression an escaped character is a single literal
+                            /// member of the class. Emit `\<char>` so that, for example, `[\-]` matches
+                            /// only `-` (not a backslash), and `[\^]` matches a literal `^`.
+                            res += '\\';
+                            res += pos[1];
+                            ++pos;
+                        }
+                        else
+                        {
+                            /// Unknown escape sequence treated literally: as backslash (which must be quoted in re2) + the following character
+                            res += "\\\\";
+                        }
                         break;
                 }
                 break;

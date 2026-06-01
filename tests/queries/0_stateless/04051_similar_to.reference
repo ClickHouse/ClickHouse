@@ -128,3 +128,15 @@
 1
 1
 0
+-- Escaped metacharacter inside bracket is a single literal member
+1
+0
+0
+1
+0
+1
+1
+0
+-- re2 extension groups like (?...) are not part of SIMILAR TO and are rejected
+1
+1

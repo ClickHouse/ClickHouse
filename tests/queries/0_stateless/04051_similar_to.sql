@@ -159,3 +159,19 @@ SELECT 'a'  SIMILAR TO '[^[]';                     -- Returns: 1
 SELECT '[a' SIMILAR TO '[[a]_';                    -- Returns: 1
 SELECT 'aa' SIMILAR TO '[[a]_';                    -- Returns: 1
 SELECT 'xb' SIMILAR TO '[[a]_';                    -- Returns: 0
+
+SELECT '-- Escaped metacharacter inside bracket is a single literal member';
+SELECT '-' SIMILAR TO '[\-]';                      -- Returns: 1
+SELECT '\\' SIMILAR TO '[\-]';                     -- Returns: 0
+SELECT 'a' SIMILAR TO '[\-]';                      -- Returns: 0
+SELECT '^' SIMILAR TO '[\^]';                      -- Returns: 1
+SELECT '\\' SIMILAR TO '[\^]';                     -- Returns: 0
+SELECT '-' SIMILAR TO '[[:digit:]\-]';             -- Returns: 1
+SELECT '5' SIMILAR TO '[[:digit:]\-]';             -- Returns: 1
+SELECT '\\' SIMILAR TO '[[:digit:]\-]';            -- Returns: 0
+
+SELECT '-- re2 extension groups like (?...) are not part of SIMILAR TO and are rejected';
+SELECT 'A' SIMILAR TO '(?i:a)'; -- { serverError BAD_ARGUMENTS }
+SELECT 'a' SIMILAR TO '(?:a)';  -- { serverError BAD_ARGUMENTS }
+SELECT 'a' SIMILAR TO '(a)?';                      -- Returns: 1
+SELECT ''  SIMILAR TO '(a)?';                      -- Returns: 1
