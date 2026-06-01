@@ -16,4 +16,7 @@ SELECT quantilesDDMerge(0.01, 0.5)(s)[1] > 0 FROM t_ddsketch_bad;
 -- Read path rejects the same bad state too
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('020000000000000040000000000000000001040180F0FFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
 
+-- Corrupted mapping with a huge (but finite) offset
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02000000000000004000C84E676DC1AB4301040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
 DROP TABLE t_ddsketch_bad;

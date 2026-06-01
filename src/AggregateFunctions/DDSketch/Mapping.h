@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -54,9 +53,16 @@ public:
     /// Clamped to int because that's how keys are stored
     std::pair<Int64, Int64> validKeyRange() const
     {
-        const auto lo = std::max<Int64>(std::numeric_limits<int>::min(), static_cast<Int64>(std::floor(logGamma(min_possible) + offset)));
-        const auto hi = std::min<Int64>(std::numeric_limits<int>::max(), static_cast<Int64>(std::floor(logGamma(max_possible) + offset)));
-        return {lo, hi};
+        const auto to_key = [](Float64 v) -> Int64
+        {
+            v = std::floor(v);
+            if (!(v >= static_cast<Float64>(std::numeric_limits<int>::min()))) // also catches NaN
+                return std::numeric_limits<int>::min();
+            if (v > static_cast<Float64>(std::numeric_limits<int>::max()))
+                return std::numeric_limits<int>::max();
+            return static_cast<Int64>(v);
+        };
+        return {to_key(logGamma(min_possible) + offset), to_key(logGamma(max_possible) + offset)};
     }
 
     Float64 logGamma(Float64 value) const { return std::log(value) * multiplier; }
