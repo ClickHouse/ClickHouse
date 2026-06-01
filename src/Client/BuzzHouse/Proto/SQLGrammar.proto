@@ -188,7 +188,6 @@ message SpecialVal {
         VAL_NON_LEAP_DAY = 73;
         VAL_BEYOND_INT256 = 74;
         VAL_FLOAT64_MAX_SCIENTIFIC = 75;
-        VAL_FLOAT64_OVERFLOW_SCIENTIFIC = 76;
     }
     required SpecialValEnum val = 1;
     optional bool paren = 2;

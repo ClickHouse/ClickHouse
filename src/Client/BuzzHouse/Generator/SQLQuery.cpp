@@ -726,10 +726,6 @@ String StatementGenerator::getNextHTTPURL(RandomGenerator & rg, const bool secur
     }
     if (rg.nextSmallNumber() < 4)
     {
-        ret += "decompress=1&";
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
         /// Small buffer sizes stress intermediate flushes in WriteBufferDecorator
         ret += "buffer_size=" + std::to_string(UINT32_C(1) << (rg.nextSmallNumber() % 14)) + "&";
     }

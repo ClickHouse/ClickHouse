@@ -3715,8 +3715,10 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions (named_collection, text → result)
-        {"aiClassify", "aiEmbed", "aiExtract", "aiGenerate", "aiTranslate"},
+        /// AI functions: 2-arg (named_collection, text → result)
+        {"aiEmbed", "aiGenerate"},
+        /// AI functions: 3-arg (named_collection, text, semantic_arg → result)
+        {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Consistent hash functions (value, num_buckets → Int32)
@@ -3734,9 +3736,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// IP CIDR range functions (IP, UInt8 → Tuple)
         {"IPv4CIDRToRange", "IPv6CIDRToRange"},
         /// IP string predicates (String → UInt8)
-        {"isIPv4String", "isIPv6String"},
-        /// Geohash functions (coordinates/geohash → geohash/coordinates)
-        {"geohashDecode", "geohashEncode"}};
+        {"isIPv4String", "isIPv6String"}};
 
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {

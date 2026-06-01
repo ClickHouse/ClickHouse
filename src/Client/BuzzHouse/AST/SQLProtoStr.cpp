@@ -787,9 +787,6 @@ CONV_FN(SpecialVal, val)
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_MAX_SCIENTIFIC:
             ret += "1e308";
             break;
-        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_OVERFLOW_SCIENTIFIC:
-            ret += "1e309";
-            break;
     }
     ret += val.paren() ? ")" : "";
 }

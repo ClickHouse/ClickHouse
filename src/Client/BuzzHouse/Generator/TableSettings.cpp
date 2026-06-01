@@ -924,7 +924,7 @@ static std::unordered_map<String, CHSetting> ytsaurusTableSettings = {
     {"enable_heavy_proxy_redirection", trueOrFalseSetting},
     {"encode_utf8", trueOrFalseSetting},
     {"force_read_table", trueOrFalseSetting},
-    {"max_streams", highRangeSetting},
+    {"max_streams", highRangeNonZeroSetting},
     {"min_rows_for_spawn_stream", rowsRangeSetting},
     {"skip_unknown_columns", trueOrFalseSetting},
     {"transaction_timeout_ms", highRangeSetting},
