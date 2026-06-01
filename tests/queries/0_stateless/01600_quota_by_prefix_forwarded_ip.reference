@@ -12,3 +12,5 @@ exceeded
 1	::
 --- Test /0 prefix masks every forwarded IP to 0.0.0.0 ---
 1	0.0.0.0
+--- Test IPv4-mapped IPv6 forwarded address is masked by IPV4_PREFIX_BITS ---
+1.2.0.0

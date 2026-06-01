@@ -145,6 +145,29 @@ WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
 FORMAT TSV;
 "
 
+echo '--- Test IPv4-mapped IPv6 forwarded address is masked by IPV4_PREFIX_BITS ---'
+
+${CLICKHOUSE_CLIENT} --query "
+DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
+    KEYED BY forwarded_ip_address
+    IPV4_PREFIX_BITS 16
+    IPV6_PREFIX_BITS 64
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2
+    TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+"
+
+# An IPv4-mapped IPv6 address represents an IPv4 client and must be masked by
+# IPV4_PREFIX_BITS (yielding the native IPv4 form `1.2.0.0`), not by IPV6_PREFIX_BITS.
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: ::ffff:1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: ::ffff:1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "
+SELECT quota_key
+FROM system.quota_usage
+WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
+FORMAT TSV;
+" | grep -o "1.2.0.0"
+
 ${CLICKHOUSE_CLIENT} --query "
 DROP QUOTA IF EXISTS quota_by_ip_${CLICKHOUSE_DATABASE};
 DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};

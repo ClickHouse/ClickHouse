@@ -33,9 +33,17 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
-    auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
+    auto mask_address = [this](Poco::Net::IPAddress addr) -> String
     {
         using Family = Poco::Net::IPAddress::Family;
+        /// An IPv4-mapped IPv6 address (such as `::ffff:192.0.2.10`) represents an IPv4 client.
+        /// Normalize it to a native IPv4 address so that `IPV4_PREFIX_BITS` is applied and such
+        /// clients share quota buckets with plain IPv4 clients, instead of falling into the IPv6
+        /// branch and being masked by `IPV6_PREFIX_BITS` (which would collapse all mapped IPv4
+        /// addresses together for a wide enough prefix).
+        if (addr.family() == Family::IPv6 && addr.isIPv4Mapped())
+            addr = Poco::Net::IPAddress(reinterpret_cast<const char *>(addr.addr()) + 12, 4);
+
         const auto fam = addr.family();
         /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
         if (fam == Family::IPv4)
