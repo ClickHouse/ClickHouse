@@ -180,8 +180,12 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
             known_uuid = normalizeUuid(settings_uuid.value);
     }
 
+    /// Don't pass `known_uuid` (the catalog hint) to the latest-metadata cache path —
+    /// the hint UUID hasn't been validated against the selected metadata file yet.
+    /// Passing it would poison the global cache if the REST inline response is stale
+    /// or inconsistent. The hint is still safe for the content probe below.
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), known_uuid, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     String raw_metadata_json;
     auto metadata_object
