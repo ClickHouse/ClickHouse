@@ -1180,8 +1180,6 @@ static void dupTableDef(SQLTable & next, const SQLTable & t)
     {
         next.cols[col.first] = col.second;
     }
-    next.constrs.clear();
-    next.constrs.insert(t.constrs.begin(), t.constrs.end());
     next.col_counter = t.col_counter;
     next.idx_counter = t.idx_counter;
     next.proj_counter = t.proj_counter;
@@ -1983,10 +1981,9 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
     this->inside_projection = false;
 }
 
-void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, const bool staged, ConstraintDef * cdef)
+void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef)
 {
     String crname = rg.nextIdentifier("c", t.constr_counter++, fc.allow_nasty_identifiers);
-    auto & to_add = staged ? t.staged_constrs : t.constrs;
     const bool prev_allow_in_expression_alias = this->allow_in_expression_alias;
     std::uniform_int_distribution<uint32_t> constr_range(1, static_cast<uint32_t>(ConstraintDef::ConstraintType_MAX));
 
@@ -2002,7 +1999,6 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     this->generateWherePredicate(rg, cdef->mutable_expr());
     this->allow_in_expression_alias = prev_allow_in_expression_alias;
     this->levels.clear();
-    to_add.insert(std::move(crname));
 }
 
 void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
@@ -2399,7 +2395,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                  {add_const,
                   [&]
                   {
-                      addTableConstraint(rg, next, false, ndef->mutable_const_def());
+                      addTableConstraint(rg, next, ndef->mutable_const_def());
                       added_consts++;
                   }},
                  {add_col,
@@ -2516,8 +2512,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     setClusterClause(rg, next.cluster, ct->mutable_cluster());
     if ((next.isAnyIcebergEngine() && next.integration == IntegrationCall::Dolor && next.getLakeCatalog() == LakeCatalog::None)
-        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96)
-        || (next.constrs.empty() && rg.nextMediumNumber() < 11))
+        || ((next.isDistributedEngine() || next.isBufferEngine() || next.isAliasEngine()) && rg.nextMediumNumber() < 96))
     {
         /// For Iceberg tables created from Spark, don't give table schema
         ct->clear_table_def();

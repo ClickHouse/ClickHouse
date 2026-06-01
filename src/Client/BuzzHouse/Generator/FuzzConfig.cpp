@@ -1211,6 +1211,16 @@ String FuzzConfig::tableGetRandomProjection(const uint64_t rand_val, const Strin
     return tableGetRandomSystemName(rand_val, "projections", database, table);
 }
 
+uint32_t FuzzConfig::tableCountConstraints(const String & database, const String & table)
+{
+    return tableCountSystemRows("constraints", database, table);
+}
+
+String FuzzConfig::tableGetRandomConstraint(const uint64_t rand_val, const String & database, const String & table)
+{
+    return tableGetRandomSystemName(rand_val, "constraints", database, table);
+}
+
 void FuzzConfig::validateClickHouseHealth()
 {
     if (processServerQuery(

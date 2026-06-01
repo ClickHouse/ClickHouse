@@ -456,6 +456,10 @@ public:
 
     String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
 
+    uint32_t tableCountConstraints(const String & database, const String & table);
+
+    String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
+
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 
     void validateClickHouseHealth();
