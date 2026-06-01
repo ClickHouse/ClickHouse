@@ -281,15 +281,12 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
 
-        if (db_disk->existsFile(getDetachedPermanentlyFlagPath(table_metadata_path)))
-        {
-            const fs::path metadata_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
-            const fs::path metadata_dropped_detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path_drop);
+        /// If a crash happens here, we get stale orphan flag
+        /// but it is better than removing detached flag first and risking table ressurection on restart
+        const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
+        LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
+        db_disk->removeFileIfExists(detached_flag_path);
 
-            LOG_TRACE(
-                log, "Rename detached flag from {} to {} for removing.", metadata_detached_flag_path, metadata_dropped_detached_flag_path);
-            db_disk->replaceFile(metadata_detached_flag_path, metadata_dropped_detached_flag_path);
-        }
 
         table_name_to_path.erase(table_name);
         snapshot_detached_tables.erase(table_name);

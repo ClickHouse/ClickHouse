@@ -1642,23 +1642,6 @@ void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table
     database_ptr->removeDetachedTableInfo(table.table_id);
 }
 
-void DatabaseCatalog::removeDetachedPermanentlyFlag(std::shared_ptr<IDisk> db_disk, const TableMarkedAsDropped & table)
-{
-    auto database = tryGetDatabase(table.table_id.getDatabaseName());
-    if (!database)
-        return;
-
-    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
-    if (!database_ptr)
-        return;
-
-    if (db_disk->existsFile(DatabaseOnDisk::getDetachedPermanentlyFlagPath(table.metadata_path)))
-    {
-        database_ptr->DatabaseOnDisk::removeDetachedPermanentlyFlag(
-            getContext(), table.table_id.getNameForLogs(), table.metadata_path, true);
-    }
-}
-
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
@@ -1697,7 +1680,6 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         disk->removeRecursive(data_path);
     }
 
-    removeDetachedPermanentlyFlag(db_disk, table);
     removeDetachedTableInfo(table);
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
