@@ -540,8 +540,19 @@ void LocalServer::startServers(const ServerType & server_type)
     const auto & config = getClientConfiguration();
     const Settings & settings = global_context->getSettingsRef();
 
-    auto configured_listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
-    auto listen_hosts = configured_listen_hosts;
+    /// An explicit `--listen_host` on the command line is a hard override: bind only that single host
+    /// and ignore any `listen_host` entries from a loaded config file. This matters because
+    /// `getMultipleValuesFromConfig` returns the union of repeated `listen_host[...]` keys across all
+    /// configuration layers, so a plain `config.setString("listen_host", ...)` would replace only the
+    /// first entry and leave lower-priority hosts (possibly non-loopback) from the config still bound,
+    /// defeating the documented hardening path.
+    std::vector<std::string> listen_hosts;
+    if (cli_listen_host.has_value())
+        listen_hosts.emplace_back(*cli_listen_host);
+    else
+        listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+
+    const bool hosts_explicitly_configured = !listen_hosts.empty();
     if (listen_hosts.empty())
     {
         listen_hosts.emplace_back("::1");
@@ -549,12 +560,12 @@ void LocalServer::startServers(const ServerType & server_type)
     }
 
     /// Mirror `clickhouse-server`'s `getListenTry`: honor an explicit `listen_try` server setting,
-    /// and otherwise fall back to `listen_try=true` only when the user has not configured any
-    /// `listen_host` (so the implicit `::1` + `127.0.0.1` defaults don't fail on a host without
+    /// and otherwise fall back to `listen_try=true` only when the user has not named any host
+    /// explicitly (so the implicit `::1` + `127.0.0.1` defaults don't fail on a host without
     /// IPv6). When the user names hosts explicitly with `listen_try=0`, surface bind failures.
     bool listen_try = server_settings[ServerSetting::listen_try];
     if (!listen_try)
-        listen_try = configured_listen_hosts.empty();
+        listen_try = !hosts_explicitly_configured;
 
     /// `getServerPort` stores a single value per `port_name`, so an OS-assigned ephemeral
     /// port (`port=0`) combined with multiple `listen_host` values would produce an
@@ -1622,7 +1633,7 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
 
     if (options.contains("listen_host"))
-        getClientConfiguration().setString("listen_host", options["listen_host"].as<std::string>());
+        cli_listen_host = options["listen_host"].as<std::string>();
     if (options.contains("tcp_port"))
         getClientConfiguration().setInt("tcp_port", options["tcp_port"].as<int>());
     if (options.contains("http_port"))

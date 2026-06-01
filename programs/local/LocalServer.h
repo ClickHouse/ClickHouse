@@ -90,6 +90,12 @@ private:
 
     ServerSettings server_settings;
 
+    /// Host passed explicitly via the `--listen_host` command-line option, if any. Stored separately
+    /// from the configuration because it must act as a hard override: `config.setString("listen_host", ...)`
+    /// would only replace the first `listen_host` key, leaving lower-priority repeated `listen_host[...]`
+    /// entries from a loaded config file visible to `getMultipleValuesFromConfig` in `startServers`.
+    std::optional<String> cli_listen_host;
+
     /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
     /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
     /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
