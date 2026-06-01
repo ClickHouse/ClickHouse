@@ -285,7 +285,7 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
 {
     LOG_TRACE(logger, "Start loading vector similarity index");
 
-    UInt64 file_version;
+    UInt64 file_version = 0;
     readIntBinary(file_version, istr);
     if (file_version != FILE_FORMAT_VERSION)
         throw Exception(
@@ -295,7 +295,7 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinary(ReadBuffer & istr,
         /// More fancy error handling would be: Set a flag on the index that it failed to load. During usage return all granules, i.e.
         /// behave as if the index does not exist. Since format changes are expected to happen only rarely and it is "only" an index, keep it simple for now.
 
-    UInt64 dimensions;
+    UInt64 dimensions = 0;
     readIntBinary(dimensions, istr);
     index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
@@ -531,8 +531,8 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
-        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
+        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
@@ -584,7 +584,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring || overrides.row_filter.has_value())
         /// Fewer hits after post-filter, rescoring, or PK row filter: raise fetch limit by index_fetch_multiplier.
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 
     auto search_result = [&]()
     {

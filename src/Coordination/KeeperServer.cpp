@@ -1015,7 +1015,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
+                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
@@ -1374,7 +1374,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 {
-    Keeper4LWInfo result;
+    Keeper4LWInfo result{};
     result.is_leader = raft_instance->is_leader();
 
     auto srv_config = state_manager->get_srv_config();
