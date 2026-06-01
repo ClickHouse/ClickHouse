@@ -2294,6 +2294,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment);
 }
 
+void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
