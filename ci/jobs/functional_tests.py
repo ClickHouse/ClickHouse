@@ -114,10 +114,20 @@ def run_tests(
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    # Allow a margin over the graceful budget for the run to wind down (the last
-    # in-flight test can take up to its per-test timeout to finish) before the
-    # external hard kill engages.
-    outer_timeout = global_time_limit + 600 if global_time_limit > 0 else None
+    # Allow a margin over the graceful budget for the run to wind down before
+    # the external hard kill engages. The margin must exceed the worst case for
+    # `clickhouse-test` to finish gracefully after `--global_time_limit` is hit:
+    # a test that started just before the deadline keeps running until its own
+    # per-test alarm, which is `int(timeout * 1.1) + 60` - i.e. 720s for the
+    # default 600s per-test timeout - and only then does the runner notice the
+    # deadline and exit with `GLOBAL_TIME_LIMIT_EXIT_CODE`. If the hard kill
+    # fired before that, the SIGTERM would be misreported as "Server died",
+    # defeating the purpose of the graceful exit. 900s keeps a comfortable
+    # cushion above 720s plus the parent's own teardown.
+    GRACEFUL_WIND_DOWN_MARGIN = 900
+    outer_timeout = (
+        global_time_limit + GRACEFUL_WIND_DOWN_MARGIN if global_time_limit > 0 else None
+    )
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
