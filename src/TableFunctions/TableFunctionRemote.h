@@ -1,33 +1,13 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 
 
 namespace DB
 {
-
-/// The result of parsing the arguments of the `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`
-/// table functions or the `Remote`/`RemoteSecure` storage engines. It is everything needed to
-/// construct a `StorageDistributed`.
-struct ParsedRemoteFunctionArguments
-{
-    ClusterPtr cluster;
-    StorageID remote_table_id = StorageID::createEmpty();
-    ASTPtr sharding_key;
-    ASTPtr remote_table_function_ptr;
-};
-
-/// Parses the arguments shared by the `remote` family of table functions and the `Remote`/`RemoteSecure`
-/// storage engines. `args` is the list of argument expressions (may be modified in place during evaluation).
-ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
-    ASTs & args,
-    ContextPtr context,
-    const std::string & name,
-    bool is_cluster_function,
-    bool secure,
-    const PreformattedMessage & help_message);
 
 /* remote ('address', db, table) - creates a temporary StorageDistributed.
  * To get the table structure, a DESC TABLE request is made to the remote server.

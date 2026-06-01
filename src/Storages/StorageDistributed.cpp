@@ -87,7 +87,7 @@
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionRemote.h>
+#include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/IStorageCluster.h>
@@ -2155,6 +2155,7 @@ void registerStorageDistributed(StorageFactory & factory)
     });
 }
 
+void registerStorageRemote(StorageFactory & factory);
 void registerStorageRemote(StorageFactory & factory)
 {
     /// The `Remote` and `RemoteSecure` storage engines accept the same arguments as the
