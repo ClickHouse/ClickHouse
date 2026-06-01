@@ -499,7 +499,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
         return error("Cannot parse escape sequence: unexpected eof", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
     }
 
-    assert(buf.hasPendingData());
+    chassert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -1155,7 +1155,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
     readCSVStringInto<String, true>(s, buf, settings);
 }
 
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+static void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
@@ -2174,8 +2174,8 @@ void skipNullTerminated(ReadBuffer & buf)
 
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
-    assert(current >= in.position());
-    assert(current <= in.buffer().end());
+    chassert(current >= in.position());
+    chassert(current <= in.buffer().end());
 
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
@@ -2186,7 +2186,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     if (new_bytes == 0)
         return;
 
-    assert(in.position() + additional_bytes <= in.buffer().end());
+    chassert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
@@ -2194,7 +2194,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 
 bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
-    assert(current <= in.buffer().end());
+    chassert(current <= in.buffer().end());
 
     if (current < in.buffer().end())
         return true;
@@ -2204,8 +2204,8 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
     bool loaded_more = !in.eof();
     // A sanity check. Buffer position may be in the beginning of the buffer
     // (normal case), or have some offset from it (AIO).
-    assert(in.position() >= in.buffer().begin());
-    assert(in.position() <= in.buffer().end());
+    chassert(in.position() >= in.buffer().begin());
+    chassert(in.position() <= in.buffer().end());
     current = in.position();
 
     return loaded_more;

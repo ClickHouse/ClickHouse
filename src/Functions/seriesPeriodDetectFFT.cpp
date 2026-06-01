@@ -12,6 +12,7 @@
 #    pragma clang diagnostic pop
 
 #    include <cmath>
+#    include <limits>
 #    include <Columns/ColumnArray.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <DataTypes/DataTypeArray.h>
@@ -20,7 +21,6 @@
 #    include <Functions/FunctionHelpers.h>
 #    include <Functions/IFunction.h>
 #    include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -119,11 +119,14 @@ public:
         size_t len = end - start;
         if (len < 4)
         {
-            period = NAN; // At least four data points are required to detect period
+            period = std::numeric_limits<Float64>::quiet_NaN(); // At least four data points are required to detect period
             return true;
         }
 
-        VectorWithMemoryTracking<Float64> src((src_vec.begin() + start), (src_vec.begin() + end));
+        VectorWithMemoryTracking<Float64> src;
+        src.reserve(len);
+        for (size_t i = start; i < end; ++i)
+            src.push_back(static_cast<Float64>(src_vec[i]));
         VectorWithMemoryTracking<std::complex<double>> out((len / 2) + 1);
 
         pocketfft::shape_t shape{len};
@@ -205,4 +208,5 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
     factory.registerFunction<FunctionSeriesPeriodDetectFFT>(documentation);
 }
 }
+
 #endif

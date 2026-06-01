@@ -340,7 +340,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         else
             LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
 
-        assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
+        chassert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
         auto task_it = current_tasks.begin();
         while (task_it != current_tasks.end())
         {
@@ -351,7 +351,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 chassert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
-                assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
+                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
                 ++task_it;
             }
             else if (task->was_executed)
@@ -527,16 +527,16 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
 
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
-    assert((worker_pool != nullptr) == (1 < pool_size));
+    chassert((worker_pool != nullptr) == (1 < pool_size));
 
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,
     /// so current tasks list must be empty when we are ready to process new one.
-    assert(worker_pool || current_tasks.empty());
+    chassert(worker_pool || current_tasks.empty());
 
     /// Parallel execution is enabled ==> Not more than pool_size tasks are currently executing.
     /// Note: If current_tasks.size() == pool_size, then all worker threads are busy,
     /// so we will wait on worker_pool->scheduleOrThrowOnError(...)
-    assert(!worker_pool || current_tasks.size() <= pool_size);
+    chassert(!worker_pool || current_tasks.size() <= pool_size);
 
     current_tasks.emplace_back(std::move(task));
 
@@ -840,7 +840,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    assert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
+    chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
 
@@ -1096,7 +1096,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     /// Failed on attempt to create node_path/active because it exists, so node_path/finished must exist too
     bool both_already_exists = responses.size() == 2 && responses[0]->error == Coordination::Error::ZNODEEXISTS
                                                      && responses[1]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY;
-    assert(!both_already_exists || (zookeeper->exists(fs::path(node_path) / "active") && zookeeper->exists(fs::path(node_path) / "finished")));
+    chassert(!both_already_exists || (zookeeper->exists(fs::path(node_path) / "active") && zookeeper->exists(fs::path(node_path) / "finished")));
 
     /// Failed on attempt to create node_path/finished, but node_path/active does not exist
     bool is_currently_deleting = responses.size() == 2 && responses[0]->error == Coordination::Error::ZOK
@@ -1112,7 +1112,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     }
 
     /// Connection lost or entry was removed
-    assert(Coordination::isHardwareError(code) || code == Coordination::Error::ZNONODE);
+    chassert(Coordination::isHardwareError(code) || code == Coordination::Error::ZNONODE);
     zkutil::KeeperMultiException::check(code, ops, responses);
 }
 

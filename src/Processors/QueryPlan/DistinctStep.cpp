@@ -226,6 +226,7 @@ QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
     return DistinctStep::deserialize(ctx, true);
 }
 
+void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.

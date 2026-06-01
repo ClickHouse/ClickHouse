@@ -124,6 +124,7 @@ void LimitByStep::applyOrder(SortDescription sort_description)
     in_order = sort_description.hasPrefix(columns);
 }
 
+void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("LimitBy", LimitByStep::deserialize);

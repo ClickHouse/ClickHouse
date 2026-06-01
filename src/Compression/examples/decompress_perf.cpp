@@ -16,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <base/unaligned.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** for i in *.bin; do ./decompress_perf < $i > /dev/null; done

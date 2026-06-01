@@ -111,21 +111,6 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
             {
                 match = matches[frame.node->children.at(0)];
             }
-            else if (frame.node->type == ActionsDAG::ActionType::FUNCTION
-                && frame.node->children.size() == 1
-                && (frame.node->function_base->getName() == "materialize"
-                    || frame.node->function_base->getName() == "identity"))
-            {
-                /// `materialize`/`identity` are no-op wrappers that do not change values, so
-                /// for matching purposes they behave like `ALIAS` - pass the match of the
-                /// wrapped node through. This lets `optimizeReadInOrder` see through the
-                /// `materialize(...)` wrappers that filter push-down can inject into a
-                /// `MergeTree` prewhere (e.g. for queries through `ReadFromMerge` after
-                /// `convertAndFilterSourceStream`). Without this, `materialize` only
-                /// contributes a non-strict monotonic match and the `ORDER BY` prefix that
-                /// can be served from the sorting key is truncated.
-                match = matches[frame.node->children.at(0)];
-            }
             else if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
             {
                 //std::cerr << "... Processing " << frame.node->function_base->getName() << std::endl;
@@ -237,6 +222,15 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
 
+                                /// `materialize` does not change values, so it is effectively
+                                /// strictly monotonic. Without this override the `ORDER BY`
+                                /// prefix that can be served from the sorting key gets truncated
+                                /// when filter push-down injects a `materialize(...)` wrapper
+                                /// (e.g. for queries through `ReadFromMerge` after
+                                /// `convertAndFilterSourceStream`).
+                                if (frame.node->function_base->getName() == "materialize")
+                                    monotonicity.strict = true;
+
                                 if (child_match.monotonicity)
                                 {
                                     monotonicity.direction *= child_match.monotonicity->direction;
@@ -323,7 +317,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
 }
 
 /// Check whether all the function in chain are monotonic
-bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)
@@ -550,7 +544,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            assert(node->children.size() == 1);
+            chassert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -598,7 +592,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                assert(node->children.size() == 1);
+                chassert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:

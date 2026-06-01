@@ -1209,6 +1209,7 @@ public:
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wmissing-declarations"
 
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {

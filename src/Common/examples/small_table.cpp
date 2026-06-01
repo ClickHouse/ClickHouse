@@ -3,6 +3,7 @@
 #include <Interpreters/AggregationCommon.h>
 
 #include <Common/HashTable/SmallTable.h>
+#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleSmallTable(int, char **)

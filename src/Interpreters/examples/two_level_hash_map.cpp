@@ -17,6 +17,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace
