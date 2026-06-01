@@ -15,7 +15,7 @@ extern const int UNKNOWN_SETTING;
 }
 
 #define LIST_OF_DATABASE_REPLICATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(Float,  max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
+    DECLARE(Float, max_broken_tables_ratio, 1, "Do not recover replica automatically if the ratio of staled tables to all tables is greater", 0) \
     DECLARE(NonZeroUInt64, max_replication_lag_to_enqueue, 50, "Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than 0", 0) \
     DECLARE(UInt64, wait_entry_commited_timeout_sec, 3600, "Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet", 0) \
     DECLARE(String, collection_name, "", "A name of a collection defined in server's config where all info for cluster authentication is defined", 0) \
