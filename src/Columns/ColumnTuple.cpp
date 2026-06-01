@@ -742,7 +742,7 @@ void ColumnTuple::shrinkToFit()
     /// to avoid violating the `assumeMutableRef` deep ownership check.
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        if (columns[i]->use_count() == 1)
+        if (std::as_const(columns[i])->use_count() == 1)
             getColumn(i).shrinkToFit();
 }
 

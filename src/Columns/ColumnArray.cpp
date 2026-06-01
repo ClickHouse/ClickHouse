@@ -571,9 +571,9 @@ void ColumnArray::shrinkToFit()
 {
     /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
     /// to avoid violating the `assumeMutableRef` deep ownership check.
-    if (offsets->use_count() == 1)
+    if (std::as_const(offsets)->use_count() == 1)
         getOffsets().shrink_to_fit();
-    if (data->use_count() == 1)
+    if (std::as_const(data)->use_count() == 1)
         getData().shrinkToFit();
 }
 
