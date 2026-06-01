@@ -125,35 +125,44 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 void AllocationQueue::purgeQueue()
 {
     std::lock_guard lock(mutex);
-
-    /// Only a detached queue can be purged so we don't disturb its parent.
     chassert(parent == nullptr);
-
-    // Cancel any pending activation event for this node. `detach` does not do this,
-    // so without an explicit cancel the activation hook would remain linked in the
-    // EventQueue when the queue is destroyed — triggering the
-    // `activation_event_id == 0` chassert in `~ISchedulerNode` (and a dangling
-    // intrusive hook in release builds).
     cancelActivation();
 
-    // Fail all allocations so their owners (e.g. MemoryReservation) mark themselves
-    // as removed/failed and do not call back into the queue from their destructors.
-    // Note: increasing_allocations and decreasing_allocations are subsets of running_allocations.
     auto reason = std::make_exception_ptr(
         Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
             "Allocation queue is about to be destructed for workload '{}'",
             getWorkloadName()));
-    for (ResourceAllocation & allocation : pending_allocations)
-        allocation.allocationFailed(reason);
-    for (ResourceAllocation & allocation : running_allocations)
-        allocation.allocationFailed(reason);
 
-    // NOTE: Queue never owns allocations, so they are not destructed here, just detached
-    pending_allocations.clear();
-    increasing_allocations.clear();
-    decreasing_allocations.clear();
-    removing_allocations.clear();
-    running_allocations.clear();
+    // Fail allocation only after removing from all intrusive lists to avoid use-after-free
+    while (!pending_allocations.empty())
+    {
+        ResourceAllocation & allocation = pending_allocations.front();
+        pending_allocations.pop_front();
+        pending_allocations_size -= allocation.increase.size;
+        if (allocation.removing_hook.is_linked())
+            removing_allocations.erase(removing_allocations.iterator_to(allocation));
+        allocation.allocationFailed(reason);
+    }
+
+    while (!running_allocations.empty())
+    {
+        ResourceAllocation & allocation = *running_allocations.begin();
+        running_allocations.erase(running_allocations.iterator_to(allocation));
+        if (allocation.increasing_hook.is_linked())
+            increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+        if (allocation.decreasing_hook.is_linked())
+            decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
+        if (allocation.removing_hook.is_linked())
+            removing_allocations.erase(removing_allocations.iterator_to(allocation));
+        allocation.allocated = 0;
+        allocation.allocationFailed(reason);
+    }
+
+    chassert(pending_allocations.empty());
+    chassert(running_allocations.empty());
+    chassert(increasing_allocations.empty());
+    chassert(decreasing_allocations.empty());
+    chassert(removing_allocations.empty());
 
     // All further calls to this queue will throw exceptions
     increase = nullptr;

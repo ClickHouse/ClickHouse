@@ -15,6 +15,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
+#include <Common/Scheduler/MemoryReservation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
@@ -2433,6 +2435,74 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
 
         // Cancel pending allocation by dtor
     }
+}
+
+// Regression: `AllocationQueue::purgeQueue` must unlink each allocation from intrusive
+// containers before calling `allocationFailed`. Otherwise a `MemoryReservation` blocked
+// inside its constructor on `cv.wait` is synchronously destroyed when allocationFailed
+// wakes it, and the queue's iteration over now-freed hook bytes is a use-after-free; in
+// debug builds `~ResourceAllocation` also chasserts on still-linked hooks.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD blocker_wl IN all");
+    t.query("CREATE WORKLOAD victim IN all");
+
+    ClassifierPtr c_blocker = t.manager->acquire("blocker_wl");
+    TestAllocation blocker(c_blocker->get("memory"), "blocker", 100);
+    blocker.waitSync();
+
+    ClassifierPtr c_victim = t.manager->acquire("victim");
+    ResourceLink link_victim = c_victim->get("memory");
+
+    // `all`'s budget is fully held by `blocker_wl`, so any reservation made through
+    // `victim` stays pending forever — `MemoryReservation` constructor blocks in `cv.wait`.
+    constexpr int waiter_count = 4;
+    std::atomic<int> threw{0};
+    std::vector<std::thread> waiters;
+    waiters.reserve(waiter_count);
+    for (int i = 0; i < waiter_count; ++i)
+    {
+        waiters.emplace_back([link_victim, &threw]
+        {
+            try
+            {
+                MemoryReservation r(link_victim, "pending", 50);
+                ADD_FAILURE() << "MemoryReservation should have failed";
+            }
+            catch (const Exception &)
+            {
+                threw.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    // Wait until every waiter's reservation is enqueued as pending in victim's queue.
+    while (true)
+    {
+        UInt64 pending = 0;
+        t.manager->forEachNode([&](const String &, const String &, ISchedulerNode * node)
+        {
+            if (auto * q = dynamic_cast<AllocationQueue *>(node))
+                pending += q->getPending();
+        });
+        if (pending >= waiter_count)
+            break;
+        std::this_thread::yield();
+    }
+
+    // Adding a child to `victim` turns it from leaf into non-leaf, which detaches
+    // victim's `AllocationQueue` and calls `purgeQueue` on it explicitly (via
+    // `WorkloadNode::QueueOrChildrenBranch::removeQueue`). At this moment the queue
+    // still has `waiter_count` allocations linked in pending_allocations.
+    t.query("CREATE WORKLOAD leaf IN victim");
+
+    for (auto & th : waiters)
+        th.join();
+    EXPECT_EQ(threw.load(), waiter_count);
 }
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
