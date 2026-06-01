@@ -1,7 +1,7 @@
 no_prefetching_single_part
 1
 correctness
-0
+1
 no_prefetching_with_limit
 1
 prefetching_multi_part
@@ -9,15 +9,15 @@ prefetching_multi_part
 multi_part_streams_within_cap
 1
 multi_part_correctness
-0
+1
 reverse_prefetching_multi_part
 1
 reverse_multi_part_correctness
-0
+1
 reverse_no_prefetching_single_part
 1
 reverse_correctness
-0
+1
 no_prefetching_with_more_parts_than_streams
 1
 no_prefetching_with_max_streams_setting

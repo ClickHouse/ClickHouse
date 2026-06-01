@@ -30,14 +30,16 @@ SELECT count() = 0 FROM (
              merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
--- Verify correctness: output must be sorted.
+-- Verify correctness: output must be sorted. We capture the pipeline output order
+-- with `groupArray` (which preserves arrival order) and check that it is already
+-- sorted. We must not re-sort here (e.g. with a window function `OVER (ORDER BY ...)`),
+-- because that would mask any reordering introduced by `PrefetchingConcat`.
 SELECT 'correctness';
-SELECT countIf(path < prev_path) FROM (
-    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY path) AS prev_path
-    FROM t_prefetching_concat WHERE path LIKE '%file.log' ORDER BY path
+SELECT groupArray(path) = arraySort(groupArray(path)) FROM (
+    SELECT path FROM t_prefetching_concat WHERE path LIKE '%file.log' ORDER BY path
     SETTINGS max_threads = 4, optimize_read_in_order = 1,
              merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE prev_path != '';
+);
 
 -- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
 SELECT 'no_prefetching_with_limit';
@@ -89,12 +91,11 @@ SELECT sum(streams) <= 6 FROM (
 
 -- Correctness: output must be sorted across partitions.
 SELECT 'multi_part_correctness';
-SELECT countIf(key < prev_key) FROM (
-    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key) AS prev_key
-    FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key
+SELECT groupArray(key) = arraySort(groupArray(key)) FROM (
+    SELECT key FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key
     SETTINGS max_threads = 6, optimize_read_in_order = 1,
              merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE prev_key != 0;
+);
 
 -- Multi-part reverse `ORDER BY key DESC`: per-part `PrefetchingConcat` is enabled
 -- and must reverse the pipe order so that the merge produces correctly descending output.
@@ -108,12 +109,11 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 SELECT 'reverse_multi_part_correctness';
-SELECT countIf(key > prev_key) FROM (
-    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key DESC) AS prev_key
-    FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key DESC
+SELECT groupArray(key) = arrayReverseSort(groupArray(key)) FROM (
+    SELECT key FROM t_prefetching_concat_multi WHERE value LIKE '%5%' ORDER BY key DESC
     SETTINGS max_threads = 6, optimize_read_in_order = 1,
              merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE prev_key != 0;
+);
 
 DROP TABLE t_prefetching_concat_multi;
 
@@ -136,12 +136,11 @@ SELECT count() = 0 FROM (
 
 -- Correctness: output must be in descending order.
 SELECT 'reverse_correctness';
-SELECT countIf(key > prev_key) FROM (
-    SELECT key, lagInFrame(key, 1, 0) OVER (ORDER BY key DESC) AS prev_key
-    FROM t_prefetching_concat_reverse WHERE value LIKE '%5%' ORDER BY key DESC
+SELECT groupArray(key) = arrayReverseSort(groupArray(key)) FROM (
+    SELECT key FROM t_prefetching_concat_reverse WHERE value LIKE '%5%' ORDER BY key DESC
     SETTINGS max_threads = 4, optimize_read_in_order = 1,
              merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
-) WHERE prev_key != 0;
+);
 
 DROP TABLE t_prefetching_concat_reverse;
 
