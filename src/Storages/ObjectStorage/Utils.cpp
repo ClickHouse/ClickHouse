@@ -121,12 +121,17 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
     return {storage, key_to_use};
 }
 
+/// A path is absolute if `SchemeAuthorityKey` assigns it a scheme (`scheme://...`
+/// or the RFC 8089 `scheme:/path` form such as `file:/var/...`) or a key rooted at
+/// '/'. Reuse the same parser so this predicate cannot drift from the resolution
+/// logic in `tryResolveObjectStorageForPath`, which decomposes the path the same way.
 bool isAbsolutePath(const std::string & path)
 {
-    if (!path.empty() && (path.front() == '/' || path.find("://") != std::string_view::npos))
-        return true;
+    if (path.empty())
+        return false;
 
-    return false;
+    SchemeAuthorityKey decomposed{path};
+    return !decomposed.scheme.empty() || decomposed.key.starts_with('/');
 }
 
 #endif // USE_AVRO
