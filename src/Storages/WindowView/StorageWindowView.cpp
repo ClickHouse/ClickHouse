@@ -480,7 +480,6 @@ void StorageWindowView::alter(
     auto table_id = getStorageID();
     auto current_metadata = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *current_metadata;
-    StorageInMemoryMetadata old_metadata = *current_metadata;
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
