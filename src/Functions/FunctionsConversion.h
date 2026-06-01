@@ -599,14 +599,24 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// DateTime64 can represent fractional seconds within the boundary second, e.g. 10413791999.1
+        /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Extend the upper bound by the largest
+        /// fraction representable at this scale so such values are neither falsely rejected in `throw`
+        /// mode nor clamped down to the whole second otherwise. The lower bound has no representable
+        /// fraction below it, so it stays at the whole second.
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+        const FromType max_fraction = static_cast<FromType>(scale_multiplier - 1) / static_cast<FromType>(scale_multiplier);
+        const FromType lower_bound = static_cast<FromType>(MIN_DATETIME64_TIMESTAMP);
+        const FromType upper_bound = static_cast<FromType>(MAX_DATETIME64_TIMESTAMP) + max_fraction;
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < static_cast<FromType>(MIN_DATETIME64_TIMESTAMP) || from > static_cast<FromType>(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
+            if (from < lower_bound || from > upper_bound) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        from = std::max(from, lower_bound);
+        from = std::min(from, upper_bound);
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -736,14 +746,23 @@ struct ToTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
+        /// Time64 can represent fractional seconds within the boundary second, e.g. 3599999.1 is a valid
+        /// Time64(1) value (999:59:59.1). Extend both bounds by the largest fraction representable at this
+        /// scale so such values are neither falsely rejected in `throw` mode nor clamped down to the whole
+        /// second otherwise.
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+        const FromType max_fraction = static_cast<FromType>(scale_multiplier - 1) / static_cast<FromType>(scale_multiplier);
+        const FromType upper_bound = static_cast<FromType>(MAX_TIME_TIMESTAMP) + max_fraction;
+        const FromType lower_bound = -upper_bound;
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP) || from > static_cast<FromType>(MAX_TIME_TIMESTAMP)) [[unlikely]]
+            if (from < lower_bound || from > upper_bound) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
+        from = std::max(from, lower_bound);
+        from = std::min(from, upper_bound);
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
