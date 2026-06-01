@@ -137,11 +137,11 @@ inline std::array<__m128i, 16u> mm_is_in_prepare(const char * symbols, size_t nu
     return result;
 }
 
-/// NOTE: `num_chars` must be passed explicitly. Unused entries in `needles` are
-/// zero-initialised (see `mm_is_in_prepare`), so iterating the whole array would
-/// unconditionally match NUL bytes in `bytes` that the caller did not ask for.
-/// Zero is just an ordinary byte like the other 255; the compare must respect
-/// the actual needle count.
+/// NOTE: `num_chars` must be passed explicitly so the compare respects the
+/// actual needle count. Zero is just an ordinary byte like the other 255, so
+/// iterating past `num_chars` could match `\0` bytes in `bytes` that the caller
+/// did not ask for. `mm_is_in_prepare` additionally pads the unused slots with a
+/// real needle byte, so this is defence-in-depth against the same NUL-match bug.
 inline __m128i mm_is_in_execute(__m128i bytes, const std::array<__m128i, 16u> & needles, size_t num_chars)
 {
     __m128i accumulator = _mm_setzero_si128();
