@@ -107,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     return *this;
 }
 
-ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     if (this == &other)
         return *this;
@@ -143,7 +143,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-String formatASTStateAware(IAST & ast, IAST::FormatState & state)
+static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
