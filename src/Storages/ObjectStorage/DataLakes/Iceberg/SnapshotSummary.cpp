@@ -37,18 +37,17 @@ SnapshotSummaryOperation SnapshotSummary::getOperation() const
         update);
 }
 
-void SnapshotSummary::applyTotals(std::optional<SnapshotSummaryTotals> other_totals)
+SnapshotSummaryTotals SnapshotSummary::getTotals() const
 {
-    if (totals)
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "SnapshotSummary::applyTotals called twice -- totals would be double-applied");
+    return totals;
+}
 
-    if (other_totals)
-        totals = other_totals.value();
-    else if (getOperation() == SnapshotSummaryOperation::APPEND)
-        totals.emplace();
-    else
+SnapshotSummary::SnapshotSummary(SnapshotSummaryUpdate update_, std::optional<SnapshotSummaryTotals> parent_totals)
+    : update(std::move(update_))
+{
+    if (parent_totals)
+        totals = *parent_totals;
+    else if (getOperation() != SnapshotSummaryOperation::APPEND)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No parent snapshot for DELETE/OVERWRITE/REPLACE");
 
     switch (getOperation())
@@ -56,40 +55,40 @@ void SnapshotSummary::applyTotals(std::optional<SnapshotSummaryTotals> other_tot
         case SnapshotSummaryOperation::APPEND:
         {
             const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
-            totals->records += u.added_records;
-            totals->files_size += u.added_files_size;
-            totals->data_files += u.added_files;
-            totals->equality_deletes = 0;
+            totals.records += u.added_records;
+            totals.files_size += u.added_files_size;
+            totals.data_files += u.added_files;
+            totals.equality_deletes = 0;
             break;
         }
         case SnapshotSummaryOperation::OVERWRITE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
-            totals->files_size += u.added_files_size;
-            totals->delete_files += u.added_delete_files;
+            totals.files_size += u.added_files_size;
+            totals.delete_files += u.added_delete_files;
             /// FI->ME: this is correct only while we don't support equality deletes
-            totals->position_deletes += u.num_deleted_rows;
-            totals->equality_deletes = 0;
+            totals.position_deletes += u.num_deleted_rows;
+            totals.equality_deletes = 0;
             break;
         }
         case SnapshotSummaryOperation::DELETE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
-            totals->records -= u.removed_records;
-            totals->files_size -= u.removed_files_size;
-            totals->data_files -= u.removed_data_files;
-            totals->delete_files -= u.removed_position_delete_files;
+            totals.records -= u.removed_records;
+            totals.files_size -= u.removed_files_size;
+            totals.data_files -= u.removed_data_files;
+            totals.delete_files -= u.removed_position_delete_files;
             /// FI->ME: this is correct only while we don't support equality deletes
-            totals->position_deletes -= u.removed_position_deletes;
-            totals->equality_deletes = 0;
+            totals.position_deletes -= u.removed_position_deletes;
+            totals.equality_deletes = 0;
             break;
         }
         case SnapshotSummaryOperation::REPLACE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
-            totals->records += u.added_records - u.removed_records;
-            totals->files_size += u.added_files_size - u.removed_files_size;
-            totals->data_files += u.added_files - u.removed_data_files;
+            totals.records += u.added_records - u.removed_records;
+            totals.files_size += u.added_files_size - u.removed_files_size;
+            totals.data_files += u.added_files - u.removed_data_files;
             break;
         }
         default:
@@ -99,9 +98,6 @@ void SnapshotSummary::applyTotals(std::optional<SnapshotSummaryTotals> other_tot
 
 Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
 {
-    if (!totals)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "SnapshotSummary doesn't have totals");
-
     Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
 
     /// https://iceberg.apache.org/spec/?h=summary#optional-snapshot-summary-fields
@@ -172,12 +168,12 @@ Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected operation enum {}", getOperation());
     }
 
-    set_as_string(Iceberg::f_total_records, totals->records);
-    set_as_string(Iceberg::f_total_files_size, totals->files_size);
-    set_as_string(Iceberg::f_total_data_files, totals->data_files);
-    set_as_string(Iceberg::f_total_delete_files, totals->delete_files);
-    set_as_string(Iceberg::f_total_position_deletes, totals->position_deletes);
-    set_as_string(Iceberg::f_total_equality_deletes, totals->equality_deletes);
+    set_as_string(Iceberg::f_total_records, totals.records);
+    set_as_string(Iceberg::f_total_files_size, totals.files_size);
+    set_as_string(Iceberg::f_total_data_files, totals.data_files);
+    set_as_string(Iceberg::f_total_delete_files, totals.delete_files);
+    set_as_string(Iceberg::f_total_position_deletes, totals.position_deletes);
+    set_as_string(Iceberg::f_total_equality_deletes, totals.equality_deletes);
 
     return obj;
 }
@@ -240,8 +236,6 @@ SnapshotSummary SnapshotSummary::fromJSON(const Poco::JSON::Object & obj)
     result.totals.delete_files = get_optional_int(Iceberg::f_total_delete_files);
     result.totals.position_deletes = get_optional_int(Iceberg::f_total_position_deletes);
     result.totals.equality_deletes = get_optional_int(Iceberg::f_total_equality_deletes);
-
-    result.finalized = true;
 
     return result;
 }
