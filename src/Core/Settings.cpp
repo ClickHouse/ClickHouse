@@ -3969,11 +3969,9 @@ Possible values:
 - [ORDER BY Clause](/sql-reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, read_in_order_allow_per_partition_lazy_read, false, R"(
-When enabled, in-order reading from MergeTree tables groups parts by partition and reads
-partitions sequentially using ConcatProcessor instead of merging all parts at once via
-MergingSortedTransform. This avoids reading initial granules from later partitions until
-earlier ones are fully consumed, which is beneficial for ORDER BY + LIMIT queries when
-partitions are globally sorted by the sorting key. Requires `optimize_read_in_order`.
+When enabled, in-order reading processes one partition at a time, following partition order, instead of reading and merging data from all selected parts at once.
+This avoids reading initial granules from partitions whose data will not be included in the query result due to the LIMIT clause of the query.
+The optimization is applied only when partitions are ordered by the sorting key used in the query. Requires `optimize_read_in_order`.
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
