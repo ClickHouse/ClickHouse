@@ -739,19 +739,19 @@ ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 Then disable the empirical path so the estimator falls back to column statistics:
 
 ```sql
-EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
 ```
 
 ```text
 With idx_b (minmax, hypothetical):
   status:       applicable
-  skip_ratio:   99.99%
+  skip_ratio:   99.9%
 
 Estimation:
   source:           statistical
 ```
 
-The number comes from the column-statistic selectivity of `b = 42` and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
+The number comes from the column-statistic selectivity of `b < 10` (about 10 rows out of 10000) and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
 
 If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
 

@@ -77,13 +77,13 @@ To skip the in-memory empirical scan and estimate from [column statistics](/engi
 ALTER TABLE t ADD STATISTICS b TYPE TDigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
-EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
 ```
 
 ```text
 With idx_b (minmax, hypothetical):
   status:       applicable
-  skip_ratio:   99.99%
+  skip_ratio:   99.9%
 
 Estimation:
   source:           statistical
