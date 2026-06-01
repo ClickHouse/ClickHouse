@@ -2086,7 +2086,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
+    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * static_cast<double>((*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts]);
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
         "{} rows of {} total rows in filesystem are suspicious. "
@@ -2346,8 +2346,8 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         Coordination::Error e;
         {
 
-            Coordination::SimpleFaultInjection fault((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit],
-                                                     (*getSettings())[MergeTreeSetting::fault_probability_after_part_commit], "part commit");
+            Coordination::SimpleFaultInjection fault(static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit]),
+                                                     static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_after_part_commit]), "part commit");
             ThreadFuzzer::maybeInjectSleep();
             e = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
         }

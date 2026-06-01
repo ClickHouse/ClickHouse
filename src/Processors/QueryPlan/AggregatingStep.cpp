@@ -1131,6 +1131,7 @@ void AggregatingStep::setFinal(bool new_value)
     updateOutputHeader();
 }
 
+void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Aggregating", AggregatingStep::deserialize);

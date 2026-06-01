@@ -821,6 +821,7 @@ void StorageFileLog::wakeUp()
     cv.notify_one();
 }
 
+void registerStorageFileLog(StorageFactory & factory);
 void registerStorageFileLog(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

@@ -333,7 +333,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
+static bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 

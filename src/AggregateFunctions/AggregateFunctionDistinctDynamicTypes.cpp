@@ -155,6 +155,7 @@ static AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
     return std::make_shared<AggregateFunctionDistinctDynamicTypes>(argument_types);
 }
 
+void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory)
 {
     /// distinctDynamicTypes documentation

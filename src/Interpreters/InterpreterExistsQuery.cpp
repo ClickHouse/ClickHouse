@@ -100,6 +100,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         "result" }})));
 }
 
+void registerInterpreterExistsQuery(InterpreterFactory & factory);
 void registerInterpreterExistsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

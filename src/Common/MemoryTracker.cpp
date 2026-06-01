@@ -240,7 +240,7 @@ void MemoryTracker::injectFault() const
         description ? " memory tracker" : "Memory tracker");
 }
 
-void incrementAllocationWithoutCheck(Int64 size)
+static void incrementAllocationWithoutCheck(Int64 size)
 {
     ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
     if (size < 0)

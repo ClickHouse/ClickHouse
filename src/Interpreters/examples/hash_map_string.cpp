@@ -8,6 +8,7 @@
 #include <sparsehash/sparse_hash_map>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES

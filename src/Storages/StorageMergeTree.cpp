@@ -2194,7 +2194,7 @@ struct FutureNewEmptyPart
 
 using FutureNewEmptyParts = std::vector<FutureNewEmptyPart>;
 
-Strings getPartsNames(const FutureNewEmptyParts & parts)
+static Strings getPartsNames(const FutureNewEmptyParts & parts)
 {
     Strings part_names;
     for (const auto & p : parts)
@@ -2202,7 +2202,7 @@ Strings getPartsNames(const FutureNewEmptyParts & parts)
     return part_names;
 }
 
-FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
+static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_parts)
 {
     FutureNewEmptyParts future_parts;
 
@@ -2221,7 +2221,7 @@ FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector & old_pa
     return future_parts;
 }
 
-std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> createEmptyDataParts(
+static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> createEmptyDataParts(
     MergeTreeData & data, FutureNewEmptyParts & future_parts, const MergeTreeTransactionPtr & txn)
 {
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;

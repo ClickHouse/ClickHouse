@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleLzmaBuffers(int, char **)
 try

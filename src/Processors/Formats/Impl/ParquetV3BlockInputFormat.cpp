@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
+static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
     options.format = format_settings;
@@ -281,6 +281,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
+void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -323,6 +324,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
+void registerInputFormatParquet(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
@@ -392,6 +394,7 @@ void registerInputFormatParquet(FormatFactory & factory)
     });
 }
 
+void registerParquetSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSplitter("Parquet", []
@@ -423,6 +426,8 @@ void registerParquetSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatParquet(FormatFactory &);
+void registerParquetSchemaReader(FormatFactory &);
 void registerInputFormatParquet(FormatFactory &)
 {
 }
