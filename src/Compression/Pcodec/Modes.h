@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Bits.h>
 #include <Compression/Pcodec/Constants.h>
 #include <Compression/Pcodec/NumberTraits.h>
@@ -48,12 +50,12 @@ inline size_t calcSampleN(size_t n)
 /// Deterministic spread sample (we don't need the reference's RNG — sample quality only affects
 /// ratio). `f` maps a value to an optional sample element (used to filter, e.g., non-normal floats).
 template <typename T, typename S, typename F>
-std::vector<S> chooseSample(const std::vector<T> & vals, F && f)
+PcoArray<S> chooseSample(const PcoArray<T> & vals, F && f)
 {
     size_t target = calcSampleN(vals.size());
     if (target == 0)
         return {};
-    std::vector<S> res;
+    PcoArray<S> res;
     res.reserve(target);
     size_t stride = std::max<size_t>(1, vals.size() / (target * 3 + 1));
     for (size_t i = 0; i < vals.size() && res.size() < target; i += stride)
@@ -66,14 +68,14 @@ std::vector<S> chooseSample(const std::vector<T> & vals, F && f)
             if (auto s = f(vals[i]))
                 res.push_back(*s);
     }
-    return res.size() >= MIN_SAMPLE ? res : std::vector<S>{};
+    return res.size() >= MIN_SAMPLE ? res : PcoArray<S>{};
 }
 
 /// Average bits saved per number, counting only "infrequent" primary latents (sampling.rs).
 template <Latent L>
-double estBitsSavedPerNum(const std::vector<L> & primaries, double bits_saved_per_infrequent)
+double estBitsSavedPerNum(const PcoArray<L> & primaries, double bits_saved_per_infrequent)
 {
-    std::unordered_map<L, size_t> counts;
+    std::unordered_map<L, size_t> counts; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (L p : primaries)
         ++counts[p];
     size_t cutoff = std::max<size_t>(1, primaries.size() >> CLASSIC_MEMORIZABLE_BINS_LOG);
@@ -87,12 +89,12 @@ double estBitsSavedPerNum(const std::vector<L> & primaries, double bits_saved_pe
 // ---- FloatQuant detection (mode/float_quant.rs) ----
 
 template <typename T>
-std::pair<Bitlen, double> estimateBestK(const std::vector<T> & sample)
+std::pair<Bitlen, double> estimateBestK(const PcoArray<T> & sample)
 {
     using TR = NumberTraits<T>;
     using U = typename TR::Latent;
     Bitlen precision = TR::PRECISION_BITS;
-    std::vector<uint32_t> hist(precision + 1, 0);
+    PcoArray<uint32_t> hist(precision + 1, 0);
     for (T x : sample)
     {
         Bitlen tz = std::min<Bitlen>(precision, static_cast<Bitlen>(std::countr_zero(std::bit_cast<U>(x))));
@@ -211,9 +213,9 @@ inline std::optional<double> filterScoreTripleGcd(double gcd, size_t triples_w_g
 }
 
 template <Latent L>
-std::optional<std::pair<L, double>> chooseIntMultBase(const std::vector<L> & sample)
+std::optional<std::pair<L, double>> chooseIntMultBase(const PcoArray<L> & sample)
 {
-    std::unordered_map<L, size_t> counts;
+    std::unordered_map<L, size_t> counts; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t total_triples = sample.size() / 3;
     for (size_t i = 0; i + 3 <= sample.size(); i += 3)
     {
@@ -246,7 +248,7 @@ struct ModeInfo
 /// only for the chosen mode by `splitForMode`, so a rejected mode costs no full-array work (in
 /// particular, no 2M-element hardware divisions for IntMult).
 template <typename T>
-ModeInfo detectMode(const std::vector<T> & vals)
+ModeInfo detectMode(const PcoArray<T> & vals)
 {
     using TR = NumberTraits<T>;
     using L = typename TR::Latent;
@@ -265,7 +267,7 @@ ModeInfo detectMode(const std::vector<T> & vals)
             auto [k, bsi] = estimateBestK<T>(sample);
             if (k > 0 && k <= TR::PRECISION_BITS)
             {
-                std::vector<L> primaries(sample.size());
+                PcoArray<L> primaries(sample.size());
                 for (size_t i = 0; i < sample.size(); ++i)
                     primaries[i] = static_cast<L>(std::bit_cast<L>(sample[i]) >> k);
                 if (estBitsSavedPerNum<L>(primaries, bsi) > QUANT_REQUIRED_BITS_SAVED_PER_NUM)
@@ -285,7 +287,7 @@ ModeInfo detectMode(const std::vector<T> & vals)
             if (auto base_and_saved = chooseIntMultBase<L>(sample))
             {
                 L base = base_and_saved->first;
-                std::vector<L> primaries(sample.size());
+                PcoArray<L> primaries(sample.size());
                 for (size_t i = 0; i < sample.size(); ++i)
                     primaries[i] = static_cast<L>(sample[i] / base);
                 if (estBitsSavedPerNum<L>(primaries, base_and_saved->second) > MULT_REQUIRED_BITS_SAVED_PER_NUM)
@@ -303,7 +305,7 @@ ModeInfo detectMode(const std::vector<T> & vals)
 /// Splits `n` values (read from `vals`) into primary (+ secondary) latents for the given mode.
 /// Works on either the full array (the winner) or a sample (for cost estimation).
 template <typename T, typename L = typename NumberTraits<T>::Latent>
-void splitForMode(const T * vals, size_t n, const ModeInfo & info, std::vector<L> & primary, std::vector<L> & secondary)
+void splitForMode(const T * vals, size_t n, const ModeInfo & info, PcoArray<L> & primary, PcoArray<L> & secondary)
 {
     using TR = NumberTraits<T>;
     primary.resize(n);

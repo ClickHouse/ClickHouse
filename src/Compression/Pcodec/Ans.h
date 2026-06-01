@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Constants.h>
 #include <Compression/Pcodec/PcodecError.h>
 
@@ -35,20 +37,20 @@ struct AnsSpec
     /// log2 of the table size; table states are in [2^size_log, 2^(size_log+1)).
     Bitlen size_log = 0;
     /// The symbol assigned to each table state, in state order.
-    std::vector<Symbol> state_symbols;
+    PcoArray<Symbol> state_symbols;
     /// How many times each symbol appears in the table.
-    std::vector<Weight> symbol_weights;
+    PcoArray<Weight> symbol_weights;
 
     size_t tableSize() const { return size_t{1} << size_log; }
 
     /// Deterministically spread symbols across the table. Backward-compatible; do not change.
-    static std::vector<Symbol> spreadStateSymbols(Bitlen size_log, const std::vector<Weight> & symbol_weights)
+    static PcoArray<Symbol> spreadStateSymbols(Bitlen size_log, const PcoArray<Weight> & symbol_weights)
     {
         Weight table_size = std::accumulate(symbol_weights.begin(), symbol_weights.end(), Weight{0});
         if (table_size != (Weight{1} << size_log))
             throw PcodecError("pcodec: ANS table size log does not agree with total symbol weight");
 
-        std::vector<Symbol> res(table_size, 0);
+        PcoArray<Symbol> res(table_size, 0);
         Weight step = 0;
         Weight stride = chooseStride(table_size);
         Weight mod_table_size = (std::numeric_limits<Weight>::max() >> 1) >> (32 - 1 - size_log);
@@ -64,7 +66,7 @@ struct AnsSpec
         return res;
     }
 
-    static AnsSpec fromWeights(Bitlen size_log, std::vector<Weight> symbol_weights)
+    static AnsSpec fromWeights(Bitlen size_log, PcoArray<Weight> symbol_weights)
     {
         if (symbol_weights.empty())
             symbol_weights = {1};
@@ -87,16 +89,16 @@ struct AnsNode
 
 struct AnsDecoder
 {
-    std::vector<AnsNode> nodes;
+    PcoArray<AnsNode> nodes;
 
     /// Builds the decode table. `bin_offset_bits[symbol]` is the offset-bit count for each bin;
     /// a missing entry (degenerate 0-bin case) uses 0. Matches `ans::decoding::Decoder::new`.
-    static AnsDecoder make(const AnsSpec & spec, const std::vector<Bitlen> & bin_offset_bits)
+    static AnsDecoder make(const AnsSpec & spec, const PcoArray<Bitlen> & bin_offset_bits)
     {
         size_t table_size = spec.tableSize();
         AnsDecoder decoder;
         decoder.nodes.reserve(table_size);
-        std::vector<Weight> symbol_x_s = spec.symbol_weights;
+        PcoArray<Weight> symbol_x_s = spec.symbol_weights;
         for (Symbol symbol : spec.state_symbols)
         {
             AnsState next_state_base = symbol_x_s[symbol];
@@ -127,8 +129,8 @@ struct AnsEncoder
         int64_t next_states_base = 0;
     };
 
-    std::vector<SymbolInfo> symbol_infos;
-    std::vector<AnsState> next_states; // flat over all symbols (size == table_size)
+    PcoArray<SymbolInfo> symbol_infos;
+    PcoArray<AnsState> next_states; // flat over all symbols (size == table_size)
     Bitlen size_log = 0;
 
     static AnsEncoder make(const AnsSpec & spec)
@@ -141,7 +143,7 @@ struct AnsEncoder
         enc.next_states.resize(table_size);
 
         // Contiguous block per symbol: base[s] = sum of weights of earlier symbols.
-        std::vector<size_t> base(n_symbols);
+        PcoArray<size_t> base(n_symbols);
         size_t acc = 0;
         for (size_t s = 0; s < n_symbols; ++s)
         {
@@ -154,7 +156,7 @@ struct AnsEncoder
             base[s] = acc;
             acc += weight;
         }
-        std::vector<size_t> filled(n_symbols, 0);
+        PcoArray<size_t> filled(n_symbols, 0);
         for (size_t state_idx = 0; state_idx < spec.state_symbols.size(); ++state_idx)
         {
             Symbol s = spec.state_symbols[state_idx];
@@ -177,14 +179,14 @@ struct AnsEncoder
 };
 
 /// Quantize bin counts to ANS weights that sum to a power of 2 (ans/encoding.rs::quantize_weights_to).
-inline std::vector<Weight> quantizeWeightsTo(const std::vector<Weight> & counts, size_t total_count, Bitlen size_log)
+inline PcoArray<Weight> quantizeWeightsTo(const PcoArray<Weight> & counts, size_t total_count, Bitlen size_log)
 {
     if (size_log == 0)
         return {1};
 
     Weight required_weight_sum = Weight{1} << size_log;
     float multiplier = static_cast<float>(required_weight_sum) / static_cast<float>(total_count);
-    std::vector<float> desired_surplus_per_bin(counts.size());
+    PcoArray<float> desired_surplus_per_bin(counts.size());
     float desired_surplus = 0;
     for (size_t i = 0; i < counts.size(); ++i)
     {
@@ -194,8 +196,8 @@ inline std::vector<Weight> quantizeWeightsTo(const std::vector<Weight> & counts,
     Weight required_surplus = required_weight_sum - static_cast<Weight>(counts.size());
     float surplus_mult = desired_surplus == 0.0f ? 0.0f : static_cast<float>(required_surplus) / desired_surplus;
 
-    std::vector<float> float_weights(counts.size());
-    std::vector<Weight> weights(counts.size());
+    PcoArray<float> float_weights(counts.size());
+    PcoArray<Weight> weights(counts.size());
     Weight weight_sum = 0;
     for (size_t i = 0; i < counts.size(); ++i)
     {
@@ -228,14 +230,14 @@ inline std::vector<Weight> quantizeWeightsTo(const std::vector<Weight> & counts,
 }
 
 /// Choose both size_log and quantized weights (ans/encoding.rs::quantize_weights).
-inline std::pair<Bitlen, std::vector<Weight>> quantizeWeights(const std::vector<Weight> & counts, size_t total_count, Bitlen max_size_log)
+inline std::pair<Bitlen, PcoArray<Weight>> quantizeWeights(const PcoArray<Weight> & counts, size_t total_count, Bitlen max_size_log)
 {
     if (counts.size() == 1)
         return {0, {1}};
 
     Bitlen min_size_log = static_cast<Bitlen>(32 - std::countl_zero(static_cast<uint32_t>(counts.size() - 1)));
     Bitlen size_log = std::max(min_size_log, max_size_log);
-    std::vector<Weight> weights = quantizeWeightsTo(counts, total_count, size_log);
+    PcoArray<Weight> weights = quantizeWeightsTo(counts, total_count, size_log);
 
     Bitlen power_of_2 = 32;
     for (Weight w : weights)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Ans.h>
 #include <Compression/Pcodec/Bits.h>
 #include <Compression/Pcodec/Constants.h>
@@ -142,7 +144,7 @@ class HistogramBuilder
 public:
     HistogramBuilder(size_t n_, Bitlen n_bins_log_) : n(n_), n_bins(uint64_t{1} << n_bins_log_), n_bins_log(n_bins_log_) { }
 
-    std::vector<HistogramBin<L>> dst;
+    PcoArray<HistogramBin<L>> dst;
 
     /// Partial quicksort that only sorts down to bin boundaries (histograms.rs::apply_quicksort_recurse).
     /// `lower_loose`/`upper_loose` mark whether the current range's bounds are loose (need a scan) or
@@ -324,7 +326,7 @@ private:
 };
 
 template <Latent L>
-std::vector<HistogramBin<L>> histogram(std::vector<L> & latents, Bitlen n_bins_log)
+PcoArray<HistogramBin<L>> histogram(PcoArray<L> & latents, Bitlen n_bins_log)
 {
     size_t len = latents.size();
     if (len == 0)
@@ -351,19 +353,19 @@ inline float binCost(float bin_meta_cost, L lower, L upper, Weight count, float 
 
 /// Exactly-optimal merging of consecutive histogram bins (bin_optimization.rs).
 template <Latent L>
-std::vector<BinCompressionInfo<L>> optimizeBins(const std::vector<HistogramBin<L>> & bins, Bitlen ans_size_log)
+PcoArray<BinCompressionInfo<L>> optimizeBins(const PcoArray<HistogramBin<L>> & bins, Bitlen ans_size_log)
 {
     size_t n = bins.size();
     float bin_meta_cost = static_cast<float>(binExactBitSize<L>(ans_size_log));
 
-    std::vector<uint64_t> c_counts(n + 1, 0);
-    std::vector<float> best_costs(n + 1, 0.0f);
+    PcoArray<uint64_t> c_counts(n + 1, 0);
+    PcoArray<float> best_costs(n + 1, 0.0f);
     for (size_t i = 0; i < n; ++i)
         c_counts[i + 1] = c_counts[i] + bins[i].count;
     uint64_t total_count = c_counts[n];
     float total_count_log2 = std::log2(static_cast<float>(total_count));
 
-    std::vector<size_t> best_js(n);
+    PcoArray<size_t> best_js(n);
     for (size_t i = 0; i < n; ++i)
     {
         float best_cost = std::numeric_limits<float>::max();
@@ -388,7 +390,7 @@ std::vector<BinCompressionInfo<L>> optimizeBins(const std::vector<HistogramBin<L
 
     // Shortcut 1: a single bin covering everything.
     float single_bin_cost = binCost<L>(bin_meta_cost, bins[0].lower, bins[n - 1].upper, static_cast<Weight>(total_count), total_count_log2);
-    std::vector<std::pair<size_t, size_t>> partitioning;
+    PcoArray<std::pair<size_t, size_t>> partitioning;
     if (single_bin_cost < best_cost + SINGLE_BIN_SPEEDUP * static_cast<float>(total_count))
     {
         partitioning.emplace_back(0, n - 1);
@@ -433,7 +435,7 @@ std::vector<BinCompressionInfo<L>> optimizeBins(const std::vector<HistogramBin<L
         }
     }
 
-    std::vector<BinCompressionInfo<L>> res;
+    PcoArray<BinCompressionInfo<L>> res;
     res.reserve(partitioning.size());
     for (size_t symbol = 0; symbol < partitioning.size(); ++symbol)
     {
@@ -451,21 +453,21 @@ std::vector<BinCompressionInfo<L>> optimizeBins(const std::vector<HistogramBin<L
 template <Latent L>
 struct TrainedBins
 {
-    std::vector<BinCompressionInfo<L>> infos;
+    PcoArray<BinCompressionInfo<L>> infos;
     Bitlen ans_size_log = 0;
-    std::vector<Weight> counts;
+    PcoArray<Weight> counts;
 };
 
 /// Trains bins on a (copied, will be sorted) latent array (chunk_compressor.rs::train_infos).
 template <Latent L>
-TrainedBins<L> trainInfos(std::vector<L> latents, Bitlen unoptimized_bins_log)
+TrainedBins<L> trainInfos(PcoArray<L> latents, Bitlen unoptimized_bins_log)
 {
     TrainedBins<L> result;
     if (latents.empty())
         return result;
 
     size_t n_latents = latents.size();
-    std::vector<HistogramBin<L>> unoptimized = histogram(latents, unoptimized_bins_log);
+    PcoArray<HistogramBin<L>> unoptimized = histogram(latents, unoptimized_bins_log);
 
     Bitlen n_log_ceil = n_latents <= 1 ? 0 : static_cast<Bitlen>(32 - std::countl_zero(static_cast<uint32_t>(n_latents - 1)));
     Bitlen estimated_ans_size_log = std::min({unoptimized_bins_log + 2, static_cast<Bitlen>(MAX_COMPRESSION_LEVEL), n_log_ceil});

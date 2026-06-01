@@ -80,8 +80,8 @@ CREATE TABLE t_pco_ratio (x Int64 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(
 CREATE TABLE t_none_ratio (x Int64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_pco_ratio SELECT number * 2 - 5 FROM numbers(500000);
 INSERT INTO t_none_ratio SELECT number * 2 - 5 FROM numbers(500000);
-SELECT 'compresses', (SELECT sum(data_compressed_bytes) FROM system.parts WHERE table = 't_pco_ratio' AND active)
-                   < (SELECT sum(data_compressed_bytes) FROM system.parts WHERE table = 't_none_ratio' AND active);
+SELECT 'compresses', (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_pco_ratio' AND active)
+                   < (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_none_ratio' AND active);
 
 DROP TABLE t_pco;
 DROP TABLE t_pco_chain;

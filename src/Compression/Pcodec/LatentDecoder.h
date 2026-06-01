@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Ans.h>
 #include <Compression/Pcodec/BitReader.h>
 #include <Compression/Pcodec/Bits.h>
@@ -162,7 +164,7 @@ public:
     // --- chunk-level (immutable after initChunk) ---
     LatentVarDeltaEncoding delta_encoding;
     size_t bytes_per_offset = 0;
-    std::vector<L> state_lowers;
+    PcoArray<L> state_lowers;
     size_t n_bins = 0;
     AnsDecoder decoder;
 
@@ -173,7 +175,7 @@ public:
 
     // --- page-level state ---
     std::array<AnsState, ANS_INTERLEAVING> ans_state_idxs{};
-    std::vector<L> delta_state;
+    PcoArray<L> delta_state;
     size_t delta_state_pos = 0;
 
     void initChunk(const ChunkLatentVarMeta & var, const LatentVarDeltaEncoding & de)
@@ -181,8 +183,8 @@ public:
         delta_encoding = de;
 
         Bitlen max_ob = 0;
-        std::vector<Bitlen> bin_offset_bits(var.bins.size());
-        std::vector<Weight> weights(var.bins.size());
+        PcoArray<Bitlen> bin_offset_bits(var.bins.size());
+        PcoArray<Weight> weights(var.bins.size());
         for (size_t i = 0; i < var.bins.size(); ++i)
         {
             bin_offset_bits[i] = var.bins[i].offset_bits;
@@ -215,7 +217,7 @@ public:
         }
     }
 
-    void initPage(const std::array<AnsState, ANS_INTERLEAVING> & finals, std::vector<L> stored_delta_state)
+    void initPage(const std::array<AnsState, ANS_INTERLEAVING> & finals, PcoArray<L> stored_delta_state)
     {
         ans_state_idxs = finals;
         if (delta_encoding.variant == DeltaEncodingVariant::Lookback)
@@ -408,13 +410,13 @@ private:
         using Conv = typename ConvTypeFor<L>::type;
         toggleCenterInPlace(latents.data(), len);
         size_t order = delta_encoding.conv1.weights.size();
-        std::vector<Conv> weights(order);
+        PcoArray<Conv> weights(order);
         for (size_t i = 0; i < order; ++i)
             weights[i] = static_cast<Conv>(delta_encoding.conv1.weights[i]);
         Conv bias = static_cast<Conv>(delta_encoding.conv1.bias);
         Bitlen quantization = delta_encoding.conv1.quantization;
 
-        std::vector<L> residuals(len + order);
+        PcoArray<L> residuals(len + order);
         std::copy(delta_state.begin(), delta_state.begin() + order, residuals.begin());
         std::copy(latents.begin(), latents.begin() + len, residuals.begin() + order);
         for (size_t i = order; i < residuals.size(); ++i)

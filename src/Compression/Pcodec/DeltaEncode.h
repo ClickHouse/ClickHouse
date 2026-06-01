@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Binning.h>
 #include <Compression/Pcodec/Bits.h>
 #include <Compression/Pcodec/Constants.h>
@@ -26,10 +28,10 @@ inline constexpr size_t N_PER_EXTRA_DELTA_GROUP = 10000;
 /// moments (raw first values). After this call, `latents[min(order,n)..]` holds the toggled deltas
 /// (the "body"); the first `min(order,n)` entries are junk.
 template <Latent L>
-std::vector<L> encodeConsecutiveInPlace(size_t order, std::vector<L> & latents)
+PcoArray<L> encodeConsecutiveInPlace(size_t order, PcoArray<L> & latents)
 {
     size_t len = latents.size();
-    std::vector<L> moments;
+    PcoArray<L> moments;
     moments.reserve(order);
     size_t start = 0;
     for (size_t o = 0; o < order; ++o)
@@ -68,15 +70,15 @@ template <Latent L>
 struct ChosenDelta
 {
     size_t order = 0;
-    std::vector<L> body;
-    std::vector<L> moments;
+    PcoArray<L> body;
+    PcoArray<L> moments;
     TrainedBins<L> trained;
 };
 
 /// Builds a small, spread-out sample of any value array (chunk_compressor.rs::choose_delta_sample).
 /// Used both for delta-order selection (on latents) and mode-cost estimation (on raw values).
 template <typename U>
-std::vector<U> spreadSample(const std::vector<U> & values)
+PcoArray<U> spreadSample(const PcoArray<U> & values)
 {
     size_t n = values.size();
     size_t n_extra_groups = 1 + n / N_PER_EXTRA_DELTA_GROUP;
@@ -85,7 +87,7 @@ std::vector<U> spreadSample(const std::vector<U> & values)
         return values;
 
     size_t group_padding = (n - nominal) / n_extra_groups;
-    std::vector<U> sample;
+    PcoArray<U> sample;
     sample.reserve(nominal);
     for (size_t k = 0; k < DELTA_GROUP_SIZE; ++k)
         sample.push_back(values[k]);
@@ -103,7 +105,7 @@ std::vector<U> spreadSample(const std::vector<U> & values)
 /// Builds a small, spread-out sample of the latents for cheap delta-order selection
 /// (chunk_compressor.rs::choose_delta_sample).
 template <Latent L>
-std::vector<L> chooseDeltaSample(const std::vector<L> & latents)
+PcoArray<L> chooseDeltaSample(const PcoArray<L> & latents)
 {
     size_t n = latents.size();
     size_t n_extra_groups = 1 + n / N_PER_EXTRA_DELTA_GROUP;
@@ -112,7 +114,7 @@ std::vector<L> chooseDeltaSample(const std::vector<L> & latents)
         return latents;
 
     size_t group_padding = (n - nominal) / n_extra_groups;
-    std::vector<L> sample;
+    PcoArray<L> sample;
     sample.reserve(nominal);
     for (size_t k = 0; k < DELTA_GROUP_SIZE; ++k)
         sample.push_back(latents[k]);
@@ -129,16 +131,16 @@ std::vector<L> chooseDeltaSample(const std::vector<L> & latents)
 
 /// Estimated cost (bits) of compressing `sample` under the given consecutive delta order.
 template <Latent L>
-double sampleDeltaCost(const std::vector<L> & sample, size_t order, Bitlen unoptimized_bins_log)
+double sampleDeltaCost(const PcoArray<L> & sample, size_t order, Bitlen unoptimized_bins_log)
 {
     if (order == 0)
     {
         TrainedBins<L> trained = trainInfos(sample, unoptimized_bins_log);
         return estimateChunkBits(trained, sample.size(), 0);
     }
-    std::vector<L> work = sample;
+    PcoArray<L> work = sample;
     encodeConsecutiveInPlace<L>(order, work);
-    std::vector<L> body(work.begin() + std::min(order, work.size()), work.end());
+    PcoArray<L> body(work.begin() + std::min(order, work.size()), work.end());
     TrainedBins<L> trained = trainInfos(body, unoptimized_bins_log);
     return estimateChunkBits(trained, body.size(), order);
 }
@@ -147,11 +149,11 @@ double sampleDeltaCost(const std::vector<L> & sample, size_t order, Bitlen unopt
 /// candidate mode against Classic without doing a full encode of each). `allow_delta` enables
 /// trying consecutive delta orders (used for the primary; the secondary is always NoOp).
 template <Latent L>
-double estimateCostPerNum(const std::vector<L> & latents, Bitlen unoptimized_bins_log, bool allow_delta)
+double estimateCostPerNum(const PcoArray<L> & latents, Bitlen unoptimized_bins_log, bool allow_delta)
 {
     if (latents.empty())
         return 0.0;
-    std::vector<L> sample = chooseDeltaSample(latents);
+    PcoArray<L> sample = chooseDeltaSample(latents);
     double best = sampleDeltaCost(sample, 0, unoptimized_bins_log);
     if (allow_delta)
         for (size_t order = 1; order <= MAX_CONSECUTIVE_DELTA_ORDER && order < sample.size(); ++order)
@@ -171,12 +173,12 @@ double estimateCostPerNum(const std::vector<L> & latents, Bitlen unoptimized_bin
 /// the body (no copy); for delta orders it is consumed in place. `trainInfos` makes its own sorted
 /// copy, so `best.body` stays in original order for the later dissect pass.
 template <Latent L>
-ChosenDelta<L> chooseDelta(std::vector<L> latents, Bitlen unoptimized_bins_log)
+ChosenDelta<L> chooseDelta(PcoArray<L> latents, Bitlen unoptimized_bins_log)
 {
     size_t best_order = 0;
     if (latents.size() > 1)
     {
-        std::vector<L> sample = chooseDeltaSample(latents);
+        PcoArray<L> sample = chooseDeltaSample(latents);
         double best_cost = sampleDeltaCost(sample, 0, unoptimized_bins_log);
         for (size_t order = 1; order <= MAX_CONSECUTIVE_DELTA_ORDER && order < sample.size(); ++order)
         {

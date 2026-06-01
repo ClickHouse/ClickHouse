@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/BitReader.h>
 #include <Compression/Pcodec/Bits.h>
 #include <Compression/Pcodec/Constants.h>
@@ -41,7 +43,7 @@ struct DeltaConv1Config
 {
     Bitlen quantization = 0;
     int64_t bias = 0;
-    std::vector<int64_t> weights;
+    PcoArray<int64_t> weights;
 };
 
 /// How a chunk applied delta encoding (chunk-level). Per-latent-var encoding is derived from this.
@@ -91,14 +93,14 @@ struct Mode
     ModeVariant variant = ModeVariant::Classic;
     uint64_t base_latent = 0; // IntMult / FloatMult base (ordered latent)
     Bitlen quant_k = 0; // FloatQuant k
-    std::vector<uint64_t> dict; // Dict entries (ordered latents)
+    PcoArray<uint64_t> dict; // Dict entries (ordered latents)
 };
 
 struct ChunkLatentVarMeta
 {
     Bitlen ans_size_log = 0;
     Bitlen latent_bits = 0; // width of this var's latent type (8/16/32/64)
-    std::vector<Bin> bins;
+    PcoArray<Bin> bins;
 };
 
 struct ChunkMeta

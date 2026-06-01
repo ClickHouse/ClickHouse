@@ -234,7 +234,7 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
 
     /// Copy the standalone stream into a padded buffer so the bit reader can safely overshoot.
     size_t comp_len = source_size - 2 - bytes_to_skip;
-    std::vector<uint8_t> padded(comp_len + Pcodec::OVERSHOOT_PADDING + 16, 0);
+    Pcodec::PcoArray<uint8_t> padded(comp_len + Pcodec::OVERSHOOT_PADDING + 16, 0);
     memcpy(padded.data(), &source[2 + bytes_to_skip], comp_len);
 
     size_t expected = uncompressed_size - bytes_to_skip;
@@ -252,7 +252,7 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
         }
         else
         {
-            std::vector<uint64_t> aligned_scratch(expected / sizeof(uint64_t) + 2);
+            Pcodec::PcoArray<uint64_t> aligned_scratch(expected / sizeof(uint64_t) + 2);
             auto * scratch = reinterpret_cast<uint8_t *>(aligned_scratch.data());
             written = Pcodec::decodeStandalone(padded.data(), comp_len, scratch, expected);
             memcpy(out, scratch, std::min(written, expected));

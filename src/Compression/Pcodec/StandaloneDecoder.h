@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/BitReader.h>
 #include <Compression/Pcodec/Constants.h>
 #include <Compression/Pcodec/LatentDecoder.h>
@@ -31,7 +33,7 @@ inline constexpr size_t CURRENT_STANDALONE_VERSION = 3;
 /// Per-latent-variable page metadata: delta state values (as wide latents) + 4 final ANS states.
 struct PageVarMeta
 {
-    std::vector<uint64_t> delta_state;
+    PcoArray<uint64_t> delta_state;
     std::array<AnsState, ANS_INTERLEAVING> finals{};
 };
 
@@ -47,9 +49,9 @@ inline PageVarMeta readPageVarMeta(BitReader & reader, Bitlen latent_bits, size_
 }
 
 template <Latent L>
-std::vector<L> castDeltaState(const std::vector<uint64_t> & src)
+PcoArray<L> castDeltaState(const PcoArray<uint64_t> & src)
 {
-    std::vector<L> res(src.size());
+    PcoArray<L> res(src.size());
     for (size_t i = 0; i < src.size(); ++i)
         res[i] = static_cast<L>(src[i]);
     return res;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Binning.h>
 #include <Compression/Pcodec/BitWriter.h>
 #include <Compression/Pcodec/Constants.h>
@@ -45,7 +47,7 @@ inline void writeVarint(BitWriter & writer, uint64_t n)
     writer.writeU64(n, power);
 }
 
-inline void writeChunkLatentVarMeta(BitWriter & writer, Bitlen ans_size_log, const std::vector<Bin> & bins, Bitlen latent_bits)
+inline void writeChunkLatentVarMeta(BitWriter & writer, Bitlen ans_size_log, const PcoArray<Bin> & bins, Bitlen latent_bits)
 {
     writer.writeU64(ans_size_log, BITS_TO_ENCODE_ANS_SIZE_LOG);
     writer.writeU64(bins.size(), BITS_TO_ENCODE_N_BINS);
@@ -101,7 +103,7 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         writer.writeU64(n - 1, BITS_TO_ENCODE_N_ENTRIES);
 
         // --- read values, detect a candidate mode (cheap, sample-based) ---
-        std::vector<T> vals(n);
+        PcoArray<T> vals(n);
         std::memcpy(vals.data(), src_bytes, n * sizeof(T));
         ModeInfo info = detectMode<T>(vals);
 
@@ -110,14 +112,14 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
 
         auto make_bins = [](const TrainedBins<L> & t)
         {
-            std::vector<Bin> bins(t.infos.size());
+            PcoArray<Bin> bins(t.infos.size());
             for (size_t i = 0; i < t.infos.size(); ++i)
                 bins[i] = Bin{t.infos[i].weight, static_cast<uint64_t>(t.infos[i].lower), t.infos[i].offset_bits};
             return bins;
         };
 
         // Classic baseline latents (cheap), reused if Classic wins.
-        std::vector<L> primary_latents(n);
+        PcoArray<L> primary_latents(n);
         for (size_t i = 0; i < n; ++i)
             primary_latents[i] = NumberTraits<T>::toLatentOrdered(vals[i]);
 
@@ -128,15 +130,15 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         uint64_t base_latent = 0;
         Bitlen quant_k = 0;
         bool has_secondary = false;
-        std::vector<L> secondary;
+        PcoArray<L> secondary;
 
         if (info.variant != ModeVariant::Classic)
         {
             double classic_cost = estimateCostPerNum(primary_latents, unoptimized_bins_log, /*allow_delta=*/true);
             // Split only a small sample for the mode estimate.
-            std::vector<T> sample_vals = spreadSample(vals);
-            std::vector<L> sample_primary;
-            std::vector<L> sample_secondary;
+            PcoArray<T> sample_vals = spreadSample(vals);
+            PcoArray<L> sample_primary;
+            PcoArray<L> sample_secondary;
             splitForMode<T>(sample_vals.data(), sample_vals.size(), info, sample_primary, sample_secondary);
             double mode_cost = estimateCostPerNum(sample_primary, unoptimized_bins_log, /*allow_delta=*/true);
             if (info.has_secondary)
@@ -149,7 +151,7 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
                 quant_k = info.k;
                 has_secondary = info.has_secondary;
                 // Now do the full split (only for the winner).
-                std::vector<L> mode_primary;
+                PcoArray<L> mode_primary;
                 splitForMode<T>(vals.data(), n, info, mode_primary, secondary);
                 primary_latents = std::move(mode_primary);
             }
@@ -162,11 +164,11 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         if (has_secondary)
             sec_trained = trainInfos(secondary, sec_ubl);
 
-        std::vector<Bin> primary_bins = make_bins(primary_dp.trained);
+        PcoArray<Bin> primary_bins = make_bins(primary_dp.trained);
         LatentEncoder<L> primary_enc = LatentEncoder<L>::build(primary_dp.trained, primary_bins);
         DissectedVar<L> primary_dis = primary_enc.dissect(primary_dp.body);
 
-        std::vector<Bin> sec_bins;
+        PcoArray<Bin> sec_bins;
         LatentEncoder<L> sec_enc;
         DissectedVar<L> sec_dis;
         if (has_secondary)
@@ -230,12 +232,12 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
 /// Convenience wrapper returning a freshly-allocated vector (used by the standalone API and tests).
 /// The scratch buffer is allocated uninitialized — no zeroing is needed by the writer.
 template <typename T>
-std::vector<uint8_t> encodeStandalone(const uint8_t * src_bytes, size_t n, size_t compression_level = DEFAULT_COMPRESSION_LEVEL)
+PcoArray<uint8_t> encodeStandalone(const uint8_t * src_bytes, size_t n, size_t compression_level = DEFAULT_COMPRESSION_LEVEL)
 {
     size_t cap = encodeStandaloneMaxSize<T>(n);
     auto scratch = std::make_unique_for_overwrite<uint8_t[]>(cap);
     size_t size = encodeStandaloneInto<T>(src_bytes, n, scratch.get(), compression_level);
-    return std::vector<uint8_t>(scratch.get(), scratch.get() + size);
+    return PcoArray<uint8_t>(scratch.get(), scratch.get() + size);
 }
 
 }

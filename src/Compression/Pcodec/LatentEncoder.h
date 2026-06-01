@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/Pcodec/PcoArray.h>
+
 #include <Compression/Pcodec/Ans.h>
 #include <Compression/Pcodec/Binning.h>
 #include <Compression/Pcodec/BitWriter.h>
@@ -24,10 +26,10 @@ namespace DB::Pcodec
 template <Latent L>
 struct DissectedVar
 {
-    std::vector<AnsState> ans_vals;
-    std::vector<Bitlen> ans_bits;
-    std::vector<L> offsets;
-    std::vector<Bitlen> offset_bits;
+    PcoArray<AnsState> ans_vals;
+    PcoArray<Bitlen> ans_bits;
+    PcoArray<L> offsets;
+    PcoArray<Bitlen> offset_bits;
     std::array<AnsState, ANS_INTERLEAVING> ans_final_states{};
 };
 
@@ -35,9 +37,9 @@ template <Latent L>
 class LatentEncoder
 {
 public:
-    std::vector<BinCompressionInfo<L>> infos_by_lower; // sorted by lower
-    std::vector<L> sorted_lowers;
-    std::vector<L> search_lowers; // padded to 2^search_size_log with L::MAX, for branchless search
+    PcoArray<BinCompressionInfo<L>> infos_by_lower; // sorted by lower
+    PcoArray<L> sorted_lowers;
+    PcoArray<L> search_lowers; // padded to 2^search_size_log with L::MAX, for branchless search
     size_t search_size_log = 0;
     AnsEncoder encoder;
     Bitlen ans_size_log = 0;
@@ -47,7 +49,7 @@ public:
 
     /// `bins` are in symbol order (used for the ANS spec + bin metadata). `infos` are the same
     /// bins with raw->quantized weights, used for the search table.
-    static LatentEncoder build(const TrainedBins<L> & trained, const std::vector<Bin> & bins)
+    static LatentEncoder build(const TrainedBins<L> & trained, const PcoArray<Bin> & bins)
     {
         LatentEncoder enc;
         enc.ans_size_log = trained.ans_size_log;
@@ -55,7 +57,7 @@ public:
         enc.is_trivial = bins.empty() || (bins.size() == 1 && bins[0].offset_bits == 0);
 
         Bitlen max_offset_bits = 0;
-        std::vector<Weight> weights(bins.size());
+        PcoArray<Weight> weights(bins.size());
         for (size_t i = 0; i < bins.size(); ++i)
         {
             weights[i] = bins[i].weight;
@@ -100,7 +102,7 @@ public:
     }
 
     /// Dissects the whole (single-page) latent array. `latents` is in original order.
-    DissectedVar<L> dissect(const std::vector<L> & latents) const
+    DissectedVar<L> dissect(const PcoArray<L> & latents) const
     {
         DissectedVar<L> d;
         d.ans_final_states.fill(encoder.defaultState());
