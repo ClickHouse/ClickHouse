@@ -203,7 +203,7 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("sparse_grams", bloomFilterIndexTextCreator, Documentation{
         .description = "A Bloom filter over the sparse n-grams of the index expression's string values, for speeding up substring searches.",
-        .syntax = "INDEX name expr TYPE sparse_grams(n, size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .syntax = "INDEX name expr TYPE sparse_grams(min_ngram_length, max_ngram_length[, min_cutoff_length], size_in_bytes, num_hash_functions, seed) GRANULARITY g",
         .related = {"ngrambf_v1", "tokenbf_v1"}});
     registerValidator("sparse_grams", bloomFilterIndexTextValidator);
 
@@ -216,13 +216,13 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 #if USE_USEARCH
     registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
         .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
-        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function'[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
         .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
     registerCreator("text", textIndexCreator, Documentation{
-        .description = "A full-text (inverted) index over the tokens of a string column, for speeding up text search functions such as `hasToken`, `searchAny`, and `searchAll`.",
+        .description = "A full-text (inverted) index over the tokens of a string column, for speeding up text search functions such as `hasToken`, `hasAnyTokens`, `hasAllTokens`, and `hasPhrase`.",
         .syntax = "INDEX name expr TYPE text(tokenizer = splitByNonAlpha) GRANULARITY g",
         .related = {"tokenbf_v1"}});
     registerValidator("text", textIndexValidator);
