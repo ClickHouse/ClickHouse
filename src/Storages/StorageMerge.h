@@ -180,12 +180,16 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
+
+    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
+    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
+    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 

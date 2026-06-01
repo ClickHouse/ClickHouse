@@ -73,7 +73,7 @@ struct AggregateFunctionDistinctGenericData
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
             history.insert(readStringBinaryInto(*arena, buf));
@@ -86,8 +86,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        Set::LookupResult it;
-        bool inserted;
+        Set::LookupResult it = nullptr;
+        bool inserted = false;
         history.emplace(key_holder, it, inserted);
 
         return inserted;
@@ -98,8 +98,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            Set::LookupResult it;
-            bool inserted;
+            Set::LookupResult it = nullptr;
+            bool inserted = false;
             history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
 
             if (inserted)
@@ -121,8 +121,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
-        Set::LookupResult it;
-        bool inserted;
+        Set::LookupResult it = nullptr;
+        bool inserted = false;
         history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
 
         return inserted;
@@ -135,8 +135,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             const auto & value = elem.getValue();
             if (!history.contains(value))
             {
-                Set::LookupResult it;
-                bool inserted;
+                Set::LookupResult it = nullptr;
+                bool inserted = false;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
@@ -190,7 +190,7 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        assert(!argument_columns.empty());
+        chassert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 
@@ -299,6 +299,22 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        /// Distinct state contains a history of unique values and can be merged across
+        /// variants without reading the nested function state from rhs
+        return this->haveSameDefinition(rhs);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place,
+        const IAggregateFunction & /*rhs*/,
+        ConstAggregateDataPtr rhs_place,
+        Arena * arena) const override
+    {
+        merge(place, rhs_place, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
