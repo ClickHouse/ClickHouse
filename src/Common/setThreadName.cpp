@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
+#include <Common/ThreadStackRegistry.h>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
 
@@ -74,6 +75,11 @@ static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
 void setThreadName(ThreadName name)
 {
+    /// Make sure this OS thread is registered with ThreadStackRegistry so its
+    /// stack is counted by MemoryThreadStacks* async metrics. Idempotent per
+    /// thread (the call after the first one is just a TLS access).
+    ThreadStackRegistry::ensureCurrentThreadRegistered();
+
     // Skip rename on no-op.
     if (thread_name == name)
         return;

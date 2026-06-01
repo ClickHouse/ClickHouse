@@ -17,6 +17,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -193,6 +194,7 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
+    openFileIfExists("/proc/self/smaps", vm_smaps);
     /// Note, "stat" does not include SigQ
     openFileIfExists("/proc/self/status", process_status);
 
@@ -2293,6 +2295,157 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
             openFileIfExists("/proc/self/maps", vm_maps);
+        }
+    }
+
+    if (vm_smaps)
+    {
+        try
+        {
+            /// Snapshot the thread-stack registry once, then walk /proc/self/smaps
+            /// and match each VMA's start address against the snapshot.
+            ///
+            /// /proc/self/smaps is a seq_file iterated across many read() syscalls,
+            /// and the kernel releases mmap_lock between them. In a busy
+            /// multi-threaded process, new VMAs from jemalloc chunks and new
+            /// pthread stacks may appear during the walk and get appended to later
+            /// records. By matching against the snapshot taken before the walk,
+            /// the match count is bounded by the thread count at snapshot time
+            /// regardless of churn. Stacks created during the walk are correctly
+            /// ignored (their addresses aren't in the snapshot). Stacks that exit
+            /// during the walk before the iterator reaches their address are
+            /// undercounted; that residual error is the price of the snapshot.
+            ///
+            /// The parse is allocation-free: we walk the ReadBuffer's internal
+            /// buffer byte-by-byte and accumulate the current line into a small
+            /// stack buffer, never growing the heap.
+            ///
+            /// Format of /proc/PID/smaps is set by the kernel in
+            /// fs/proc/task_mmu.c (functions `show_vma_header_prefix`,
+            /// `show_smap`, `__show_smap`):
+            ///   - The VMA header line begins with `<start>-<end>` written by
+            ///     `seq_put_hex_ll(...)` — lowercase hex, '-' separator.
+            ///   - Detail lines are written by `SEQ_PUT_DEC(str, val)` which is
+            ///     `seq_put_decimal_ull_width(m, str, val >> 10, 8)`, so every
+            ///     `Size:` / `Rss:` / `Pss:` / etc. value is an integer kB
+            ///     right-aligned in width 8, followed by " kB\n".
+            ///   - `Size:` is the first detail line after the header (set by
+            ///     show_smap), `Rss:` is emitted a few lines later by
+            ///     __show_smap. We don't depend on a specific relative order,
+            ///     just that both appear before the next header.
+            const auto stack_snapshot = ThreadStackRegistry::snapshot();
+
+            vm_smaps->rewind();
+
+            uint64_t stack_rss_kb = 0;
+            uint64_t stack_size_kb = 0;
+            uint64_t stack_count = 0;
+            bool current_is_stack = false;
+
+            constexpr size_t line_buf_size = 1024;
+            char line_buf[line_buf_size];
+            size_t line_len = 0;
+
+            auto process_line = [&](const char * data, size_t len)
+            {
+                if (len == 0)
+                    return;
+                char first = data[0];
+                bool is_header = ((first >= '0' && first <= '9') || (first >= 'a' && first <= 'f'));
+                if (is_header)
+                {
+                    uintptr_t start = 0;
+                    bool parsed = false;
+                    for (size_t i = 0; i < len; ++i)
+                    {
+                        char d = data[i];
+                        if (d == '-')
+                        {
+                            parsed = true;
+                            break;
+                        }
+                        if (d >= '0' && d <= '9')
+                            start = (start << 4) | static_cast<uintptr_t>(d - '0');
+                        else if (d >= 'a' && d <= 'f')
+                            start = (start << 4) | static_cast<uintptr_t>(d - 'a' + 10);
+                        else
+                        {
+                            parsed = false;
+                            break;
+                        }
+                    }
+                    current_is_stack = parsed && stack_snapshot.contains(start);
+                    if (current_is_stack)
+                        ++stack_count;
+                }
+                else if (current_is_stack)
+                {
+                    uint64_t * dest = nullptr;
+                    size_t value_offset = 0;
+                    if (len >= 4 && data[0] == 'R' && data[1] == 's' && data[2] == 's' && data[3] == ':')
+                    {
+                        dest = &stack_rss_kb;
+                        value_offset = 4;
+                    }
+                    else if (len >= 5 && data[0] == 'S' && data[1] == 'i' && data[2] == 'z' && data[3] == 'e' && data[4] == ':')
+                    {
+                        dest = &stack_size_kb;
+                        value_offset = 5;
+                    }
+                    if (dest)
+                    {
+                        while (value_offset < len && data[value_offset] == ' ')
+                            ++value_offset;
+                        uint64_t value = 0;
+                        while (value_offset < len && data[value_offset] >= '0' && data[value_offset] <= '9')
+                        {
+                            value = value * 10 + static_cast<uint64_t>(data[value_offset] - '0');
+                            ++value_offset;
+                        }
+                        *dest += value;
+                    }
+                }
+            };
+
+            while (!vm_smaps->eof())
+            {
+                char c = *vm_smaps->position();
+                ++vm_smaps->position();
+                if (c == '\n')
+                {
+                    process_line(line_buf, line_len);
+                    line_len = 0;
+                }
+                else if (line_len < line_buf_size)
+                {
+                    line_buf[line_len++] = c;
+                }
+                /// Lines longer than line_buf_size get truncated. We only need
+                /// the first few bytes for either the header start address or
+                /// the metric key + value, so truncation is harmless for smaps.
+            }
+            if (line_len > 0)
+                process_line(line_buf, line_len);
+
+            /// stack_rss_kb and stack_size_kb are in integer kB (the kernel's
+            /// unit in /proc/self/smaps); multiply by 1024 to expose bytes.
+            new_values["MemoryThreadStacksResident"] = { stack_rss_kb * 1024,
+                "Approximate resident set size of pthread stacks, summed from `Rss:`"
+                " of /proc/self/smaps VMAs whose start address matches the snapshot"
+                " of currently-registered thread stack bases at the start of the"
+                " scrape. May slightly undercount under heavy thread churn (Linux"
+                " only)." };
+            new_values["MemoryThreadStacksVirtual"] = { stack_size_kb * 1024,
+                "Approximate virtual size of pthread stacks, summed from `Size:`"
+                " of matching /proc/self/smaps VMAs (Linux only)." };
+            new_values["MemoryThreadStacksCount"] = { stack_count,
+                "Number of pthread stack VMAs matched in /proc/self/smaps against"
+                " the snapshot taken at the start of the scrape (Linux only)." };
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            openFileIfExists("/proc/self/smaps", vm_smaps);
         }
     }
 

@@ -2,6 +2,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
@@ -117,6 +118,13 @@ ThreadStatus::ThreadStatus()
     log = getLogger("ThreadStatus");
 
     current_thread = this;
+
+#if defined(OS_LINUX)
+    /// Make sure the current OS thread is registered so AsynchronousMetrics can
+    /// attribute the matching /proc/self/smaps VMA to thread stacks. Idempotent
+    /// per thread; the actual cleanup runs on thread exit.
+    ThreadStackRegistry::ensureCurrentThreadRegistered();
+#endif
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
