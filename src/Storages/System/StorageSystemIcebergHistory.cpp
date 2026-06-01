@@ -19,8 +19,15 @@
 #include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
+#include <Core/Field.h>
+
+#if USE_AVRO
+#include <base/EnumReflection.h>
+#endif
 
 /// Iceberg specs mention that the timestamps are stored in ms: https://iceberg.apache.org/spec/#table-metadata-fields
 static constexpr auto TIME_SCALE = 3;
@@ -43,7 +50,9 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
         {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"Date & time when this snapshot was made current snapshot"},
         {"snapshot_id",std::make_shared<DataTypeUInt64>(),"Snapshot id which is used to identify a snapshot."},
         {"parent_id",std::make_shared<DataTypeUInt64>(),"Parent id of this snapshot."},
-        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."}
+        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."},
+        {"operation",std::make_shared<DataTypeString>(),"Snapshot operation (e.g. APPEND, OVERWRITE, DELETE)."},
+        {"summary",std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),"Snapshot summary fields other than operation, as stored in the Iceberg metadata."}
     };
 }
 
@@ -79,6 +88,22 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(iceberg_history_item.snapshot_id);
                     res_columns[column_index++]->insert(iceberg_history_item.parent_id);
                     res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
+
+                    const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
+                    res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.operation));
+
+                    Map summary_map;
+                    if (snapshot_summary.operation != Iceberg::SnapshotSummary::Operation::UNKNOWN)
+                    {
+                        auto summary_json = snapshot_summary.toJSON();
+                        for (const auto & [key, value] : *summary_json)
+                        {
+                            if (key == Iceberg::f_operation)
+                                continue;
+                            summary_map.push_back(Tuple{key, value.toString()});
+                        }
+                    }
+                    res_columns[column_index++]->insert(summary_map);
                 }
             }
         }
