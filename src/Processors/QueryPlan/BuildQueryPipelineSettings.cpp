@@ -31,7 +31,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];
-    max_streams_for_union_step_to_max_threads_ratio = from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio];
+    max_streams_for_union_step_to_max_threads_ratio = static_cast<double>(from->getSettingsRef()[Setting::max_streams_for_union_step_to_max_threads_ratio]);
 
     /// Setting query_plan_merge_filters is enabled by default.
     /// But it can brake short-circuit without splitting filter step into smaller steps.

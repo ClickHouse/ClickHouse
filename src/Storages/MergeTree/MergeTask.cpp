@@ -108,6 +108,11 @@ namespace DimensionalMetrics
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char merge_task_projection_stage_pause[];
+}
+
 namespace Setting
 {
     extern const SettingsBool compile_sort_description;
@@ -161,7 +166,7 @@ namespace ErrorCodes
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
-class BuildStatisticsTransform : public ISimpleTransform
+class BuildStatisticsTransform final : public ISimpleTransform
 {
 public:
     BuildStatisticsTransform(
@@ -377,7 +382,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (!global_ctx->merging_params.version_column.empty())
         key_columns.emplace(global_ctx->merging_params.version_column);
 
-    /// Force all columns params of Graphite mode
+    /// Force configured `GraphiteMergeTree` rollup columns.
+    /// Generic key/minmax/dedup columns are collected separately.
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
     {
         key_columns.emplace(global_ctx->merging_params.graphite_params.path_column_name);
@@ -396,8 +402,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
-    /// Key columns required for merge, must not be expired early.
-    global_ctx->merge_required_key_columns = key_columns;
+    switch (global_ctx->merging_params.mode)
+    {
+        case MergeTreeData::MergingParams::Summing:
+        case MergeTreeData::MergingParams::Aggregating:
+        case MergeTreeData::MergingParams::Coalescing:
+            for (const auto & column : global_ctx->storage_columns)
+                key_columns.emplace(column.name);
+            break;
+        default:
+            /// Other modes either need only key/sign/version columns already collected above,
+            /// or, for `GraphiteMergeTree`, only configured rollup columns beyond
+            /// the generic columns collected above.
+            break;
+    }
+
+    /// Snapshot columns required by merge semantics before adding columns used only
+    /// to rebuild skip indexes, projections, or TTL filters. This covers defaults
+    /// for `SummingMergeTree`, `CoalescingMergeTree`, and `AggregatingMergeTree`,
+    /// and configured rollup columns for `GraphiteMergeTree`.
+    /// Expired required columns may later be removed from Wide parts; Compact
+    /// parts keep them because per-column file removal is not applicable.
+    global_ctx->merge_required_columns = key_columns;
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
     for (const auto & index : skip_indexes)
@@ -436,8 +462,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     for (const auto * projection : global_ctx->projections_to_rebuild)
         for (const auto & column : projection->getRequiredColumns())
             key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
-
-    /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
     /// For vertical merge with TTL delete optimization, include columns needed by
     /// TTL expressions in the horizontal phase so the TTL filter can be evaluated.
@@ -665,7 +689,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             for (const auto & column : input)
             {
                 bool is_expired = expired_columns.contains(column.name);
-                bool is_required_for_merge = global_ctx->merge_required_key_columns.contains(column.name);
+                bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
                 if (is_expired)
                     expired_out.push_back(column);
@@ -777,7 +801,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     SerializationInfo::Settings info_settings
     {
-        (*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
@@ -1174,6 +1198,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     ProfileEvents::increment(ProfileEvents::MergedProjections, global_ctx->projections_to_merge.size());
     ProfileEvents::increment(ProfileEvents::RebuiltProjections, global_ctx->projections_to_rebuild.size());
 
+    if (!global_ctx->projection)
+    {
+        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+        std::lock_guard lock(parent_elem->projection_introspection_mutex);
+        for (const auto * projection : global_ctx->projections_to_rebuild)
+            parent_elem->projections_pending.push_back(projection->name);
+        for (const auto * projection : global_ctx->projections_to_merge)
+            parent_elem->projections_pending.push_back(projection->name);
+    }
+
     const auto & settings = global_ctx->context->getSettingsRef();
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
@@ -1207,7 +1241,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             tmp_part->finalize();
             tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1232,11 +1266,25 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
             ctx->projection_parts[projection.name].emplace_back(std::move(temp_part->part));
+        }
+    }
+
+    if (!global_ctx->projection)
+    {
+        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+        std::lock_guard lock(parent_elem->projection_introspection_mutex);
+        for (const auto * proj : global_ctx->projections_to_rebuild)
+        {
+            if (!ctx->projection_parts.contains(proj->name))
+            {
+                std::erase(parent_elem->projections_pending, proj->name);
+                parent_elem->projections_done.push_back(proj->name);
+            }
         }
     }
 
@@ -1263,7 +1311,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->merge_entry,
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
-        global_ctx->space_reservation
+        global_ctx->space_reservation,
+        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
     );
 }
 
@@ -1281,6 +1330,23 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
     }
 
     const auto & current_projection_name = ctx->projection_parts_iterator->first;
+
+    if (!global_ctx->projection)
+    {
+        bool new_projection = false;
+        {
+            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+            std::lock_guard lock(parent_elem->projection_introspection_mutex);
+            if (parent_elem->current_projection != current_projection_name)
+            {
+                parent_elem->current_projection = current_projection_name;
+                new_projection = true;
+            }
+        }
+        if (new_projection)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+    }
+
     Stopwatch step_watch(CLOCK_MONOTONIC_COARSE);
 
     if (ctx->merge_projection_parts_task_ptr->executeStep())
@@ -1291,6 +1357,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 
     ctx->projections_rebuild_elapsed_ns[current_projection_name] += step_watch.elapsedNanoseconds();
     ++ctx->projection_parts_iterator;
+
+    if (!global_ctx->projection)
+    {
+        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+        std::lock_guard lock(parent_elem->projection_introspection_mutex);
+        std::erase(parent_elem->projections_pending, current_projection_name);
+        parent_elem->projections_done.push_back(current_projection_name);
+        parent_elem->current_projection.clear();
+        parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
 
     if (ctx->projection_parts_iterator == std::make_move_iterator(ctx->projection_parts.end()))
     {
@@ -1797,9 +1875,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
         projection_future_part->name = projection->name;
-        // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
-        // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
-        // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
+        projection_future_part->path = global_ctx->future_part->path + "/" + projection->name + ".proj/";
         projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
 
         MergeTreeData::MergingParams projection_merging_params;
@@ -1807,11 +1883,15 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         if (projection->type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+        auto child_merge_list_element = std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context);
+        if (!global_ctx->projection)
+            child_merge_list_element->parent_progress = &(*global_ctx->merge_entry)->ptr()->current_projection_progress;
+
         ctx->tasks_for_projections.emplace_back(std::make_shared<MergeTask>(
             projection_future_part,
             projection->metadata,
             global_ctx->merge_entry,
-            std::make_unique<MergeListElement>((*global_ctx->merge_entry)->table_id, projection_future_part, global_ctx->context),
+            std::move(child_merge_list_element),
             global_ctx->time_of_merge,
             global_ctx->context,
             *global_ctx->holder,
@@ -1848,13 +1928,44 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 bool MergeTask::MergeProjectionsStage::executeProjections() const
 {
     if (ctx->projections_iterator == ctx->tasks_for_projections.end())
+    {
+        if (!global_ctx->projection)
+        {
+            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+            std::lock_guard lock(parent_elem->projection_introspection_mutex);
+            parent_elem->current_projection.clear();
+            parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
+            parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+            parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+        }
         return false;
+    }
 
     /// Release offset mapping when all projections with _part_offset has been merged.
     if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets)
         global_ctx->merged_part_offsets->clear();
 
     const auto & projection_name = (*ctx->projections_iterator)->global_ctx->future_part->name;
+
+    if (!global_ctx->projection)
+    {
+        bool new_projection = false;
+        {
+            auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+            std::lock_guard lock(parent_elem->projection_introspection_mutex);
+            if (parent_elem->current_projection != projection_name)
+            {
+                parent_elem->current_projection = projection_name;
+                auto num_parts = (*ctx->projections_iterator)->global_ctx->future_part->parts.size();
+                parent_elem->current_projection_parts_merging.store(num_parts, std::memory_order_relaxed);
+                parent_elem->current_projection_parts_remaining.store(num_parts, std::memory_order_relaxed);
+                new_projection = true;
+            }
+        }
+        if (new_projection)
+            FailPointInjection::pauseFailPoint(FailPoints::merge_task_projection_stage_pause);
+    }
+
     Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
 
     if ((*ctx->projections_iterator)->execute())
@@ -1866,6 +1977,19 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
     /// Projection finished — convert accumulated nanoseconds to milliseconds.
     ctx->projections_merge_elapsed_ns[projection_name] += projection_watch.elapsedNanoseconds();
     global_ctx->projections_merge_time[projection_name] += ctx->projections_merge_elapsed_ns[projection_name] / 1000000;
+
+    if (!global_ctx->projection)
+    {
+        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+        std::lock_guard lock(parent_elem->projection_introspection_mutex);
+        std::erase(parent_elem->projections_pending, projection_name);
+        parent_elem->projections_done.push_back(projection_name);
+        parent_elem->current_projection.clear();
+        parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
+
     ++ctx->projections_iterator;
     return true;
 }
@@ -2114,6 +2238,14 @@ void MergeTask::MergeProjectionsStage::cancel() noexcept
 {
     for (auto & prj_task: ctx->tasks_for_projections)
         prj_task->cancel();
+
+    if (!global_ctx->projection)
+    {
+        auto * parent_elem = (*global_ctx->merge_entry)->ptr();
+        parent_elem->current_projection_progress.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_merging.store(0, std::memory_order_relaxed);
+        parent_elem->current_projection_parts_remaining.store(0, std::memory_order_relaxed);
+    }
 }
 
 
