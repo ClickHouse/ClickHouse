@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- SQL-defined handlers are stored in Keeper and replicated across nodes. -->
+    <query_rules_storage>
+        <type>keeper</type>
+        <path>/clickhouse/handlers</path>
+        <update_timeout_ms>1000</update_timeout_ms>
+    </query_rules_storage>
+</clickhouse>

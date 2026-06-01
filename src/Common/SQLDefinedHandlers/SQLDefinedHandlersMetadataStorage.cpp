@@ -14,6 +14,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -176,6 +177,7 @@ public:
         : WithContext(context_)
         , root_path(path_)
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::ZooKeeperStorage");
         if (root_path.empty())
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Handlers path cannot be empty");
 
@@ -196,6 +198,7 @@ public:
 
     bool waitUpdate(size_t timeout) override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::waitUpdate");
         if (!wait_event)
             return true;
 
@@ -214,6 +217,7 @@ public:
 
     std::vector<std::string> list() const override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::list");
         if (!wait_event)
             wait_event = std::make_shared<Poco::Event>();
 
@@ -225,16 +229,19 @@ public:
 
     bool exists(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::exists");
         return getClient()->exists(getPath(file_name));
     }
 
     std::string read(const std::string & file_name) const override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::read");
         return getClient()->get(getPath(file_name));
     }
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::write");
         if (replace)
         {
             getClient()->createOrUpdate(getPath(file_name), data, zkutil::CreateMode::Persistent);
@@ -249,11 +256,13 @@ public:
 
     void remove(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::remove");
         getClient()->remove(getPath(file_name));
     }
 
     bool removeIfExists(const std::string & file_name) override
     {
+        auto component_guard = Coordination::setCurrentComponent("SQLDefinedHandlersMetadataStorage::removeIfExists");
         auto code = getClient()->tryRemove(getPath(file_name));
         if (code == Coordination::Error::ZOK)
             return true;
