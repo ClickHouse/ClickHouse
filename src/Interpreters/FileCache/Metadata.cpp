@@ -625,7 +625,7 @@ class CleanupQueue
 public:
     void add(const FileCacheKey & key)
     {
-        bool inserted;
+        bool inserted = false;
         {
             std::lock_guard lock(mutex);
             if (cancelled)
@@ -766,7 +766,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
     while (true)
     {
         Key key;
-        size_t offset;
+        size_t offset = 0;
         std::weak_ptr<FileSegment> file_segment_weak;
 
         {
