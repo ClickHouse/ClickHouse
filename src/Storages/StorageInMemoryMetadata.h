@@ -357,7 +357,6 @@ public:
 
     const StorageInMemoryMetadata * operator->() const &;
     const StorageInMemoryMetadata & operator*() const &;
-    const StorageInMemoryMetadata * get() const &;
 
     operator StorageMetadataPtr() const; /// NOLINT(google-explicit-constructor)
 
