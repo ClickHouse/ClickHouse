@@ -376,6 +376,7 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
 
 }
 
+void registerAggregateFunctionSparkbar(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory & factory)
 {
 

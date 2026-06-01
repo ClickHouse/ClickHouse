@@ -292,7 +292,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 }
 
 
-ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
+static ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 {
     // SUBJECT = arguments[0], LEFT = arguments[1], RIGHT = arguments[2]
 
@@ -308,7 +308,7 @@ ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
     return makeASTOperator("and", f_left_expr, f_right_expr);
 }
 
-ASTPtr makeTruthValuePredicateOperator(std::string_view predicate_name, const ASTPtr & argument)
+static ASTPtr makeTruthValuePredicateOperator(std::string_view predicate_name, const ASTPtr & argument)
 {
     auto is_not_distinct_from_true = [&]
     {
@@ -2962,12 +2962,12 @@ private:
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
-bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
+static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
 {
     return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
 }
 
-std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
+static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
@@ -3055,7 +3055,7 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
 }
 
 
-bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     IParser::Pos begin = pos;
 
@@ -3073,7 +3073,7 @@ bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
 
@@ -3092,7 +3092,7 @@ bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
 

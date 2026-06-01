@@ -363,18 +363,26 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
+        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
+        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
+#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+#pragma clang diagnostic pop
     }
 
     /// Change path for logging.

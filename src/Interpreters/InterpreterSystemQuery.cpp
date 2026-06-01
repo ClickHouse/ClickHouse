@@ -2780,6 +2780,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     return required_access;
 }
 
+void registerInterpreterSystemQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

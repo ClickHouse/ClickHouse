@@ -67,6 +67,7 @@ QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
     return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);

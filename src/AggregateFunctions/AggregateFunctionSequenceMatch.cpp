@@ -852,6 +852,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 
 }
 
+void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {}});

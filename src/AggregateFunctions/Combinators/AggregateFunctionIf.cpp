@@ -510,6 +510,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
+void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());

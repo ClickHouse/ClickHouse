@@ -178,7 +178,7 @@ std::string FileCacheReserveStat::Stat::toString() const
     return wb.str();
 }
 
-double normalizeProbability(double probability)
+static double normalizeProbability(double probability)
 {
     if (probability < 0.0)
         probability = .0;

@@ -1225,6 +1225,7 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
+void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,

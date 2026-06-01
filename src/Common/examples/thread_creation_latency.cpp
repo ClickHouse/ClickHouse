@@ -8,6 +8,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace CurrentMetrics
