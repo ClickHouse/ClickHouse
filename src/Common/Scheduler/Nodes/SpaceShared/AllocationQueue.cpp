@@ -117,6 +117,14 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     std::lock_guard lock(mutex);
     if (is_not_usable)
         return; // Queue has been purged — `allocationFailed` has already notified the owner.
+    // If the allocation has been failed by a concurrent path (e.g. `updateMinMaxAllocated` or
+    // `updateQueueLimit` rejected it after the owner's destructor checked `fail_reason` but
+    // before this call), it is no longer in `pending_allocations` or `running_allocations`.
+    // Adding it to `removing_allocations` in this state would leave `removing_hook` linked when
+    // the owner reaches `~ResourceAllocation`, with `processActivation` later dereferencing a
+    // freed object.
+    if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
+        return;
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -182,7 +190,11 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
     std::lock_guard lock(mutex);
     min_max_allocated = new_value;
 
-    // Reject pending allocations that can never succeed because they exceed the new limit
+    // Reject pending allocations that can never succeed because they exceed the new limit.
+    // Unlink the allocation from every intrusive container before notifying the owner — see
+    // `purgeQueue` for the full rationale (allocationFailed can synchronously wake an owner
+    // thread that destroys the ResourceAllocation, and a still-linked removing_hook would
+    // either chassert or cause a use-after-free when `processActivation` later runs).
     for (auto it = pending_allocations.begin(); it != pending_allocations.end();)
     {
         ResourceAllocation & allocation = *it;
@@ -191,6 +203,8 @@ void AllocationQueue::updateMinMaxAllocated(ResourceCost new_value)
         {
             pending_allocations.erase(pending_allocations.iterator_to(allocation));
             pending_allocations_size -= allocation.increase.size;
+            if (allocation.removing_hook.is_linked())
+                removing_allocations.erase(removing_allocations.iterator_to(allocation));
             ++rejects;
             allocation.allocationFailed(std::make_exception_ptr(
                 Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
@@ -378,11 +392,15 @@ void AllocationQueue::updateQueueLimit(Int64 value)
     std::lock_guard lock(mutex);
     max_queued = value;
 
+    // See `updateMinMaxAllocated` for the rationale on unlinking `removing_hook` before
+    // calling `allocationFailed`.
     while (max_queued >= 0 && static_cast<size_t>(max_queued) < pending_allocations.size())
     {
         ResourceAllocation & allocation = pending_allocations.back();
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
+        if (allocation.removing_hook.is_linked())
+            removing_allocations.erase(removing_allocations.iterator_to(allocation));
         allocation.allocationFailed(std::make_exception_ptr(
             Exception(ErrorCodes::SERVER_OVERLOADED,
                 "Workload '{}' limit `max_waiting_queries` has been reached: {} of {}",

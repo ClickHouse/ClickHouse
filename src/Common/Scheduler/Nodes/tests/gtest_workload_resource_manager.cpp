@@ -2535,6 +2535,39 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
     EXPECT_EQ(threw.load(), waiter_count);
 }
 
+// Regression: simulate the race where the owner's destructor reaches `queue.removeAllocation`
+// AFTER `updateMinMaxAllocated`/`updateQueueLimit` has already rejected the allocation. The
+// guard in `removeAllocation` must keep an already-failed allocation out of
+// `removing_allocations`, otherwise `~ResourceAllocation` would chassert on a linked
+// `removing_hook` (and `processActivation` would later dereference freed memory).
+TEST(SchedulerWorkloadResourceManager, MemoryReservationRemoveAllocationOnFailedIsNoOp)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation blocker(link, "blocker", 80);
+    blocker.waitSync();
+
+    auto pending = std::make_unique<TestAllocation>(link, "pending", 50);
+    pending->assertIncreaseEnqueued();
+
+    // Lower max_memory so `updateMinMaxAllocated` rejects the pending allocation.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 30");
+
+    // Simulate the lost-race destructor path: the owner's `fail_reason` check happened before
+    // ALTER fired `allocationFailed`, so the destructor proceeds to call `removeAllocation`
+    // even though the allocation is now failed and unlinked. Without the guard,
+    // `removing_hook` would end up linked and trip the chassert below in `~TestAllocation`.
+    link.allocation_queue->removeAllocation(*pending);
+
+    pending.reset();
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationMaxWaitingQueries)
 {
     ResourceTest t;
