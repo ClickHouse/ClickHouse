@@ -60,12 +60,18 @@ public:
     /// Restore the legacy `FixedString(26)` analyzer-time invariant; the DSL has no width matcher.
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        /// The function is variadic, so a zero-argument call reaches this override before the
+        /// base signature path validates arity; guard against an out-of-bounds access and let
+        /// the base path raise NUMBER_OF_ARGUMENTS_DOESNT_MATCH.
+        if (!arguments.empty())
         {
-            if (fs->getN() != ULID_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument 1 of function {}, expected String or FixedString({})",
-                    arguments[0].type->getName(), getName(), ULID_LENGTH);
+            if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+            {
+                if (fs->getN() != ULID_LENGTH)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument 1 of function {}, expected String or FixedString({})",
+                        arguments[0].type->getName(), getName(), ULID_LENGTH);
+            }
         }
         return IFunction::getReturnTypeImpl(arguments);
     }
