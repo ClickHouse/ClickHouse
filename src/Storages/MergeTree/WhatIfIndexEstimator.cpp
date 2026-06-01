@@ -171,6 +171,7 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     ContextPtr /* context */)
+try
 {
     const auto & data = read_step->getMergeTreeData();
     const auto & storage_snapshot = read_step->getStorageSnapshot();
@@ -184,6 +185,7 @@ bool tryEstimateEmpirical(
     Stopwatch watch;
 
     const size_t skip_index_granularity = index_helper->index.granularity;
+    auto index_expression = index_helper->index.expression;
 
     for (const auto & part_with_ranges : saved_parts)
     {
@@ -265,6 +267,11 @@ bool tryEstimateEmpirical(
             if (block.rows() == 0)
                 continue;
 
+            /// Evaluate the index expression so the aggregator sees what a real
+            /// MATERIALIZE INDEX would see (e.g. lower(s) instead of raw s)
+            if (index_expression)
+                index_expression->execute(block);
+
             size_t pos = 0;
             aggregator->update(block, &pos, block.rows());
 
@@ -295,6 +302,11 @@ bool tryEstimateEmpirical(
 
     return true;
 }
+catch (...) /// Fall back to statistical/applicability_only on any empirical-path failure
+{
+    tryLogCurrentException(__PRETTY_FUNCTION__);
+    return false;
+}
 
 /// Check applicability, then try empirical → statistical → applicability_only
 WhatIfIndexEstimator::IndexResult evaluateIndex(
@@ -322,6 +334,14 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
+        return result;
+    }
+
+    /// Text indexes need a tokenized block layout the empirical pipeline doesn't build. That's a TODO
+    if (index_desc.type == "text")
+    {
+        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.not_applicable_reason = "EXPLAIN WHATIF does not yet support empirical estimation for text indexes";
         return result;
     }
 
@@ -387,7 +407,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
 
-    /// Lock down inner `SETTINGS` so zcontract stays deterministic
+    /// Lock down inner `SETTINGS` so baseline contract stays deterministic
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
@@ -472,8 +492,23 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
+    /// FINAL prevents skip indexes from pruning granules (the merge needs every
+    /// granule), so a hypothetical index can't help. Report not_applicable
+    const bool query_with_final = read_step->isQueryWithFinal();
+
     for (const auto & index_desc : hypo_indexes)
     {
+        if (query_with_final)
+        {
+            IndexResult r;
+            r.index_name = index_desc.name;
+            r.index_type = index_desc.type;
+            r.status = IndexResult::NotApplicable;
+            r.not_applicable_reason = "Skip indexes do not prune granules for queries with FINAL";
+            result.index_results.push_back(std::move(r));
+            continue;
+        }
+
         auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, context);
         result.index_results.push_back(std::move(index_result));
     }

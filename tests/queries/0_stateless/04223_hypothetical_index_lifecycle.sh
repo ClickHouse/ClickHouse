@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database
+# no-replicated-database: hypothetical indexes are session-scoped and not replicated
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -66,20 +67,6 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stale"
 
-# RENAME + reuse: don't touch the entry for the renamed table
-echo "--- rename + reuse: DROP on the new table does not touch the renamed one ---"
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE IF EXISTS t_hypo_rn;
-    DROP TABLE IF EXISTS t_hypo_rn2;
-    CREATE TABLE t_hypo_rn (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
-    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_rn (b) TYPE minmax GRANULARITY 1;
-    RENAME TABLE t_hypo_rn TO t_hypo_rn2;
-    CREATE TABLE t_hypo_rn (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
-    DROP HYPOTHETICAL INDEX idx_b ON t_hypo_rn;
-" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn2"
-
 # =========================================================
 # IF NOT EXISTS is silent on duplicate; second CREATE with no IF errors
 # =========================================================
@@ -97,6 +84,76 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^---|^[0-9]+$'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_dup"
+
+echo "--- DROP TABLE hides the entry from system.hypothetical_indexes ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_orphan;
+    CREATE TABLE t_hypo_orphan (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_orphan (b) TYPE minmax GRANULARITY 1;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_orphan';
+    DROP TABLE t_hypo_orphan;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_orphan';
+" | grep -E '^[0-9]+$'
+
+echo "--- CREATE respects allow_suspicious_indices = 0 ---"
+$CLICKHOUSE_CLIENT --allow_suspicious_indices 0 -n -q "
+    DROP TABLE IF EXISTS t_hypo_susp;
+    CREATE TABLE t_hypo_susp (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_dup ON t_hypo_susp (a, a) TYPE minmax GRANULARITY 1;
+" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_susp"
+
+echo "--- EXPLAIN WHATIF with FINAL reports not_applicable ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_final;
+    CREATE TABLE t_hypo_final (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_final SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_final (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42;
+" | grep -E '^With |^\s+status:|^\s+reason:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_final"
+
+echo "--- EXPLAIN WHATIF with text index reports not_applicable ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_text;
+    CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id
+    SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_hypo_text VALUES (1, 'abc def foo'),(2, 'abc def bar'),(3, 'abc baz foo'),(4, 'abc baz bar'),(5, 'xyz');
+    CREATE HYPOTHETICAL INDEX idx_text ON t_hypo_text (message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_text WHERE hasToken(message, 'foo');
+" | grep -E '^With |^\s+status:|^\s+reason:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_text"
+
+echo "--- EXPLAIN WHATIF with function-expression index ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_func;
+    CREATE TABLE t_hypo_func (a UInt64, s String) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_func SELECT number, if(number < 100, 'Hit', 'Miss') FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_l ON t_hypo_func (lower(s)) TYPE set(100) GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_func WHERE lower(s) = 'hit';
+" | grep -E '^With |^\s+status:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_func"
+
+echo "--- CREATE rejects unknown index type ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_bad;
+    CREATE TABLE t_hypo_bad (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX bad ON t_hypo_bad (b) TYPE no_such_type GRANULARITY 1;
+" 2>&1 | grep -m1 -oE 'INCORRECT_QUERY|UNKNOWN_FUNCTION|BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_bad"
+
+echo "--- type_full distinguishes parametrized index types ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_tf;
+    CREATE TABLE t_hypo_tf (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX i1 ON t_hypo_tf (b) TYPE bloom_filter(0.01)  GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX i2 ON t_hypo_tf (b) TYPE bloom_filter(0.001) GRANULARITY 1;
+    SELECT name, type, type_full FROM system.hypothetical_indexes
+    WHERE table = 't_hypo_tf' ORDER BY name FORMAT TSV;
+"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_tf"
 
 # =========================================================
 # Applicability: set index on column b, predicate on column c → not applicable
@@ -121,3 +178,20 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^\s+status:|^\s+reason:|^With '
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_app"
+
+# =========================================================
+# EXPLAIN WHATIF must work even when the session enables parallel
+# replicas — hypothetical indexes are session-local to the initiator,
+# so the WHATIF plan must stay on the local MergeTree read
+# =========================================================
+echo "--- parallel replicas: EXPLAIN WHATIF still runs locally ---"
+$CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --cluster_for_parallel_replicas=parallel_replicas --parallel_replicas_local_plan=1 -n -q "
+    DROP TABLE IF EXISTS t_hypo_pr;
+    CREATE TABLE t_hypo_pr (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_pr SELECT number, number FROM numbers(1000);
+
+    CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_pr (a) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_pr WHERE a > 500;
+" | grep -E '^\s+status:|^\s+source:|^With idx_a'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_pr"

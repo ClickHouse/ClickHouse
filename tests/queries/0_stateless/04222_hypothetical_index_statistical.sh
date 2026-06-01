@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database, no-random-merge-tree-settings
-# no-random-merge-tree-settings: need fixed index_granularity
+# no-fasttest: column statistics (tdigest/uniq) require the full build, fast_build can't materialize them, so the statistical path falls through to applicability_only
+# no-replicated-database: hypothetical indexes are session-scoped and not replicated
+# no-random-merge-tree-settings: test requires deterministic index_granularity
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,6 +11,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
+    -- master's default for \`materialize_statistics_on_insert\` is 0; force on so
+    -- the INSERT below builds statistics files that the statistical path reads.
     SET materialize_statistics_on_insert = 1;
 
     DROP TABLE IF EXISTS t_hypo_stat;
@@ -29,7 +33,6 @@ echo "--- statistical: range query on column with stats ---"
 $CLICKHOUSE_CLIENT -n -q "
     SET allow_experimental_statistics = 1;
     SET allow_statistics_optimize = 1;
-    SET materialize_statistics_on_insert = 1;
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_stat (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF empirical = 0 SELECT * FROM t_hypo_stat WHERE b < 50;
 " | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'

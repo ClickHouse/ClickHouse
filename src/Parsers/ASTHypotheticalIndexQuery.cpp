@@ -7,9 +7,13 @@ namespace DB
 
 String ASTHypotheticalIndexQuery::getID(char delim) const
 {
-    if (kind == DropAll)
-        return "DropAllHypotheticalIndexes";
-    return "HypotheticalIndexQuery" + (delim + getDatabase()) + delim + getTable();
+    switch (kind)
+    {
+        case Create:  return "CreateHypotheticalIndexQuery" + (delim + getDatabase()) + delim + getTable();
+        case Drop:    return "DropHypotheticalIndexQuery"   + (delim + getDatabase()) + delim + getTable();
+        case DropAll: return "DropAllHypotheticalIndexes";
+    }
+    UNREACHABLE();
 }
 
 ASTPtr ASTHypotheticalIndexQuery::clone() const
@@ -47,6 +51,8 @@ void ASTHypotheticalIndexQuery::formatQueryImpl(
         return;
     }
 
+    chassert(index_name);
+
     if (kind == Create)
     {
         ostr << "CREATE HYPOTHETICAL INDEX " << (if_not_exists ? "IF NOT EXISTS " : "");
@@ -70,8 +76,9 @@ void ASTHypotheticalIndexQuery::formatQueryImpl(
         table->format(ostr, settings, state, frame);
     }
 
-    if (kind == Create && index_decl)
+    if (kind == Create)
     {
+        chassert(index_decl);
         ostr << " ";
         index_decl->format(ostr, settings, state, frame);
     }

@@ -71,7 +71,25 @@ Estimation:
   elapsed_us:       631
 ```
 
-Use `EXPLAIN WHATIF empirical = 0 SELECT ...` to skip the in-memory empirical scan and estimate from column statistics instead. See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
+To skip the in-memory empirical scan and estimate from [column statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) instead, define them on the relevant columns first (they are off by default), then disable the empirical path:
+
+```sql
+ALTER TABLE t MODIFY COLUMN b SET STATISTICS (tdigest);
+ALTER TABLE t MATERIALIZE STATISTICS b;
+
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  skip_ratio:   99.99%
+
+Estimation:
+  source:           statistical
+```
+
+See the [`EXPLAIN WHATIF`](/sql-reference/statements/explain#explain-whatif) reference for the full output schema and settings.
 
 ## DROP HYPOTHETICAL INDEX {#drop-hypothetical-index}
 

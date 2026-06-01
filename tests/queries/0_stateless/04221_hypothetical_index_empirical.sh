@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database, no-random-merge-tree-settings
+# no-replicated-database: hypothetical indexes are session-scoped and not replicated
 # no-random-merge-tree-settings: needs fixed index_granularity
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -83,19 +84,25 @@ $CLICKHOUSE_CLIENT -n -q "
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE a > 5000 AND b < 100;
 " | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
-# Real minmax on b prunes 99 granules; hypothetical on c then sees baseline = 1
+# =========================================================
+# Empirical with existing real skip index:
+# hypothetical index only processes marks surviving both PK and real index
+# =========================================================
 echo "--- empirical with existing real index ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_real;
-    CREATE TABLE t_hypo_real (a UInt64, b UInt64, c UInt64, INDEX idx_b_real b TYPE minmax GRANULARITY 1)
+    CREATE TABLE t_hypo_real (a UInt64, b UInt64, INDEX idx_a_real a TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-    INSERT INTO t_hypo_real SELECT number, intDiv(number, 100), number FROM numbers(10000);
+    INSERT INTO t_hypo_real SELECT number, number FROM numbers(10000);
 "
 
+# With real minmax on a and PK on a, WHERE a > 5000 is handled by PK
+# WHERE b = 7777 is tested by hypothetical minmax on b
+# sampled_marks ≈ 50 / 100 (only ~50 baseline marks scanned out of 100 in the table)
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE HYPOTHETICAL INDEX idx_c_hypo ON t_hypo_real (c) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_real WHERE b = 50 AND c = 7777;
+    CREATE HYPOTHETICAL INDEX idx_b_hypo ON t_hypo_real (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_real WHERE a > 5000 AND b = 7777;
 " | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_real"

@@ -685,12 +685,16 @@ Estimation:
 ```
 
 - `source` — how the estimate was produced.
-  - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. Exact.
-  - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
-  - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
+    - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. Exact.
+    - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
+    - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index.
 
-**Example**
+The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
+
+If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
+
+**Empirical example**
 
 ```sql
 CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
@@ -700,16 +704,56 @@ INSERT INTO t SELECT number, number FROM numbers(10000);
 
 CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
 
--- Default — empirical (exact) measurement
 EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
 
--- Force the statistical / applicability_only path
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+The hypothetical `minmax` would prune from 100 marks down to 1 — `skip_ratio: 99.0%`.
+
+**Statistical example**
+
+Column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics) are off by default. To exercise the `statistical` path, define them on the relevant columns first:
+
+```sql
+ALTER TABLE t MODIFY COLUMN b SET STATISTICS (tdigest);
+ALTER TABLE t MATERIALIZE STATISTICS b;
+```
+
+Then disable the empirical path so the estimator falls back to column statistics:
+
+```sql
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b = 42;
 ```
 
-The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  skip_ratio:   99.99%
 
-If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
+Estimation:
+  source:           statistical
+```
+
+The number comes from the column-statistic selectivity of `b = 42` and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
+
+If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 

@@ -9,12 +9,31 @@ With idx_b (minmax, hypothetical):
 0
 --- drop/recreate: re-creating the index purges the stale entry ---
 1
---- rename + reuse: DROP on the new table does not touch the renamed one ---
-BAD_ARGUMENTS
 --- IF NOT EXISTS is silent on duplicate ---
 1
 --- DROP IF EXISTS is silent on missing ---
 1
+--- DROP TABLE hides the entry from system.hypothetical_indexes ---
+1
+0
+--- CREATE respects allow_suspicious_indices = 0 ---
+BAD_ARGUMENTS
+--- EXPLAIN WHATIF with FINAL reports not_applicable ---
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Skip indexes do not prune granules for queries with FINAL
+--- EXPLAIN WHATIF with text index reports not_applicable ---
+With idx_text (text, hypothetical):
+  status:       not_applicable
+  reason:       EXPLAIN WHATIF does not yet support empirical estimation for text indexes
+--- EXPLAIN WHATIF with function-expression index ---
+With idx_l (set, hypothetical):
+  status:       applicable
+--- CREATE rejects unknown index type ---
+INCORRECT_QUERY
+--- type_full distinguishes parametrized index types ---
+i1	bloom_filter	bloom_filter(0.01)
+i2	bloom_filter	bloom_filter(0.001)
 --- applicability: predicate doesn't reference index column ---
 With idx_b_set (set, hypothetical):
   status:       not_applicable
@@ -23,3 +42,7 @@ With idx_b_set (set, hypothetical):
 With idx_a_minmax (minmax, hypothetical):
   status:       not_applicable
   reason:       Query has no filter predicate
+--- parallel replicas: EXPLAIN WHATIF still runs locally ---
+With idx_a (minmax, hypothetical):
+  status:       applicable
+  source:           empirical
