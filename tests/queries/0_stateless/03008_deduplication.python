@@ -305,7 +305,7 @@ class ArgsFactory:
         self.add_opt_insert_method()
         self.add_opt_uniq_blocks()
         self.__parser.add_argument(
-            "--debug-on-fail", type=str2bool, nargs="?", const=True, default=True
+            "--debug-on-fail", type=str2bool, nargs="?", const=True, default=False
         )
 
 

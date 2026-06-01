@@ -46,7 +46,6 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail False \
     )
 " 1>/dev/null 2>&1 && echo 'insert_several_blocks_into_table OK'  || echo "FAIL: insert_several_blocks_into_table ${THIS_RUN}"
 
@@ -60,7 +59,6 @@ $CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail False \
     )
 " 1>/dev/null 2>&1 && echo 'mv_generates_several_blocks OK'  || echo "FAIL: mv_generates_several_blocks ${THIS_RUN}"
 
@@ -74,7 +72,6 @@ $CLICKHOUSE_CLIENT  --max_insert_block_size 1 -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail False \
     )
 " 1>/dev/null 2>&1 && echo 'several_mv_into_one_table OK'  || echo "FAIL: several_mv_into_one_table ${THIS_RUN}"
 
