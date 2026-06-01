@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -261,6 +262,14 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
             return true;
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::IPv6: [[fallthrough]];
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::UInt8: [[fallthrough]];
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::UInt16: [[fallthrough]];
+        case TypeIndex::Int32: [[fallthrough]];
+        case TypeIndex::UInt32: [[fallthrough]];
+        case TypeIndex::Int64: [[fallthrough]];
+        case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
@@ -273,6 +282,8 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
 
 AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro::NodePtr & root_node, const DataTypePtr & target_type)
 {
+    checkStackSize();
+
     if (target_type->lowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(target_type.get());
@@ -759,6 +770,8 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
 
 AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & root_node)
 {
+    checkStackSize();
+
     switch (root_node->type())
     {
         case avro::AVRO_STRING:
@@ -901,6 +914,8 @@ static inline std::string concatPath(const std::string & a, const std::string & 
 
 AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path)
 {
+    checkStackSize();
+
     if (node->type() == avro::AVRO_SYMBOLIC)
     {
         /// continue traversal only if some column name starts with current_path
@@ -1079,7 +1094,8 @@ AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, P
 
 void AvroRowInputFormat::readPrefix()
 {
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
+    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+        std::make_unique<AvroInputStreamReadBufferAdapter>(*in), MAX_AVRO_SCHEMA_DEPTH);
     deserializer_ptr = std::make_unique<AvroDeserializer>(
         output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
     file_reader_ptr->init();
@@ -1111,8 +1127,8 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
 
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
-    uint8_t magic;
-    uint32_t schema_id;
+    uint8_t magic = 0;
+    uint32_t schema_id = 0;
 
     try
     {
@@ -1206,7 +1222,8 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     }
     else
     {
-        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(in));
+        auto file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(
+            std::make_unique<AvroInputStreamReadBufferAdapter>(in), MAX_AVRO_SCHEMA_DEPTH);
         root_node = file_reader_ptr->dataSchema().root();
     }
 
@@ -1222,6 +1239,8 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
 {
+    checkStackSize();
+
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names);
 }
@@ -1372,6 +1391,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
     }
 }
 
+void registerInputFormatAvro(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory)
 {
     factory.registerInputFormat("Avro", [](
@@ -1397,6 +1417,7 @@ void registerInputFormatAvro(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
+void registerAvroSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -1418,6 +1439,8 @@ void registerAvroSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatAvro(FormatFactory &);
+void registerAvroSchemaReader(FormatFactory &);
 void registerInputFormatAvro(FormatFactory &)
 {
 }

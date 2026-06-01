@@ -688,7 +688,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
             scratch.resize(max_dest_size);
 
-            size_t compressed_size;
+            size_t compressed_size = 0;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
             scratch.resize(compressed_size);
@@ -1086,7 +1086,7 @@ void writeColumnImpl(
             {
                 for (size_t i = 0; i < data_count; ++i)
                 {
-                    UInt64 h;
+                    UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
                         h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
