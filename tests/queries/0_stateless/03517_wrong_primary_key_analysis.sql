@@ -1,8 +1,13 @@
--- The query `SELECT *, day + 365 AS day` triggers an unrelated analyzer bug
--- (`MULTIPLE_EXPRESSIONS_FOR_ALIAS`, issue #74324) when run with parallel
--- replicas. This test is for #48881 (wrong primary key analysis), so disable
--- parallel replicas explicitly to keep the test deterministic. Remove this
--- guard once #74324 is fixed.
+-- The query `SELECT *, day + 365 AS day` redefines the alias `day` over a
+-- column of the same name. Under parallel replicas the remote replica's
+-- analyzer sees two bodies (`day` and `day + 365`) for the alias `day` and
+-- throws `MULTIPLE_EXPRESSIONS_FOR_ALIAS` (issue #74324). The fix #103806
+-- covered other shapes of that issue but not this self-shadowing alias over
+-- `SELECT *`, which still reproduces (verified locally against master after
+-- #103806). This test is for #48881 (wrong primary key analysis), so disable
+-- parallel replicas explicitly to keep it deterministic regardless of the
+-- `ParallelReplicas` CI suite. Remove this guard once the analyzer handles
+-- this shape.
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 
