@@ -548,7 +548,7 @@ public:
 private:
     UInt64 last_update_ns = 0;
     std::atomic<UInt64> consumed{0};
-    char padding[64]; // to avoid false sharing
+    char padding[64] = {}; // to avoid false sharing
 };
 
 class ThreadMetricsGroup : public boost::noncopyable
@@ -1351,12 +1351,12 @@ TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
     EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
-auto getAcquired()
+static auto getAcquired()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlAcquired);
 }
 
-auto getPreempted()
+static auto getPreempted()
 {
     return CurrentMetrics::get(CurrentMetrics::ConcurrencyControlPreempted);
 }

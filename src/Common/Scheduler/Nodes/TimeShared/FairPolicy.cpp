@@ -1,6 +1,7 @@
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
+#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 
 namespace DB
 {

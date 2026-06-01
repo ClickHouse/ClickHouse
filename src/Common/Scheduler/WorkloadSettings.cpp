@@ -150,13 +150,13 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         {
             // We dont mind slight loss of precision when converting from Int64/UInt64 to Float64
             {
-                UInt64 val;
+                UInt64 val = 0;
                 if (field.tryGet(val))
                     return static_cast<Float64>(val);
             }
 
             {
-                Int64 val;
+                Int64 val = 0;
                 if (field.tryGet(val))
                     return static_cast<Float64>(val);
             }
@@ -177,7 +177,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         static Int64 getInt64(const Field & field)
         {
             {
-                UInt64 val;
+                UInt64 val = 0;
                 if (field.tryGet(val))
                 {
                     // Saturate on overflow
@@ -188,7 +188,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
             }
 
             {
-                Int64 val;
+                Int64 val = 0;
                 if (field.tryGet(val))
                     return val;
             }

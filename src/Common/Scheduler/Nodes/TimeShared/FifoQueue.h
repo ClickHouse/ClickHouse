@@ -195,7 +195,7 @@ public:
 
     void activateChild(ITimeSharedNode &) override
     {
-        assert(false); // queue cannot have children
+        chassert(false); // queue cannot have children
     }
 
     void attachChild(const SchedulerNodePtr &) override

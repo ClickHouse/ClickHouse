@@ -445,7 +445,7 @@ protected:
         NodePtr queue; /// FifoQueue or AllocationQueue node is used if there are no children
         ChildrenBranch branch; /// Used if there is at least one child
         WorkloadSettings settings;
-        CostUnit unit;
+        CostUnit unit = CostUnit::IOByte;
 
         NodePtr getRoot()
         {
@@ -515,7 +515,7 @@ protected:
         NodePtr semaphore;
         QueueOrChildrenBranch branch;
         WorkloadSettings settings;
-        CostUnit unit;
+        CostUnit unit = CostUnit::IOByte;
         String resource;
 
         // Should be called after constructor, before any other methods

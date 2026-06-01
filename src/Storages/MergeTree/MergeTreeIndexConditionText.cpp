@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -80,8 +81,8 @@ SipHash TextSearchQuery::getHash() const
             else
             {
                 std::string required_substring;
-                bool is_trivial;
-                bool required_substring_is_prefix;
+                bool is_trivial = false;
+                bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
                 hash.update(required_substring);
                 hash.update(is_trivial);
@@ -1061,7 +1062,9 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         if (node.type != ActionsDAG::ActionType::COLUMN)
             continue;
 
-        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+        if (!column_set)
+            column_set = checkAndGetColumn<ColumnSet>(node.column.get());
         if (!column_set)
             continue;
 
@@ -1158,7 +1161,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
         if (node.type != ActionsDAG::ActionType::COLUMN)
             continue;
 
-        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
         if (!column_set)
             continue;
 

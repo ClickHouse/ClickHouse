@@ -116,7 +116,7 @@ public:
                     break;
                 }
             }
-            assert(found);
+            chassert(found);
             if (child_idx < heap_size) // Detach of active child requires deactivation at first
             {
                 heap_size--;
@@ -165,7 +165,7 @@ public:
             if (request)
             {
                 // SFQ fairness invariant: system vruntime equals last served request start-time
-                assert(current.vruntime >= system_vruntime);
+                chassert(current.vruntime >= system_vruntime);
                 system_vruntime = current.vruntime;
 
                 // By definition vruntime is amount of consumed resource (cost) divided by weight
