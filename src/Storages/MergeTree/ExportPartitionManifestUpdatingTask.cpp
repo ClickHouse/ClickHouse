@@ -530,7 +530,7 @@ void ExportPartitionManifestUpdatingTask::poll()
         /// A replica exported the last part but the commit never landed. Try to fix it.
         try
         {
-            ExportPartitionUtils::commit(work.metadata, work.destination_storage, zk, log_ptr, work.entry_path, work.context, storage);
+            ExportPartitionUtils::commit(work.metadata, work.destination_storage, zk, log_ptr, work.entry_path, work.context, storage, storage.getReplicaName());
         }
         catch (const Exception & e)
         {

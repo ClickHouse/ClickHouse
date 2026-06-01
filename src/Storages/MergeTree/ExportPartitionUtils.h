@@ -43,7 +43,8 @@ namespace ExportPartitionUtils
         const LoggerPtr & log,
         const std::string & entry_path,
         const ContextPtr & context,
-        MergeTreeData & source_storage
+        MergeTreeData & source_storage,
+        const String & replica_name
     );
 
     /// Handles a commit-phase failure for a replicated partition export:

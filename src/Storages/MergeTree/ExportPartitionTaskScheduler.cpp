@@ -297,7 +297,7 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
     try
     {
         auto context = ExportPartitionUtils::getContextCopyWithTaskSettings(storage.getContext(), manifest);
-        ExportPartitionUtils::commit(manifest, destination_storage, zk, storage.log.load(), export_path, context, storage);
+        ExportPartitionUtils::commit(manifest, destination_storage, zk, storage.log.load(), export_path, context, storage, storage.replica_name);
     }
     catch (const Exception & e)
     {

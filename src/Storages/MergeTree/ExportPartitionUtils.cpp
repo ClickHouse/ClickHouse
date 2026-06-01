@@ -158,7 +158,8 @@ namespace ExportPartitionUtils
         const LoggerPtr & log,
         const std::string & entry_path,
         const ContextPtr & context_in,
-        MergeTreeData & source_storage)
+        MergeTreeData & source_storage,
+        const String & replica_name)
     {
         auto context = Context::createCopy(context_in);
         context->setSetting("write_full_path_in_iceberg_metadata", manifest.write_full_path_in_iceberg_metadata);
@@ -170,6 +171,19 @@ namespace ExportPartitionUtils
             throw Exception(ErrorCodes::FAULT_INJECTED,
                 "Failpoint: export_partition_commit_always_throw");
         });
+
+        /// Per-task ephemeral lock that serializes the commit phase across replicas.
+        /// Without it, `handlePartExportSuccess` (post-last-part path) and `tryCleanup`
+        /// (poll/recovery path) can drive `commitExportPartitionTransaction` concurrently
+        /// for the same task.
+        const auto commit_lock_path = fs::path(entry_path) / "commit_lock";
+        auto commit_lock = zkutil::EphemeralNodeHolder::tryCreate(commit_lock_path, *zk, replica_name);
+        if (!commit_lock)
+        {
+            LOG_INFO(log, "ExportPartition: commit_lock for {} is held by another replica, skipping commit on this replica", entry_path);
+            return;
+        }
+        LOG_INFO(log, "ExportPartition: commit_lock for {} acquired by replica {}", entry_path, replica_name);
 
         const auto exported_paths = ExportPartitionUtils::getExportedPaths(log, zk, entry_path);
 
