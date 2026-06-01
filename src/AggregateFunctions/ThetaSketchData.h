@@ -11,9 +11,16 @@
 #include <theta_intersection.hpp>
 #include <theta_a_not_b.hpp>
 
+#include <Common/Exception.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 
 template <typename Key>
@@ -168,10 +175,30 @@ public:
     {
         datasketches::compact_theta_sketch::vector_bytes bytes;
         readVectorBinary(bytes, in);
-        if (!bytes.empty())
+        if (bytes.empty())
+            return;
+
+        try
         {
             auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
             getSkUnion()->update(sk);
+        }
+        catch (const DB::Exception &)
+        {
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            /// `datasketches` throws `std::invalid_argument` / `std::out_of_range` on
+            /// malformed input. These are not `DB::Exception`, so without translation
+            /// they escape `SerializationAggregateFunction`'s `catch (...)` block, reach
+            /// the top level as `LOGICAL_ERROR` (code 1001), and abort the process via
+            /// `abortOnFailedAssertion`. Translate to `CORRUPTED_DATA` so the bad input
+            /// is rejected cleanly.
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot deserialize Theta sketch state: {}",
+                e.what());
         }
     }
 
