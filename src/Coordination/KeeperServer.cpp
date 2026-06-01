@@ -940,7 +940,15 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
-                LOG_DEBUG(log, "Logs not preprocessed, ProcessReq callback with {} entries, last_commit_index={}, last_log_idx_on_disk={}, isCommitInProgress={}, get_target_committed_log_idx={}", req.log_entries().size(), state_machine->last_commit_index(), last_log_idx_on_disk.load(), raft_instance->isCommitInProgress(), raft_instance->get_target_committed_log_idx());
+                LOG_TRACE(
+                    log,
+                    "Logs not preprocessed, ProcessReq callback with {} entries, last_commit_index={}, last_log_idx_on_disk={}, "
+                    "isCommitInProgress={}, get_target_committed_log_idx={}",
+                    req.log_entries().size(),
+                    state_machine->last_commit_index(),
+                    last_log_idx_on_disk.load(),
+                    raft_instance->isCommitInProgress(),
+                    raft_instance->get_target_committed_log_idx());
 
                 /// committing/preprocessing of local logs can take some time
                 /// and we don't want election to start during that time so we
@@ -950,18 +958,18 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// maybe we got snapshot installed
                 if (state_machine->last_commit_index() >= last_log_idx_on_disk && !raft_instance->isCommitInProgress())
                 {
-                    LOG_DEBUG(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: preprocessing logs");
                     preprocess_logs();
                 }
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
                 {
-                    LOG_DEBUG(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
                     keeper_context->waitLocalLogsPreprocessedOrShutdown();
                 }
                 else
                 {
-                    LOG_DEBUG(log, "Logs not preprocessed, ProcessReq callback: ignoring");
+                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: ignoring");
                 }
 
                 break;
@@ -973,7 +981,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 if (req.log_entries().empty())
                     break;
 
-                LOG_DEBUG(log, "Logs not preprocessed, GotAppendEntryReqFromLeader callback with last_log_idx={}, current last_log_idx_on_disk={}, dropping {} entries from the request", req.get_last_log_idx(), last_log_idx_on_disk.load(), req.log_entries().size());
+                LOG_TRACE(log, "Logs not preprocessed, GotAppendEntryReqFromLeader callback with last_log_idx={}, current last_log_idx_on_disk={}, dropping {} entries from the request", req.get_last_log_idx(), last_log_idx_on_disk.load(), req.log_entries().size());
 
                 /// we need to rollback some local logs so we set last_log_idx_on_disk
                 /// to the last common log index from leader
