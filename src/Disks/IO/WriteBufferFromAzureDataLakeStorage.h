@@ -37,6 +37,7 @@ public:
     void nextImpl() override;
     void finalizeImpl() override;
     void preFinalize() override;
+    void cancelImpl() noexcept override;
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
 

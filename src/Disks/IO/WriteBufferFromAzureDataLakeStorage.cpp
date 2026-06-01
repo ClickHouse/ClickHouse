@@ -275,6 +275,24 @@ void WriteBufferFromAzureDataLakeStorage::finalizeImpl()
         preFinalize();
 }
 
+void WriteBufferFromAzureDataLakeStorage::cancelImpl() noexcept
+{
+    WriteBufferFromFileBase::cancelImpl();
+
+    if (file_created && !finalized)
+    {
+        try
+        {
+            LOG_INFO(log, "Deleting incomplete ADLS Gen2 file `{}` after cancel", blob_path);
+            file_client.DeleteIfExists();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to delete incomplete ADLS Gen2 file `{}`", blob_path));
+        }
+    }
+}
+
 }
 
 #endif
