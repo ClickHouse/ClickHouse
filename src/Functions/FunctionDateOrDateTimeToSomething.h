@@ -106,14 +106,18 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
+        /// Keep this branch as the `if constexpr` so `std::make_shared<ToDataType>()` is not instantiated
+        /// for types without a default constructor (e.g. DataTypeDateTime64).
         if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
             return nullptr;
-        /// Extract-capable functions widen to Int64 for Interval; the narrow `ToDataType`
-        /// would wrap an out-of-range interval, but returning nullptr (Dynamic) changes
-        /// downstream typing even for date/time inputs. Int64 fits every supported result.
-        if (this->acceptsIntervalArgument())
-            return std::make_shared<DataTypeInt64>();
-        return std::make_shared<ToDataType>();
+        else
+        {
+            /// Extract-capable functions widen to Int64 for Interval; the narrow `ToDataType`
+            /// would wrap an out-of-range interval. Int64 fits every supported result.
+            if (this->acceptsIntervalArgument())
+                return std::make_shared<DataTypeInt64>();
+            return std::make_shared<ToDataType>();
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
