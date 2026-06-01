@@ -99,25 +99,29 @@ find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config -exec \
 find $GIT_DIR/worktrees/$WORKTREE_ENTRY/modules -name config.worktree -exec \
     sed -i "s|worktree = .*/contrib/|worktree = <WORKTREE_PATH>/contrib/|" {} +
 
-# Register submodules and write .git pointer files into contrib/ directories
-# (no network — uses hardlinked objects). This does NOT populate working trees.
-git -C <WORKTREE_PATH> submodule update
-
-# Populate submodule working trees. The previous command only writes .git pointer
-# files but leaves working trees empty because the hardlinked index files are empty.
-# We must explicitly reset each submodule's index from HEAD and checkout the files.
-# Some submodules may fail if their git data is incomplete — safe to skip.
-git -C <WORKTREE_PATH> submodule foreach \
-    '(git read-tree HEAD && git checkout -- .) 2>/dev/null || echo "SKIP: $name"'
+# Register and populate every submodule working tree in one parallel pass,
+# WITHOUT calling `git submodule update`. That command walks all ~130 submodules
+# serially and takes ~25s even with everything already local (no network) — it is
+# the bottleneck of this whole skill. Since the gitdirs are already hardlinked and
+# their configs now point at this worktree's contrib dirs, all we need per submodule
+# is to write its `.git` pointer file and check out the working tree. Fan that across
+# cores with `xargs -P`. Submodules with no hardlinked gitdir are reported and skipped.
+export MODROOT=$GIT_DIR/worktrees/$WORKTREE_ENTRY/modules
+export WT=<WORKTREE_PATH>
+git -C <WORKTREE_PATH> config -f .gitmodules --get-regexp 'submodule\..*\.path' \
+    | awk '{print $2}' \
+    | xargs -P "$(nproc)" -I {} sh -c '
+        p="$1"; gd="$MODROOT/$p"; wt="$WT/$p"
+        [ -d "$gd" ] || { echo "SKIP (no gitdir): $p"; exit 0; }
+        mkdir -p "$wt"
+        printf "gitdir: %s\n" "$gd" > "$wt/.git"
+        (git -C "$wt" read-tree HEAD && git -C "$wt" checkout -- .) 2>/dev/null || echo "SKIP: $p"
+      ' _ {}
 ```
 
-**Important:** `git submodule update` (without `--init`) is sufficient for the first step because the hardlinked modules directory already contains all the submodule git data. Everything is purely local — no network access occurs. However, it only creates `.git` pointer files in each `contrib/` subdirectory without populating the working trees. The subsequent `git read-tree HEAD && git checkout -- .` in each submodule is required to actually check out the files.
+**Important:** no `git submodule update` is needed because the hardlinked modules directory already contains every submodule's git data and the `sed` steps above already point each gitdir's `core.worktree` at this worktree. Writing the `.git` pointer file plus `git read-tree HEAD && git checkout -- .` reproduces exactly what `submodule update` would do, but in parallel and with zero network access. The per-submodule SHA still matches what the superproject records, because each hardlinked gitdir's `HEAD` is the SHA the main repo had checked out.
 
-If `git submodule update` fails with errors about uninitialized submodules, run:
-```bash
-git -C <WORKTREE_PATH> submodule init
-git -C <WORKTREE_PATH> submodule update
-```
+This pass is non-recursive (top-level submodules only), which matches what the ClickHouse build needs. If you ever do need nested submodules, run `git -C <WORKTREE_PATH> submodule update --init --recursive` afterwards (slower, and may hit the network for any submodule not already present locally).
 
 ### 7. Report results
 
