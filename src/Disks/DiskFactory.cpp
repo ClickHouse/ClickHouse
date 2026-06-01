@@ -68,5 +68,6 @@ DiskPtr DiskFactory::create(
 void DiskFactory::clearRegistry()
 {
     registry.clear();
+    documentations.clear();
 }
 }
