@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
