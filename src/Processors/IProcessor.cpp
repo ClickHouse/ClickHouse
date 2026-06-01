@@ -170,6 +170,7 @@ IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() c
     info.input_bytes = stats.input_bytes;
     info.output_rows = stats.output_rows;
     info.output_bytes = stats.output_bytes;
+    info.memory_usage_delta = memory_usage_delta;
 
     return info;
 }

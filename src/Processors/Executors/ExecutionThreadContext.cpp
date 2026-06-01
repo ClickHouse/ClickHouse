@@ -2,8 +2,12 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
+#include <Common/VariableContext.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -44,21 +48,64 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static std::optional<Int64> getCurrentThreadMemoryUsage()
+{
+    auto * memory_tracker = CurrentThread::getMemoryTracker();
+    if (!memory_tracker)
+        return std::nullopt;
+
+    Int64 result = memory_tracker->get();
+    /// Do not flush untracked memory here. Keep this profiling path read-only and count only memory
+    /// that would be charged to the query-thread tracker when eventually flushed.
+    if (current_thread && current_thread->untracked_memory_blocker_level == VariableContext::Max)
+        result += current_thread->untracked_memory;
+
+    return result;
+}
+
+void ExecutionThreadContext::executeJob()
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        auto & processor = *node->processor();
 
-        node->processor()->work();
+        if (processor.isSpillable())
+        {
+            if (auto group = CurrentThread::getGroup())
+                group->memory_spill_scheduler->checkAndSpill(node->processor());
+        }
+
+        std::optional<Int64> memory_usage_before;
+        if (profile_processors)
+            memory_usage_before = getCurrentThreadMemoryUsage();
+
+        auto add_memory_usage = [&]
+        {
+            if (!memory_usage_before)
+                return;
+
+            if (auto memory_usage_after = getCurrentThreadMemoryUsage())
+                processor.memory_usage_delta += *memory_usage_after - *memory_usage_before;
+        };
+
+        try
+        {
+            processor.work();
+        }
+        catch (...)
+        {
+            add_memory_usage();
+            throw;
+        }
+
+        add_memory_usage();
 
         /// Update read progress only for source nodes.
         bool is_source = node->back_edges.empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = node->processor()->getReadProgress())
+            if (auto read_progress = processor.getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -67,7 +114,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    node->processor()->cancel();
+                    processor.cancel();
             }
         }
     }
@@ -100,7 +147,7 @@ bool ExecutionThreadContext::executeTask()
 
     try
     {
-        executeJob(node, read_progress_callback);
+        executeJob();
         ++node->num_executed_jobs;
     }
     catch (...)

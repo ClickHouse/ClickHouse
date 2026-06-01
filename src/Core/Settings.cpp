@@ -2037,7 +2037,7 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, log_processors_profiles, true, R"(
-Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+Write processor-level profiling information to `system.processors_profile_log` table.
 
 See also:
 

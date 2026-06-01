@@ -12,6 +12,8 @@ class ReadProgressCallback;
 class ExecutionThreadContext
 {
 private:
+    void executeJob();
+
     /// This objects are used to wait for next available task.
     std::condition_variable condvar;
     std::mutex mutex;
