@@ -21,7 +21,7 @@ BAD_ARGUMENTS
 --- EXPLAIN WHATIF with FINAL reports not_applicable ---
 With idx_b (minmax, hypothetical):
   status:       not_applicable
-  reason:       Skip indexes do not prune granules for queries with FINAL
+  reason:       EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL (PrimaryKeyExpand may re-include granules selected by skip indexes)
 --- EXPLAIN WHATIF with text index reports not_applicable ---
 With idx_text (text, hypothetical):
   status:       not_applicable

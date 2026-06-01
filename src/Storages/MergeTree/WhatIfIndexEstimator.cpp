@@ -437,6 +437,9 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
+    local_context->setSetting("use_skip_indexes", Field{UInt64{1}});
+    local_context->setSetting("use_skip_indexes_if_final", Field{UInt64{1}});
+    local_context->setSetting("ignore_data_skipping_indices", Field{String{}});
 
     SelectQueryOptions query_options;
     query_options.setExplain();
@@ -530,7 +533,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             r.index_name = index_desc.name;
             r.index_type = index_desc.type;
             r.status = IndexResult::NotApplicable;
-            r.not_applicable_reason = "Skip indexes do not prune granules for queries with FINAL";
+            r.not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
+                                      "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
             result.index_results.push_back(std::move(r));
             continue;
         }

@@ -1,6 +1,8 @@
 ---
 description: 'System table listing hypothetical (what-if) indexes defined in the current session'
 keywords: ['system table', 'hypothetical_indexes', 'what-if']
+sidebar_label: 'hypothetical_indexes'
+sidebar_position: 81
 slug: /operations/system-tables/hypothetical_indexes
 title: 'system.hypothetical_indexes'
 doc_type: 'reference'
