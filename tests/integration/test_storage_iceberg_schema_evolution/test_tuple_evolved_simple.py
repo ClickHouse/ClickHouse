@@ -43,7 +43,7 @@ def test_tuple_evolved_simple(
             c struct<c : int, d: int>
         )
         USING iceberg
-        OPTIONS ('format-version'='2')
+        OPTIONS ('format-version'='{format_version}')
     """)
 
     execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, named_struct('a', 1.23, 'b', 'ABBA'), named_struct('c', 1, 'd', 2))")
