@@ -22,7 +22,26 @@ add_custom_command(
 
 add_custom_target(copy_pnglibconf_h ALL DEPENDS ${PNG_LIBCONF_OUT})
 
-file(GLOB SRCS "${LIBRARY_DIR}/*.c")
+# Use the explicit upstream library source list. A `*.c` glob would also pull in
+# `example.c` and `pngtest.c`, which are tool/example sources (each defines `main`)
+# that upstream keeps in separate targets and must not be linked into the library.
+set(SRCS
+    "${LIBRARY_DIR}/png.c"
+    "${LIBRARY_DIR}/pngerror.c"
+    "${LIBRARY_DIR}/pngget.c"
+    "${LIBRARY_DIR}/pngmem.c"
+    "${LIBRARY_DIR}/pngpread.c"
+    "${LIBRARY_DIR}/pngread.c"
+    "${LIBRARY_DIR}/pngrio.c"
+    "${LIBRARY_DIR}/pngrtran.c"
+    "${LIBRARY_DIR}/pngrutil.c"
+    "${LIBRARY_DIR}/pngset.c"
+    "${LIBRARY_DIR}/pngtrans.c"
+    "${LIBRARY_DIR}/pngwio.c"
+    "${LIBRARY_DIR}/pngwrite.c"
+    "${LIBRARY_DIR}/pngwtran.c"
+    "${LIBRARY_DIR}/pngwutil.c"
+)
 
 add_library(_libpng ${SRCS})
 
