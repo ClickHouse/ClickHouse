@@ -1253,10 +1253,11 @@ void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLak
         compression_method,
         persistent_components.table_uuid);
 
-    /// Erase all data and metadata files of the table from object storage.
-    auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
-    for (const auto & file : files)
-        object_storage->removeObjectIfExists(StoredObject(file));
+    /// List all existing files of the table (data and metadata). We delete them below, after the new
+    /// empty metadata file is written. Note that the prefix must be empty here: `listFiles` builds the
+    /// listing key as `path / prefix`, so passing the table path as the prefix as well would either
+    /// duplicate it (relative paths, e.g. S3) or be silently ignored (absolute paths, e.g. local disk).
+    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
 
     /// Reset the metadata object to represent an empty table while preserving its schema.
     if (metadata_object->getArray(f_snapshots))
@@ -1272,16 +1273,27 @@ void IcebergMetadata::truncate(ContextPtr local_context, std::shared_ptr<DataLak
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", persistent_components.table_path, compression_suffix);
+    auto filename_version_hint = persistent_components.table_path + "metadata/version-hint.text";
+    bool use_version_hint = data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value;
 
+    /// Write the new, empty metadata file (and version hint) before deleting the old files. This keeps
+    /// the `metadata` directory non-empty throughout the deletion: otherwise, on local object storage,
+    /// `removeObject` removes parent directories once they become empty and would walk up to the
+    /// storage root. We overwrite unconditionally (no `If-None-Match`) because we reuse the `v1` name.
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
     writeMessageToFile(
-        removeEscapedSlashes(oss.str()), filename, object_storage, local_context, "*", "", persistent_components.metadata_compression_method);
+        removeEscapedSlashes(oss.str()), filename, object_storage, local_context, "", "", persistent_components.metadata_compression_method);
 
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    if (use_version_hint)
+        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "", "");
+
+    /// Delete all previously existing files except the ones we have just written.
+    for (const auto & file : files)
     {
-        auto filename_version_hint = persistent_components.table_path + "metadata/version-hint.text";
-        writeMessageToFile("1", filename_version_hint, object_storage, local_context, "*", "");
+        if (file == filename || (use_version_hint && file == filename_version_hint))
+            continue;
+        object_storage->removeObjectIfExists(StoredObject(file));
     }
 
     if (catalog)
