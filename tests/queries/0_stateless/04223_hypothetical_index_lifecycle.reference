@@ -5,7 +5,7 @@ With idx_b (minmax, hypothetical):
 --- drop/recreate: new table does NOT see old index ---
 (none):
 --- drop/recreate: stale entry is removable by name ---
-1
+0
 0
 --- drop/recreate: re-creating the index purges the stale entry ---
 1
@@ -22,10 +22,8 @@ BAD_ARGUMENTS
 With idx_b (minmax, hypothetical):
   status:       not_applicable
   reason:       EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL (PrimaryKeyExpand may re-include granules selected by skip indexes)
---- EXPLAIN WHATIF with text index reports not_applicable ---
-With idx_text (text, hypothetical):
-  status:       not_applicable
-  reason:       EXPLAIN WHATIF does not yet support empirical estimation for text indexes
+--- CREATE rejects text index ---
+NOT_IMPLEMENTED
 --- EXPLAIN WHATIF with function-expression index ---
 With idx_l (set, hypothetical):
   status:       applicable

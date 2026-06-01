@@ -114,15 +114,12 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^With |^\s+status:|^\s+reason:'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_final"
 
-echo "--- EXPLAIN WHATIF with text index reports not_applicable ---"
+echo "--- CREATE rejects text index ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_text;
-    CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id
-    SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-    INSERT INTO t_hypo_text VALUES (1, 'abc def foo'),(2, 'abc def bar'),(3, 'abc baz foo'),(4, 'abc baz bar'),(5, 'xyz');
+    CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id;
     CREATE HYPOTHETICAL INDEX idx_text ON t_hypo_text (message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_text WHERE hasToken(message, 'foo');
-" | grep -E '^With |^\s+status:|^\s+reason:'
+" 2>&1 | grep -m1 -o 'NOT_IMPLEMENTED'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_text"
 
 echo "--- EXPLAIN WHATIF with function-expression index ---"

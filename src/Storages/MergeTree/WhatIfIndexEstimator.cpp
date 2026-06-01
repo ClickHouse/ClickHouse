@@ -23,6 +23,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 
 #include <fmt/format.h>
 
@@ -32,6 +33,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool use_skip_indexes;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
+    extern const SettingsString ignore_data_skipping_indices;
 }
 
 namespace ErrorCodes
@@ -111,6 +115,33 @@ void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
         out.insert(node->result_name);
     for (const auto * child : node->children)
         collectFilterInputColumns(child, out);
+}
+
+/// True if the filter contains an `or` whose branches mix index columns with
+/// columns outside the index. Real reads can combine multiple skip indexes for
+/// such disjunctions (when `use_skip_indexes_for_disjunctions = 1`), and the
+/// hypothetical estimator does not model that combination
+bool filterHasMixedDisjunction(const ActionsDAG::Node * node, const NameSet & index_columns)
+{
+    if (!node)
+        return false;
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base
+        && node->function_base->getName() == "or")
+    {
+        for (const auto * child : node->children)
+        {
+            NameSet child_inputs;
+            collectFilterInputColumns(child, child_inputs);
+            for (const auto & col : child_inputs)
+                if (!index_columns.contains(col))
+                    return true;
+        }
+    }
+    for (const auto * child : node->children)
+        if (filterHasMixedDisjunction(child, index_columns))
+            return true;
+    return false;
 }
 
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
@@ -198,7 +229,6 @@ bool tryEstimateEmpirical(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     ContextPtr context)
-try
 {
     const auto & data = read_step->getMergeTreeData();
     const auto & storage_snapshot = read_step->getStorageSnapshot();
@@ -336,11 +366,6 @@ try
 
     return true;
 }
-catch (...) /// Fall back to statistical/applicability_only on any empirical-path failure
-{
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-    return false;
-}
 
 /// Check applicability, then try empirical → statistical → applicability_only
 WhatIfIndexEstimator::IndexResult evaluateIndex(
@@ -359,10 +384,51 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
+    /// Mirror what a real read would do under the user's session settings
+    if (!context->getSettingsRef()[Setting::use_skip_indexes])
+    {
+        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.not_applicable_reason = "Skip indexes are disabled by `use_skip_indexes = 0`";
+        return result;
+    }
+
+    {
+        const auto & ignored = context->getSettingsRef()[Setting::ignore_data_skipping_indices].value;
+        if (!ignored.empty() && ignored.find(index_desc.name) != std::string::npos)
+        {
+            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+            result.not_applicable_reason = "Index '" + index_desc.name + "' is listed in `ignore_data_skipping_indices`";
+            return result;
+        }
+    }
+
+    /// The stored `IndexDescription` was built against the schema at `CREATE
+    /// HYPOTHETICAL INDEX` time. Rebuild it from the original AST against the
+    /// current metadata so an `ALTER TABLE ... MODIFY/DROP/RENAME COLUMN`
+    /// either yields a fresh descriptor or surfaces as `not_applicable`
+    IndexDescription fresh_index_desc;
+    try
+    {
+        auto metadata = read_step->getStorageMetadata();
+        fresh_index_desc = IndexDescription::getIndexFromAST(
+            index_desc.definition_ast,
+            metadata->getColumns(),
+            /* is_implicitly_created = */ false,
+            /* escape_filenames = */ true,
+            context);
+    }
+    catch (...)
+    {
+        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.not_applicable_reason = "Hypothetical index no longer matches the current table schema: "
+            + getCurrentExceptionMessage(false);
+        return result;
+    }
+
     MergeTreeIndexPtr index_helper;
     try
     {
-        index_helper = MergeTreeIndexFactory::instance().get(index_desc);
+        index_helper = MergeTreeIndexFactory::instance().get(fresh_index_desc);
     }
     catch (...)
     {
@@ -385,6 +451,20 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
         result.not_applicable_reason = "Query has no filter predicate";
         return result;
+    }
+
+    if (context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
+    {
+        NameSet index_columns_set;
+        for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
+            index_columns_set.insert(col);
+        if (filterHasMixedDisjunction(filter_dag->getOutputs().front(), index_columns_set))
+        {
+            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+            result.not_applicable_reason = "EXPLAIN WHATIF does not model disjunctive combination with other skip indexes "
+                                           "(use_skip_indexes_for_disjunctions)";
+            return result;
+        }
     }
 
     MergeTreeIndexConditionPtr condition;
@@ -445,9 +525,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
-    local_context->setSetting("use_skip_indexes", Field{UInt64{1}});
-    local_context->setSetting("use_skip_indexes_if_final", Field{UInt64{1}});
-    local_context->setSetting("ignore_data_skipping_indices", Field{String{}});
 
     SelectQueryOptions query_options;
     query_options.setExplain();

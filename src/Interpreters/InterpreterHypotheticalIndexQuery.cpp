@@ -95,6 +95,28 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// matching ALTER TABLE ... ADD INDEX semantics
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
 
+    /// Reject index types whose real `ALTER TABLE ... ADD INDEX` validation needs
+    /// table-level constraints that the hypothetical store cannot replicate
+    /// (`text` has the one-per-column rule and `enable_full_text_index`,
+    /// `vector_similarity` requires `index_granularity_bytes != 0`)
+    if (index_desc.type == "text" || index_desc.type == "vector_similarity")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Hypothetical indexes of type '{}' are not supported",
+            index_desc.type);
+
+    /// Reject name conflicts with existing real secondary indexes
+    for (const auto & existing : metadata->getSecondaryIndices())
+    {
+        if (existing.name == index_desc.name)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Hypothetical index '{}' conflicts with an existing secondary index on {}.{}",
+                index_desc.name,
+                table_id.getDatabaseName(),
+                table_id.getTableName());
+    }
+
     if (!context->getSettingsRef()[Setting::allow_suspicious_indices])
     {
         const auto * index_ast = query.index_decl ? query.index_decl->as<ASTIndexDeclaration>() : nullptr;
