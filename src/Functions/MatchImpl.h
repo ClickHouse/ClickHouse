@@ -700,8 +700,8 @@ struct MatchImpl
         const size_t haystack_length = haystack.size();
 
         String required_substr;
-        bool is_trivial;
-        bool required_substring_is_prefix;
+        bool is_trivial = false;
+        bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         size_t prev_needle_offset = 0;
 
