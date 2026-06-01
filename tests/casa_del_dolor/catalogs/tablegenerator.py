@@ -167,7 +167,7 @@ class LakeTableGenerator:
             if cols:
                 col_name = random.choice(cols)
                 sc = table.columns[col_name]
-                action = "DROP" if sc.nullable else "SET"
+                action = "SET" if sc.nullable else "DROP"
                 spark.sql(
                     f"ALTER TABLE {tpath} ALTER COLUMN {col_name} {action} NOT NULL;"
                 )
