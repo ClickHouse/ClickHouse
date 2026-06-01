@@ -862,7 +862,7 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
   * type_matcher_list ::= (type_matcher ',' ...)?
   */
 
-bool parseIdentifier(TokenIterator & pos, std::string & res)
+static bool parseIdentifier(TokenIterator & pos, std::string & res)
 {
     if (pos->type == TokenType::BareWord)
     {
@@ -873,7 +873,7 @@ bool parseIdentifier(TokenIterator & pos, std::string & res)
     return false;
 }
 
-bool consumeToken(TokenIterator & pos, TokenType type)
+static bool consumeToken(TokenIterator & pos, TokenType type)
 {
     if (pos->type == type)
     {
@@ -884,7 +884,7 @@ bool consumeToken(TokenIterator & pos, TokenType type)
 }
 
 /// Detect `...` formed from three `Dot` tokens.
-bool consumeEllipsis(TokenIterator & pos)
+static bool consumeEllipsis(TokenIterator & pos)
 {
     TokenIterator probe = pos;
     if (probe->type != TokenType::Dot) return false;
@@ -897,7 +897,7 @@ bool consumeEllipsis(TokenIterator & pos)
     return true;
 }
 
-bool consumeKeyword(TokenIterator & pos, const std::string & keyword)
+static bool consumeKeyword(TokenIterator & pos, const std::string & keyword)
 {
     if (pos->type == TokenType::BareWord)
     {
@@ -947,14 +947,14 @@ bool parseFunctionLikeExpression(TokenIterator & pos, std::string & name, bool a
         && consumeToken(pos, TokenType::ClosingRoundBracket);
 }
 
-bool typeFamilyExists(const std::string & family_name)
+static bool typeFamilyExists(const std::string & family_name)
 {
     /// existsCanonicalFamilyName is gone in modern code; emulate by trying to construct an empty-parameter type.
     return DataTypeFactory::instance().tryGet(family_name) != nullptr
         || DataTypeFactory::instance().tryGet(family_name, ASTPtr{}) != nullptr;
 }
 
-bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
+static bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 {
     /// Integer literal — used inside return-type expressions to pass numeric arguments
     /// to type functions, e.g. `DateTime64(max(scaleOf(T), 3))`.
@@ -1080,7 +1080,7 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 
 bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res);
 
-bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
+static bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 {
     TokenIterator begin = pos;
     std::string name;
@@ -1191,7 +1191,7 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
 /// One or more simple matchers separated by `|`. The `|` operator binds tighter than `T :`
 /// so `T : Float | Decimal` reads as `T : (Float | Decimal)`.
-bool parseOrTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
+static bool parseOrTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 {
     if (!parseSimpleTypeMatcher(pos, res))
         return false;
@@ -1240,7 +1240,7 @@ bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
     return parseOrTypeMatcher(pos, res);
 }
 
-bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & res)
+static bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & res)
 {
     if (consumeKeyword(pos, "const"))
         res.is_const = true;
@@ -1267,7 +1267,7 @@ bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & r
     return parseTypeMatcher(pos, res.type_matcher);
 }
 
-bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription & res)
+static bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription & res)
 {
     return parseList(pos, false,
         [&](TokenIterator & inner)
@@ -1284,7 +1284,7 @@ bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription &
         });
 }
 
-bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const ArgumentsGroup & prev_group)
+static bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const ArgumentsGroup & prev_group)
 {
     if (consumeToken(pos, TokenType::OpeningSquareBracket)
         && parseSimpleArgumentsDescription(pos, res.elems)
@@ -1355,7 +1355,7 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const Argume
     return false;
 }
 
-bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatureImpl & res)
+static bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatureImpl & res)
 {
     /// Allow signatures with no function name, starting directly with '('.
     auto parse_args_in_parens = [&](TokenIterator & inner)
@@ -1424,7 +1424,7 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
     return false;
 }
 
-bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
+static bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
 {
     auto signature = std::make_shared<AlternativeFunctionSignatureImpl>();
     if (parseList(pos, false,
@@ -1450,7 +1450,7 @@ bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignatureImp
     return false;
 }
 
-bool parseFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
+static bool parseFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
 {
     return parseAlternativeFunctionSignature(pos, res);
 }
