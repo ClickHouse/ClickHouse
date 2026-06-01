@@ -28,6 +28,7 @@
 namespace DB
 {
 struct ReadSettings;
+struct FilesystemCacheSettings;
 
 /// Track acquired space in cache during reservation
 /// to make error messages when no space left more informative.
@@ -45,6 +46,9 @@ struct FileCacheReserveStat
         size_t moving_count = 0;
         size_t invalidated_count = 0;
 
+        size_t candidates_iteration_steps = 0;
+        size_t clients_iterated = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
@@ -54,6 +58,8 @@ struct FileCacheReserveStat
             evicting_count += other.evicting_count;
             moving_count += other.moving_count;
             invalidated_count += other.invalidated_count;
+            candidates_iteration_steps += other.candidates_iteration_steps;
+            clients_iterated += other.clients_iterated;
             return *this;
         }
 
@@ -235,7 +241,7 @@ public:
     std::vector<FileSegment::Info> sync();
 
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
-    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
@@ -290,9 +296,11 @@ private:
 
     std::mutex apply_settings_mutex;
 
-    CacheMetadata metadata;
-
     FileCachePriorityPtr main_priority;
+
+    /// Must be declared after main_priority: metadata holds iterators that reference
+    /// the priority's internal state, so metadata must be destroyed first
+    CacheMetadata metadata;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
     mutable CacheStateGuard cache_state_guard;

@@ -67,7 +67,7 @@ struct SearchSymbols
     }
 
 #if defined(__SSE4_2__)
-    __m128i simd_vector;
+    __m128i simd_vector{};
 #endif
     std::string str;
 };
