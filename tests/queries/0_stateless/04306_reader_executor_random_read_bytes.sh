@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT --use_reader_executor=1 --query_id "$POINT" --query "
 $CLICKHOUSE_CLIENT --use_reader_executor=1 --query_id "$FULL" --query "
     SELECT sum(v) FROM t_re_bytes FORMAT Null"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 
 # The point read pulls about one granule (~100 KiB: one 64 KiB granule of the
 # random column plus the key granule and marks), far under both the 8 MiB window
