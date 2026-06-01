@@ -38,6 +38,7 @@ protected:
 
 public:
     LRUFileCachePriority(
+        QueueType queue_type_,
         size_t max_size_,
         size_t max_elements_,
         const std::string & description_ = "none",
@@ -122,7 +123,7 @@ public:
         const OriginInfo & origin_info,
         const CacheStateGuard::Lock & lock) override;
 
-    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
+    FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(getQueueType(), max_size, max_elements, description, state); }
 
     /// See a comment near eviction_pos.
     void resetEvictionPos() override

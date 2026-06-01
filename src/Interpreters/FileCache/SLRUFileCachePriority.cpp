@@ -33,20 +33,23 @@ namespace
 }
 
 SLRUFileCachePriority::SLRUFileCachePriority(
+    QueueType queue_type_,
     size_t max_size_,
     size_t max_elements_,
     double size_ratio_,
     const std::string & description_,
     LRUFileCachePriority::StatePtr probationary_state_,
     LRUFileCachePriority::StatePtr protected_state_)
-    : IFileCachePriority(max_size_, max_elements_)
+    : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , description(description_)
     , size_ratio(size_ratio_)
-    , protected_queue(LRUFileCachePriority(getRatio(max_size_, size_ratio),
+    , protected_queue(LRUFileCachePriority(queue_type_,
+                                           getRatio(max_size_, size_ratio),
                                            getRatio(max_elements_, size_ratio),
                                            description_ + ", protected",
                                            protected_state_))
-    , probationary_queue(LRUFileCachePriority(getRatio(max_size_, 1 - size_ratio),
+    , probationary_queue(LRUFileCachePriority(queue_type_,
+                                              getRatio(max_size_, 1 - size_ratio),
                                               getRatio(max_elements_, 1 - size_ratio),
                                               description_ + ", probationary",
                                               probationary_state_))
@@ -79,7 +82,7 @@ SLRUFileCachePriority::SLRUFileCachePriority(
 FileCachePriorityPtr SLRUFileCachePriority::copy() const
 {
     return std::make_unique<SLRUFileCachePriority>(
-        max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
+        getQueueType(), max_size, max_elements, size_ratio, description, probationary_queue.state, protected_queue.state);
 }
 
 size_t SLRUFileCachePriority::getSize(const CacheStateGuard::Lock & lock) const

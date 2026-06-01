@@ -1579,7 +1579,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     const size_t max_size = 30;
     const size_t max_elements = 6;
     const double slru_size_ratio = 0.5;
-    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_104307");
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements, slru_size_ratio, "test_104307");
 
     const std::string cache_path = caches_dir / "test_slru_104307";
     fs::create_directories(cache_path);
@@ -1715,7 +1715,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     size_t max_size = 50;
     size_t max_elements = 3;
 
-    LRUFileCachePriority priority(max_size, max_elements);
+    LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
     CacheMetadata cache_metadata(cache_path, 0, 0, false);

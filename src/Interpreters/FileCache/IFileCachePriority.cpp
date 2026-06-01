@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
-    : max_size(max_size_), max_elements(max_elements_)
+IFileCachePriority::IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_)
+    : queue_type(queue_type_), max_size(max_size_), max_elements(max_elements_)
 {
 }
 

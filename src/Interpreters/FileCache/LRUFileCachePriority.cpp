@@ -71,11 +71,12 @@ void LRUFileCachePriority::State::sub(uint64_t size_, uint64_t elements_)
 }
 
 LRUFileCachePriority::LRUFileCachePriority(
+    QueueType queue_type_,
     size_t max_size_,
     size_t max_elements_,
     const std::string & description_,
     StatePtr state_)
-    : IFileCachePriority(max_size_, max_elements_)
+    : IFileCachePriority(queue_type_, max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
     , eviction_pos(queue.end())
@@ -137,7 +138,8 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
     }
 
     auto iterator = queue.insert(queue.end(), entry);
-    CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    if (getQueueType() == QueueType::Main)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
         state->add(entry->size, /* elements */1, *state_lock);
@@ -166,9 +168,12 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
 
     moveEvictionPosIfEqual(it, lock);
 
-    if (was_invalidated)
-        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements);
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    if (getQueueType() == QueueType::Main)
+    {
+        if (was_invalidated)
+            CurrentMetrics::sub(CurrentMetrics::FilesystemCacheInvalidatedElements);
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    }
 
     return queue.erase(it);
 }
@@ -650,7 +655,8 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     size_t entry_size = entry_ptr->size;
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheInvalidatedElements);
+    if (cache_priority->getQueueType() == QueueType::Main)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheInvalidatedElements);
 
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);

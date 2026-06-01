@@ -27,6 +27,13 @@ class IFileCachePriority : private boost::noncopyable
 {
 public:
     using Key = FileCacheKey;
+
+    enum class QueueType
+    {
+        Main, /// Global queue
+        Query, /// Per-query queue
+    };
+
     enum class QueueEntryType : uint8_t
     {
         None,
@@ -194,6 +201,8 @@ public:
         SLRU_OVERCOMMIT,
     };
     virtual Type getType() const = 0;
+
+    QueueType getQueueType() const { return queue_type; }
 
     size_t getSizeLimit(const CacheStateGuard::Lock &) const { return max_size; }
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
@@ -407,13 +416,14 @@ public:
     using OnEvictCallback = std::function<void(const FileSegment & segment)>;
 
 protected:
-    IFileCachePriority(size_t max_size_, size_t max_elements_);
+    IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
 
     virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
     /// No lock is required in releaseImpl unlike holdImpl,
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
+    const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 };
