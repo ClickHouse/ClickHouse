@@ -68,7 +68,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCacheSimpleKey)
         ASSERT_FALSE(SSDCacheBlock::canBeWrittenInEmptyBlock(key, block_data_size));
         key.size = 4064;
 
-        size_t offset_in_block;
+        size_t offset_in_block = {};
         ASSERT_TRUE(block.enoughtPlaceToWriteKey(key));
         ASSERT_TRUE(block.writeKey(key, offset_in_block));
         ASSERT_EQ(offset_in_block, block_header_size + key_metadata_size);
@@ -100,7 +100,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCacheSimpleKey)
 
         std::unique_ptr<char[]> data_to_insert(new char[4000]);
         memset(data_to_insert.get(), 1, 4000);
-        size_t offset_in_block;
+        size_t offset_in_block = {};
         SSDCacheSimpleKey key {0, 200, data_to_insert.get()};
         block.writeKey({1, 200, data_to_insert.get()}, offset_in_block);
         ASSERT_EQ(block.getKeysSize(), 1);
@@ -185,7 +185,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         ASSERT_FALSE(SSDCacheBlock::canBeWrittenInEmptyBlock(key, block_data_size));
         key.size = 4064;
 
-        size_t offset_in_block;
+        size_t offset_in_block = {};
         ASSERT_TRUE(block.enoughtPlaceToWriteKey(key));
         ASSERT_TRUE(block.writeKey(key, offset_in_block));
         ASSERT_EQ(offset_in_block, block_header_size + key_metadata_size);
@@ -217,7 +217,7 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
 
         std::unique_ptr<char[]> data_to_insert(new char[4000]);
         memset(data_to_insert.get(), 1, 4000);
-        size_t offset_in_block;
+        size_t offset_in_block = {};
         SSDCacheComplexKey key {"0", 200, data_to_insert.get()};
         block.writeKey({1, 200, data_to_insert.get()}, offset_in_block);
         ASSERT_EQ(block.getKeysSize(), 1);
