@@ -187,6 +187,12 @@ public:
         {
             throw;
         }
+        catch (const std::bad_alloc &)
+        {
+            /// Memory pressure on `compact_theta_sketch::deserialize`, `getSkUnion`,
+            /// or `theta_union.update` is not data corruption; let it propagate.
+            throw;
+        }
         catch (const std::exception & e)
         {
             /// `datasketches` throws `std::invalid_argument` / `std::out_of_range` on
