@@ -4278,7 +4278,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
-    StorageInMemoryMetadata old_metadata = *storage_metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *storage_metadata_snapshot;
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();

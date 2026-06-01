@@ -1789,7 +1789,7 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);

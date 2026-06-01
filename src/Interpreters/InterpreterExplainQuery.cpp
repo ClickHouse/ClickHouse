@@ -861,7 +861,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
-            StorageInMemoryMetadata metadata_snapshot = *metadata;
+            const StorageInMemoryMetadata & metadata_snapshot = *metadata;
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);

@@ -506,7 +506,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto block_io = interpreter.execute();
 
     auto nested_metadata = nested_storage->getInMemoryMetadataPtr(insert_context, false);
-    StorageInMemoryMetadata storage_metadata = *nested_metadata;
+    const StorageInMemoryMetadata & storage_metadata = *nested_metadata;
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);

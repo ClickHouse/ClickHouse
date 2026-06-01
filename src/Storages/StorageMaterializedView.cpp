@@ -715,7 +715,7 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *view_metadata;
-    StorageInMemoryMetadata old_metadata = *view_metadata;
+    const StorageInMemoryMetadata & old_metadata = *view_metadata;
 
     /// Use the database where the materialized view is created to resolve nested views
     ContextMutablePtr mv_db_context = Context::createCopy(local_context);

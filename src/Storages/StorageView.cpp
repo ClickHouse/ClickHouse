@@ -404,7 +404,7 @@ void StorageView::alter(
     auto table_id = getStorageID();
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    StorageInMemoryMetadata old_metadata = *metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
