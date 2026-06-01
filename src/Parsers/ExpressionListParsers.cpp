@@ -3472,18 +3472,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         return Action::OPERAND;
     }
 
-    /// PostgreSQL-compatible ARRAY[...] syntax: treat as syntactic sugar for [...].
-    {
-        auto pos_after_array = pos;
-        if (parseOperator(pos_after_array, "ARRAY", expected) && pos_after_array->type == TokenType::OpeningSquareBracket)
-        {
-            ++pos_after_array;
-            pos = pos_after_array;
-            layers.push_back(std::make_unique<ArrayLayer>());
-            return Action::OPERAND;
-        }
-    }
-
     if (ParseDateOperatorExpression(pos, tmp, expected) ||
         ParseTimestampOperatorExpression(pos, tmp, expected) ||
         tuple_literal_parser.parse(pos, tmp, expected) ||
@@ -3507,6 +3495,20 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             return Action::OPERAND;
         }
         pos = old_pos;
+
+        /// PostgreSQL-compatible ARRAY[...] syntax for non-literal arrays (e.g. ARRAY[x+1]).
+        /// Literal arrays with ARRAY[...] are already handled by array_literal_parser above,
+        /// which preserves recordLiteralTokens for ConstantExpressionTemplate optimizations.
+        {
+            auto pos_copy = pos;
+            if (parseOperator(pos_copy, "ARRAY", expected) && pos_copy->type == TokenType::OpeningSquareBracket)
+            {
+                ++pos_copy;
+                pos = pos_copy;
+                layers.push_back(std::make_unique<ArrayLayer>());
+                return Action::OPERAND;
+            }
+        }
 
         if (identifier_parser.parse(pos, tmp, expected))
         {
