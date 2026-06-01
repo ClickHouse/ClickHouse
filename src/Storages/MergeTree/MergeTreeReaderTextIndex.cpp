@@ -285,7 +285,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
         {
             const auto & settings = condition_text.getContext()->getSettingsRef();
-            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
+            double selectivity_threshold = static_cast<double>(settings[Setting::text_index_hint_max_selectivity]);
             size_t num_rows_in_part = data_part_info_for_read->getRowCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
@@ -371,7 +371,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
-    size_t from_row;
+    size_t from_row = 0;
     if (continue_reading)
     {
         from_mark = current_mark;
@@ -683,7 +683,7 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 }
 
 /// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
-void applyPostingsAny(
+static void applyPostingsAny(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,
@@ -722,7 +722,7 @@ void applyPostingsAny(
 }
 
 /// Finds the intersection of the posting lists for range [granule_offset, granule_offset + num_rows)
-void applyPostingsAll(
+static void applyPostingsAll(
     IColumn & column,
     PostingsMap & postings_map,
     PaddedPODArray<UInt32> & indices,

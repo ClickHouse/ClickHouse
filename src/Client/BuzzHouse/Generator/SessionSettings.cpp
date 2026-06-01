@@ -248,7 +248,7 @@ String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc)
     else
     {
         char buf[32];
-        struct tm tm_buf;
+        struct tm tm_buf{};
         static const std::vector<uint32_t> offsets_sec = {1, 2, 3, 5, 10, 15, 20, 30, 60};
         const auto now = std::chrono::system_clock::now();
         auto secs = static_cast<time_t>(duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());

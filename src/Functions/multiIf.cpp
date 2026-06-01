@@ -1,3 +1,4 @@
+#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -124,8 +125,8 @@ public:
 
         for_conditions([&](const ColumnWithTypeAndName & arg)
         {
-            const auto& arg_type = recursiveRemoveLowCardinality(arg.type);
-            const IDataType * nested_type;
+            const auto & arg_type = recursiveRemoveLowCardinality(arg.type);
+            const IDataType * nested_type = nullptr;
             if (arg_type->isNullable())
             {
                 if (arg_type->onlyNull())

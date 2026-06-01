@@ -1,6 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -201,22 +202,8 @@ Strings CompressionCodecFactory::getAllRegisteredNames() const
 }
 
 
-void registerCodecNone(CompressionCodecFactory & factory);
-void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
-void registerCodecZSTD(CompressionCodecFactory & factory);
-void registerCodecMultiple(CompressionCodecFactory & factory);
-
-/// Keeper use only general-purpose codecs, so we don't need these special codecs
-/// in standalone build
-void registerCodecDelta(CompressionCodecFactory & factory);
-void registerCodecT64(CompressionCodecFactory & factory);
-void registerCodecDoubleDelta(CompressionCodecFactory & factory);
-void registerCodecGorilla(CompressionCodecFactory & factory);
-void registerCodecEncrypted(CompressionCodecFactory & factory);
-void registerCodecFPC(CompressionCodecFactory & factory);
-void registerCodecGCD(CompressionCodecFactory & factory);
-void registerCodecALP(CompressionCodecFactory & factory);
+/// Defined in individual CompressionCodec*.cpp files
+/// and declared in registerCompressionCodecs.h
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
