@@ -288,7 +288,8 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
+    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {

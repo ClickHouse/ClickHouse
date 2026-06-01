@@ -226,7 +226,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
+            auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else
         {

@@ -80,10 +80,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
 
 MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & storage_info, LoggerPtr log_)
     : storage(storage_info.storage)
-    , table_description(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock())
+    , table_description(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getSampleBlock())
     , columns_attributes(storage_info.attributes)
-    , column_names(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getNamesOfPhysical())
-    , array_info(createArrayInfos(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumns().getAllPhysical(), table_description))
+    , column_names(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getColumns().getNamesOfPhysical())
+    , array_info(createArrayInfos(StorageMetadataPtr(storage_info.storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false))->getColumns().getAllPhysical(), table_description))
 {
     auto columns_num = table_description.sample_block.columns();
     /// +2 because of _sign and _version columns

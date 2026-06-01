@@ -446,7 +446,8 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    Block sample_block = metadata_snapshot->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -561,7 +562,8 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(

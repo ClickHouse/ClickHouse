@@ -443,7 +443,8 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
 
 void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
 
     std::unique_ptr<TimeSeriesSettings> new_settings;
