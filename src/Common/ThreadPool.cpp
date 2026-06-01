@@ -3,6 +3,7 @@
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -778,6 +779,14 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
+
+        /// Register this OS thread's stack with ThreadStackRegistry so it's
+        /// accounted for by MemoryThreadStacks* async metrics. Done here
+        /// rather than in `setThreadName` because the call internally
+        /// allocates and `setThreadName` is invoked under
+        /// `DENY_ALLOCATIONS_IN_SCOPE` at the top of `worker()`. Idempotent
+        /// per OS thread (subsequent calls are a TLS access).
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
