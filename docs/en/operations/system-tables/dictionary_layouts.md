@@ -42,4 +42,4 @@ ORDER BY name
 
 ## See also {#see-also}
 
-- [Dictionaries](/sql-reference/dictionaries) — Information about dictionaries and their layouts.
+- [Dictionary layouts](/sql-reference/statements/create/dictionary/layouts) — Information about dictionaries and their layouts.
