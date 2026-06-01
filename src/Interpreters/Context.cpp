@@ -2184,6 +2184,16 @@ void Context::resetToUserDefaults()
     }
     /// The swapped-out collections' destructors run here, outside the lock.
 
+    /// Bake the recalculated access into the session context now, mirroring what
+    /// `Session::makeSessionContext` does after `setUser`. Query contexts are
+    /// built with `Context::createCopy`, whose copy constructor copies `access`
+    /// and `current_roles` but NOT `external_roles`; if the session were left
+    /// with `need_recalculate_access`, the next query context would recompute its
+    /// access from the copied state and drop the externally-granted roles
+    /// re-applied above. Computing it here (outside the lock — `getAccess` takes
+    /// its own) caches the correct access so copies inherit it.
+    getAccess();
+
     /// Fire handler hooks outside the lock (callbacks take their own locks).
     /// Run every callback even if one throws — otherwise a broken hook leaves
     /// another handler's state dirty — but still rethrow afterwards so a
