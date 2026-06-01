@@ -117,6 +117,21 @@ off_t PipelineReadBuffer::getPosition()
     return read_position - available();
 }
 
+void PipelineReadBuffer::setReadUntilPosition(size_t position)
+{
+    /// `position` is in this buffer's coordinates - the executor's logical file
+    /// offset (the post-decryption .bin offset that marks address). Advertise it
+    /// as the read extent so the executor bounds its live connection there.
+    executor->setReadExtent(position);
+}
+
+void PipelineReadBuffer::setReadUntilEnd()
+{
+    /// Read to the file end: clear the extent. A read that runs to EOF drains its
+    /// connection naturally, so no explicit bound is needed.
+    executor->setReadExtent(std::nullopt);
+}
+
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 {
     /// Unknown-size sources (S3 HEAD without Content-Length) must surface as

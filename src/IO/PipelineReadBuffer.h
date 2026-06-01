@@ -22,6 +22,13 @@ public:
     off_t getPosition() override;
     std::optional<size_t> tryGetFileSize() override;
 
+    /// Advertise the read boundary to the executor. `MergeTreeReaderStream`
+    /// drives this per mark range (`adjustRightMark`); the executor bounds its
+    /// live connection to it so it stays drained and reusable, and keeps
+    /// prefetches within it.
+    void setReadUntilPosition(size_t position) override;
+    void setReadUntilEnd() override;
+
     /// Parquet's prefetcher takes a fast `RandomRead` path when both are true,
     /// fan-out via `readBigAt` with no shared mutex. Without these overrides
     /// it falls back to serial seek+read under a single lock, which on big

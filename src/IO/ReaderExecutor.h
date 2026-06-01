@@ -98,6 +98,17 @@ public:
     /// prefetch-logging contract under the executor.
     void setFilesystemReadPrefetchesLog(std::shared_ptr<FilesystemReadPrefetchesLog> log_);
 
+    /// Advertise the read extent: the logical end offset the consumer intends to
+    /// read up to. Driven via the standard `ReadBuffer::setReadUntilPosition`
+    /// contract that `MergeTreeReaderStream::adjustRightMark` already issues per
+    /// mark range. The executor bounds its live source connection to this extent
+    /// - so the borrowed HTTP connection is read to a known end and returned to
+    /// the pool reusable instead of abandoned open-ended mid-response - and keeps
+    /// prefetches within it. `nullopt` clears it (read to the file end). Distinct
+    /// from the `makeTransientForReadAt` one-shot extent, which also sets
+    /// `is_transient`.
+    void setReadExtent(std::optional<size_t> logical_end) { read_extent_end = logical_end; }
+
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     /// Add a decryption layer. Can be called multiple times for layered encryption.
@@ -240,10 +251,18 @@ private:
     /// prefetch wasted by a seek then costs less.
     size_t effectivePrefetchWindowSize() const;
 
-    /// Shrink `win_size` so the read does not pass `read_extent_end` (a
-    /// `makeTransientForReadAt` one-shot reader). No-op on a sequential reader,
-    /// which has no extent. Saturates to 0 once `position` reaches the extent.
+    /// Shrink `win_size` so the read does not pass `read_extent_end` (the
+    /// `makeTransientForReadAt` one-shot extent, or a sequential reader's
+    /// `setReadExtent`). No-op when no extent is set. Saturates to 0 once
+    /// `position` reaches the extent (an empty window, recoverable: extending the
+    /// extent resumes - the same contract as the legacy `setReadUntilPosition`).
     size_t clampToExtent(size_t win_size) const;
+
+    /// Return the live connection to the pool the moment it has been read to its
+    /// right bound (the advertised extent, or a one-shot block): it is fully
+    /// drained and reusable, and dropping it lets the next read open a fresh
+    /// streamed connection instead of falling to the stateless one-shot path.
+    void releaseLiveBufferAtBound();
 
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
@@ -299,6 +318,12 @@ private:
     struct LiveBuffer
     {
         size_t current_position = 0;
+        /// Object-local position the connection is bounded to via
+        /// `setReadUntilPosition` (`nullopt` = open-ended). Reused for a
+        /// continuation only while it stays within this bound; a read that would
+        /// pass it reopens, so the connection is always read to its bound and
+        /// returned to the pool drained and reusable.
+        std::optional<size_t> read_until;
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         SourceBufferSlot slot;
     };
@@ -325,11 +350,11 @@ private:
     /// `pre_acquired_slot->objectPath()`.
     std::optional<SourceBufferSlot> pre_acquired_slot;
 
-    /// Logical end of the permitted read region, set only on a
-    /// `makeTransientForReadAt` one-shot reader. When set, windows and source
-    /// ranges never extend past it, so the borrowed connection is read to a known
-    /// bound and returned to the pool reusable. `nullopt` on a sequential reader —
-    /// it reads to the file end.
+    /// Logical end of the advertised read region: the `makeTransientForReadAt`
+    /// one-shot extent, or a sequential reader's `setReadExtent` (from
+    /// `setReadUntilPosition`). When set, windows are clamped to it and the live
+    /// connection is bounded to it, so the borrowed connection is read to a known
+    /// end and returned to the pool reusable. `nullopt` = read to the file end.
     std::optional<size_t> read_extent_end;
 
     /// True on a `makeTransientForReadAt` executor. Such an executor does not emit

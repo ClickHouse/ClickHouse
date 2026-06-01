@@ -487,6 +487,15 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
+void ReaderExecutor::releaseLiveBufferAtBound()
+{
+    if (live_buffer && live_buffer->read_until && live_buffer->current_position >= *live_buffer->read_until)
+    {
+        live_buffer.reset();
+        inflight_segment_pin.reset();
+    }
+}
+
 void ReaderExecutor::maybeTriggerPrefetch()
 {
     if (!prefetch_pool || prefetch_handle || atEnd())
@@ -512,6 +521,15 @@ void ReaderExecutor::maybeTriggerPrefetch()
     size_t next_size = offset_map.hasUnknownSize()
         ? prefetch_window
         : std::min(prefetch_window, logical_size - position);
+    /// Keep prefetch within the advertised extent: never read ahead past what the
+    /// consumer said it will read. At the extent boundary there is nothing left to
+    /// prefetch - release the slot reserved above (as the suppressed-window path).
+    next_size = clampToExtent(next_size);
+    if (next_size == 0)
+    {
+        pre_acquired_slot.reset();
+        return;
+    }
     ByteRange next_physical_window{position + data_start_offset, next_size};
     size_t next_logical_offset = position;
 
@@ -1027,9 +1045,17 @@ Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
 {
+    size_t want = 0;
+    for (const auto & block : blocks)
+        want += block->size();
+
+    /// Reuse the live connection only for a contiguous read that still fits
+    /// within its right bound; a read that would pass the bound reopens (the
+    /// bounded connection is already drained at that point and reusable).
     if (live_buffer
         && live_buffer->slot.objectPath() == object.remote_path
-        && live_buffer->current_position == offset)
+        && live_buffer->current_position == offset
+        && (!live_buffer->read_until || offset + want <= *live_buffer->read_until))
     {
         LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
@@ -1040,6 +1066,7 @@ Rope ReaderExecutor::readFromSource(
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
         live_buffer->current_position += total_read;
         live_buffer->slot.updatePosition(live_buffer->current_position);
+        releaseLiveBufferAtBound();
         return rope;
     }
 
@@ -1072,24 +1099,36 @@ Rope ReaderExecutor::readFromSource(
             if (offset > 0)
                 opened->seek(offset, SEEK_SET);
 
-            /// A `readBigAt` transient reads a bounded extent, but a cache miss
-            /// may legitimately expand this source read past the requested extent
-            /// to fill a whole cache block/segment. Bound the connection to the
-            /// bytes this call actually reads (the block total), so it is fully
-            /// consumed and returned to the pool reusable rather than abandoned
-            /// open-ended. `offset`/blocks are physical (map-space) offsets, so no
-            /// `data_start_offset` shift is needed.
-            if (read_extent_end && !hasUnknownSize() && opened->supportsRightBoundedReads())
+            /// Bound the connection so it is read to a known end and returned to
+            /// the pool reusable rather than abandoned open-ended. A transient
+            /// (`readBigAt`) reads one block, which may over-read past its
+            /// requested extent to fill a cache block - bound it to the bytes this
+            /// call reads. A sequential reader with an advertised extent streams
+            /// within `[.., extent)` across windows and drains at the extent -
+            /// bound it there, but never short of this call's read so a cache-block
+            /// over-read past the extent still completes. `offset`/blocks are
+            /// physical (map-space) offsets.
+            std::optional<size_t> read_until;
+            if (!hasUnknownSize() && opened->supportsRightBoundedReads())
             {
-                size_t want = 0;
-                for (const auto & block : blocks)
-                    want += block->size();
-                if (want > 0)
-                    opened->setReadUntilPosition(offset + want);
+                if (is_transient)
+                {
+                    read_until = offset + want;
+                }
+                else if (read_extent_end)
+                {
+                    const size_t physical_extent_end = *read_extent_end + data_start_offset;
+                    const size_t to_extent = physical_extent_end > logical_offset ? physical_extent_end - logical_offset : 0;
+                    const size_t to_object_end = object.bytes_size > offset ? object.bytes_size - offset : 0;
+                    read_until = offset + std::max(want, std::min(to_extent, to_object_end));
+                }
+                if (read_until)
+                    opened->setReadUntilPosition(*read_until);
             }
 
             live_buffer.emplace(LiveBuffer{
                 .current_position = offset,
+                .read_until = read_until,
                 .buffer = std::move(opened),
                 .slot = std::move(*slot),
             });
@@ -1105,12 +1144,7 @@ Rope ReaderExecutor::readFromSource(
             ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
             LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
                 object.remote_path, total_read, live_buffer->current_position);
-
-            /// Transient one-shot: the connection is bounded to this read, so a
-            /// contiguous next window could not continue past the bound. Drop it
-            /// now - fully read => returned to the pool drained and reusable.
-            if (read_extent_end)
-                live_buffer.reset();
+            releaseLiveBufferAtBound();
             return rope;
         }
     }
@@ -1125,14 +1159,8 @@ Rope ReaderExecutor::readFromSource(
 
     /// No slot kept: bound the one-shot read so its connection is fully consumed
     /// and reusable by the pool, rather than abandoning an open-ended GET.
-    if (!hasUnknownSize() && opened->supportsRightBoundedReads())
-    {
-        size_t want = 0;
-        for (const auto & block : blocks)
-            want += block->size();
-        if (want > 0)
-            opened->setReadUntilPosition(offset + want);
-    }
+    if (!hasUnknownSize() && opened->supportsRightBoundedReads() && want > 0)
+        opened->setReadUntilPosition(offset + want);
 
     auto & buf = *opened;
     ++stats.source_requests;

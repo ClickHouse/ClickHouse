@@ -1885,6 +1885,60 @@ TEST(ReaderExecutor, ReadBigAtBoundsLiveConnectionToObjectEndAcrossBoundary)
     EXPECT_EQ(*log.read_until[1], want - (s0 - offset)) << "o1 connection bounded to the extent end (object-local)";
 }
 
+TEST(ReaderExecutor, SequentialReaderBoundsConnectionToAdvertisedExtent)
+{
+    /// A sequential (non-transient) reader given an advertised extent via
+    /// setReadExtent - the standard setReadUntilPosition contract that
+    /// MergeTreeReaderStream::adjustRightMark drives per mark range - bounds its
+    /// live connection to that extent and streams within it on ONE connection,
+    /// drained at the extent and reusable, instead of an open-ended connection
+    /// abandoned mid-response when the read stops short of the file end. Updating
+    /// the extent (the next mark range) resumes the read on a fresh bounded
+    /// connection.
+    const size_t file_size = 1u << 20;   // 1 MiB
+    const size_t extent1 = 300u << 10;   // first advertised range
+    const size_t extent2 = 600u << 10;   // extended range (next mark range)
+
+    BoundLog log;
+    auto source = std::make_shared<BoundRecordingSource>(
+        std::unordered_map<String, String>{{"obj", String(file_size, 'x')}}, log);
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto limit = std::make_shared<SourceBufferLimit>(10);
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/64u << 10, /*min_bytes_for_seek=*/0);
+    executor.setBufferLimit(limit);
+
+    TestThreadGroup tg;
+
+    auto drain_to_extent = [&]()
+    {
+        size_t read = 0;
+        while (true)
+        {
+            auto rope = executor.readNextWindow();
+            if (rope.empty())
+                break;
+            read += rope.range().size;
+        }
+        return read;
+    };
+
+    executor.setReadExtent(extent1);
+    EXPECT_EQ(drain_to_extent(), extent1) << "the reader stops at the advertised extent (empty window past it)";
+
+    executor.setReadExtent(extent2);
+    EXPECT_EQ(drain_to_extent(), extent2 - extent1) << "extending the advertised extent resumes the read";
+
+    ASSERT_GE(log.read_until.size(), 2u) << "one connection per advertised extent (streamed within each)";
+    ASSERT_TRUE(log.read_until[0].has_value()) << "the live connection must be right-bounded, not open-ended";
+    EXPECT_EQ(*log.read_until[0], extent1) << "bounded to the first advertised extent (object-local)";
+    ASSERT_TRUE(log.read_until[1].has_value());
+    EXPECT_EQ(*log.read_until[1], extent2) << "bounded to the extended extent";
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 2)
+        << "exactly one streamed connection per extent (reused across the windows within each)";
+}
+
 TEST(ReaderExecutor, ReadBigAtTransientStatsRollUpToParent)
 {
     /// A `readBigAt` transient must not emit its own ProfileEvents /
