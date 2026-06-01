@@ -7273,18 +7273,25 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
     if (!backup->fileExists(column_ids_in_backup))
     {
-        /// Legacy backup (no mapping file) into an active-mapping destination
-        /// would attach parts named by logical column names; the reader resolves
-        /// through column IDs and would find no physical files for the columns,
-        /// silently returning defaults via `remapColumnsWithPhysicalNames`.
-        if (getTotalActiveSizeInBytes() > 0)
+        /// Legacy backup (no mapping file) into a destination with a non-identity
+        /// active mapping would attach parts named by logical columns; the reader
+        /// resolves through column IDs and finds no physical files for them,
+        /// silently returning defaults.  An empty destination still triggers this
+        /// risk (e.g. after `ADD COLUMN c` + `TRUNCATE` leaves a non-identity
+        /// mapping in place), so do not gate on `getTotalActiveSizeInBytes`.
+        auto current = getColumnIdMapping();
+        if (current && current->isActive())
         {
-            auto current = getColumnIdMapping();
-            if (current && current->isActive())
+            bool is_identity = true;
+            for (const auto & [logical, id] : current->getLogicalToId())
+            {
+                if (logical != id) { is_identity = false; break; }
+            }
+            if (!is_identity)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "RESTORE: backup has no `{}` (legacy backup), but destination has "
-                    "an active column-ID mapping.  Restored parts would be read with "
-                    "the wrong physical column names.  Restore into an empty table.",
+                    "a non-identity column-ID mapping.  Restored parts would be read "
+                    "with the wrong physical column names.  Restore into a fresh table.",
                     COLUMN_IDS_FILE_NAME);
         }
     }
