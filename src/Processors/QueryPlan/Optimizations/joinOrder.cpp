@@ -142,8 +142,17 @@ void QueryGraph::buildColumnEquivalences()
         /// for all rows and the transitive equivalence would be invalid.
         auto lhs_it = join_kinds.find(*lhs_rel);
         auto rhs_it = join_kinds.find(*rhs_rel);
-        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
-            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
+        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.kind))
+            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.kind)))
+            continue;
+
+        /// Skip pinned predicates: they're conditionally applicable (only when the
+        /// pin relations are joined first), so the equality doesn't hold unconditionally
+        /// and the transitive equivalence cannot bypass the pin's constraint. Without
+        /// this skip, `areTransitivelyConnected` would consider `(A,C)` connected via
+        /// `a.w=c.w` even when that edge is pinned to require B, letting greedy commit
+        /// to a dead-end first pair.
+        if (auto pin_it = pinned.find(edge); pin_it != pinned.end() && pin_it->second.any())
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
@@ -666,15 +675,15 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (pin_it != query_graph.pinned.end())
         {
             /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause.
-              * 2. The expression depends on a relation that was previously part of an OUTER JOIN.
-              * In the first case, the OUTER JOINed relation can only appear as a singleton in the `left` or `right` set.
-              * In the second case, the relation can be part of a bushy tree,
-              * so the expression is not strictly applied the first time its pinned relation is joined.
-              * Here, we just check if the expression is pinned to another join,
-              * which can be different from the expression's source relations.
+              * 1. The expression is part of an OUTER JOIN ON clause — pinned to the
+              *    NULL-supplying side.
+              * 2. The expression of an INNER join sits above a child outer-join
+              *    boundary it cannot legally be pushed past — pinned to the
+              *    null-supplying relations of every such boundary it crosses.
+              * The pin set is the relations that MUST all be in `joined_rels`
+              * before the edge is applicable, so check subset.
               */
-            if (!joined_rels.test(pin_it->second))
+            if (!isSubsetOf(pin_it->second, joined_rels))
                 continue;
         }
 
@@ -933,9 +942,12 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
             auto it = query_graph.join_kinds.find(rel_id.value());
             if (it != query_graph.join_kinds.end())
             {
-                if (isSubsetOf(it->second.first, rhs))
-                    return it->second.second;
-                return {};
+                const auto & restriction = it->second;
+                if (!isSubsetOf(restriction.required_partners, rhs))
+                    return {};
+                if ((rhs & restriction.forbidden_partners).any())
+                    return {};
+                return restriction.kind;
             }
         }
         return JoinKind::Inner;
