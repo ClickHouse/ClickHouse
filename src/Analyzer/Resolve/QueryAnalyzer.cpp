@@ -373,6 +373,42 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
     return false;
 }
 
+/// Variant of `isFromJoinTree` that also descends into `ArrayJoinNode` children. Used to
+/// check whether a column's source table participates in an ARRAY JOIN's input subtree,
+/// which may itself be (or contain) another ARRAY JOIN when ARRAY JOINs are chained.
+static bool isInArrayJoinSourceTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
+{
+    if (node_source == tree_node)
+        return true;
+
+    std::stack<const IQueryTreeNode *> stack;
+    stack.push(tree_node);
+
+    while (!stack.empty())
+    {
+        const auto * current = stack.top();
+        stack.pop();
+
+        if (node_source == current)
+            return true;
+
+        if (const auto * child_join_node = current->as<JoinNode>())
+        {
+            stack.push(child_join_node->getLeftTableExpression().get());
+            stack.push(child_join_node->getRightTableExpression().get());
+        }
+        else if (const auto * child_cross_join_node = current->as<CrossJoinNode>())
+        {
+            stack.push_range(child_cross_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
+        }
+        else if (const auto * child_array_join_node = current->as<ArrayJoinNode>())
+        {
+            stack.push(child_array_join_node->getTableExpression().get());
+        }
+    }
+    return false;
+}
+
 std::optional<JoinTableSide> QueryAnalyzer::getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node)
 {
     if (resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT)
@@ -4625,7 +4661,7 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
             {
                 auto column_source = resolved_column_node->getColumnSourceOrNull();
                 const auto & array_join_input = array_join_node_typed.getTableExpression();
-                if (column_source && hasTableExpressionInJoinTree(array_join_input, column_source))
+                if (column_source && isInArrayJoinSourceTree(column_source.get(), array_join_input.get()))
                 {
                     auto data_it = scope.table_expression_node_to_data.find(column_source);
                     if (data_it != scope.table_expression_node_to_data.end())
