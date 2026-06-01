@@ -48,22 +48,20 @@ In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree
 | Schema evolution (add / drop / modify columns) | [`ALTER TABLE ... ADD / DROP / MODIFY COLUMN`](/sql-reference/statements/alter/column) | Same DDL surface as BigQuery. Many column changes are metadata-only. |
 | Partitioning | [`PARTITION BY`](/engines/table-engines/mergetree-family/custom-partitioning-key) clause on the table | Where BigQuery limits partitioning to time-unit, integer-range, or ingestion-time columns, ClickHouse takes an arbitrary expression. Use it for retention (drop a partition) and pruning. |
 | Clustering | [`ORDER BY`](/guides/best-practices/sparse-primary-indexes) columns in the table definition | Where BigQuery clustering is best-effort and reorganized in the background, ClickHouse's `ORDER BY` is enforced at insert time and drives the sparse primary index. |
-| External tables / BigLake | [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions for direct file access; [Iceberg engine](/engines/table-engines/integrations/iceberg) for open catalogs | Object storage and open-table formats are read directly through these functions and engines. ClickHouse does not provide a unified-governance layer over external storage. |
+| External tables / BigLake | [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) / [`azureBlobStorage`](/sql-reference/table-functions/azureBlobStorage) table functions for direct file access; [Iceberg engine](/engines/table-engines/integrations/iceberg) for open catalogs | Object storage and open-table formats are accessed directly through these functions and engines. ClickHouse doesn't provide a unified-governance layer over external storage. |
 | Object tables (SQL access to unstructured files) | [`s3`](/sql-reference/table-functions/s3) / [`gcs`](/sql-reference/table-functions/gcs) table functions over binary formats | Unstructured objects (images, PDFs, audio) are queried directly through these table functions, not via a dedicated table type. |
-| In-SQL ML inference on objects (`ML.GENERATE_TEXT`, `ML.GENERATE_EMBEDDING`) | — | No in-SQL LLM-on-objects equivalent; call hosted models from the application layer. |
-| Apache Iceberg | [Iceberg engine](/engines/table-engines/integrations/iceberg) | Reads Iceberg tables stored in S3, Azure, HDFS, or local storage. Writes are not supported. See the engine page for the current list of supported features. |
+| In-SQL ML inference on objects (`ML.GENERATE_TEXT`, `ML.GENERATE_EMBEDDING`) | [`aiGenerate`](/sql-reference/functions/ai-functions#aiGenerate) / [`aiEmbed`](/sql-reference/functions/ai-functions#aiEmbed) for text | In-SQL LLM and embedding functions exist, but they operate on text columns, not directly on unstructured objects (images, PDFs, audio). For object content, convert to text first or call a multimodal model from the application layer. |
+| Apache Iceberg | [Iceberg engine](/engines/table-engines/integrations/iceberg) | Wide open-table format support; see the [data lake support matrix](/use-cases/data-lake/support-matrix) for current capabilities. |
 | Default table / partition / dataset expiration | [`TTL` clause](/sql-reference/statements/create/table#ttl-expression) on the table, column, or partition | `TTL` can be set at table creation or via [`ALTER TABLE ... MODIFY TTL`](/sql-reference/statements/alter/ttl), and applies at the table, column, or partition level rather than the dataset default. |
 | Table snapshot | Service-level [backup](/cloud/manage/backups/overview) | Granularity differs significantly; see the callout below. |
-| Time travel | Point-in-time [backup](/cloud/manage/backups/overview) restore into a new service | No inline historical query; restore is the only way to reach prior state. |
+| Time travel | Point-in-time [backup](/cloud/manage/backups/overview) restore | No inline historical query; restore is the only way to reach prior state. |
 | Authorized views | [View](/sql-reference/statements/create/view) with `SQL SECURITY DEFINER` (runs with the view-owner's privileges) | See [CREATE VIEW](/sql-reference/statements/create/view) for the syntax and the `INVOKER` / `DEFINER` / `NONE` modes. |
 | Row-level security | [Row policy](/sql-reference/statements/create/row-policy) — a `WHERE`-style expression evaluated per user | Same role; the policy expression is attached per user (or role) rather than as a BigQuery RLS row access policy resource. |
 | Wildcard tables (`_TABLE_SUFFIX`) | [`Merge`](/engines/table-engines/special/merge) table engine (persistent grouping) or [`merge()`](/sql-reference/table-functions/merge) function (inline) | Same idea, different syntax. `Merge` is a persistent table-of-tables; `merge()` is inline without creating one. |
-| Table clone | [`CREATE TABLE ... AS SELECT`](/sql-reference/statements/create/table) copy, or [backup](/cloud/manage/backups/overview) restore into a new service | ClickHouse has no copy-on-write primitive; every copy reads the source data fully. |
+| Table clone | [`CREATE TABLE ... CLONE AS`](/sql-reference/statements/create/table#with-a-schema-and-data-cloned-from-another-table) within a service, or [backup](/cloud/manage/backups/overview) restore into a new service | `CLONE AS` hardlinks the source table's parts (part-level copy-on-write), so no data is physically copied. Copying across services still reads the source fully. |
 
 :::note Backups
-ClickHouse Cloud backups are per-service. Restoring
-a backup creates a new service; a single table cannot be restored
-back into the original service.
+Console-managed backups are per-service and restore into a new service. SQL [`BACKUP` / `RESTORE`](/operations/backup/overview#syntax) commands work at table or database granularity and can restore into an existing service.
 :::
 
 :::note Updates and deletes
@@ -75,7 +73,7 @@ rather than transactional row writes. BigQuery DML patterns (`MERGE`, `UPDATE`,
 `DELETE`, dbt incremental updates) typically port to engine choice in ClickHouse:
 [`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree)
 keeps the latest row by sort key, [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree)
-marks deletes inline, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
+cancels rows by inserting a matching row with `Sign = -1`, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
 maintains aggregated state. Engine choice is set at table creation and is
 non-trivial to change later.
 :::
@@ -97,7 +95,7 @@ Query acceleration in ClickHouse comes from three layers: primary-key ordering (
 | Dry run | [`EXPLAIN ESTIMATE`](/sql-reference/statements/explain) — reports rows, parts, and marks the query would read; other [`EXPLAIN`](/sql-reference/statements/explain) variants (`PLAN`, `PIPELINE`, `SYNTAX`) cover deeper plan inspection | Covers the plan-inspection role of BigQuery's dry run, not the cost-estimation role. ClickHouse billing isn't per-query, so there's no "bytes that will be billed" answer to return. |
 | Federated queries (Spanner, Cloud SQL, AlloyDB, Bigtable) | External OLTP attached via [database engine](/engines/database-engines) (PostgreSQL, MySQL, MongoDB, SQLite) | Distinct from external tables in object storage; these attach a live source so its tables are queryable directly. Bigtable has no ClickHouse database-engine equivalent. |
 | Cached results | [Query cache](/operations/query-cache) | ClickHouse's query cache lives in each replica's memory and is per-user by default; identical queries to different replicas don't share results. Not transactionally consistent. |
-| Sessions / multi-statement queries | Per-statement execution; multi-step state managed in the client or an orchestrator | ClickHouse has no per-session variables or shared state. |
+| Sessions / multi-statement queries | [`SET`](/sql-reference/statements/set) for session-scoped settings and [query parameters](/sql-reference/statements/set#setting-query-parameters) | `SET name = value` applies a setting for the session's lifetime, and `SET param_name = value` defines query parameters referenced as `{name:Type}`. Multi-statement scripting (`DECLARE`, procedural control flow) has no equivalent; keep that logic in the client or an orchestrator. |
 
 ## Security and governance {#security-governance}
 
@@ -106,8 +104,8 @@ Authorized views and row-level security are listed under [Storage and tables](#s
 | BigQuery | ClickHouse | Notes |
 |---|---|---|
 | Policy tags / column-level access control | Column-level [grants](/sql-reference/statements/grant) on specific columns of a table | Grants apply at the column level. BigQuery's centralized taxonomy/policy-tag governance has no direct equivalent. |
-| Data masking | Views, [row policies](/sql-reference/statements/create/row-policy), or function-based transforms; see [data masking patterns](/cloud/guides/data-masking) | No column-mask primitive; patterns are SQL-level. |
-| Customer-managed encryption keys (CMEK) | [CMEK](/cloud/security/cmek) on the service | Available on AWS (KMS) and GCP (Cloud KMS), with rotation and revocation. |
+| Data masking | [`CREATE MASKING POLICY`](/sql-reference/statements/create/masking-policy) (ClickHouse Cloud); or [views](/sql-reference/statements/create/view) and [row policies](/sql-reference/statements/create/row-policy). See [data masking patterns](/cloud/guides/data-masking) | `CREATE MASKING POLICY` is a direct equivalent: function-based column masking applied at query time per role, without changing stored data. |
+| Customer-managed encryption keys (CMEK) | [CMEK](/cloud/security/cmek) on the service | Supports key rotation and revocation. See the CMEK page for the current list of supported cloud providers. |
 | AEAD / SQL-level encryption functions | [Encryption functions](/sql-reference/functions/encryption-functions) (`encrypt` / `decrypt`) | Covers AES-128/256-CBC/GCM and AEAD modes. |
 | Differential privacy | — | Not a managed feature. Applying noise in a [UDF](/sql-reference/functions/udf) doesn't reproduce BigQuery's epsilon/delta-controlled privacy guarantees; for true DP, use an external library. |
 | VPC Service Controls | [Private connectivity](/cloud/security/connectivity/private-networking) — Private Service Connect (GCP), PrivateLink (AWS, Azure), and IP allowlists for ingress restriction | Restricts ingress; doesn't replicate VPC SC's data-exfiltration boundary. |
@@ -125,7 +123,7 @@ ClickHouse surfaces operational state through `system.*` tables (queries, sessio
 
 | BigQuery | ClickHouse | Notes |
 |---|---|---|
-| BigQuery ML | External training and serving (notebooks, Spark, Vertex AI, feature stores) reading from ClickHouse; see [AI/ML in Cloud](/cloud/features/ai-ml) for managed-side features | ClickHouse has no in-database ML. Use it as the analytical store and run training elsewhere. |
+| BigQuery ML | External training and serving (notebooks, Spark, Vertex AI, feature stores) reading from ClickHouse; see [AI/ML in Cloud](/cloud/features/ai-ml) for managed-side features | ClickHouse has no in-database model training. Use it as the analytical store and train elsewhere. For in-SQL LLM inference, see [`aiGenerate`](/sql-reference/functions/ai-functions#aiGenerate) / [`aiEmbed`](/sql-reference/functions/ai-functions#aiEmbed). |
 | BI Engine | Direct querying — no separate acceleration tier to provision | Sub-second BI latency comes from the storage engine itself; there's no in-memory cache layer to size or pay for separately. |
 | OMNI / cross-cloud federated query | — | ClickHouse doesn't query in place across clouds. The closest pattern is one service per [supported region](/cloud/reference/supported-regions) with data staged into the target service before being queried. |
 | Data sources / file formats | [File-format and connector library](/integrations) | Managed connectors (ClickPipes) for sources like Kafka, Pub/Sub, MySQL, Postgres, and object storage; SQL table functions for ad-hoc reads of files in object storage. |
@@ -136,7 +134,7 @@ ClickHouse surfaces operational state through `system.*` tables (queries, sessio
 | Change data capture ingestion | [ClickPipes for Postgres](/integrations/clickpipes/postgres), [MySQL](/integrations/clickpipes/mysql), or Kafka | Managed CDC from OLTP sources. |
 | BigQuery Studio notebooks / BigQuery DataFrames | Jupyter with [`clickhouse-connect`](/integrations/python) or another [client library](/integrations/python) | No in-product notebook environment or pandas-compatible in-DB API; notebook-side libraries cover the same workflow. |
 | Data Canvas | — | No drag-and-drop NL canvas. [SQL Console](/integrations/sql-clients/sql-console) covers ad-hoc query authoring; visual data prep happens in an external orchestrator. |
-| Gemini in BigQuery (SQL generation, code completion) | [ClickHouse Agents](/cloud/features/ai-ml/agents) in the cloud console; Ask-AI in the docs | Agents (currently in beta) are conversational: natural-language queries against your data with tool calls and chat workflows. In-SQL LLM functions analogous to `BQ.ML.GENERATE_TEXT` are handled outside SQL today; check the [Agents](/cloud/features/ai-ml/agents) page for the current capability surface. |
+| Gemini in BigQuery (SQL generation, code completion) | [ClickHouse Agents](/cloud/features/ai-ml/agents) in the cloud console; Ask-AI in the docs | Agents are conversational: natural-language queries against your data with tool calls and chat workflows. For in-SQL LLM calls analogous to `BQ.ML.GENERATE_TEXT`, see [`aiGenerate`](/sql-reference/functions/ai-functions#aiGenerate). Check the [Agents](/cloud/features/ai-ml/agents) page for the current capability surface. |
 | Knowledge Catalog / data lineage / data quality | [`system.*`](/operations/system-tables) tables for metadata; external tools (dbt, DataHub) for lineage and quality | ClickHouse exposes metadata via system tables rather than a managed catalog product. |
 | Cross-region replication / managed disaster recovery | Multi-AZ HA within a region (automatic); cross-region resiliency via [external backups](/cloud/manage/backups/export-backups-to-own-cloud-account) exported to a customer-owned bucket; see [Data resiliency](/cloud/data-resiliency) | ClickHouse Cloud has no automatic cross-region replication, failover, or active-active sync today. Cross-region DR is backup-based. |
 
