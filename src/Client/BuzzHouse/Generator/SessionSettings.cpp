@@ -518,6 +518,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", trueOrFalseSettingNoOracle},
     {"allow_changing_replica_until_first_data_packet", trueOrFalseSettingNoOracle},
     {"allow_dynamic_type_in_join_keys", trueOrFalseSettingNoOracle},
+    {"allow_experimental_macaddress_type", trueOrFalseSettingNoOracle},
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_nullable_tuple_in_extracted_subcolumns", trueOrFalseSettingNoOracle},

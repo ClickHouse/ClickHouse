@@ -51,6 +51,7 @@ String FieldVisitorToJSONElement::operator() (const Int256 & x) const { return f
 String FieldVisitorToJSONElement::operator() (const UUID & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const IPv4 & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const IPv6 & x) const { return formatAsString(x); }
+String FieldVisitorToJSONElement::operator() (const MacAddress & x) const { return formatAsString(x); }
 String FieldVisitorToJSONElement::operator() (const AggregateFunctionStateData & x) const { return formatAsString(x.data); }
 String FieldVisitorToJSONElement::operator() (const bool & x) const { return x ? "true" : "false"; }
 String FieldVisitorToJSONElement::operator() (const CustomType & x) const { return formatString(x.toString()); }

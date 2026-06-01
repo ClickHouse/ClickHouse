@@ -8036,6 +8036,10 @@ Changes made with `SET` or query-level `SETTINGS` do not change extracted subcol
 To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
 )", 0) \
     \
+    DECLARE(Bool, allow_experimental_macaddress_type, false, R"(
+Allows creation of [MacAddress](../../sql-reference/data-types/macaddress.md) columns in tables.
+)", EXPERIMENTAL) \
+    \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs

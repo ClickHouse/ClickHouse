@@ -2356,7 +2356,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeBFloat16, DataTypeFloat32, DataTypeFloat64,
             DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime,
-            DataTypeUUID, DataTypeIPv4, DataTypeIPv6>)
+            DataTypeUUID, DataTypeIPv4, DataTypeIPv6, DataTypeMacAddress>)
         {
             ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
             return true;
