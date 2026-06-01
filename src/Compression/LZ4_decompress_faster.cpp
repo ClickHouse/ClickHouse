@@ -463,11 +463,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     while (true)
     {
-        size_t length;
+        size_t length = 0;
 
         auto continue_read_length = [&]
         {
-            unsigned s;
+            unsigned s = 0;
             do
             {
                 s = *ip++;
@@ -483,8 +483,8 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         const unsigned token = *ip++;
         length = token >> 4;
 
-        UInt8 * copy_end;
-        size_t real_length;
+        UInt8 * copy_end = nullptr;
+        size_t real_length = 0;
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -651,7 +651,7 @@ bool decompress(
         size_t best_variant = statistics.select(variant_size);
 
         Stopwatch watch;
-        bool success;
+        bool success = false;
         if (best_variant == 0)
             success = decompressImpl<8>(source, dest, source_size, dest_size);
         else if (best_variant == 1)

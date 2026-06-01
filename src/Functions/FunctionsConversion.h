@@ -1291,13 +1291,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1318,13 +1318,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
@@ -1385,7 +1385,7 @@ struct ConvertThroughParsing
             }
             else
             {
-                bool parsed;
+                bool parsed = false;
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
                 {
@@ -1403,13 +1403,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -1430,13 +1430,13 @@ struct ConvertThroughParsing
                     }
                     else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
-                        time_t res;
+                        time_t res = 0;
                         parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
@@ -2125,7 +2125,7 @@ struct ConvertImpl
 
             const DateLUTImpl * time_zone = nullptr;
 
-            UInt32 scale;
+            UInt32 scale = 0;
 
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2207,7 +2207,7 @@ struct ConvertImpl
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
 
-            UInt32 scale;
+            UInt32 scale = 0;
             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                         || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 scale = additions.scale;
@@ -2634,7 +2634,7 @@ struct ConvertImpl
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale;
+                UInt32 scale = 0;
 
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -4706,5 +4706,14 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
+
+FunctionBasePtr createFunctionBaseCast(
+    ContextPtr context,
+    const char * name,
+    const ColumnsWithTypeAndName & arguments,
+    const DataTypePtr & return_type,
+    std::optional<CastDiagnostic> diagnostic,
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

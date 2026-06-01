@@ -187,7 +187,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x;
+        UInt8 x = 0;
 
         if (in[i]->onlyNull())
             x = func(Null());
@@ -786,7 +786,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info;
+    MaskInfo mask_info{};
     for (size_t i = 1; i <= arguments.size(); ++i)
     {
         if (inverted)
