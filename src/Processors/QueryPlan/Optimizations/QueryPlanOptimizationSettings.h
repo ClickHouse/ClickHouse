@@ -30,6 +30,22 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
+    /// Copies the EXPLAIN-introspection knobs (`is_explain`, `keep_logical_steps`,
+    /// `max_step_description_length`) from `other`.
+    ///
+    /// Every other field of this struct is a pure function of the query `Settings`/`Context`,
+    /// so it can be reproduced by simply constructing the settings from any context. These three
+    /// are different: they describe HOW the plan is being inspected by an `EXPLAIN` statement, not
+    /// how the query runs, so they are not part of the query settings. The constructors leave them
+    /// at their defaults and `InterpreterExplainQuery` assigns them imperatively after construction.
+    ///
+    /// Because of that, whenever a sub-plan has to be (re-)optimized with a freshly built settings
+    /// object — e.g. the parallel replicas local plan, which must be optimized with the subquery's
+    /// own settings — a plain rebuild would silently reset these to their defaults and break
+    /// `EXPLAIN` introspection of that sub-plan (the result would still be correct, but the printed
+    /// plan would differ). Call this after building such a settings object to carry them over.
+    void inheritExplainSettingsFrom(const QueryPlanOptimizationSettings & other);
+
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;

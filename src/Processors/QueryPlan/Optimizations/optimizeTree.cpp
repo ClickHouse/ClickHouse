@@ -412,8 +412,23 @@ void optimizeTreeSecondPass(
         {
             read_from_local_parallel_replica_plan = true;
 
+            /// The local plan is the initiator's share of a parallel-replicas read. It must be optimized
+            /// exactly as the remote replicas optimize the subquery they receive — i.e. with the subquery's
+            /// own SETTINGS — otherwise plan-level decisions (e.g. read-in-order) diverge and the shared
+            /// coordinator observes conflicting coordination modes. The outer `optimization_settings` is
+            /// built once from the top-level query context and does not reflect those per-subquery settings,
+            /// so rebuild the settings from the subquery's context. The only thing the rebuild can't
+            /// reproduce is the EXPLAIN-introspection state, which lives outside the query settings — carry
+            /// it over explicitly (see `inheritExplainSettingsFrom`).
+            auto local_optimization_settings = optimization_settings;
+            if (auto local_context = read_from_local->getContext())
+            {
+                local_optimization_settings = QueryPlanOptimizationSettings(local_context);
+                local_optimization_settings.inheritExplainSettingsFrom(optimization_settings);
+            }
+
             auto local_plan = read_from_local->extractQueryPlan();
-            local_plan->optimize(optimization_settings);
+            local_plan->optimize(local_optimization_settings);
 
             auto * local_plan_node = frame.node;
             query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));

@@ -295,4 +295,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
 }
+
+void QueryPlanOptimizationSettings::inheritExplainSettingsFrom(const QueryPlanOptimizationSettings & other)
+{
+    is_explain = other.is_explain;
+    keep_logical_steps = other.keep_logical_steps;
+    max_step_description_length = other.max_step_description_length;
+}
 }
