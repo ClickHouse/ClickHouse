@@ -26,29 +26,29 @@ static std::string slowEncode64(std::string_view src)
 static std::string scalarEncode32(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_32_LEN];
-    size_t len = TargetSpecific::Default::encodeBase58_32(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_32_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
 static std::string scalarEncode64(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_64_LEN];
-    size_t len = TargetSpecific::Default::encodeBase58_64(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_64_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 static std::string avxEncode32(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_32_LEN];
-    size_t len = TargetSpecific::x86_64_v3::encodeBase58_32(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_32_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 
 static std::string avxEncode64(std::string_view src)
 {
     uint8_t buf[BASE58_ENCODED_64_LEN];
-    size_t len = TargetSpecific::x86_64_v3::encodeBase58_64(reinterpret_cast<const uint8_t *>(src.data()), buf);
+    size_t len = encodeBase58_64_fd(reinterpret_cast<const uint8_t *>(src.data()), buf);
     return std::string(reinterpret_cast<const char *>(buf), len);
 }
 #endif
@@ -180,7 +180,7 @@ TEST(Base58, Scalar32)
 
         uint8_t decoded[32] = {};
         auto result
-            = TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 32u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 32)) << "id=" << v.id;
@@ -197,34 +197,28 @@ TEST(Base58, Scalar64)
 
         uint8_t decoded[64] = {};
         auto result
-            = TargetSpecific::Default::decodeBase58_64(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
+            = decodeBase58_64_fd(reinterpret_cast<const uint8_t *>(v.encoded.data()), v.encoded.size(), decoded);
         ASSERT_TRUE(result.has_value()) << "id=" << v.id;
         EXPECT_EQ(*result, 64u) << "id=" << v.id;
         EXPECT_EQ(0, memcmp(decoded, v.decoded.data(), 64)) << "id=" << v.id;
     }
 }
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 
 TEST(Base58, Avx32)
 {
-    if (!isArchSupported(TargetArch::x86_64_v3))
-        GTEST_SKIP() << "AVX2 not supported on this CPU";
-
     for (const auto & v : test_data_32)
         EXPECT_EQ(avxEncode32(v.decoded), scalarEncode32(v.decoded)) << "id=" << v.id;
 }
 
 TEST(Base58, Avx64)
 {
-    if (!isArchSupported(TargetArch::x86_64_v3))
-        GTEST_SKIP() << "AVX2 not supported on this CPU";
-
     for (const auto & v : test_data_64)
         EXPECT_EQ(avxEncode64(v.decoded), scalarEncode64(v.decoded)) << "id=" << v.id;
 }
 
-#endif // USE_MULTITARGET_CODE
+#endif // defined(__AVX2__)
 
 /// Decode must reject invalid characters, overlong strings, and overflowing values.
 TEST(Base58, DecodeInvalid)
@@ -240,25 +234,25 @@ TEST(Base58, DecodeInvalid)
              "l111111111111111111111111111111111111111111"sv, // 'l'
          })
     {
-        EXPECT_FALSE(TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(bad.data()), bad.size(), out32).has_value())
+        EXPECT_FALSE(decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(bad.data()), bad.size(), out32).has_value())
             << bad;
     }
 
     // Too short for 32-byte output: minimum is 32 chars (all-zero input encodes to 32 '1's).
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
+        decodeBase58_32_fd(
             reinterpret_cast<const uint8_t *>("1111111111111111111111111111111"), 31, out32)
             .has_value());
 
     // Too long for 32-byte output (BASE58_ENCODED_32_LEN = 44).
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
+        decodeBase58_32_fd(
             reinterpret_cast<const uint8_t *>("111111111111111111111111111111111111111111111"), 45, out32)
             .has_value());
 
     // 44 'z's: value overflows 32 bytes (58^44 > 2^256), must be rejected.
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_32(
+        decodeBase58_32_fd(
             reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), 44, out32)
             .has_value());
 
@@ -266,18 +260,18 @@ TEST(Base58, DecodeInvalid)
     {
         std::string extra = "1" + std::string(test_data_32[1].encoded);
         EXPECT_FALSE(
-            TargetSpecific::Default::decodeBase58_32(reinterpret_cast<const uint8_t *>(extra.data()), extra.size(), out32).has_value());
+            decodeBase58_32_fd(reinterpret_cast<const uint8_t *>(extra.data()), extra.size(), out32).has_value());
     }
 
     // Too short for 64-byte output: minimum is 64 chars (all-zero input encodes to 64 '1's).
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
+        decodeBase58_64_fd(
             reinterpret_cast<const uint8_t *>("1111111111111111111111111111111111111111111111111111111111111111"), 63, out64)
             .has_value());
 
     // Too long for 64-byte output (BASE58_ENCODED_64_LEN = 88).
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
+        decodeBase58_64_fd(
             reinterpret_cast<const uint8_t *>("11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
             89,
             out64)
@@ -285,7 +279,7 @@ TEST(Base58, DecodeInvalid)
 
     // 88 'z's: value overflows 64 bytes (58^88 > 2^512), must be rejected.
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
+        decodeBase58_64_fd(
             reinterpret_cast<const uint8_t *>("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
             88,
             out64)
@@ -293,7 +287,7 @@ TEST(Base58, DecodeInvalid)
 
     // Invalid character in 64-byte input.
     EXPECT_FALSE(
-        TargetSpecific::Default::decodeBase58_64(
+        decodeBase58_64_fd(
             reinterpret_cast<const uint8_t *>("0111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"),
             88,
             out64)

@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
+
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 #include <vector>
