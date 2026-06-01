@@ -1020,7 +1020,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
 
     std::lock_guard lock(fire_signal_mutex);
 
-    bool updated;
+    bool updated = false;
     if (is_watermark_strictly_ascending)
     {
         updated = max_watermark < watermark;
@@ -1802,6 +1802,7 @@ void StorageWindowView::throwIfWindowViewIsDisabled(ContextPtr local_context) co
                         "in the current infrastructure for query analysis (the setting 'allow_experimental_analyzer')");
 }
 
+void registerStorageWindowView(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory)
 {
     factory.registerStorage(
