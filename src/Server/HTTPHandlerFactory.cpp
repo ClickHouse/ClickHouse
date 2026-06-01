@@ -21,6 +21,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -52,6 +56,48 @@ public:
         applyHTTPResponseHeaders(response, http_response_headers_override);
         response.redirect(url);
     }
+};
+
+/// Matches incoming requests against the registry of SQL-defined handlers (CREATE HANDLER).
+/// Consulted after all configuration-defined handlers, so config handlers always take priority.
+/// SQL-defined handlers are tried in lexicographic order of their names.
+class SQLDefinedHTTPHandlerFactory : public HTTPRequestHandlerFactory
+{
+public:
+    SQLDefinedHTTPHandlerFactory(IServer & server_, std::string protocol_name_)
+        : server(server_), protocol_name(std::move(protocol_name_))
+    {
+    }
+
+    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
+    {
+        auto handlers = SQLDefinedHandlersFactory::instance().getAll();
+        if (!handlers || handlers->empty())
+            return nullptr;
+
+        /// Match against the URL path only, without the query string and fragment.
+        const auto & uri = request.getURI();
+        const char * path_end = find_first_symbols<'?', '#'>(uri.data(), uri.data() + uri.size());
+        const String path(uri.data(), path_end);
+
+        const String & method = request.getMethod();
+
+        for (const auto & [name, handler] : *handlers)
+        {
+            if (handler->matchesProtocol(protocol_name)
+                && handler->matchesMethod(method)
+                && handler->matchesURL(path))
+            {
+                return std::make_unique<SQLDefinedQueryHandler>(server, HTTPHandlerConnectionConfig{}, *handler);
+            }
+        }
+
+        return nullptr;
+    }
+
+private:
+    IServer & server;
+    std::string protocol_name;
 };
 
 HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
@@ -290,15 +336,21 @@ static inline auto createHandlersFactoryFromConfig(
 }
 
 static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key = "http_handlers")
+createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key, const std::string & protocol_name)
 {
+    std::shared_ptr<HTTPRequestHandlerFactoryMain> factory;
     if (config.has(http_handlers_key))
     {
-        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
+        factory = createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
+    }
+    else
+    {
+        factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        addDefaultHandlersFactory(*factory, server, config, async_metrics);
     }
 
-    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addDefaultHandlersFactory(*factory, server, config, async_metrics);
+    /// SQL-defined handlers (CREATE HANDLER) are matched after all configuration-defined handlers.
+    factory->addHandler(std::make_shared<SQLDefinedHTTPHandlerFactory>(server, protocol_name));
     return factory;
 }
 
@@ -314,10 +366,10 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key, const std::string & protocol_name)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key);
+        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key, protocol_name);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")

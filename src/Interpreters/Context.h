@@ -366,6 +366,10 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    /// Name of the SQL-defined HTTP handler that invoked the query (empty otherwise). See `currentHandler`.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query (empty for non-HTTP). See `currentRequestURL`.
+    String http_request_url;
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -1088,6 +1092,13 @@ public:
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
+
+    /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).
+    String getHTTPHandlerName() const { return http_handler_name; }
+    void setHTTPHandlerName(const String & name) { http_handler_name = name; }
+    /// The HTTP request URL (path and query string) that invoked the query, if any (see `currentRequestURL`).
+    String getHTTPRequestURL() const { return http_request_url; }
+    void setHTTPRequestURL(const String & url) { http_request_url = url; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;

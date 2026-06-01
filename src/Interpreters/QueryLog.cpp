@@ -129,6 +129,9 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
 
+        {"http_handler_name", std::make_shared<DataTypeString>(), "Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query. Empty if the query was not invoked through such a handler."},
+        {"http_request_url", std::make_shared<DataTypeString>(), "The HTTP request URL (path and query string) that invoked the query. Empty for non-HTTP queries."},
+
         {"log_comment", std::make_shared<DataTypeString>(), "Log comment. It can be set to arbitrary string no longer than max_query_size. An empty string if it is not defined."},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Thread ids that are participating in query execution. These threads may not have run simultaneously."},
@@ -245,6 +248,9 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     appendClientInfo(client_info, columns, i);
 
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
+
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_handler_name.data(), http_handler_name.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(http_request_url.data(), http_request_url.size());
 
     typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 

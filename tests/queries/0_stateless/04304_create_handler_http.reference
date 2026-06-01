@@ -1,0 +1,26 @@
+=== exact URL, GET ===
+1	hello
+=== URL match ignores query string and fragment ===
+1	hello
+=== URL PREFIX ===
+prefixed
+=== currentHandler() and currentRequestURL() ===
+1	1
+=== parameterized query via regexp URL capture ===
+12345
+=== parameterized query via URL query-string parameter ===
+42
+=== method not allowed (GET-only handler, POST request) does not match ===
+0
+=== POST allowed ===
+10
+=== INSERT handler reads data from the HTTP body ===
+6
+=== PROTOCOL-scoped handler is not served on the default http port ===
+0
+=== query_log records handler name and request URL ===
+1	1
+=== access control: CREATE HANDLER requires a grant ===
+ACCESS_DENIED
+create with grant ok
+ACCESS_DENIED

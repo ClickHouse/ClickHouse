@@ -31,6 +31,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
@@ -963,6 +964,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        SQLDefinedHandlersFactory::instance().shutdown();
 
         delete_async_insert_queue.reset();
 
@@ -1229,6 +1231,8 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    http_handler_name(o.http_handler_name),
+    http_request_url(o.http_request_url),
     can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),

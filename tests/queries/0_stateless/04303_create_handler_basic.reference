@@ -1,0 +1,10 @@
+h04303_a	\N	exact	/test_04303/a	['GET']	query	SELECT 1 AS x
+/test_04303/a
+h04303_b	my_proto	prefix	/test_04303/b/	['GET','POST']	query
+h04303_c	regexp	/test_04303/c/(?P<id>[0-9]+)
+h04303_post_a	['POST']
+/test_04303/a	['GET']	SELECT 42 AS y
+prefix	/test_04303/a_new	SELECT 42 AS y
+['GET','POST','PUT','DELETE']
+3
+0

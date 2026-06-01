@@ -159,10 +159,13 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
 /// @param config - not the same as server.config(), since it can be newer
 /// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)
 /// @param http_handlers_key - config key for custom http_handlers (default: "http_handlers")
+/// @param protocol_name - composable protocol name this factory serves; used to scope SQL-defined
+///                        handlers that specify a PROTOCOL. Empty for legacy http_port/https_port.
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
     const std::string & name,
-    const std::string & http_handlers_key = {});
+    const std::string & http_handlers_key = {},
+    const std::string & protocol_name = {});
 
 }

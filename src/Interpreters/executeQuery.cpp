@@ -454,6 +454,8 @@ QueryLogElement logQueryStart(
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = context->getHTTPRequestURL();
 
     elem.is_internal = internal;
 
@@ -906,6 +908,8 @@ void logExceptionBeforeStart(
     elem.exception_format_string_args = exception_message.format_string_args;
 
     elem.client_info = context->getClientInfo();
+    elem.http_handler_name = context->getHTTPHandlerName();
+    elem.http_request_url = context->getHTTPRequestURL();
 
     elem.log_comment = settings[Setting::log_comment];
     if (elem.log_comment.size() > settings[Setting::max_query_size])

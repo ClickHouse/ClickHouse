@@ -30,6 +30,7 @@ class Session;
 class IServer;
 struct Settings;
 class WriteBufferFromHTTPServerResponse;
+struct SQLDefinedHandler;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
@@ -63,7 +64,12 @@ public:
 protected:
     LoggerPtr log;
 
+    /// Set by SQL-defined handlers so that `currentHandler()` and the query_log can report the handler name.
+    void setIntrospectionHandlerName(const String & name_) { introspection_handler_name = name_; }
+
 private:
+    String introspection_handler_name;
+
     struct Output
     {
         /* Raw data
@@ -211,6 +217,22 @@ public:
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 
     bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+};
+
+/// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like
+/// PredefinedQueryHandler, and additionally reports its handler name for introspection
+/// (`currentHandler()` and the query_log `http_handler_name` column).
+class SQLDefinedQueryHandler : public PredefinedQueryHandler
+{
+public:
+    SQLDefinedQueryHandler(
+        IServer & server_,
+        const HTTPHandlerConnectionConfig & connection_config,
+        const SQLDefinedHandler & handler);
+
+    /// Append a newline after the stored query so that, for INSERT handlers, the request body
+    /// (concatenated after the query) is correctly separated and parsed as the inserted data.
+    std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 };
 
 }

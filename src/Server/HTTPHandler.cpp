@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Processors/Port.h>
@@ -234,6 +235,12 @@ void HTTPHandler::processQuery(
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
     auto context = session->makeQueryContext();
+
+    /// Expose the HTTP request URL and the SQL-defined handler name (if any) to the query
+    /// via `currentRequestURL()` / `currentHandler()` and the query_log.
+    context->setHTTPRequestURL(request.getURI());
+    if (!introspection_handler_name.empty())
+        context->setHTTPHandlerName(introspection_handler_name);
 
     auto roles = params.getAll("role");
     if (!roles.empty())
@@ -960,6 +967,27 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     }
 
     return predefined_query;
+}
+
+SQLDefinedQueryHandler::SQLDefinedQueryHandler(
+    IServer & server_,
+    const HTTPHandlerConnectionConfig & connection_config,
+    const SQLDefinedHandler & handler)
+    : PredefinedQueryHandler(
+        server_,
+        connection_config,
+        analyzeReceiveQueryParams(handler.query),
+        handler.query,
+        handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
+        {},
+        std::nullopt)
+{
+    setIntrospectionHandlerName(handler.name);
+}
+
+std::string SQLDefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
+{
+    return PredefinedQueryHandler::getQuery(request, params, context) + "\n";
 }
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
