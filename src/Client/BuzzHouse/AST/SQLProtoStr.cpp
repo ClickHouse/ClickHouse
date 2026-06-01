@@ -745,7 +745,7 @@ CONV_FN(SpecialVal, val)
             ret += R"('a\xE2\x80\x8Bb')";
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_JOINER:
-            // Split to avoid style-check matching "Db" across the hex boundary
+            // Split so \x8D and b are in separate literals (style check)
             ret += R"('a\xE2\x80\x8D)"
                    "b'";
             break;
