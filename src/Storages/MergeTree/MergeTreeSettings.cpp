@@ -2605,10 +2605,7 @@ MergeTreeSettings::MergeTreeSettings(const MergeTreeSettings & settings) : impl(
 {
 }
 
-MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
-    : impl(std::make_unique<MergeTreeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept = default;
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
