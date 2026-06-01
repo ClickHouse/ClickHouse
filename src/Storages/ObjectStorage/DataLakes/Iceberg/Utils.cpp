@@ -592,6 +592,16 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
     }
 }
 
+void validateIcebergTimeOfDayMicroseconds(Int64 microseconds)
+{
+    if (microseconds < 0 || microseconds >= ICEBERG_TIME_OF_DAY_MAX_MICROS)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg time value {} microseconds is out of allowed range [0, {}) for time of day",
+            microseconds,
+            ICEBERG_TIME_OF_DAY_MAX_MICROS);
+}
+
 Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())

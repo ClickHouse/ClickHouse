@@ -41,6 +41,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
+#include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -100,6 +101,7 @@ namespace ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace FailPoints
@@ -167,11 +169,23 @@ Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
     const WhichDataType which(type);
     if (which.isTime())
     {
+        Int64 seconds = 0;
         if (field.getType() == Field::Types::Int64)
-            return field.safeGet<Int64>() * 1'000'000;
-        if (field.getType() == Field::Types::UInt64)
-            return static_cast<Int64>(field.safeGet<UInt64>()) * 1'000'000;
-        return static_cast<Int64>(field.safeGet<Int32>()) * 1'000'000;
+            seconds = field.safeGet<Int64>();
+        else if (field.getType() == Field::Types::UInt64)
+            seconds = static_cast<Int64>(field.safeGet<UInt64>());
+        else
+            seconds = field.safeGet<Int32>();
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(seconds, Int64(1'000'000), microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time value {} is out of range for Iceberg time (microseconds since midnight)",
+                seconds);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
     }
 
     if (which.isTime64())
@@ -181,7 +195,17 @@ Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
 
         const auto value = field.safeGet<Decimal64>().getValue().value;
-        return value * DataTypeTime64::getScaleMultiplier(6 - scale).value;
+        const auto multiplier = DataTypeTime64::getScaleMultiplier(6 - scale).value;
+
+        Int64 microseconds = 0;
+        if (common::mulOverflow(value, multiplier, microseconds))
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "Time64 value {} is out of range for Iceberg time (microseconds since midnight)",
+                value);
+
+        validateIcebergTimeOfDayMicroseconds(microseconds);
+        return microseconds;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());

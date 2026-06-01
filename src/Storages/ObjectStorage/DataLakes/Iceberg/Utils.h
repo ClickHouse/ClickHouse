@@ -76,6 +76,11 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
 Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
 
+/// Iceberg `time` is microseconds since midnight in [00:00:00, 24:00:00).
+constexpr Int64 ICEBERG_TIME_OF_DAY_MAX_MICROS = 24LL * 60 * 60 * 1'000'000;
+
+void validateIcebergTimeOfDayMicroseconds(Int64 microseconds);
+
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,

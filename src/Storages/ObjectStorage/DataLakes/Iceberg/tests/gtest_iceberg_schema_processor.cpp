@@ -112,3 +112,20 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeUnknownThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("unknown_type"), DB::Exception);
 }
+
+#if USE_AVRO
+
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+
+TEST(IcebergTimeValidation, ValidateIcebergTimeOfDayMicroseconds)
+{
+    validateIcebergTimeOfDayMicroseconds(0);
+    validateIcebergTimeOfDayMicroseconds(ICEBERG_TIME_OF_DAY_MAX_MICROS - 1);
+
+    EXPECT_THROW(validateIcebergTimeOfDayMicroseconds(-1), DB::Exception);
+    EXPECT_THROW(validateIcebergTimeOfDayMicroseconds(ICEBERG_TIME_OF_DAY_MAX_MICROS), DB::Exception);
+    /// ClickHouse Time can represent 999:59:59, which is far beyond one day in microseconds.
+    EXPECT_THROW(validateIcebergTimeOfDayMicroseconds(3'599'999'000'000), DB::Exception);
+}
+
+#endif
