@@ -38,9 +38,10 @@ endif()
 # Re-enable FMA fusion only for these two TUs: the dot-product and distance kernels rely on the compiler
 # generating `vfmadd*` from `a*b + c` patterns in their hot inner loops. The per-file `COMPILE_FLAGS` are
 # appended after `CMAKE_CXX_FLAGS`, so this override wins over the global `-ffp-contract=off`.
-set_source_files_properties(
-    arrayDotProduct.cpp arrayDistance.cpp
-    PROPERTIES APPEND PROPERTY COMPILE_FLAGS "-ffp-contract=fast")
+set_source_files_properties(arrayDotProduct.cpp PROPERTIES COMPILE_FLAGS "-ffp-contract=fast")
+# Append so the conditional `-march=x86-64-v2` set above for arrayDistance.cpp is preserved
+# (`set_source_files_properties` has no APPEND form; use `set_property ... APPEND_STRING`).
+set_property(SOURCE arrayDistance.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -ffp-contract=fast")
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_array PRIVATE "-g1")
