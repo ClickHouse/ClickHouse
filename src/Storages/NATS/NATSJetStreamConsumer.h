@@ -32,8 +32,8 @@ protected:
     const String consumer_name;
 
     std::unique_ptr<jsCtx, decltype(&jsCtx_Destroy)> jet_stream_ctx;
-    jsOptions jet_stream_options;
-    jsSubOptions subscribe_options;
+    jsOptions jet_stream_options{};
+    jsSubOptions subscribe_options{};
 };
 
 }

@@ -1969,7 +1969,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
 
     chassert(total_weight > 0);
 
-    size_t res;
+    size_t res = 0;
     {
         std::lock_guard lock(rng_mutex);
         res = std::uniform_int_distribution<size_t>(0, total_weight - 1)(rng);
@@ -2053,6 +2053,7 @@ void StorageDistributed::delayInsertOrThrowIfNeeded() const
     }
 }
 
+void registerStorageDistributed(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory)
 {
     factory.registerStorage("Distributed", [](const StorageFactory::Arguments & args)
