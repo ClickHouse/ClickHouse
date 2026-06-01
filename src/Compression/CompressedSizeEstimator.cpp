@@ -25,7 +25,7 @@ void CompressedSizeEstimator::nextImpl()
     chassert(offset() <= INT_MAX);
     const UInt32 decompressed_size = static_cast<UInt32>(offset());
 
-    UInt32 compressed_size;
+    UInt32 compressed_size = 0;
     if (auto predicted = codec->tryGetCompressedSize(working_buffer.begin(), decompressed_size))
     {
         compressed_size = ICompressionCodec::getHeaderSize() + *predicted;
