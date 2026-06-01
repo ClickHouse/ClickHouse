@@ -1273,13 +1273,22 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, entry->rows_estimate_trusted);
+            /// The DP cardinality formula in `estimateJoinCardinality` models `ALL`-join
+            /// semantics (`selectivity * lhs * rhs`); it does not account for join strictness.
+            /// For `ANY` / `SEMI` / `ANTI` joins the real output is bounded differently
+            /// (e.g. `SEMI` / `ANTI` output is a subset of the left side, `ANY` deduplicates
+            /// matches), so the estimate is not representative of the actual cardinality and
+            /// must not cross the trust boundary to upstream optimizers even when every NDV
+            /// along the DP path was known. Demote trust for non-`ALL` strictness here, at the
+            /// point where the real strictness becomes known.
+            bool exposed_trust = entry->rows_estimate_trusted && join_strictness == JoinStrictness::All;
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats, exposed_trust);
 
             LOG_TRACE(getLogger("optimizeJoin"),
                 "Join {} cardinality: {} (trust={}) -> exposed to upstream as {}",
                 join_step->getReadableRelationName(),
                 entry->estimated_rows ? toString(*entry->estimated_rows) : "unknown",
-                entry->rows_estimate_trusted,
+                exposed_trust,
                 join_step->getTrustedResultRowsEstimation() ? toString(*join_step->getTrustedResultRowsEstimation()) : "unknown");
 
             auto & new_node = nodes.emplace_back();
