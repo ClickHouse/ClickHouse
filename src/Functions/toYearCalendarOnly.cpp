@@ -1,3 +1,4 @@
+#include <Common/FunctionDocumentation.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
 #include <Functions/FunctionFactory.h>
@@ -27,7 +28,7 @@ using FunctionToYearCalendarOnly = FunctionDateOrDateTimeToSomething<DataTypeUIn
 
 REGISTER_FUNCTION(ToYearCalendarOnly)
 {
-    factory.registerFunction<FunctionToYearCalendarOnly>();
+    factory.registerFunction<FunctionToYearCalendarOnly>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }
