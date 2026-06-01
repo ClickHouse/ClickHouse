@@ -416,17 +416,25 @@ void optimizeTreeSecondPass(
             /// agree on with the remote replicas is the coordination mode (Default / WithOrder / ReverseOrder)
             /// announced to the shared coordinator — everything else stays local (each replica announces its
             /// own ranges and the coordinator reconciles them). That mode is a pure function of
-            /// `query_info.input_order_info`, which is produced solely by the read-in-order optimizations.
-            /// So keep the outer `optimization_settings` (it carries the contracts this local
-            /// plan must be optimized under — deferred set building, reused index/PK analysis, etc.) and
-            /// override only the settings that feed `input_order_info` with the subquery's values.
+            /// `query_info.input_order_info`, which is set only by `ReadFromMergeTree::requestReadingInOrder`.
+            /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
+            /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
+            /// subquery's values, exactly the settings that gate an optimization which can call
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
+            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
+            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
+            /// must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
                 const QueryPlanOptimizationSettings subquery_optimization_settings(local_context);
                 local_optimization_settings.read_in_order = subquery_optimization_settings.read_in_order;
-                local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
+                local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
+                local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.reuse_storage_ordering_for_window_functions
+                    = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
