@@ -812,6 +812,7 @@ void PrettyBlockOutputFormat::onRowsReadBeforeUpdate()
     total_rows = getRowsReadBefore();
 }
 
+void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatPretty(FormatFactory & factory)
 {
     /// Various combinations are available under their own names, e.g. PrettyCompactNoEscapesMonoBlock.

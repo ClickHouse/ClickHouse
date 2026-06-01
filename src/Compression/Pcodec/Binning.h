@@ -170,11 +170,11 @@ public:
         }
 
         L tentative = histChoosePivot(data, len);
-        L pivot;
-        L lhs_ub;
-        bool lhs_ub_tight;
-        L rhs_lb;
-        bool rhs_lb_tight;
+        L pivot = 0;
+        L lhs_ub = 0;
+        bool lhs_ub_tight = false;
+        L rhs_lb = 0;
+        bool rhs_lb_tight = false;
         if (tentative > lb)
         {
             pivot = tentative;

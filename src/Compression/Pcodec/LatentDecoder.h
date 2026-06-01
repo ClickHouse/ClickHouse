@@ -385,7 +385,7 @@ private:
         for (size_t i = 0; i < paired; ++i)
         {
             size_t pos = start_pos + i;
-            size_t lb;
+            size_t lb = 0;
             if (lookbacks[i] <= static_cast<uint32_t>(window_n))
                 lb = lookbacks[i];
             else

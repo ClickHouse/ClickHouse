@@ -72,6 +72,8 @@ inline size_t encodeStandaloneMaxSize(size_t n)
 /// least `encodeStandaloneMaxSize<T>(n)` bytes). The buffer need NOT be zero-initialized. Returns
 /// the number of bytes written.
 template <typename T>
+/// `out` is an output buffer written through BitWriter; const would break the BitWriter ctor.
+/// NOLINTNEXTLINE(readability-non-const-parameter)
 size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, size_t compression_level = DEFAULT_COMPRESSION_LEVEL)
 {
     using L = typename NumberTraits<T>::Latent;

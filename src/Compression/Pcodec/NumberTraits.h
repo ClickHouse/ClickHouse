@@ -96,8 +96,8 @@ struct FloatTraitsBase
     static T intFloatFromLatent(U l)
     {
         U mid = latentMid<U>;
-        bool negative;
-        U abs_int;
+        bool negative = false;
+        U abs_int = 0;
         if (l >= mid)
         {
             negative = false;

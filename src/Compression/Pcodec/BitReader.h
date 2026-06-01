@@ -24,7 +24,7 @@ namespace DB::Pcodec
 /// Read 8 bytes at `p` as a little-endian u64 (unaligned-safe).
 inline uint64_t loadU64LE(const uint8_t * p)
 {
-    uint64_t v;
+    uint64_t v = 0;
     std::memcpy(&v, p, sizeof(v));
     if constexpr (std::endian::native == std::endian::big)
         v = std::byteswap(v);
@@ -34,7 +34,7 @@ inline uint64_t loadU64LE(const uint8_t * p)
 /// Read 4 bytes at `p` as a little-endian u32 (unaligned-safe).
 inline uint32_t loadU32LE(const uint8_t * p)
 {
-    uint32_t v;
+    uint32_t v = 0;
     std::memcpy(&v, p, sizeof(v));
     if constexpr (std::endian::native == std::endian::big)
         v = std::byteswap(v);

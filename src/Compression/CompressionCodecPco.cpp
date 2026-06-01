@@ -4,6 +4,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Compression/Pcodec/Constants.h>
 #include <Compression/Pcodec/PcodecError.h>
 #include <Compression/Pcodec/StandaloneDecoder.h>
@@ -196,7 +197,7 @@ UInt32 CompressionCodecPco::doCompressData(const char * source, UInt32 source_si
     memcpy(&dest[2], source, bytes_to_skip);
 
     size_t n = (source_size - bytes_to_skip) / data_bytes_size;
-    size_t encoded_size;
+    size_t encoded_size = 0;
     try
     {
         encoded_size = pcoEncodeInto(
@@ -237,7 +238,7 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     memcpy(padded.data(), &source[2 + bytes_to_skip], comp_len);
 
     size_t expected = uncompressed_size - bytes_to_skip;
-    size_t written;
+    size_t written = 0;
     try
     {
         /// The decoder writes through a typed pointer, so the output must be aligned to the element
