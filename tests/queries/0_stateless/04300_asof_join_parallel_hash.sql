@@ -8,6 +8,11 @@
 -- than HashJoin, which changes the bit-level result of sum() over floats —
 -- semantically identical, but EXCEPT would treat the rows as different).
 
+-- Force more than one ConcurrentHashJoin shard. With max_threads = 1 the number
+-- of shards is 1, dispatchBlock returns the whole block without ever calling
+-- selectDispatchBlock, and the ASOF prefix-slicing fix would not be exercised.
+SET max_threads = 4;
+
 DROP TABLE IF EXISTS asof_left;
 DROP TABLE IF EXISTS asof_right;
 
