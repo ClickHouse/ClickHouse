@@ -130,7 +130,10 @@ public:
         if (filtered_types.size() == 1)
             return filtered_types[0];
 
-        return use_variant_as_common_type
+        /// Preserve the legacy behavior: expand to a Variant whenever any surviving argument
+        /// is already a Variant, even if `use_variant_as_common_type` is off.
+        const bool has_variant = std::any_of(filtered_types.begin(), filtered_types.end(), [](const auto & t) { return isVariant(t); });
+        return (use_variant_as_common_type || has_variant)
             ? getLeastSupertypeOrVariant(filtered_types)
             : getLeastSupertype(filtered_types);
     }
