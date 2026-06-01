@@ -1136,6 +1136,7 @@ class JobConfigs:
                 "./ci/jobs/buzzhouse_job.py",
                 "./ci/jobs/lacasadeldolor_job.py",
                 "./ci/jobs/scripts/cidb_cluster.py",
+                "./ci/jobs/scripts/docker_in_docker.sh",
                 "./ci/jobs/scripts/integration_tests_configs.py",
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/fuzzer/",

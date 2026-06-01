@@ -2,6 +2,7 @@ from abc import abstractmethod
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
+import os
 import random
 import string
 import typing
