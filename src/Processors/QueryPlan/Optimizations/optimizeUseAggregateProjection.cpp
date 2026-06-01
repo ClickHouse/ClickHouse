@@ -1,3 +1,4 @@
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -115,7 +116,7 @@ using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
-std::optional<AggregateFunctionMatches> matchAggregateFunctions(
+static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     const AggregateProjectionInfo & info,
     const AggregateDescriptions & aggregates,
     const MatchedTrees::Matches & matches,
@@ -253,7 +254,7 @@ static void appendAggregateFunctions(
     }
 }
 
-std::optional<ActionsDAG> analyzeAggregateProjection(
+static std::optional<ActionsDAG> analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
     const DAGIndex & query_index,
@@ -344,7 +345,7 @@ struct AggregateProjectionCandidates
     String only_count_column;
 };
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(
+static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
     AggregatingStep & aggregating,
     ReadFromMergeTree & reading,
@@ -453,7 +454,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     return candidates;
 }
 
-AggregateProjectionCandidates getAggregateProjectionCandidates(
+static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading, size_t max_set_size_for_match)
 {
     const auto metadata = reading.getStorageMetadata();
@@ -802,7 +803,7 @@ std::optional<String> optimizeUseAggregateProjections(
     }
 
     QueryPlanStepPtr projection_reading;
-    bool has_parent_parts;
+    bool has_parent_parts = false;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;

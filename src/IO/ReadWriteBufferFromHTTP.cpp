@@ -799,7 +799,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("Last-Modified"))
     {
         String date_str = response.get("Last-Modified");
-        struct tm info;
+        struct tm info{};
         char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
         if (end == date_str.data() + date_str.size())
             res.last_modified = timegm(&info);
