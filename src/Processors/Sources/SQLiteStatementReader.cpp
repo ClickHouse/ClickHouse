@@ -71,6 +71,18 @@ SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInf
     return info;
 }
 
+static std::optional<ExternalResultDescription::ValueType> getNativeFloatValueType(const ColumnWithTypeAndName & column)
+{
+    WhichDataType which(removeNullable(column.type));
+
+    if (which.isFloat32())
+        return ExternalResultDescription::ValueType::vtFloat32;
+    if (which.isFloat64())
+        return ExternalResultDescription::ValueType::vtFloat64;
+
+    return std::nullopt;
+}
+
 SQLiteStatementReader::SQLiteStatementReader(
     const Block & sample_block_,
     const FormatSettings & format_settings_,
@@ -99,7 +111,13 @@ SQLiteStatementReader::SQLiteStatementReader(
     columns_info.reserve(sample_block.columns());
 
     for (const auto & column : sample_block)
-        columns_info.push_back(createColumnReadInfoForText(column));
+    {
+        auto native_float_value_type = getNativeFloatValueType(column);
+        if (native_float_value_type)
+            columns_info.push_back(createColumnReadInfoForNative(column, *native_float_value_type, canContainNull(*column.type)));
+        else
+            columns_info.push_back(createColumnReadInfoForText(column));
+    }
 }
 
 Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished)

@@ -41,7 +41,7 @@ When ClickHouse writes data in the `SQLite` format, it creates a SQLite table wi
 | Floating-point types | `REAL` |
 | Other types | `TEXT` |
 
-Values are written using ClickHouse text serialization. `NULL` values are written as SQLite `NULL`.
+For `Float32` and `Float64` columns, non-`NaN` values are written using SQLite native storage classes, while `NaN` values are written using ClickHouse text serialization. `Bool` and ordinary integer values are also written using SQLite native storage classes. Wide integers and complex types are written using ClickHouse text serialization. `NULL` values are written as SQLite `NULL`.
 
 When ClickHouse infers a schema from SQLite input, it uses the same mapping as the [SQLite database engine](../../engines/database-engines/sqlite.md#data_types-support):
 
@@ -55,7 +55,7 @@ If a column is nullable in SQLite, ClickHouse wraps the inferred type in `Nullab
 
 Schema inference does not preserve the original ClickHouse data types. For example, `Bool` is written as SQLite `INTEGER` and inferred as `Int64`, while `Date`, `DateTime`, `Decimal`, `UUID`, `IPv4`, `IPv6`, `Enum`, `Array`, `Tuple`, and `Map` are written as SQLite `TEXT` and inferred as `String`.
 
-When the ClickHouse table structure is specified explicitly, SQLite values are read as text and parsed into the requested ClickHouse types.
+When the ClickHouse table structure is specified explicitly, floating-point values are read as SQLite `REAL` values, with a text fallback for `NaN`. Other SQLite values are read as text and parsed into the requested ClickHouse types.
 
 ## Format settings {#format-settings}
 
