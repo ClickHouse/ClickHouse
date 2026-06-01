@@ -4726,7 +4726,9 @@ This setting is useful for ensuring that materialized views do not contain dupli
 - [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
-Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
+If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.
+
+This setting controls only error reporting. It does not roll back a write to the source table, and it does not guarantee whether the original block has already been committed to the source table when an error occurs in a dependent view's pipeline. When disabled (default), the `INSERT` fails on a view error — retry it with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) for exactly-once delivery to the source table and all dependent views. When enabled, the `INSERT` reports success despite partial delivery to failing views and their downstream chains; use this only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables). See the `CREATE VIEW` docs for full semantics.
 )", 0) \
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
@@ -7292,9 +7294,9 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7324,6 +7326,9 @@ Enables delta-kernel writes feature.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
+)", 0) \
+    DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
+Default partition strategy for file like engines.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -8587,9 +8592,7 @@ Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
 {}
 
-Settings::Settings(Settings && settings) noexcept
-    : impl(std::make_unique<SettingsImpl>(std::move(*settings.impl)))
-{}
+Settings::Settings(Settings && settings) noexcept = default;
 
 Settings::~Settings() = default;
 
