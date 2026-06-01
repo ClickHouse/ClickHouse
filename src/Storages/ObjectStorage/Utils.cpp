@@ -607,10 +607,72 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         if (use_base_storage)
             return std::make_pair(base_storage, key_to_use);
 
+        /// Construct the endpoint for this storage, then build the cache key from it.
+        /// A generic `s3://bucket/...` inherits one from the base storage. 
+        const bool endpoint_explicit = (target_decomposed.scheme == "http" || target_decomposed.scheme == "https");
+
+        std::string endpoint_to_use;
+
+        if (endpoint_explicit)
+        {
+            endpoint_to_use = s3_uri.endpoint.empty()
+                ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
+                : s3_uri.endpoint;
+        }
+        else
+        {
+            std::string base_endpoint;
+            if (base_storage->getType() == ObjectStorageType::S3)
+                base_endpoint = base_storage->getDescription();
+
+            if (!base_endpoint.empty())
+            {
+                if (base_endpoint.find(".s3.") != std::string::npos && base_endpoint.find(".amazonaws.com") != std::string::npos)
+                {
+                    /// AWS-style: https://oldbucket.s3.us-east-1.amazonaws.com -> https://newbucket.s3.us-east-1.amazonaws.com
+                    size_t s3_pos = base_endpoint.find(".s3.");
+                    size_t scheme_end = base_endpoint.find("://");
+                    if (scheme_end != std::string::npos)
+                    {
+                        std::string scheme = base_endpoint.substr(0, scheme_end + 3);
+                        std::string suffix = base_endpoint.substr(s3_pos);
+
+                        /// Trim path after endpoint
+                        size_t slash_pos = suffix.find('/', 1);
+                        if (slash_pos != std::string::npos)
+                            suffix = suffix.substr(0, slash_pos);
+                        endpoint_to_use = scheme + s3_uri.bucket + suffix;
+                    }
+                }
+                else
+                {
+                    /// Path-style (e.g. minio): http://host:port/oldbucket -> http://host:port/newbucket
+                    size_t scheme_end = base_endpoint.find("://");
+                    if (scheme_end != std::string::npos)
+                    {
+                        size_t path_start = base_endpoint.find('/', scheme_end + 3);
+                        if (path_start != std::string::npos)
+                            base_endpoint = base_endpoint.substr(0, path_start);
+                    }
+                    if (!base_endpoint.empty() && base_endpoint.back() == '/')
+                        base_endpoint.pop_back();
+                    endpoint_to_use = base_endpoint + "/" + s3_uri.bucket;
+                }
+            }
+
+            /// Fallback: base storage is not S3
+            if (endpoint_to_use.empty())
+            {
+                endpoint_to_use = s3_uri.endpoint.empty()
+                    ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
+                    : s3_uri.endpoint;
+            }
+        }
+
         /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
         /// so different per-query values of `s3_propagate_credentials_to_other_storages` must not share an entry.
         const bool propagate_creds = context->getSettingsRef()[Setting::s3_propagate_credentials_to_other_storages];
-        const std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + (s3_uri.endpoint.empty() ? "amazonaws.com" : s3_uri.endpoint)
+        const std::string storage_cache_key = "s3://" + s3_uri.bucket + "@" + endpoint_to_use
             + "#propagate=" + (propagate_creds ? "1" : "0");
 
         return getOrCreateStorageAndKey(
@@ -621,66 +683,6 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             context,
             [&](Poco::Util::MapConfiguration & cfg, const std::string & config_prefix)
             {
-                bool endpoint_explicit = (target_decomposed.scheme == "http" || target_decomposed.scheme == "https");
-
-                std::string endpoint_to_use;
-
-                if (endpoint_explicit)
-                {
-                    endpoint_to_use = s3_uri.endpoint.empty()
-                        ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
-                        : s3_uri.endpoint;
-                }
-                else
-                {
-                    std::string base_endpoint;
-                    if (base_storage->getType() == ObjectStorageType::S3)
-                            base_endpoint = base_storage->getDescription();
-
-                    if (!base_endpoint.empty())
-                    {
-                        if (base_endpoint.find(".s3.") != std::string::npos && base_endpoint.find(".amazonaws.com") != std::string::npos)
-                        {
-                            /// AWS-style: https://oldbucket.s3.us-east-1.amazonaws.com -> https://newbucket.s3.us-east-1.amazonaws.com
-                            size_t s3_pos = base_endpoint.find(".s3.");
-                            size_t scheme_end = base_endpoint.find("://");
-                            if (scheme_end != std::string::npos)
-                            {
-                                std::string scheme = base_endpoint.substr(0, scheme_end + 3);
-                                std::string suffix = base_endpoint.substr(s3_pos);
-
-                                /// Trim path after endpoint
-                                size_t slash_pos = suffix.find('/', 1);
-                                if (slash_pos != std::string::npos)
-                                    suffix = suffix.substr(0, slash_pos);
-                                endpoint_to_use = scheme + s3_uri.bucket + suffix;
-                            }
-                        }
-                        else
-                        {
-                            /// Path-style (e.g. minio): http://host:port/oldbucket -> http://host:port/newbucket
-                            size_t scheme_end = base_endpoint.find("://");
-                            if (scheme_end != std::string::npos)
-                            {
-                                size_t path_start = base_endpoint.find('/', scheme_end + 3);
-                                if (path_start != std::string::npos)
-                                    base_endpoint = base_endpoint.substr(0, path_start);
-                            }
-                            if (!base_endpoint.empty() && base_endpoint.back() == '/')
-                                base_endpoint.pop_back();
-                            endpoint_to_use = base_endpoint + "/" + s3_uri.bucket;
-                        }
-                    }
-
-                    /// Fallback: base storage is not S3
-                    if (endpoint_to_use.empty())
-                    {
-                        endpoint_to_use = s3_uri.endpoint.empty()
-                            ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
-                            : s3_uri.endpoint;
-                    }
-                }
-
                 cfg.setString(config_prefix + ".endpoint", endpoint_to_use);
 
                 /// Copy credentials from base storage when the endpoint is the same or
