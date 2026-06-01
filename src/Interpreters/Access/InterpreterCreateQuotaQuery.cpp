@@ -193,6 +193,7 @@ void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTC
     updateQuotaFromQueryImpl(quota, query, {}, {});
 }
 
+void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
