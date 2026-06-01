@@ -299,7 +299,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
             "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
     };
     factory.registerSource("jdbc", create_table_source, Documentation{
-        .description = "Reads dictionary data from an external database over JDBC, via the `clickhouse-jdbc-bridge` program.",
+        .description = "Reads dictionary data from an external database over JDBC, via the `clickhouse-jdbc-bridge` program. Currently disabled, pending consistent support for nullable fields.",
         .syntax = "SOURCE(JDBC(datasource '...' table 'table'))",
         .related = {"odbc"}});
 }
