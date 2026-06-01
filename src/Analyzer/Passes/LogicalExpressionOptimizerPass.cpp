@@ -1865,6 +1865,13 @@ private:
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
 
+            /// Skip comparisons whose operands contain a non-deterministic function: transitive
+            /// inference would treat independent evaluations (e.g. two `rand()` calls) as the same
+            /// value and could infer false facts (e.g. from `rand() % 2 = number % 2 AND rand() % 2 = 1`
+            /// it would derive `number % 2 = 1`), which the conflict detector then folds away.
+            if (hasNonDeterministicFunction(lhs) || hasNonDeterministicFunction(rhs))
+                continue;
+
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())

@@ -506,4 +506,12 @@ SELECT 'non_deterministic';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 < 1 AND rand() % 2 >= 1 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 < 1 AND rand() % 2 >= 1 SETTINGS optimize_redundant_comparisons = 1;
 
+-- Transitive inference must not cross non-deterministic expressions: from
+-- `rand() % 2 = number % 2 AND rand() % 2 = 1` the chain pass must NOT derive
+-- `number % 2 = 1` (the two rand() calls are independent), which would otherwise
+-- conflict with `number % 2 = 0` and fold the whole AND to false.
+SELECT 'non_deterministic_transitive';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 = number % 2 AND rand() % 2 = 1 AND number % 2 = 0 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 = number % 2 AND rand() % 2 = 1 AND number % 2 = 0 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
+
 DROP TABLE IF EXISTS 04032_t;
