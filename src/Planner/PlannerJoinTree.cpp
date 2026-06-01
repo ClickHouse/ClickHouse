@@ -612,6 +612,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
         settings[Setting::parallel_replicas_count],
         settings[Setting::parallel_replica_offset],
@@ -619,7 +620,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
         {settings[Setting::parallel_replicas_mode],
          settings[Setting::parallel_replicas_custom_key_range_lower],
          settings[Setting::parallel_replicas_custom_key_range_upper]},
-        storage->getInMemoryMetadataPtr(query_context, false)->columns,
+        metadata_snapshot->columns,
         query_context);
 
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
@@ -1274,11 +1275,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             modified_query_info.cluster = std::move(cluster);
                             till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
+                            auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),
                                 modified_query_info,
-                                storage->getInMemoryMetadataPtr(query_context, false)->getColumns(),
+                                metadata_snapshot->getColumns(),
                                 storage_snapshot,
                                 till_stage,
                                 table_expression_query_info.query_tree,
