@@ -4,7 +4,15 @@
 #include <base/defines.h>
 #include "config.h"
 
+#if USE_AVRO
+
+#include <Common/CacheBase.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/logger_useful.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace ProfileEvents
 {
@@ -14,15 +22,6 @@ namespace ProfileEvents
     extern const Event IcebergMetadataFilesCacheSkipped;
     extern const Event IcebergMetadataFilesCacheWeightLost;
 }
-
-#if USE_AVRO
-
-#include <Common/CacheBase.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/logger_useful.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace CurrentMetrics
 {
