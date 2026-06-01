@@ -157,7 +157,14 @@ public:
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
-    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+    virtual void alter(
+        const AlterCommands & /*params*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/)
+    {
+        throwNotImplemented("alter");
+    }
 
     virtual Pipe executeCommand(
         const String & command_name,

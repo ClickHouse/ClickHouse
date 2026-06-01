@@ -145,27 +145,16 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    if (num_deleted_rows == 0)
+    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
+    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
+    summary->set(Iceberg::f_added_records, std::to_string(added_records));
+    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
+    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
+    if (num_deleted_rows != 0)
     {
-        summary->set(Iceberg::f_operation, Iceberg::f_append);
-        summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-        summary->set(Iceberg::f_added_records, std::to_string(added_records));
-        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
-    }
-    else
-    {
-        summary->set(Iceberg::f_operation, Iceberg::f_overwrite);
-        if (added_files > 0 || added_records > 0)
-        {
-            summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-            summary->set(Iceberg::f_added_records, std::to_string(added_records));
-        }
         summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
         summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
         summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
-        summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
     }
 
     auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)

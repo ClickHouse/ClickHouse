@@ -813,7 +813,7 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
-    configuration->alter(object_storage, params, context);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
