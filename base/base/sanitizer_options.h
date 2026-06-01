@@ -11,6 +11,7 @@
 #ifdef SANITIZER
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
 extern "C" {
 #ifdef ADDRESS_SANITIZER
 const char * __asan_default_options()
