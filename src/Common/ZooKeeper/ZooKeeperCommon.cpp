@@ -696,7 +696,7 @@ void ZooKeeperCheckWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
 
-    int32_t type_representation;
+    int32_t type_representation = 0;
     Coordination::read(type_representation, in);
     type = static_cast<CheckWatchType>(type_representation);
 }
@@ -740,7 +740,7 @@ size_t ZooKeeperCheckWatchResponse::sizeImpl() const
 void ZooKeeperRemoveWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t type_representation;
+    int32_t type_representation = 0;
     Coordination::read(type_representation, in);
     type = static_cast<WatchType>(type_representation);
 }
@@ -784,7 +784,7 @@ size_t ZooKeeperRemoveWatchResponse::sizeImpl() const
 void ZooKeeperAddWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t mode_representation;
+    int32_t mode_representation = 0;
     Coordination::read(mode_representation, in);
     mode = static_cast<AddWatchMode>(mode_representation);
 }
@@ -814,7 +814,7 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
 
 void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
-    int32_t err;
+    int32_t err = 0;
     Coordination::read(err, in);
 }
 
@@ -1000,7 +1000,7 @@ std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
 
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
 {
-    Coordination::Error read_error;
+    Coordination::Error read_error = {};
     Coordination::read(read_error, in);
 
     if (read_error != error)
@@ -1155,9 +1155,9 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 {
     while (true)
     {
-        OpNum op_num;
-        bool done;
-        int32_t error;
+        OpNum op_num = {};
+        bool done = false;
+        int32_t error = 0;
         Coordination::read(op_num, in);
         Coordination::read(done, in);
         Coordination::read(error, in);
@@ -1210,9 +1210,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 {
     for (auto & response : responses)
     {
-        OpNum op_num;
-        bool done;
-        Error op_error;
+        OpNum op_num = {};
+        bool done = false;
+        Error op_error = {};
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1246,9 +1246,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
     /// Footer.
     {
-        OpNum op_num;
-        bool done;
-        int32_t error_read;
+        OpNum op_num = {};
+        bool done = false;
+        int32_t error_read = 0;
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1630,8 +1630,8 @@ void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
 {
-    XID xid;
-    OpNum op_num;
+    XID xid = 0;
+    OpNum op_num = {};
 
     Coordination::read(xid, in);
     Coordination::read(op_num, in);

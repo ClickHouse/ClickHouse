@@ -63,10 +63,9 @@ namespace
 {
 }
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
-
 extern const char * auto_time_zones[];
+
+int mainEntryClickHouseFormat(int argc, char ** argv);
 
 int mainEntryClickHouseFormat(int argc, char ** argv)
 {

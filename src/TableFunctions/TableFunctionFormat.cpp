@@ -225,6 +225,7 @@ Result:
 }
 
 
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>(format_table_function_documentation, {false}, TableFunctionFactory::Case::Insensitive);

@@ -114,6 +114,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     return pipeline;
 }
 
+void registerInterpreterWatchQuery(InterpreterFactory & factory);
 void registerInterpreterWatchQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

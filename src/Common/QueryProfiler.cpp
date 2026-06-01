@@ -65,7 +65,10 @@ namespace
 #if defined(OS_LINUX)
         if (info)
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             const int overrun_count = info->si_overrun;
+#pragma clang diagnostic pop
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
@@ -144,11 +147,14 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 #if defined(OS_FREEBSD)
         sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
 #elif defined(USE_MUSL)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);
+#pragma clang diagnostic pop
 #else
         sev._sigev_un._tid = static_cast<pid_t>(thread_id);
 #endif
-        timer_t local_timer_id;
+        timer_t local_timer_id = nullptr;
         if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -247,6 +253,11 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "QueryProfiler cannot be used without PHDR cache in this build");
 #endif
 
+    /// `sigaction` is `#define sigaction __sigaction` on some platforms, and
+    /// `sigemptyset` / `sigaddset` are similarly macro-defined in <signal.h>,
+    /// so all three trigger `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     struct sigaction sa{};
     sa.sa_sigaction = ProfilerImpl::signalHandler;
     sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -256,6 +267,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(
 
     if (sigaddset(&sa.sa_mask, pause_signal))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Failed to add signal to mask for query profiler");
+#pragma clang diagnostic pop
 
     if (sigaction(pause_signal, &sa, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Failed to setup signal handler for query profiler");

@@ -203,6 +203,7 @@ void InterpreterSelectIntersectExceptQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
+void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

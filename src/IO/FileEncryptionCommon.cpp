@@ -412,7 +412,7 @@ void Header::read(ReadBuffer & in)
     if (version < 1 || version > kCurrentVersion)
         throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Version {} of the header is not supported", version);
 
-    UInt16 algorithm_u16;
+    UInt16 algorithm_u16 = 0;
     readPODBinary(algorithm_u16, in);
     if (std::endian::native != endian)
         algorithm_u16 = std::byteswap(algorithm_u16);
@@ -424,8 +424,8 @@ void Header::read(ReadBuffer & in)
 
     if (version < 2)
     {
-        UInt64 key_id;
-        UInt8 small_key_hash;
+        UInt64 key_id = 0;
+        UInt8 small_key_hash = 0;
         readPODBinary(key_id, in);
         readPODBinary(small_key_hash, in);
         bytes_to_skip -= sizeof(key_id) + sizeof(small_key_hash);

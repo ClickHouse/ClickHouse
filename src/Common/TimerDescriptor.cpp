@@ -82,13 +82,13 @@ void TimerDescriptor::drain() const
     /// Avoid it with polling.
     Epoll epoll;
     epoll.add(timer_fd);
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     size_t ready_count = epoll.getManyReady(1, &event, 0);
     if (!ready_count)
         return;
 
-    uint64_t buf;
+    uint64_t buf = 0;
     while (true)
     {
         ssize_t res = ::read(timer_fd, &buf, sizeof(buf));
@@ -143,7 +143,7 @@ void TimerDescriptor::setRelative(uint64_t usec) const
 
     static constexpr uint32_t TIMER_PRECISION = 1e6;
 
-    itimerspec spec;
+    itimerspec spec{};
     spec.it_interval.tv_nsec = 0;
     spec.it_interval.tv_sec = 0;
     spec.it_value.tv_sec = usec / TIMER_PRECISION;

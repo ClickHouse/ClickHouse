@@ -33,7 +33,7 @@ namespace
 
 bool isLargerThanFifty(std::string_view str)
 {
-    int number;
+    int number = 0;
     auto [_, ec] = std::from_chars(str.data(), str.data() + str.size(), number);
     if (ec != std::errc())
         return false;

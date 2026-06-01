@@ -416,7 +416,7 @@ struct GroupArrayNodeBase
     /// Reads and allocates node from ReadBuffer's data (doesn't set next)
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         checkElementSize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
@@ -603,7 +603,7 @@ public:
 
     void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        UInt64 new_elems;
+        UInt64 new_elems = 0;
         if (limit_num_elems)
         {
             if (cur_elems.value.size() >= max_elems)
@@ -678,7 +678,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt64 elems;
+        UInt64 elems = 0;
         readVarUInt(elems, buf);
         checkArraySize(elems, max_elems);
 
@@ -843,6 +843,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

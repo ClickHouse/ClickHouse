@@ -261,8 +261,8 @@ void PostgreSQLHandler::run()
 
 bool PostgreSQLHandler::startup()
 {
-    Int32 payload_size;
-    Int32 info;
+    Int32 payload_size = 0;
+    Int32 info = 0;
     establishSecureConnection(payload_size, info);
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)

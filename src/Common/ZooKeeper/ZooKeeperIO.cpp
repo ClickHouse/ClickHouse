@@ -70,7 +70,7 @@ size_t size(const Error & x)
 
 void read(OpNum & x, ReadBuffer & in)
 {
-    int32_t raw_op_num;
+    int32_t raw_op_num = 0;
     read(raw_op_num, in);
     x = getOpNum(raw_op_num);
 }
@@ -124,7 +124,7 @@ void read(Stat & stat, ReadBuffer & in)
 
 void read(Error & x, ReadBuffer & in)
 {
-    int32_t code;
+    int32_t code = 0;
     read(code, in);
     x = Coordination::Error(code);
 }

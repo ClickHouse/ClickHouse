@@ -25,8 +25,8 @@ namespace
 struct Literal
 {
     std::string literal;
-    bool prefix; /// this literal string is the prefix of the whole string.
-    bool suffix; /// this literal string is the suffix of the whole string.
+    bool prefix{}; /// this literal string is the prefix of the whole string.
+    bool suffix{}; /// this literal string is the suffix of the whole string.
     void clear()
     {
         literal.clear();
@@ -295,7 +295,7 @@ const char * analyzeImpl(
                     }
                     Literal group_required_substr;
                     bool group_is_trival = true;
-                    bool group_has_capture;
+                    bool group_has_capture = false;
                     Literals group_alters;
                     pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_has_capture, group_alters);
                     /// pos should be ')', if not, then it is not a valid regular expression
@@ -438,7 +438,7 @@ finish:
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         Literals next_alternatives;
         bool next_is_trivial = true;
-        bool next_has_capture;
+        bool next_has_capture = false;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_has_capture, next_alternatives);
 
         /// has_capture is true when all alternatives have captures
@@ -622,7 +622,7 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
         if (required_substring.empty())
             return true;
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -638,7 +638,7 @@ bool OptimizedRegularExpression::match(const char * subject, size_t subject_size
 
     if (!required_substring.empty())
     {
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -679,7 +679,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
             return 1;
         }
 
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -697,7 +697,7 @@ unsigned OptimizedRegularExpression::match(const char * subject, size_t subject_
 
     if (!required_substring.empty())
     {
-        const UInt8 * pos;
+        const UInt8 * pos = nullptr;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
         else

@@ -104,13 +104,13 @@ void LimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length;
-    UInt64 group_offset;
+    UInt64 group_length = 0;
+    UInt64 group_offset = 0;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns;
+    UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -124,6 +124,7 @@ void LimitByStep::applyOrder(SortDescription sort_description)
     in_order = sort_description.hasPrefix(columns);
 }
 
+void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("LimitBy", LimitByStep::deserialize);

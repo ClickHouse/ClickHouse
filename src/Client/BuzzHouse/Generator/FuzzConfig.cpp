@@ -238,7 +238,7 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
 
         for (auto word : std::views::split(String(value.getString()), delim))
         {
-            uint32_t result;
+            uint32_t result = {};
             const std::string_view sv(word.begin(), word.end());
             const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
@@ -1336,7 +1336,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             {
                 if (val.minimum < server.metrics.at(key)
                     && server.metrics.at(key) > static_cast<uint64_t>(
-                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,

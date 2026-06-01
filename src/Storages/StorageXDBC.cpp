@@ -264,11 +264,13 @@ namespace
     }
 }
 
+void registerStorageJDBC(StorageFactory & factory);
 void registerStorageJDBC(StorageFactory & factory)
 {
     registerXDBCStorage<JDBCBridgeMixin>(factory, "JDBC");
 }
 
+void registerStorageODBC(StorageFactory & factory);
 void registerStorageODBC(StorageFactory & factory)
 {
     registerXDBCStorage<ODBCBridgeMixin>(factory, "ODBC");

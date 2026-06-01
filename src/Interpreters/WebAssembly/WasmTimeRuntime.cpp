@@ -83,7 +83,7 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+static wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
 {
     #define M(T) \
         if (value == WasmValKind::T) \
@@ -94,7 +94,7 @@ wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+static WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
     #define M(T) \
         if (wasmtime::ValKind::T == val_type) \
@@ -105,7 +105,7 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
+static WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
     #define M(T) \
     { \
@@ -121,7 +121,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::Val toWasmTimeValue(WasmVal val)
+static wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -136,7 +136,7 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
+static wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
     auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
@@ -202,7 +202,7 @@ struct WasmTimeStoreData
     std::shared_ptr<std::atomic_bool> stop_requested;
 };
 
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
+static wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
     wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
 {
     epoch_deadline_delta += 1;
@@ -386,7 +386,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
+static WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);

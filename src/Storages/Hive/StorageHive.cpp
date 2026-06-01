@@ -1057,6 +1057,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const ActionsDAG * filter_
     return total_rows;
 }
 
+void registerStorageHive(StorageFactory & factory);
 void registerStorageHive(StorageFactory & factory)
 {
     factory.registerStorage(

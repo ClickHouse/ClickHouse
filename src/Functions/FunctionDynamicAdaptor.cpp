@@ -514,7 +514,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
 FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
-    size_t result_max_dynamic_type;
+    size_t result_max_dynamic_type = 0;
     bool first = true;
     for (size_t i = 0; i != arguments.size(); ++i)
     {

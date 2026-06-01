@@ -178,6 +178,7 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
 
 }
 
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

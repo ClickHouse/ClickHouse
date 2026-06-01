@@ -81,10 +81,10 @@ public:
             chassert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        size_t begin;
-        size_t length;
+        size_t begin{};
+        size_t length{};
 
-        size_t current;
+        size_t current{};
         Chunk chunk;
     };
 

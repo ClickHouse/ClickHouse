@@ -29,11 +29,11 @@ using Pos = const char *;
 class SplitByNonAlphaImpl
 {
 private:
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     /// Get the name of the function.

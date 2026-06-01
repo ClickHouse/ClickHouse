@@ -145,7 +145,7 @@ protected:
         Poco::Timestamp fail_time = 0;
         size_t consecutive_fail_count = 0;
 
-        size_t weight_prefix_sum;
+        size_t weight_prefix_sum{};
 
         bool operator <(const Record & r) const
         {

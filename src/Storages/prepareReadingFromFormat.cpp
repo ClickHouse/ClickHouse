@@ -383,7 +383,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     result.hive_partition_columns_to_read_from_file_path.readTextWithNamesInStorage(ctx.in);
-    bool has_prewhere_info;
+    bool has_prewhere_info = false;
     readBinary(has_prewhere_info, ctx.in);
     if (has_prewhere_info)
         result.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));

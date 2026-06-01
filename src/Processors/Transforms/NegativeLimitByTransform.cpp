@@ -188,7 +188,7 @@ void NegativeLimitByTransform::consumeImpl(
     for (UInt64 row = 0; row < num_rows; ++row)
     {
         auto emplace_result = state.emplaceKey(method.data, row, *data.aggregates_pool);
-        size_t group_idx;
+        size_t group_idx = 0;
         if (emplace_result.isInserted()) /// New grouping key
         {
             group_idx = group_windows.size();

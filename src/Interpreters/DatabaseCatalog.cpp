@@ -1310,7 +1310,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     chassert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
     /// Table was removed from database. Enqueue removal of its data from disk.
-    time_t drop_time;
+    time_t drop_time = 0;
     if (table)
     {
         chassert(hasUUIDMapping(table_id.uuid));

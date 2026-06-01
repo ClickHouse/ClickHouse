@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
+void tracingCallback(struct ffi::Event event);
 void tracingCallback(struct ffi::Event event)
 {
     /// Do not pollute logs with very long messages

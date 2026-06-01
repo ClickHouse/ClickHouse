@@ -184,7 +184,7 @@ public:
 
     struct RangesState
     {
-        RangesPos pos;
+        RangesPos pos{};
         mutable std::mutex mutex;
     };
 

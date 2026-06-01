@@ -139,7 +139,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result;
+        std::array<TypeIndex, result_size> result{};
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)

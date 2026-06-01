@@ -813,7 +813,7 @@ namespace
             return true;
 
         ReadBufferFromString buf(field);
-        Float64 tmp_float;
+        Float64 tmp_float = 0;
         /// Check if it's a float value, and if so, don't try to infer DateTime from it,
         /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
         if (tryReadFloatText(tmp_float, buf) && buf.eof())
@@ -863,7 +863,7 @@ namespace
 
         if (!settings.try_infer_datetimes_only_datetime64)
         {
-            time_t tmp;
+            time_t tmp = 0;
             if (tryInferDateTime(field, tmp, settings))
                 return std::make_shared<DataTypeDateTime>();
         }
@@ -1022,8 +1022,8 @@ namespace
         if (buf.eof())
             return nullptr;
 
-        Float64 tmp_float;
-        bool has_fractional;
+        Float64 tmp_float = 0;
+        bool has_fractional = false;
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
@@ -1038,7 +1038,7 @@ namespace
                 if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
                     return std::make_shared<DataTypeFloat64>();
 
-                Int64 tmp_int;
+                Int64 tmp_int = 0;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_int, buf))
                 {
@@ -1049,7 +1049,7 @@ namespace
                 }
 
                 /// In case of Int64 overflow we can try to infer UInt64.
-                UInt64 tmp_uint;
+                UInt64 tmp_uint = 0;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_uint, buf))
                     return std::make_shared<DataTypeUInt64>();
@@ -1067,7 +1067,7 @@ namespace
                 return std::make_shared<DataTypeFloat64>();
             peekable_buf.rollbackToCheckpoint(/* drop= */ false);
 
-            Int64 tmp_int;
+            Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, peekable_buf))
             {
                 auto type = std::make_shared<DataTypeInt64>();
@@ -1078,7 +1078,7 @@ namespace
             peekable_buf.rollbackToCheckpoint(/* drop= */ true);
 
             /// In case of Int64 overflow we can try to infer UInt64.
-            UInt64 tmp_uint;
+            UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, peekable_buf))
                 return std::make_shared<DataTypeUInt64>();
         }
@@ -1098,7 +1098,7 @@ namespace
 
         if (settings.try_infer_integers)
         {
-            Int64 tmp_int;
+            Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
@@ -1111,7 +1111,7 @@ namespace
             buf.position() = buf.buffer().begin();
 
             /// In case of Int64 overflow, try to infer UInt64
-            UInt64 tmp_uint;
+            UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, buf) && buf.eof())
                 return std::make_shared<DataTypeUInt64>();
         }
@@ -1119,8 +1119,8 @@ namespace
         /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
         buf.position() = buf.buffer().begin();
 
-        Float64 tmp;
-        bool has_fractional;
+        Float64 tmp = 0;
+        bool has_fractional = false;
         if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
             return std::make_shared<DataTypeFloat64>();
 
@@ -1448,7 +1448,7 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
     transformInferredJSONTypesIfNeeded(first, second, settings, &json_info);
 }
 
-void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
+static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
     if (!data_type)
         return;

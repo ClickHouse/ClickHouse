@@ -145,7 +145,7 @@ private:
     std::unordered_map<String, XRayHandlerFunction> handler_name_to_function;
 
     mutable SharedMutex shared_mutex;
-    UInt64 instrumented_point_ids TSA_GUARDED_BY(shared_mutex);
+    UInt64 instrumented_point_ids TSA_GUARDED_BY(shared_mutex) = 0;
     InstrumentedPointContainer instrumented_points TSA_GUARDED_BY(shared_mutex);
 };
 

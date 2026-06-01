@@ -141,6 +141,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

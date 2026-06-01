@@ -84,7 +84,7 @@ struct EnabledQuota::Impl
             /// Ensure the interval is current (may reset counters).
             interval.getEndOfInterval(current_time);
 
-            QuotaValue current_count;
+            QuotaValue current_count = 0;
             {
                 std::lock_guard lock(interval.per_hash_mutex);
                 current_count = ++interval.per_hash_used[normalized_query_hash];
@@ -211,7 +211,7 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
 /// `counters_were_reset`.
 std::chrono::system_clock::time_point EnabledQuota::Interval::getEndOfInterval(std::chrono::system_clock::time_point current_time) const
 {
-    bool counters_were_reset;
+    bool counters_were_reset = false;
     return getEndOfInterval(current_time, counters_were_reset);
 }
 

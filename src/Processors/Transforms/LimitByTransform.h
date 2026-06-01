@@ -34,7 +34,7 @@ private:
     const UInt64 group_offset;
     const bool in_order;
 
-    UInt128 current_key;
+    UInt128 current_key{};
     UInt64 current_key_count = 0;
     bool first_row = true;
 

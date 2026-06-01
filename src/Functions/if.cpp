@@ -1,3 +1,4 @@
+#include <Functions/if.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>

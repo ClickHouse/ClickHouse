@@ -135,7 +135,7 @@ size_t deserializeOffsets(
         ++total_rows;
     }
 
-    size_t group_size;
+    size_t group_size = 0;
     while (!istr.eof())
     {
         readVarUInt(group_size, istr);

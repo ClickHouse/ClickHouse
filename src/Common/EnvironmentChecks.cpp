@@ -134,7 +134,12 @@ void checkRequiredInstructions()
 {
     struct sigaction sa{};
     struct sigaction sa_old{};
+    /// `sa_sigaction` is a macro defined as `__sigaction_handler.sa_sigaction` in glibc's `bits/sigaction.h`,
+    /// so the assignment expands the macro within a value that uses the same identifier.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     sa.sa_sigaction = sigIllCheckHandler;
+#pragma clang diagnostic pop
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
     if (sigemptyset(&sa.sa_mask) != 0

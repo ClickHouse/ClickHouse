@@ -806,7 +806,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     return {};
 }
 
-QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
+static QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
                                                   const QueryTreeNodePtr & right_resolved_identifier)
 {
     if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
@@ -921,7 +921,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
 }
 
 /// Compare resolved identifiers considering columns that become nullable after JOIN
-bool resolvedIdenfiersFromJoinAreEquals(
+static bool resolvedIdenfiersFromJoinAreEquals(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
     const IdentifierResolveScope & scope)
@@ -951,6 +951,8 @@ bool resolvedIdenfiersFromJoinAreEquals(
  * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
  * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
  */
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope);
+
 QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
 {
     const auto & using_expression = using_column_node.getExpression();

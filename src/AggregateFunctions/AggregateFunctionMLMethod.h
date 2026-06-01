@@ -301,13 +301,13 @@ private:
     VectorWithMemoryTracking<Float64> weights;
     Float64 bias{0.0};
 
-    Float64 learning_rate;
-    Float64 l2_reg_coef;
-    UInt64 batch_capacity;
+    Float64 learning_rate{};
+    Float64 l2_reg_coef{};
+    UInt64 batch_capacity{};
 
     UInt64 iter_num = 0;
     VectorWithMemoryTracking<Float64> gradient_batch;
-    UInt64 batch_size;
+    UInt64 batch_size{};
 
     std::shared_ptr<IGradientComputer> gradient_computer;
     std::shared_ptr<IWeightsUpdater> weights_updater;

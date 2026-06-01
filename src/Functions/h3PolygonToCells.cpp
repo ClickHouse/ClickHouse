@@ -231,8 +231,8 @@ private:
         VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
 
         // Temporary storage for C-style structs
-        mutable GeoLoop mutableMainLoop;
-        mutable GeoPolygon mutablePolygon;
+        mutable GeoLoop mutableMainLoop{};
+        mutable GeoPolygon mutablePolygon{};
         mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
 
     public:

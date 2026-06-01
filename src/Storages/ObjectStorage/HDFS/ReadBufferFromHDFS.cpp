@@ -95,7 +95,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
-        size_t num_bytes_to_read;
+        size_t num_bytes_to_read = 0;
         if (read_until_position)
         {
             if (read_until_position == file_offset)

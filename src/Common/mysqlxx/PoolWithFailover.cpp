@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
 
 using namespace mysqlxx;
 
-auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
+static auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
 {
     return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
     {

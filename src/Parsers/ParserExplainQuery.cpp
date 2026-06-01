@@ -14,7 +14,7 @@ namespace DB
 
 bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTExplainQuery::ExplainKind kind;
+    ASTExplainQuery::ExplainKind kind = {};
 
     ParserKeyword s_ast(Keyword::AST);
     ParserKeyword s_explain(Keyword::EXPLAIN);

@@ -66,7 +66,7 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
@@ -80,7 +80,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
-    time_t start_of_day;
+    time_t start_of_day = 0;
 
     /// Note: it's validated against all timezones in the system.
     static_assert((epoch - lut_start) == daynum_offset_epoch);

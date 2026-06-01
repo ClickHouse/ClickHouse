@@ -91,7 +91,7 @@ TEST(MD5Helpers, PadFinalBlocks)
         EXPECT_EQ(buf[0], 0x80);
         for (int i = 1; i < 56; ++i)
             EXPECT_EQ(buf[i], 0) << "byte " << i;
-        uint64_t stored_len;
+        uint64_t stored_len = 0;
         std::memcpy(&stored_len, buf + 56, 8);
         EXPECT_EQ(stored_len, 0u);
     }

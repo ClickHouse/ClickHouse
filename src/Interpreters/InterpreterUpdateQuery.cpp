@@ -125,6 +125,7 @@ BlockIO InterpreterUpdateQuery::execute()
     return res;
 }
 
+void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

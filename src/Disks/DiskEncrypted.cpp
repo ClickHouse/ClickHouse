@@ -513,6 +513,7 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

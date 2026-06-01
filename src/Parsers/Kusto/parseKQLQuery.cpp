@@ -34,7 +34,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl;
+    const char * nl = nullptr;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;

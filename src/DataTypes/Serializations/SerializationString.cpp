@@ -62,7 +62,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
 
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -101,7 +101,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
     ColumnString::Chars & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
         throw Exception(
@@ -167,7 +167,7 @@ try
         if (istr.eof())
             break;
 
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, istr);
 
         static constexpr size_t max_string_size = 16_GiB;   /// Arbitrary value to prevent logical errors and overflows, but large enough.
@@ -225,7 +225,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     /// Skip certain number of values if requested
     for (size_t i = 0; i < rows_offset; ++i)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, istr);
         istr.ignore(size);
     }
@@ -518,7 +518,7 @@ void SerializationString::deserializeTextJSON(IColumn & column, ReadBuffer & ist
     {
         String field;
         readJSONField(field, istr, settings.json);
-        Float64 tmp;
+        Float64 tmp = 0;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
             read<void>(column, [&](ColumnString::Chars & data) { data.insert(field.begin(), field.end()); });
@@ -563,7 +563,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
         if (!tryReadJSONField(field, istr, settings.json))
             return false;
 
-        Float64 tmp;
+        Float64 tmp = 0;
         ReadBufferFromString buf(field);
         if (tryReadFloatText(tmp, buf) && buf.eof())
         {

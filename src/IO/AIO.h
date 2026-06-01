@@ -60,7 +60,7 @@ struct iocb
 
 int io_setup(void);
 
-int io_destroy(void);
+int io_destroy(int ctx);
 
 /// last argument is an array of pointers technically speaking
 int io_submit(int ctx, long nr, struct iocb * iocbpp[]);

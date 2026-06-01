@@ -247,6 +247,7 @@ AggregateFunctionPtr createAggregateFunctionDeltaSumTimestamp(
 }
 }
 
+void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSumTimestamp(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

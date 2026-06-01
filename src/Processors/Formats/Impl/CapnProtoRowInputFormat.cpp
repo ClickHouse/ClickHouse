@@ -30,7 +30,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, SharedHeader 
 
 std::pair<kj::Array<capnp::word>, size_t> CapnProtoRowInputFormat::readMessagePrefix()
 {
-    uint32_t segment_count;
+    uint32_t segment_count = 0;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
     /// Don't allow large amount of segments as it's done in capnproto library:
     /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
@@ -141,6 +141,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
     return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
+void registerInputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -167,6 +168,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         });
 }
 
+void registerCapnProtoSchemaReader(FormatFactory & factory);
 void registerCapnProtoSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("CapnProto", [](const FormatSettings & settings)
@@ -182,6 +184,8 @@ void registerCapnProtoSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatCapnProto(FormatFactory &);
+    void registerCapnProtoSchemaReader(FormatFactory &);
     void registerInputFormatCapnProto(FormatFactory &) {}
     void registerCapnProtoSchemaReader(FormatFactory &) {}
 }

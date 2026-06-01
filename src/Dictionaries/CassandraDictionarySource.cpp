@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void registerDictionarySourceCassandra(DictionarySourceFactory & factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const String & name,

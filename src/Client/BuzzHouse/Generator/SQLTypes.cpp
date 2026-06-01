@@ -1963,7 +1963,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
         {{int_type,
           [&]
           {
-              Integers nint;
+              Integers nint = {};
 
               std::tie(res, nint) = randomIntType(rg, allowed_types);
               if (tp)
@@ -1974,7 +1974,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
          {floating_point_type,
           [&]
           {
-              FloatingPoints nflo;
+              FloatingPoints nflo = {};
 
               std::tie(res, nflo) = randomFloatType(rg, allowed_types);
               if (tp)
@@ -1985,7 +1985,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
          {date_type,
           [&]
           {
-              Dates dd;
+              Dates dd = {};
 
               std::tie(res, dd) = randomDateType(rg, allowed_types);
               if (tp)
@@ -2215,7 +2215,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo;
+              FloatingPoints nflo = {};
               const uint32_t dimension = rg.nextSmallNumber();
 
               std::tie(sub, nflo) = randomFloatType(rg, allowed_types);

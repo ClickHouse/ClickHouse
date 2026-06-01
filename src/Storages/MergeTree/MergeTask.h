@@ -202,7 +202,7 @@ private:
     /// Proper initialization is responsibility of the author
     struct GlobalRuntimeContext : public IStageRuntimeContext
     {
-        TableLockHolder * holder;
+        TableLockHolder * holder{};
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
@@ -283,7 +283,7 @@ private:
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix;
+        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 

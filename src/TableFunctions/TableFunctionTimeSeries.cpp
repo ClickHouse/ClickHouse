@@ -105,6 +105,7 @@ const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() 
 }
 
 
+void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(

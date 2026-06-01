@@ -98,7 +98,7 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
 }
 
 /// Checks if node is a NULL constant
-bool isNullConstant(const QueryTreeNodePtr & node)
+static bool isNullConstant(const QueryTreeNodePtr & node)
 {
     if (const auto * const_node = node->as<ConstantNode>())
         return const_node->getValue().isNull();
@@ -106,7 +106,7 @@ bool isNullConstant(const QueryTreeNodePtr & node)
 }
 
 /// Creates a NOT function node wrapping the given node (caller must resolve it)
-QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
+static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
 {
     auto not_fn = std::make_shared<FunctionNode>("not");
     not_fn->getArguments().getNodes().push_back(node);

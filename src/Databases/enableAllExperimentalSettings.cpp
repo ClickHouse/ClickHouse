@@ -1,3 +1,4 @@
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 

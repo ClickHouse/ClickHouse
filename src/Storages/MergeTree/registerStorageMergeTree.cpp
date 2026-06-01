@@ -1072,6 +1072,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
+void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

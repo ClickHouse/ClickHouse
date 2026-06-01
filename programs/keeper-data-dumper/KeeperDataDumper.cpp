@@ -22,6 +22,9 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsBool compress_logs;
 }
 
+namespace
+{
+
 void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
 {
     auto & storage = machine->getStorageUnsafe();
@@ -55,6 +58,9 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
     std::cout << std::flush;
 }
 
+}
+
+int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
 {
     if (argc != 3)

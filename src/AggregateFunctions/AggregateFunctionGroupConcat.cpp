@@ -232,7 +232,7 @@ bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
 // Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
 
-AggregateFunctionPtr createAggregateFunctionGroupConcat(
+static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -273,6 +273,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConcat(
     return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
+void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };

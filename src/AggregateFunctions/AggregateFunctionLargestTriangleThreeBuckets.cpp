@@ -351,6 +351,7 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 }
 
 
+void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

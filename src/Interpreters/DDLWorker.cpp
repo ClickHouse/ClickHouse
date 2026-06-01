@@ -1159,7 +1159,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Value pushed_entry;
+        CurrentMetrics::Value pushed_entry = 0;
         readText(pushed_entry, in);
         pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
         CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);

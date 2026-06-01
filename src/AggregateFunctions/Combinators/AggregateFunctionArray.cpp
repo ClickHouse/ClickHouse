@@ -55,6 +55,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorArray>());

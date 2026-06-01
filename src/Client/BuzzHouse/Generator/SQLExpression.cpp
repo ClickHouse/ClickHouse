@@ -1593,7 +1593,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             /// Exercise reinterpretAs* functions on raw bytes, stressing binary reinterpretation
             /// across all numeric, date, UUID, and variable-length String types.
             String target_type;
-            uint32_t byte_count;
+            uint32_t byte_count = {};
 
             /// String and FixedString accept any byte size — pick randomly to exercise different lengths.
             /// Other types have fixed sizes dictated by their binary representation.

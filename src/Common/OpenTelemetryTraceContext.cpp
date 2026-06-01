@@ -402,7 +402,7 @@ TracingContextHolder::TracingContextHolder(
                 return;
 
             // Start the trace with some configurable probability.
-            std::bernoulli_distribution should_start_trace{(*settings_ptr)[Setting::opentelemetry_start_trace_probability]};
+            std::bernoulli_distribution should_start_trace{static_cast<double>((*settings_ptr)[Setting::opentelemetry_start_trace_probability])};
             if (!should_start_trace(thread_local_rng))
                 /// skip tracing context initialization on current thread
                 return;

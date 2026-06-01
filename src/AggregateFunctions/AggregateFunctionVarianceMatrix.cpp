@@ -92,7 +92,7 @@ struct AggregateFunctionVarianceMatrixData
 
     static constexpr StatisticsMatrixFunctionKind kind = _kind;
     PaddedPODArray<DataType> data_matrix;
-    size_t num_args;
+    size_t num_args{};
 };
 
 template <typename Data>
@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionVarianceMatrix(
 
 }
 
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSampMatrix_description = R"(

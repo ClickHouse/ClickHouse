@@ -21,9 +21,9 @@ String computePartitionId(const Row & partition_key_value);
 struct IcebergObjectSerializableInfo
 {
     IcebergPathFromMetadata data_object_file_path_key;
-    Int32 underlying_format_read_schema_id;
-    Int32 schema_id_relevant_to_iterator;
-    Int64 sequence_number;
+    Int32 underlying_format_read_schema_id{};
+    Int32 schema_id_relevant_to_iterator{};
+    Int64 sequence_number{};
     String file_format;
     String manifest_file;
     String partition_id;

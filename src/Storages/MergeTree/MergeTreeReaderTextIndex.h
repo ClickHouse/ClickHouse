@@ -131,4 +131,10 @@ private:
     absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 };
 
+MergeTreeReaderPtr createMergeTreeReaderTextIndex(
+    const IMergeTreeReader * main_reader,
+    const MergeTreeIndexWithCondition & index,
+    const NamesAndTypesList & columns_to_read,
+    MergeTreeIndexGranulePtr index_granule);
+
 }

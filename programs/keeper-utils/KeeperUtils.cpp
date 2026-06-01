@@ -962,6 +962,7 @@ int deserializeChangelog(
 
 }
 
+int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
 int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
 {
     namespace po = boost::program_options;

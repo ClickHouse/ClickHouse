@@ -1,3 +1,4 @@
+#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -116,7 +117,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type;
+            const IDataType * nested_type = nullptr;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())

@@ -117,6 +117,7 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(
 }
 
 
+void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_rankCorr = R"(

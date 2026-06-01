@@ -124,7 +124,7 @@ struct StringConverter
 ///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
 struct PageDecoderInfo
 {
-    parq::Type::type physical_type;
+    parq::Type::type physical_type{};
 
     /// Postprocessing of decoded values. Exactly one of these is set, depending on physical_type.
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;

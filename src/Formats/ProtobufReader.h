@@ -49,7 +49,7 @@ private:
 
     UInt64 ALWAYS_INLINE readVarint()
     {
-        char c;
+        char c = 0;
         in->readStrict(c);
         UInt64 first_byte = static_cast<UInt8>(c);
         ++cursor;

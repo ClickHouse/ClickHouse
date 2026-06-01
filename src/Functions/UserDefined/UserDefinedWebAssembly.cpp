@@ -446,7 +446,7 @@ private:
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, WebAssembly::FuelMode fuel_mode)
+static WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, WebAssembly::FuelMode fuel_mode)
 {
     WebAssembly::WasmModule::Config cfg(fuel_mode);
 

@@ -15,7 +15,7 @@ class ObjectStorageQueuePostProcessor : public WithContext
 public:
     struct AfterProcessingSettings
     {
-        UInt32 after_processing_retries;
+        UInt32 after_processing_retries{};
         String after_processing_move_uri;
         String after_processing_move_prefix;
         String after_processing_move_access_key_id;

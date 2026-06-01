@@ -190,7 +190,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
@@ -198,7 +198,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 }
 
 /// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);

@@ -35,6 +35,7 @@ namespace ErrorCodes
     #endif
 }
 
+void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
     #if USE_MONGODB

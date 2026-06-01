@@ -225,7 +225,7 @@ public:
 };
 }
 
-AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
+static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
     if (arguments.size() != 1)
@@ -280,6 +280,7 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 
+void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -108,7 +108,7 @@ private:
         "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
     PoolT & pool;
-    ThreadName thread_name;
+    ThreadName thread_name{};
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -336,7 +336,7 @@ private:
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
     size_t max_threads = 0;
-    ThreadName thread_name;
+    ThreadName thread_name{};
     ThreadGroupPtr thread_group;
 
     std::mutex mutex;

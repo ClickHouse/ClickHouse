@@ -446,7 +446,7 @@ public:
     off_t seek(off_t off, int whence) override
     {
         off_t current_pos = getPosition();
-        off_t new_pos;
+        off_t new_pos = 0;
         if (whence == SEEK_SET)
             new_pos = off;
         else if (whence == SEEK_CUR)

@@ -881,7 +881,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
         };
 }
 
-void readPressureFile(
+static void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
 {
@@ -912,7 +912,7 @@ void readPressureFile(
         readStringUntilEquals(skip, in);
         ++in.position();
 
-        uint64_t counter;
+        uint64_t counter = 0;
         readText(counter, in);
 
         String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
@@ -2047,7 +2047,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 interface_name.pop_back();
 
                 NetworkInterfaceStatValues current_values{};
-                uint64_t unused;
+                uint64_t unused = 0;
 
                 skipWhitespaceIfAny(*net_dev, true);
                 readText(current_values.recv_bytes, *net_dev);

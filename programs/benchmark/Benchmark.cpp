@@ -350,7 +350,7 @@ private:
         UInt64 start_ns;
         UInt64 end_ns = std::numeric_limits<UInt64>::max();
         MultiStats stats;
-        size_t threads;
+        size_t threads = 0;
 
         // NOTE: We keep reference to the next interval for --precise mode
         std::shared_ptr<IntervalStats> next;
@@ -892,6 +892,7 @@ public:
 }
 
 
+int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;

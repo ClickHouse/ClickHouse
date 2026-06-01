@@ -941,7 +941,7 @@ ReturnType parseDateTimeBestEffortImpl(
 template <typename ReturnType, bool is_us_style, bool strict = false>
 ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, const char * allowed_date_delimiters = nullptr)
 {
-    time_t whole;
+    time_t whole = 0;
     DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
 
     if constexpr (std::is_same_v<ReturnType, bool>)

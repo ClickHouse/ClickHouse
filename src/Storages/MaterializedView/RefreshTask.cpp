@@ -1208,7 +1208,7 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms;
+    UInt64 delay_ms = 0;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1683,7 +1683,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
             /// Unquoted int or quoted json string.
             Int64 int_val = 0;
             String string_val;
-            char c;
+            char c = 0;
             if (in.peek(c) && c != '"')
                 in >> int_val;
             else
@@ -1780,19 +1780,19 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_seconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_seconds(std::chrono::seconds(v));
         }
         else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::milliseconds(v);
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
         }

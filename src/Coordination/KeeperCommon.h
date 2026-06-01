@@ -47,7 +47,7 @@ static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V4;
 
 struct KeeperResponseForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     Coordination::ZooKeeperResponsePtr response;
     Coordination::ZooKeeperRequestPtr request = nullptr;
 };
@@ -56,7 +56,7 @@ using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
 struct KeeperRequestForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
     int64_t zxid{0};

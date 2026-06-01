@@ -211,6 +211,7 @@ std::string HTTPDictionarySource::toString() const
     return uri.toString();
 }
 
+void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

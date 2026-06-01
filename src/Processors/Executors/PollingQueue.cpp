@@ -33,7 +33,7 @@ PollingQueue::PollingQueue()
 
 PollingQueue::~PollingQueue()
 {
-    int err;
+    int err = 0;
     err = close(pipe_fd[0]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!err || errno == EINTR);
     err = close(pipe_fd[1]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -73,7 +73,7 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
     lock.unlock();
 
-    epoll_event event;
+    epoll_event event{};
     event.data.ptr = nullptr;
     size_t num_events = epoll.getManyReady(1, &event, timeout);
 

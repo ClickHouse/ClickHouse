@@ -29,7 +29,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 {
     DistributedAsyncInsertHeader distributed_header;
 
-    UInt64 query_size;
+    UInt64 query_size = 0;
     readVarUInt(query_size, in);
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)

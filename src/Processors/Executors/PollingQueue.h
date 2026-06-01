@@ -27,7 +27,7 @@ public:
 
 private:
     Epoll epoll;
-    int pipe_fd[2];
+    int pipe_fd[2]{};
     std::atomic_bool is_finished = false;
     std::unordered_map<std::uintptr_t, TaskData> tasks;
 

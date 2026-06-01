@@ -715,7 +715,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted;
+    bool granted = false;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)

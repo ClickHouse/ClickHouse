@@ -1,3 +1,5 @@
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>

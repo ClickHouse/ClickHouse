@@ -189,6 +189,7 @@ String LibraryDictionarySource::getDictAttributesString()
 }
 
 
+void registerDictionarySourceLibrary(DictionarySourceFactory & factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

@@ -83,7 +83,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
     {
         while (!in.eof())
         {
-            char c;
+            char c = 0;
             readChar(c, in);
             if (c == '_')
                 break;
@@ -295,7 +295,7 @@ String MergeTreePartInfo::describe() const
 
 void MergeTreePartInfo::deserialize(ReadBuffer & in)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version != DBMS_MERGE_TREE_PART_INFO_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",

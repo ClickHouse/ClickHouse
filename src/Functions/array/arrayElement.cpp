@@ -261,7 +261,7 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j;
+                size_t j = 0;
                 if constexpr (negative)
                     j = offsets[i] - index - 1;
                 else
@@ -584,7 +584,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index; /// index in array from zero
+            size_t adjusted_index = 0; /// index in array from zero
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
@@ -617,7 +617,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index; /// index in array from zero
+            size_t adjusted_index = 0; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -688,7 +688,7 @@ struct ArrayElementStringImpl
 
             if (index < array_size)
             {
-                size_t adjusted_index;
+                size_t adjusted_index = 0;
                 if constexpr (negative)
                     adjusted_index = array_size - index - 1;
                 else
@@ -747,7 +747,7 @@ struct ArrayElementStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            size_t adjusted_index; /// index in array from zero
+            size_t adjusted_index = 0; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)

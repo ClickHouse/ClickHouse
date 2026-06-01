@@ -360,7 +360,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     auto request_for_session = std::make_shared<KeeperRequestForSession>();
     readIntBinary(request_for_session->session_id, buffer);
 
-    int32_t length;
+    int32_t length = 0;
     Coordination::read(length, buffer);
     /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
     if (length < 0)
@@ -370,7 +370,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     /// for that reason we serialize XID in 2 parts:
     /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
     /// - upper: 32 most significant bits of 64bit XID
-    XidHelper xid_helper;
+    XidHelper xid_helper{};
     Coordination::read(xid_helper.parts.lower, buffer);
 
     /// go to end of the buffer and read extra information including second part of XID
@@ -465,7 +465,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         }
     }
 
-    Coordination::OpNum opnum;
+    Coordination::OpNum opnum = {};
     Coordination::read(opnum, buffer);
 
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -651,7 +651,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-            int64_t session_id;
+            int64_t session_id = 0;
             std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
             KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;

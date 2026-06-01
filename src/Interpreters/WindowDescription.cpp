@@ -155,7 +155,7 @@ void WindowFrame::checkValid() const
         && begin_type == BoundaryType::Offset)
     {
         // Frame start offset must be less or equal that the frame end offset.
-        bool begin_less_equal_end;
+        bool begin_less_equal_end = false;
         if (begin_preceding && end_preceding)
         {
             /// we can't compare Fields using operator<= if fields have different types

@@ -126,8 +126,8 @@ private:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start;
-        size_t length;
+        const UInt8 * start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -171,8 +171,8 @@ private:
         size_t prev_offset = 0;
         size_t res_offset = 0;
 
-        const UInt8 * start;
-        size_t length;
+        const UInt8 * start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

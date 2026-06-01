@@ -502,7 +502,8 @@ struct integer<Bits, Signed>::_impl
         /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        if (rhs > static_cast<FromDoubleIntermediateType>(min_int) && rhs < static_cast<FromDoubleIntermediateType>(max_int))
+        if (static_cast<FromDoubleIntermediateType>(rhs) > static_cast<FromDoubleIntermediateType>(min_int)
+            && static_cast<FromDoubleIntermediateType>(rhs) < static_cast<FromDoubleIntermediateType>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
@@ -510,7 +511,7 @@ struct integer<Bits, Signed>::_impl
 
         const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
             ? -static_cast<FromDoubleIntermediateType>(rhs)
-            : rhs;
+            : static_cast<FromDoubleIntermediateType>(rhs);
 
         set_multiplier(self, rhs_long_double);
 

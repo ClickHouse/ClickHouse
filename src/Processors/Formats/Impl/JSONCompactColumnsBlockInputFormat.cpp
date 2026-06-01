@@ -29,6 +29,7 @@ bool JSONCompactColumnsReader::checkChunkEnd()
 }
 
 
+void registerInputFormatJSONCompactColumns(FormatFactory & factory);
 void registerInputFormatJSONCompactColumns(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -43,6 +44,7 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
     );
 }
 
+void registerJSONCompactColumnsSchemaReader(FormatFactory & factory);
 void registerJSONCompactColumnsSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

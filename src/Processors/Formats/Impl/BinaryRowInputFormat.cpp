@@ -126,7 +126,7 @@ bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const Se
 {
     if constexpr (with_defaults)
     {
-        UInt8 is_default;
+        UInt8 is_default = 0;
         readBinary(is_default, *in);
         if (is_default)
         {
@@ -180,6 +180,7 @@ BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuf
 {
 }
 
+void registerInputFormatRowBinary(FormatFactory & factory);
 void registerInputFormatRowBinary(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -207,6 +208,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     });
 }
 
+void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory);
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("RowBinaryWithNamesAndTypes", [](ReadBuffer & buf, const FormatSettings & settings)

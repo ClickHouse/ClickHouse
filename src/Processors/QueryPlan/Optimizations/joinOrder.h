@@ -82,7 +82,7 @@ struct QueryGraph
     {
         BitSet required_partners;
         BitSet forbidden_partners;
-        JoinKind kind;
+        JoinKind kind{};
     };
     std::unordered_map<size_t, OuterJoinRestriction> join_kinds;
 

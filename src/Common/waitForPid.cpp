@@ -105,7 +105,7 @@ static PollPidResult pollPid(pid_t pid, int timeout_in_ms)
         }
     }
 
-    struct pollfd pollfd;
+    struct pollfd pollfd{};
     pollfd.fd = pid_fd;
     pollfd.events = POLLIN;
 

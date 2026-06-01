@@ -95,7 +95,7 @@ public:
     virtual bool supportsStringLike() const = 0;
 
 private:
-    Type type;
+    Type type{};
 };
 
 using TokenizerPtr = const ITokenizer *;

@@ -107,6 +107,7 @@ void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
     }
 }
 
+void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONEachRowWithProgress", [](

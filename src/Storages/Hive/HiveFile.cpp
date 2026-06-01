@@ -71,7 +71,7 @@ Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
     return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
-Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
+static Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
 {
     if (!stats->HasMinMax())
         return Range::createWholeUniverseWithoutNull();

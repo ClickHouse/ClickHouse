@@ -28,7 +28,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
-
 namespace DB
 {
 
@@ -89,12 +88,12 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-
     static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
         return left == right[i];
+#pragma clang diagnostic pop
     }
 
     static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
@@ -109,7 +108,11 @@ private:
         }
         else
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right;
+#pragma clang diagnostic pop
         }
     }
 
@@ -126,7 +129,11 @@ private:
         }
         else
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right[j];
+#pragma clang diagnostic pop
         }
     }
 
@@ -159,7 +166,11 @@ private:
         }
         else
         {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wsign-compare"
+#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] >= right;
+#pragma clang diagnostic pop
         }
     }
 
@@ -169,8 +180,6 @@ private:
     {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
-
-#pragma clang diagnostic pop
 
 public:
     /** Assuming that the array is sorted, use a binary search */

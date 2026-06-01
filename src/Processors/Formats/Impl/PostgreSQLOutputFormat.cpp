@@ -68,6 +68,7 @@ void PostgreSQLOutputFormat::flushImpl()
     message_transport.flush();
 }
 
+void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(

@@ -148,6 +148,7 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     return res;
 }
 
+void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

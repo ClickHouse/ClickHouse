@@ -104,7 +104,7 @@ private:
     const std::string row_between_delimiter;
     const FormatSettings & format_settings;
     size_t format_data_idx;
-    size_t row_num;
+    size_t row_num{};
 };
 
 class TemplateSchemaReader final : public IRowSchemaReader

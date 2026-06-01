@@ -298,7 +298,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-ColumnPtr materializeColumn(const ColumnPtr & column)
+static ColumnPtr materializeColumn(const ColumnPtr & column)
 {
     return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
@@ -480,7 +480,7 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-ColumnPtr castToBoolColumn(ColumnPtr column)
+static ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {

@@ -423,13 +423,13 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
-    int start_version;
+    int start_version = 0;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
     auto & nodes_info = cluster_info.nodes_info;
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
-        int current_version;
+        int current_version = 0;
         getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
 
         if (current_version != start_version)

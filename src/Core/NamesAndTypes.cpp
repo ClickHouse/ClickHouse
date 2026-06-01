@@ -92,7 +92,7 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     assertString("columns format version: 1\n", buf);
-    size_t count;
+    size_t count = 0;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
 
@@ -330,7 +330,7 @@ void NamesAndTypesList::readTextWithNamesInStorage(ReadBuffer & buf)
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     assertString("columns format version: 1\n", buf);
-    size_t count;
+    size_t count = 0;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
 

@@ -224,7 +224,7 @@ void S3RequestSettings::validateUploadSettings()
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
 
-        size_t maybe_overflow;
+        size_t maybe_overflow = 0;
         if (common::mulOverflow((*this)[S3RequestSetting::max_upload_part_size].value, (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, maybe_overflow))
             throw Exception(
                             ErrorCodes::INVALID_SETTING_VALUE,

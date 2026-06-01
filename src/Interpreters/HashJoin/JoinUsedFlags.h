@@ -24,7 +24,7 @@ public:
     /// Index is the offset in FindResult
     UsedFlagsForColumns per_offset_flags;
 
-    bool need_flags;
+    bool need_flags{};
 
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
