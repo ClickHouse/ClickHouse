@@ -2162,9 +2162,9 @@ TEST(PageCacheProvider, BypassMissDoesNotPolluteCache)
         data.append(RopeNode{buf, 0, block_size, 0});
 
         size_t written = handle->put(ByteRange{0, block_size}, std::move(data));
-        EXPECT_EQ(written, block_size);
-    }   /// bypass handle drops here; if the cell was detached, the data is
-        /// reclaimed; the cache stays empty.
+        EXPECT_EQ(written, 0u)
+            << "bypass mode is a read-only probe: put populates nothing and counts 0 bytes";
+    }   /// the cache stays empty - bypass put never allocated or registered a cell.
 
     /// Step 2: lookup via a NON-bypass provider on the same file/block.
     /// Should be a MISS — bypass mode did not register the bytes.
