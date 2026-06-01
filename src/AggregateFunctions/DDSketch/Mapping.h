@@ -56,11 +56,11 @@ public:
     {
         static constexpr Int64 key_bound = Int64(1) << 30;
         const Float64 bound = static_cast<Float64>(key_bound);
-        const Float64 lo = std::floor(logGamma(min_possible) + offset);
-        const Float64 hi = std::floor(logGamma(max_possible) + offset);
+        const Float64 lo = logGamma(min_possible) + offset;
+        const Float64 hi = logGamma(max_possible) + offset;
 
-        /// No overlap with [-bound, bound] (NaN lands here too, as the comparisons are false)
-        if (!(hi >= -bound) || !(lo <= bound))
+        ///  Empty value interval, no overlap with [-bound, bound], or NaN, nothing is valid
+        if (!(lo <= hi) || !(hi >= -bound) || !(lo <= bound))
             return {1, 0};
 
         return {lo <= -bound ? -key_bound : static_cast<Int64>(lo),

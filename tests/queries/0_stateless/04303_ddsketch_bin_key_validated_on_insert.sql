@@ -13,6 +13,9 @@ INSERT INTO t_ddsketch_bad SELECT unhex('020000000000000040000000000000000001040
 SELECT count() FROM t_ddsketch_bad;
 SELECT quantilesDDMerge(0.01, 0.5)(s)[1] > 0 FROM t_ddsketch_bad;
 
+-- Bin at key 0 with offset -1023.5: key() truncates toward zero to 0, so this is valid and must be accepted
+SELECT count() FROM (SELECT unhex('0200000000000000400000000000FC8FC001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d);
+
 -- Read path rejects the same bad state too
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('020000000000000040000000000000000001040180F0FFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
 
@@ -24,5 +27,8 @@ SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02010000000000F03F0000
 
 -- Key 2^32 + 123: must be checked as Int64, not truncated to 123 and accepted
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000000000000000010401F681808020000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
+
+-- Degenerate gamma (1e308) makes min_possible > max_possible, so no value is mappable, any bin is rejected
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('02A0C8EB85F3CCE17F000000000000000001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
 
 DROP TABLE t_ddsketch_bad;
