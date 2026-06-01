@@ -1,5 +1,4 @@
 from abc import abstractmethod
-import os
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
@@ -741,7 +740,11 @@ def add_single_disk(
         object_storage_type_xml.text = object_storage_type
 
         # Set disk metadata type
-        metadata_type = "keeper" if object_storage_type == "s3_with_keeper" else "local"
+        metadata_type = (
+            "keeper"
+            if object_storage_type == "s3_with_keeper"
+            else "web" if object_storage_type == "web" else "local"
+        )
         if random.randint(1, 100) <= 70:
             possible_metadata_types = (
                 ["plain", "web"]
@@ -1151,7 +1154,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
             "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),
+            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 1, 200),
         }
         apply_properties_recursively(property_element, replicated_settings, 0)
 
