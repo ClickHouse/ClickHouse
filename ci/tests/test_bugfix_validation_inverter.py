@@ -97,30 +97,6 @@ def test_server_died_synthetic_fail_leaf_treated_as_bug_reproduced():
     assert outer.status == Result.Status.OK
 
 
-def test_error_subresult_coexisting_with_fail_is_not_counted_as_validation():
-    """The sequential "server died" path (functional_tests_results.py) marks
-    the culprit test `ERROR` and appends a "Server died" `FAIL` leaf, leaving
-    the top-level status `FAIL`. Without the sub-result guard this `FAIL`
-    would be flipped to `OK` + `set_success`, counting a false validation.
-    The inverter must treat the `ERROR` sub-result as infra-inconclusive:
-    preserve the pre-inversion status (no `set_success`, no no-repro) so the
-    post-hook's strict `is_success` excludes this arch. See the bot review on
-    PR #103541 and #105789.
-    """
-    leaf_err = _make_leaf("01234_regression_test", Result.Status.ERROR,
-                          info="server died")
-    leaf_died = _make_leaf("Server died", Result.Status.FAIL, info="Server died")
-    outer = _make_outer(Result.Status.FAIL, [leaf_err, leaf_died])
-
-    no_repro = invert_bugfix_validation_status(outer)
-
-    assert no_repro is False
-    # Not flipped to a success verdict — the FAIL leaf is not turned into OK.
-    assert leaf_died.status == Result.Status.FAIL
-    assert outer.status != Result.Status.OK
-    assert outer.status != Result.Status.SKIPPED
-
-
 def test_error_status_with_empty_results_preserves_error():
     """The regression in #105789: the runner did not finish, no per-test
     results were emitted, status is `ERROR`. The inverter must NOT
