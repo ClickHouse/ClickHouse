@@ -2009,8 +2009,8 @@ void Context::resetToUserDefaults()
     std::optional<UUID> snapshot_user_id;
     String snapshot_current_user_name;
     String snapshot_initial_user_name;
-    bool is_session_context;
-    bool inside_transaction;
+    bool is_session_context = false;
+    bool inside_transaction = false;
     {
         SharedLockGuard lock(mutex);
         snapshot_user_id = authenticated_user_id.has_value() ? authenticated_user_id : user_id;
