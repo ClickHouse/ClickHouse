@@ -68,10 +68,12 @@ SELECT count() FROM system.tables WHERE database = '_temporary_and_external_tabl
 
 -- If the current database is dropped mid-session, `RESET SESSION` must not
 -- throw — it should fall back to the user's profile default (or empty) rather
--- than leaving the session unusable.
-DROP DATABASE IF EXISTS reset_session_db_to_drop;
-CREATE DATABASE reset_session_db_to_drop;
-USE reset_session_db_to_drop;
-DROP DATABASE reset_session_db_to_drop;
+-- than leaving the session unusable. Use the per-test-unique
+-- `{CLICKHOUSE_DATABASE_1}` name so concurrent runs (e.g. the flaky check)
+-- don't collide on a shared database.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 RESET SESSION;
 SELECT 'dropped-db reset survived';
