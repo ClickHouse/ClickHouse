@@ -13,6 +13,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Processors/Formats/Impl/SQLiteCommon.h>
+#    include <Common/NaNUtils.h>
 #    include <Common/quoteString.h>
 
 #    include <sys/stat.h>
@@ -126,6 +127,24 @@ String makeInsertQuery(const Block & header, const String & table_name)
     return query.str();
 }
 
+void bindSQLiteTextValue(
+    sqlite3 * db,
+    sqlite3_stmt * statement,
+    int sqlite_index,
+    const IColumn & column,
+    size_t row,
+    const ISerialization & serialization,
+    const FormatSettings & settings)
+{
+    WriteBufferFromOwnString value;
+    serialization.serializeText(column, row, value, settings);
+    const auto value_string = value.str();
+    checkSQLiteStatus(
+        db,
+        sqlite3_bind_text(statement, sqlite_index, value_string.data(), static_cast<int>(value_string.size()), SQLITE_TRANSIENT),
+        "Cannot bind text value");
+}
+
 void bindSQLiteValue(
     sqlite3 * db,
     sqlite3_stmt * statement,
@@ -168,20 +187,21 @@ void bindSQLiteValue(
 
     if (which.isFloat())
     {
+        const auto float_value = column[row].safeGet<Float64>();
+        if (isNaN(float_value))
+        {
+            bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
+            return;
+        }
+
         checkSQLiteStatus(
             db,
-            sqlite3_bind_double(statement, sqlite_index, column[row].safeGet<Float64>()),
+            sqlite3_bind_double(statement, sqlite_index, float_value),
             "Cannot bind floating-point value");
         return;
     }
 
-    WriteBufferFromOwnString value;
-    serialization.serializeText(column, row, value, settings);
-    const auto value_string = value.str();
-    checkSQLiteStatus(
-        db,
-        sqlite3_bind_text(statement, sqlite_index, value_string.data(), static_cast<int>(value_string.size()), SQLITE_TRANSIENT),
-        "Cannot bind text value");
+    bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
 }
 
 class SQLiteOutputFormat final : public IOutputFormat

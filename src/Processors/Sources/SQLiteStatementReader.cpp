@@ -214,9 +214,21 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
             assert_cast<ColumnInt64 &>(column).insertValue(sqlite3_column_int64(statement, idx));
             break;
         case ValueType::vtFloat32:
+            if (sqlite3_column_type(statement, idx) == SQLITE_TEXT)
+            {
+                insertTextValue(column, info, statement, idx);
+                break;
+            }
+
             assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(sqlite3_column_double(statement, idx)));
             break;
         case ValueType::vtFloat64:
+            if (sqlite3_column_type(statement, idx) == SQLITE_TEXT)
+            {
+                insertTextValue(column, info, statement, idx);
+                break;
+            }
+
             assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(statement, idx));
             break;
         case ValueType::vtEnum8:
