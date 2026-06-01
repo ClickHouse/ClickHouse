@@ -1359,3 +1359,12 @@ SELECT
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND _CAST(NULL, \'Nullable(Nothing)\')
 SETTINGS optimize_redundant_comparisons = 1
+non_deterministic
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE ((rand() % 2) < 1) AND ((rand() % 2) >= 1)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE ((rand() % 2) < 1) AND ((rand() % 2) >= 1)
+SETTINGS optimize_redundant_comparisons = 1

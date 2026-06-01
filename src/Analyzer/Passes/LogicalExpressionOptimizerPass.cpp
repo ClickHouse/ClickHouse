@@ -222,6 +222,30 @@ static std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const Functio
 
 /// Helper types and functions for comparison chain pruning in `tryOptimizeAndCompareNotEqualsChain`.
 
+/// Comparison pruning groups operands by structural equality of the compared expression, which is
+/// only sound for deterministic expressions. Two syntactically identical non-deterministic calls
+/// (e.g. `rand() % 2`) are independent evaluations and may differ for the same row, so folding or
+/// merging them (e.g. `rand() % 2 < 1 AND rand() % 2 >= 1` → false) would be incorrect. Such
+/// expressions must be excluded from pruning, conflict detection and NOT IN conversion.
+static bool hasNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        /// Only ordinary functions can be non-deterministic here (e.g. `rand`); aggregate and
+        /// window functions are deterministic within the scope of the query.
+        if (function_node->isOrdinaryFunction() && !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && hasNonDeterministicFunction(child))
+            return true;
+    }
+
+    return false;
+}
+
 enum class ComparisonFunction : uint8_t
 {
     EQUALS,
@@ -1676,6 +1700,17 @@ private:
                 continue;
             }
 
+            /// Non-deterministic expressions must not be pruned/merged: structurally identical
+            /// occurrences (e.g. `rand() % 2`) are independent evaluations, so folding them
+            /// (e.g. `rand() % 2 < 1 AND rand() % 2 >= 1` → false) or merging notEquals into NOT IN
+            /// would change results. Keep such operands as-is.
+            if (hasNonDeterministicFunction(expression))
+            {
+                all_operands.emplace_back(argument_index, argument);
+                ++argument_index;
+                continue;
+            }
+
             /// Normalize so that expression is always on the left (e.g. `3 < a` → `a > 3`).
             auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
             ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
@@ -1900,7 +1935,7 @@ private:
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> findPairs
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> find_pairs
             = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
         {
             if (auto it = pairs.find(current); it != pairs.end())
@@ -1943,7 +1978,7 @@ private:
                     /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
                     /// which is strictly weaker than the existing `x < 3`.
                     if (!left.first->as<ConstantNode>())
-                        findPairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                        find_pairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
                 }
             }
         };
@@ -1952,14 +1987,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            findPairs(greater_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            findPairs(less_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals);
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());

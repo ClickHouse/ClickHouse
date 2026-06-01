@@ -495,4 +495,15 @@ SELECT * FROM 04032_t WHERE i = 3 AND i > NULL SETTINGS optimize_redundant_compa
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i > NULL SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i = 3 AND i > NULL SETTINGS optimize_redundant_comparisons = 1;
 
+-- =====================================================================
+-- Section 16: non-deterministic expressions must not be pruned
+-- =====================================================================
+
+-- Repeated rand() calls are independent at the AST level, so the conjunction
+-- `rand() % 2 < 1 AND rand() % 2 >= 1` must NOT be folded to false. The rewritten plan
+-- must keep both predicates and be identical for optimize_redundant_comparisons 0 and 1.
+SELECT 'non_deterministic';
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 < 1 AND rand() % 2 >= 1 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 < 1 AND rand() % 2 >= 1 SETTINGS optimize_redundant_comparisons = 1;
+
 DROP TABLE IF EXISTS 04032_t;
