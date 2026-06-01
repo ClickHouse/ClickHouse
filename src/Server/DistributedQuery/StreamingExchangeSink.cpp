@@ -186,13 +186,13 @@ void StreamingExchangeSink::work()
     if (has_input)
     {
         /// If we have already added final chunk then no new input is expected
-        assert(!final_chunk_added);
+        chassert(!final_chunk_added);
 
         has_input = false;
         if (input_is_finished)
         {
             /// Send empty final chunk
-            assert(!current_chunk);
+            chassert(!current_chunk);
             final_chunk_added = true;
             consume(std::move(current_chunk));
         }

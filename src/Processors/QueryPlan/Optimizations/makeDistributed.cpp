@@ -619,7 +619,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             }
 
             /// All children were traversed;
-            assert(frame.next_child == frame.node->children.size());
+            chassert(frame.next_child == frame.node->children.size());
 
             if (frame.child_plans.size() > 1)
             {
@@ -752,7 +752,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             stack.pop_back();
         }
 
-        assert(current_list_of_shards.size() == 1);
+        chassert(current_list_of_shards.size() == 1);
         main_task = std::move(current_list_of_shards.begin()->second);
     }
 
