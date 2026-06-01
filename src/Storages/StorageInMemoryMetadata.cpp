@@ -994,4 +994,11 @@ void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
     }
 }
 
+StorageMetadataPtr StorageInMemoryMetadata::clone(StorageMetadataPtr from)
+{
+    auto copy = std::make_shared<StorageInMemoryMetadata>(*from);
+    copy->cloned_from = from;
+    return copy;
+}
+
 }

@@ -86,6 +86,9 @@ struct StorageInMemoryMetadata
     ///  Current state of a datalake table.
     std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
+    /// If metadata was cloned we need to extend lifetime of previous metadata.
+    StorageMetadataPtr cloned_from = nullptr;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -336,6 +339,8 @@ struct StorageInMemoryMetadata
 
     void addImplicitIndicesForVirtualColumns(ContextPtr context);
     void dropImplicitIndicesForVirtualColumns();
+
+    static StorageMetadataPtr clone(StorageMetadataPtr from);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

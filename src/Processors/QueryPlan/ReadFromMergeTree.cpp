@@ -4393,7 +4393,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     }
 
     /// We have to recreate virtual columns and storage snapshot to add new virtual columns for reading from text index.
-    auto new_metadata = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
+    auto new_metadata = StorageInMemoryMetadata::clone(storage_snapshot->metadata);
 
     for (const auto & [index_name, added_virtual_columns] : added_columns)
     {
