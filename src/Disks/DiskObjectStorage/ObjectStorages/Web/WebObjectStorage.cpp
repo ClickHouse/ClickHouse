@@ -327,6 +327,11 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
 
         ObjectMetadata metadata;
         auto file_info = response_buf->getFileInfo();
+        /// When the response has no `Content-Length` (e.g. chunked transfer encoding), the size is unknown.
+        /// Leaving `is_size_known = true` with `size_bytes = 0` would make a non-empty body look like a
+        /// known-empty file, so that `engine_url_skip_empty_files` could skip it and read-buffer sizing
+        /// decisions would use the wrong size.
+        metadata.is_size_known = file_info.file_size.has_value();
         if (file_info.file_size)
             metadata.size_bytes = *file_info.file_size;
         if (file_info.last_modified)
