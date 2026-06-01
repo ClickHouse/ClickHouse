@@ -4501,58 +4501,41 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         auto array_join_expression_alias = array_join_expression->getAlias();
 
         std::string identifier_full_name;
-        std::optional<Identifier> original_identifier;
 
         if (auto * identifier_node = array_join_expression->as<IdentifierNode>())
-        {
-            original_identifier = identifier_node->getIdentifier();
-            identifier_full_name = original_identifier->getFullName();
-        }
+            identifier_full_name = identifier_node->getIdentifier().getFullName();
 
         resolveExpressionNode(array_join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        /// If a bare identifier in ARRAY JOIN did not resolve to an Array/Map (e.g. because
-        /// it matched an ALIAS column of a different shape), try to expand it as a Nested
-        /// prefix over the underlying table expression. For a table with `loc.x Array(...)`,
-        /// `loc.y Array(...)`, this lets `ARRAY JOIN loc` be treated as the per-field arrays —
-        /// matching the legacy analyzer's behavior.
-        if (original_identifier)
+        /// If the identifier resolved to a same-named column of this table expression
+        /// (e.g. an `ALIAS` column shadowing a Nested prefix like `loc` vs `loc.x`/`loc.y`)
+        /// and the resulting type is not an Array/Map, retry by expanding the identifier
+        /// as a Nested prefix over the per-field columns of the same table. This restores
+        /// the legacy analyzer's behavior for `ARRAY JOIN <nested_prefix>` when an `ALIAS`
+        /// column happens to occupy the same name.
+        ///
+        /// The retry is intentionally gated on the resolved node being a `ColumnNode` whose
+        /// source is the inner table expression — without this gate, a `WITH` alias, a
+        /// projection alias, or any other expression that `resolveExpressionNode` may pick
+        /// up would silently be rewritten into a row-multiplying `nested(...)` over the
+        /// table's prefix columns, turning a `TYPE_MISMATCH` into wrong results.
+        if (auto * resolved_column_node = array_join_expression->as<ColumnNode>())
         {
-            auto current_result_type = array_join_expression->getResultType();
+            auto current_result_type = resolved_column_node->getResultType();
             if (current_result_type && !isArray(current_result_type) && !isMap(current_result_type))
             {
                 const auto & inner_table_expression = array_join_node_typed.getTableExpression();
-                auto data_it = scope.table_expression_node_to_data.find(inner_table_expression);
-                if (data_it != scope.table_expression_node_to_data.end())
+                if (resolved_column_node->getColumnSourceOrNull() == inner_table_expression)
                 {
-                    const auto & table_expression_data = data_it->second;
-
-                    /// Strip the table / alias / database qualifier so the identifier matches
-                    /// the storage's bare column-prefix (mirrors `tryResolveIdentifierFromTableExpression`).
-                    Identifier identifier_without_qualifier = *original_identifier;
-                    if (identifier_without_qualifier.getPartsSize() >= 2)
+                    auto data_it = scope.table_expression_node_to_data.find(inner_table_expression);
+                    if (data_it != scope.table_expression_node_to_data.end())
                     {
-                        const auto & path_start = identifier_without_qualifier.getParts().front();
-                        const auto & table_name = table_expression_data.table_name;
-                        const auto & database_name = table_expression_data.database_name;
-
-                        if ((!table_name.empty() && path_start == table_name) ||
-                            (inner_table_expression->hasAlias() && path_start == inner_table_expression->getAlias()))
+                        Identifier column_identifier(resolved_column_node->getColumnName());
+                        if (auto nested_function_node = IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
+                                column_identifier, data_it->second, scope.context))
                         {
-                            identifier_without_qualifier.popFirst(1);
+                            array_join_expression = std::move(nested_function_node);
                         }
-                        else if (identifier_without_qualifier.getPartsSize() >= 3
-                            && !database_name.empty() && path_start == database_name
-                            && identifier_without_qualifier[1] == table_name)
-                        {
-                            identifier_without_qualifier.popFirst(2);
-                        }
-                    }
-
-                    if (auto nested_function_node = IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
-                            identifier_without_qualifier, table_expression_data, scope.context))
-                    {
-                        array_join_expression = std::move(nested_function_node);
                     }
                 }
             }

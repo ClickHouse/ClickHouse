@@ -36,4 +36,13 @@ FROM t_array_join_alias_nested
 ARRAY JOIN t_array_join_alias_nested.loc
 SETTINGS enable_analyzer = 1;
 
+-- A `WITH` alias that shadows the Nested prefix must NOT be silently rewritten
+-- into `nested(['x','y'], loc.x, loc.y)`. The non-Array alias should surface
+-- `TYPE_MISMATCH` instead of producing row-multiplied results.
+WITH 1 AS loc
+SELECT loc
+FROM t_array_join_alias_nested
+ARRAY JOIN loc
+SETTINGS enable_analyzer = 1; -- { serverError TYPE_MISMATCH }
+
 DROP TABLE t_array_join_alias_nested;
