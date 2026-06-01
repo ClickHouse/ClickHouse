@@ -214,21 +214,18 @@ public:
             if (!is_direct_child(iter->key(), rocksdb::Slice(key_prefix)))
                 continue;
             Node node;
-            if (read_meta)
+            if (read_meta && read_data)
+            {
+                /// Full decode (data and the TTL fields), matching find() and the iterator.
+                /// A manual partial decode here would drop destroy_time/ttl and silently
+                /// hand back non-TTL nodes (e.g. to recursive remove).
+                node.decodeFromString(iter->value().ToString());
+            }
+            else if (read_meta)
             {
                 ReadBufferFromOwnString buffer(iter->value().ToStringView());
                 typename Node::Meta & meta = node;
-                /// We do not read data here
                 readPODBinary(meta, buffer);
-                if (read_data)
-                {
-                    readVarUInt(meta.stats.data_size, buffer);
-                    if (meta.stats.data_size)
-                    {
-                        node.data = std::unique_ptr<char[]>(new char[meta.stats.data_size]);
-                        buffer.readStrict(node.data.get(), meta.stats.data_size);
-                    }
-                }
             }
             std::string real_key(iter->key().data() + len, iter->key().size() - len);
             result.emplace_back(std::move(real_key), std::move(node));
