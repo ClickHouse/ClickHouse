@@ -125,6 +125,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         "statement"}})));
 }
 
+void registerInterpreterShowCreateQuery(InterpreterFactory & factory);
 void registerInterpreterShowCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

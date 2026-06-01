@@ -352,6 +352,7 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 }
 
+void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

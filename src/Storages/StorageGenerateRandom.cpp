@@ -954,6 +954,7 @@ VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
 }
 
 
+void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory)
 {
     factory.registerStorage("GenerateRandom", [](const StorageFactory::Arguments & args)

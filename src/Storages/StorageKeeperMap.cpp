@@ -1764,6 +1764,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
 
 }
 
+void registerStorageKeeperMap(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory)
 {
     factory.registerStorage(

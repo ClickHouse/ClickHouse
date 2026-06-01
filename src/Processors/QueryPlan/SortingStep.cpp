@@ -111,7 +111,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
+static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
 {
     if (max_bytes_ratio_before_external_sort == 0.)
         return 0;
@@ -720,6 +720,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
+void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Sorting", SortingStep::deserialize);

@@ -346,6 +346,7 @@ static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
     return std::make_shared<AggregateFunctionDistinctJSONPathsAndTypes<Data>>(argument_types);
 }
 
+void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory)
 {
     /// distinctJSONPaths documentation

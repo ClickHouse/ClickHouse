@@ -208,7 +208,7 @@ std::optional<UInt64> DiskLocal::tryReserve(UInt64 bytes, const std::optional<Re
             }
 
             /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
+            if (constraints->min_ratio > 0.0f)
             {
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)
@@ -872,6 +872,7 @@ ObjectStoragePtr DiskLocal::getObjectStorage()
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
+void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

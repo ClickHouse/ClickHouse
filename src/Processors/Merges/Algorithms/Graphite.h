@@ -105,6 +105,7 @@ enum RuleType
 };
 
 const String & ruleTypeStr(RuleType rule_type);
+std::string buildTaggedRegex(std::string regexp_str);
 
 struct Retention
 {

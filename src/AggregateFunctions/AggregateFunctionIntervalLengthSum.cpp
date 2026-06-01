@@ -14,7 +14,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-
 namespace DB
 {
 
@@ -164,7 +163,7 @@ private:
             /// Check if current interval intersects with next one then add length, otherwise advance interval end.
             if (curr_segment.second < next_segment.first)
             {
-                res += length(curr_segment);
+                res += static_cast<TResult>(length(curr_segment));
                 curr_segment = next_segment;
             }
             else if (next_segment.second > curr_segment.second)
@@ -172,7 +171,7 @@ private:
                 curr_segment.second = next_segment.second;
             }
         }
-        res += length(curr_segment);
+        res += static_cast<TResult>(length(curr_segment));
 
         return res;
     }
@@ -271,6 +270,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
 }
 
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

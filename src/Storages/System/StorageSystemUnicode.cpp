@@ -36,6 +36,13 @@
 
 #include <vector>
 
+/// ICU wraps every entry point in a `U_ICU_ENTRY_POINT_RENAME(name)` macro that
+/// re-uses the original name during expansion (`#define u_charType
+/// U_ICU_ENTRY_POINT_RENAME(u_charType)`), so every ICU call below triggers
+/// `-Wdisabled-macro-expansion`. Keep the suppression at file scope.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+
 namespace DB
 {
 namespace ErrorCodes
@@ -176,7 +183,7 @@ constexpr UProperty string_properties[]
 // Other properties
 constexpr UProperty other_properties[] = {UCHAR_SCRIPT_EXTENSIONS, UCHAR_IDENTIFIER_TYPE};
 
-std::vector<std::pair<String, UProperty>> getPropNames()
+static std::vector<std::pair<String, UProperty>> getPropNames()
 {
     std::vector<std::pair<String, UProperty>> properties;
 
@@ -746,3 +753,5 @@ void StorageSystemUnicode::fillData(
 }
 
 }
+
+#pragma clang diagnostic pop

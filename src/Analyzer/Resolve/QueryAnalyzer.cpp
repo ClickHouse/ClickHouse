@@ -39,6 +39,10 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -339,7 +343,7 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     validateCorrelatedSubqueries(node);
 }
 
-bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
+static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
 {
     if (node_source == tree_node)
         return true;
@@ -1765,41 +1769,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     return matched_column_nodes_with_names;
 }
 
-bool hasTableExpressionInJoinTree(const QueryTreeNodePtr & join_tree_node, const QueryTreeNodePtr & table_expression)
-{
-    QueryTreeNodes nodes_to_process;
-    nodes_to_process.push_back(join_tree_node);
-
-    while (!nodes_to_process.empty())
-    {
-        auto node_to_process = std::move(nodes_to_process.back());
-        nodes_to_process.pop_back();
-        if (node_to_process == table_expression)
-            return true;
-
-        auto node_type = node_to_process->getNodeType();
-
-        if (node_type == QueryTreeNodeType::JOIN)
-        {
-            const auto & join_node = node_to_process->as<JoinNode &>();
-            nodes_to_process.push_back(join_node.getLeftTableExpression());
-            nodes_to_process.push_back(join_node.getRightTableExpression());
-        }
-        else if (node_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            const auto & join_node = node_to_process->as<CrossJoinNode &>();
-            for (const auto & expr : join_node.getTableExpressions())
-                nodes_to_process.push_back(expr);
-        }
-        else if (node_type == QueryTreeNodeType::ARRAY_JOIN)
-        {
-            const auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-            nodes_to_process.push_back(array_join_node.getTableExpression());
-        }
-
-    }
-    return false;
-}
 
 /// Columns that resolved from matcher can also match columns from JOIN USING.
 /// In that case we update type to type of column in USING section.
@@ -3215,12 +3184,50 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                 auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
+                std::string from_clause_hint;
+                if (auto * query_node = scope.scope_node->as<QueryNode>())
+                {
+                    /// The original AST may be the bare `ASTSelectQuery` or, for an expression-level
+                    /// subquery, an `ASTSubquery` wrapping `ASTSelectWithUnionQuery` over a single
+                    /// `ASTSelectQuery`. Unwrap to find the user-written `SELECT`.
+                    const IAST * original_ast = query_node->getOriginalAST().get();
+                    if (const auto * subquery = original_ast ? original_ast->as<ASTSubquery>() : nullptr)
+                    {
+                        if (!subquery->children.empty())
+                            original_ast = subquery->children[0].get();
+                    }
+                    if (const auto * union_query = original_ast ? original_ast->as<ASTSelectWithUnionQuery>() : nullptr)
+                    {
+                        if (union_query->list_of_selects && union_query->list_of_selects->children.size() == 1)
+                            original_ast = union_query->list_of_selects->children[0].get();
+                    }
+
+                    if (const auto * select_query = original_ast ? original_ast->as<ASTSelectQuery>() : nullptr;
+                        select_query && !select_query->tables())
+                    {
+                        /// The analyzer falls back to `system.one` when there is no `FROM`,
+                        /// unless this is a top-level `SELECT` and `implicit_table_at_top_level` is set
+                        /// (see `QueryTreeBuilder::buildJoinTree`). The hint only makes sense in the
+                        /// `system.one` fallback case.
+                        const String & implicit_table = scope.context->getSettingsRef()[Setting::implicit_table_at_top_level];
+                        const bool falls_back_to_system_one = query_node->isSubquery() || implicit_table.empty();
+                        if (falls_back_to_system_one)
+                            from_clause_hint = "Note: the query does not have the FROM clause. Did you forget to add it?";
+                    }
+                }
+
+                /// Keep the original five-placeholder `message_format_string` for `text_log`
+                /// (see `03096_text_log_format_string_args_not_empty`) and attach the optional
+                /// `FROM`-clause hint via `addMessage` so the format string stays stable.
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
                     scope.scope_node->formatASTForErrorMessage(),
                     getHintsErrorMessageSuffix(hints));
+                if (!from_clause_hint.empty())
+                    exception.addMessage(from_clause_hint);
+                throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
             }
 
             node = std::move(resolved_identifier_node);
@@ -4094,7 +4101,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
 }
 
-bool findIdentifier(const FunctionNode & function)
+static bool findIdentifier(const FunctionNode & function)
 {
     for (const auto & argument : function.getArguments())
     {
