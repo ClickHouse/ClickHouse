@@ -74,14 +74,15 @@ TEST(PrefetchThreadPool, CancelWhenQueued)
     EXPECT_EQ(handle->state(), PrefetchHandle::State::Cancelled);
 
     /// Release the blocker so the worker drains the queue and reaches the
-    /// cancelled task. The cancelled task should no-op.
+    /// cancelled task. The cancelled task is never run; the worker sets a
+    /// std::runtime_error on its promise.
     worker_latch.release();
     std::ignore = blocker->get();
 
-    /// Wait a bit for the worker to process the cancelled task.
-    for (int i = 0; i < 100 && handle->state() == PrefetchHandle::State::Cancelled; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
+    /// get() blocks until the worker has reached the cancelled task and rethrows
+    /// that exception - a deterministic synchronization point with the cancel
+    /// code path, with no sleep / scheduler-timing dependence.
+    EXPECT_THROW(std::ignore = handle->get(), std::runtime_error);
     EXPECT_FALSE(task2_body_ran.load()) << "Cancelled task body must not run";
 }
 
