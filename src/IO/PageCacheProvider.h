@@ -49,7 +49,7 @@ private:
     struct Block
     {
         PageCacheByteRange byte_range;
-        UInt128 key_hash;
+        UInt128 key_hash{};
         PageCache::MappedPtr cell;  /// non-null for hits
         bool is_hit = false;
     };

@@ -22,13 +22,13 @@ struct FilesystemReadPrefetchesLogElement
     time_t event_time{};
     String query_id;
     String path;
-    UInt64 offset;
-    Int64 size; /// -1 means unknown
+    UInt64 offset{};
+    Int64 size{}; /// -1 means unknown
     std::chrono::system_clock::time_point prefetch_submit_time;
     std::optional<Stopwatch> execution_watch;
     Priority priority;
-    FilesystemPrefetchState state;
-    UInt64 thread_id;
+    FilesystemPrefetchState state{};
+    UInt64 thread_id{};
     String reader_id;
 
     static std::string name() { return "FilesystemReadPrefetchesLog"; }

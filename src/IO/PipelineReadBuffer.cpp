@@ -70,7 +70,7 @@ bool PipelineReadBuffer::nextImpl()
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
 {
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
         if (off < 0)

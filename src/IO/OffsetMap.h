@@ -16,8 +16,8 @@ public:
     struct PhysicalRange
     {
         StoredObject object;
-        size_t object_offset;
-        size_t size;
+        size_t object_offset = 0;
+        size_t size = 0;
     };
 
     /// Objects are concatenated in their input order to form the logical file.
@@ -41,9 +41,9 @@ private:
     struct Segment
     {
         StoredObject object;
-        size_t object_offset;
-        size_t logical_offset;
-        size_t size;
+        size_t object_offset = 0;
+        size_t logical_offset = 0;
+        size_t size = 0;
     };
 
     VectorWithMemoryTracking<Segment> segments;
