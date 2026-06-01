@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- Tag no-parallel: SQL user-defined functions are global (not per-database), so a fixed
+-- function name collides across concurrent runs (e.g. the flaky check) with FUNCTION_ALREADY_EXISTS.
+
 -- Regression for an MSan-detected dangling reference in
 -- `UserDefinedSQLFunctionVisitor::tryToReplaceFunction`.
 -- The visitor used to construct a `QueryNormalizer::Data` with a `{}` temporary as
