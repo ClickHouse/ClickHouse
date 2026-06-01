@@ -155,7 +155,17 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
 {
     ASTPtr node;
 
-    /// 1. Identifier
+    /// 1. Map, Array, Tuple of literals and their combination.
+    /// Checked before identifier so that ARRAY[...] is not consumed as a bare identifier.
+    ParserAllCollectionsOfLiterals all_collections_p;
+
+    if (all_collections_p.parse(pos, node, expected))
+    {
+        value = applyVisitor(ParameterFieldVisitorToString(), node->as<ASTLiteral>()->value);
+        return true;
+    }
+
+    /// 2. Identifier
     ParserCompoundIdentifier identifier_p;
 
     if (identifier_p.parse(pos, node, expected))
@@ -164,7 +174,7 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
         return true;
     }
 
-    /// 2. Literal
+    /// 3. Literal
     ParserLiteral literal_p;
     if (literal_p.parse(pos, node, expected))
     {
@@ -177,15 +187,6 @@ bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected 
             readQuoted(value, buf);
         }
 
-        return true;
-    }
-
-    /// 3. Map, Array, Tuple of literals and their combination
-    ParserAllCollectionsOfLiterals all_collections_p;
-
-    if (all_collections_p.parse(pos, node, expected))
-    {
-        value = applyVisitor(ParameterFieldVisitorToString(), node->as<ASTLiteral>()->value);
         return true;
     }
 

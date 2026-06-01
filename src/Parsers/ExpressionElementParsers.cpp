@@ -1452,13 +1452,22 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
         }
-        else if (pos->type == opening_bracket)
-        {
-            layers.emplace_back(pos);
-            pos.increaseDepth();
-        }
         else
-            return false;
+        {
+            /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+            auto pos_copy = pos;
+            if (ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+                && pos_copy->type == TokenType::OpeningSquareBracket)
+                pos = pos_copy;
+
+            if (pos->type == opening_bracket)
+            {
+                layers.emplace_back(pos);
+                pos.increaseDepth();
+            }
+            else
+                return false;
+        }
     }
 
     expected.add(pos, getTokenName(closing_bracket));
@@ -1507,16 +1516,25 @@ private:
     IParser::Pos begin;
 };
 
-bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/, bool allow_map)
+bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & expected, bool allow_map)
 {
     if (allow_map && pos->type == TokenType::OpeningCurlyBrace)
         collections.push_back(std::make_unique<MapCollection>(pos));
     else if (pos->type == TokenType::OpeningRoundBracket)
         collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>(pos));
-    else if (pos->type == TokenType::OpeningSquareBracket)
-        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
     else
-        return false;
+    {
+        /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+        if (pos->type != TokenType::OpeningSquareBracket)
+        {
+            auto pos_copy = pos;
+            if (!ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+                || pos_copy->type != TokenType::OpeningSquareBracket)
+                return false;
+            pos = pos_copy;
+        }
+        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
+    }
 
     ++pos;
     return true;

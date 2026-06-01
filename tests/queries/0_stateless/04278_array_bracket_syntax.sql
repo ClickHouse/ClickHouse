@@ -35,6 +35,14 @@ CREATE DICTIONARY test_array_dict (id UInt64, arr Array(UInt64) DEFAULT ARRAY[1,
 PRIMARY KEY id SOURCE(NULL()) LIFETIME(0) LAYOUT(FLAT());
 DROP DICTIONARY test_array_dict;
 
+-- Nested ARRAY[ARRAY[...]] in dictionary DEFAULT (tests parseAllCollectionsStart)
+CREATE DICTIONARY test_array_nested_dict (id UInt64, arr Array(Array(UInt64)) DEFAULT ARRAY[ARRAY[1, 2], ARRAY[3]])
+PRIMARY KEY id SOURCE(NULL()) LIFETIME(0) LAYOUT(FLAT());
+DROP DICTIONARY test_array_nested_dict;
+
+-- SET parameter uses ParserAllCollectionsOfLiterals which also goes through parseAllCollectionsStart
+SET param_array_test = ARRAY[10, 20, 30];
+
 -- BACKUP SETTINGS uses ParserArray, not the main expression parser.
 -- Use formatQuery to verify parsing without executing the backup.
 SELECT formatQuery('BACKUP TABLE t TO File(''/tmp/bk/'') SETTINGS cluster_host_ids = ARRAY[ARRAY[''id1'', ''id2'']]') != '';
