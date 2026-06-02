@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -24,6 +25,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Exception.h>
+#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -37,15 +39,23 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
+    extern const SettingsString force_data_skipping_indices;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsOverflowMode read_overflow_mode;
 }
 
 namespace ErrorCodes
 {
+    extern const int INDEX_NOT_USED;
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
     extern const int UNKNOWN_SETTING;
 }
 
@@ -111,9 +121,10 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Drop `force_data_skipping_indices` from nested SELECT `SETTINGS`: baseline planning
-/// has no hypothetical index, so a forced name would throw `INDEX_NOT_USED`.
-void stripForcedDataSkippingIndices(IAST * node)
+/// Drop `force_data_skipping_indices` from nested SELECT `SETTINGS` (baseline planning
+/// has no hypothetical index, so a forced name would throw `INDEX_NOT_USED`), collecting
+/// the removed values so the contract can be re-validated after candidates are evaluated.
+void stripForcedDataSkippingIndices(IAST * node, std::vector<String> & removed)
 {
     if (!node)
         return;
@@ -123,15 +134,18 @@ void stripForcedDataSkippingIndices(IAST * node)
         if (auto settings_ast = select->settings())
         {
             if (auto * set_query = settings_ast->as<ASTSetQuery>())
-                std::erase_if(set_query->changes, [](const auto & change)
+                std::erase_if(set_query->changes, [&](const auto & change)
                 {
-                    return change.name == "force_data_skipping_indices";
+                    if (change.name != "force_data_skipping_indices")
+                        return false;
+                    removed.push_back(change.value.template safeGet<String>());
+                    return true;
                 });
         }
     }
 
     for (const auto & child : node->children)
-        stripForcedDataSkippingIndices(child.get());
+        stripForcedDataSkippingIndices(child.get(), removed);
 }
 
 void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
@@ -142,6 +156,43 @@ void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
         out.insert(node->result_name);
     for (const auto * child : node->children)
         collectFilterInputColumns(child, out);
+}
+
+/// True if an `or` has the candidate's column in one branch and a non-index column
+/// in another. A real read can combine the candidate with an existing skip index on
+/// that other column (`use_skip_indexes_for_disjunctions`); the estimator cannot, so
+/// these cases are reported unsupported rather than understating the benefit.
+bool disjunctionMixesIndexAndOtherColumns(const ActionsDAG::Node * node, const NameSet & index_columns)
+{
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base
+        && node->function_base->getName() == "or")
+    {
+        bool branch_has_index = false;
+        bool branch_has_other = false;
+        for (const auto * child : node->children)
+        {
+            NameSet cols;
+            collectFilterInputColumns(child, cols);
+            for (const auto & col : cols)
+            {
+                if (index_columns.contains(col))
+                    branch_has_index = true;
+                else
+                    branch_has_other = true;
+            }
+        }
+        if (branch_has_index && branch_has_other)
+            return true;
+    }
+
+    for (const auto * child : node->children)
+        if (disjunctionMixesIndexAndOtherColumns(child, index_columns))
+            return true;
+    return false;
 }
 
 /// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
@@ -247,6 +298,16 @@ bool tryEstimateEmpirical(
     UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
+    /// The whole-part scan is not the normal read pipeline, so enforce the query's
+    /// read limits explicitly (max_execution_time is handled by the process-list element).
+    const auto & limit_settings = context->getSettingsRef();
+    const SizeLimits read_limits(
+        limit_settings[Setting::max_rows_to_read],
+        limit_settings[Setting::max_bytes_to_read],
+        limit_settings[Setting::read_overflow_mode]);
+    UInt64 total_rows_read = 0;
+    UInt64 total_bytes_read = 0;
+
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
 
@@ -338,6 +399,12 @@ bool tryEstimateEmpirical(
         {
             if (block.rows() == 0)
                 continue;
+
+            total_rows_read += block.rows();
+            total_bytes_read += block.bytes();
+            if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
+                                   ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
+                break;
 
             /// Evaluate the index expression so the aggregator sees what a real
             /// MATERIALIZE INDEX would see (e.g. lower(s) instead of raw s)
@@ -469,6 +536,20 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
+    if (context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
+    {
+        NameSet index_columns_set;
+        for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
+            index_columns_set.insert(col);
+        if (disjunctionMixesIndexAndOtherColumns(filter_dag->getOutputs().front(), index_columns_set))
+        {
+            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+            result.not_applicable_reason = "EXPLAIN WHATIF does not model combining the candidate with an existing "
+                                           "skip index under a disjunction (use_skip_indexes_for_disjunctions)";
+            return result;
+        }
+    }
+
     MergeTreeIndexConditionPtr condition;
     try
     {
@@ -527,12 +608,21 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
-    /// Drop forced skip indexes for baseline planning: session-level here, inner-query
-    /// `SETTINGS` below (see `stripForcedDataSkippingIndices`).
+    /// Capture the forced skip-index names (session + inner-query), then drop them for
+    /// baseline planning — the contract is re-validated after candidates are evaluated.
+    std::vector<String> forced_strings;
+    if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
+        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
     local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
 
     auto select_query_copy = select_query->clone();
-    stripForcedDataSkippingIndices(select_query_copy.get());
+    stripForcedDataSkippingIndices(select_query_copy.get(), forced_strings);
+
+    NameSet forced_indices;
+    for (const auto & forced_string : forced_strings)
+        if (!forced_string.empty())
+            for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, context->getSettingsRef()))
+                forced_indices.insert(name);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
@@ -606,6 +696,28 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
                 static_cast<double>(total_bytes) / static_cast<double>(total_rows) * static_cast<double>(analysis.selected_rows));
     }
 
+    /// Honor `force_data_skipping_indices`: each forced name must be a useful real
+    /// skip index (from the baseline analysis) or an applicable hypothetical candidate,
+    /// otherwise throw `INDEX_NOT_USED` exactly as a real read would.
+    auto validate_forced_indices = [&]
+    {
+        if (forced_indices.empty())
+            return;
+        NameSet satisfied;
+        for (const auto & stat : analysis.index_stats)
+            if (stat.type == ReadFromMergeTree::IndexType::Skip)
+                satisfied.insert(stat.name);
+        for (const auto & idx : result.index_results)
+            if (idx.status == IndexResult::Applicable)
+                satisfied.insert(idx.index_name);
+        for (const auto & name : forced_indices)
+            if (!satisfied.contains(name))
+                throw Exception(
+                    ErrorCodes::INDEX_NOT_USED,
+                    "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                    backQuoteIfNeed(name));
+    };
+
     const auto & store = context->getHypotheticalIndexStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
@@ -617,6 +729,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         no_index.not_applicable_reason = "No hypothetical indexes defined for this table. "
             "Use CREATE HYPOTHETICAL INDEX to define one.";
         result.index_results.push_back(std::move(no_index));
+        validate_forced_indices();
         return result;
     }
 
@@ -642,6 +755,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         result.index_results.push_back(std::move(index_result));
     }
 
+    validate_forced_indices();
     return result;
 }
 

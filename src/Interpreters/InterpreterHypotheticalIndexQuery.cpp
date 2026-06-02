@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTHypotheticalIndexQuery.h>
@@ -93,6 +94,18 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     /// CREATE HYPOTHETICAL INDEX
+    const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
+
+    /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
+    /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS` (a duplicate no-op should
+    /// not throw on an otherwise-invalid replacement declaration).
+    if (query.if_not_exists)
+    {
+        for (const auto & existing : store.getForTable(table_id))
+            if (existing.name == index_ast.name)
+                return {};
+    }
+
     auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
@@ -100,6 +113,12 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         /* is_implicitly_created = */ false,
         /* escape_filenames = */ true,
         context);
+
+    /// Empirical estimation reads the index's columns, so require column-level
+    /// SELECT — otherwise a user with table-level access could infer a restricted
+    /// column's distribution from the reported skip ratio.
+    if (index_desc.expression)
+        context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
 
     /// Reject unsupported types before the type-specific validator can throw a confusing error.
     if (index_desc.type == "text" || index_desc.type == "vector_similarity")
@@ -142,11 +161,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     }
 
     if (!context->getSettingsRef()[Setting::allow_suspicious_indices])
-    {
-        const auto * index_ast = query.index_decl ? query.index_decl->as<ASTIndexDeclaration>() : nullptr;
-        if (index_ast)
-            checkSuspiciousIndex(index_ast->getExpression());
-    }
+        checkSuspiciousIndex(index_ast.getExpression());
 
     store.add(table_id, index_desc, query.if_not_exists);
     return {};

@@ -73,6 +73,17 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_dup"
 
+# IF NOT EXISTS short-circuits before validating an otherwise-invalid replacement.
+echo "--- IF NOT EXISTS is a no-op even with an invalid replacement declaration ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_dup2;
+    CREATE TABLE t_hypo_dup2 (a UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_dup2 (a) TYPE minmax GRANULARITY 1;
+    CREATE HYPOTHETICAL INDEX IF NOT EXISTS idx_a ON t_hypo_dup2 (missing_col) TYPE minmax GRANULARITY 1;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_dup2';
+" 2>&1 | grep -E '^[0-9]+$|UNKNOWN_IDENTIFIER'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_dup2"
+
 echo "--- DROP TABLE hides the entry from system.hypothetical_indexes ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_orphan;
@@ -118,7 +129,7 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -m1 -o "of type 'vector_similarity' are not supported"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_vec"
 
-echo "--- force_data_skipping_indices naming the hypothetical index does not break WHATIF ---"
+echo "--- force_data_skipping_indices: useful hypothetical index is accepted ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_force;
     CREATE TABLE t_hypo_force (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
@@ -127,6 +138,12 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_force (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_force WHERE b = 42 SETTINGS force_data_skipping_indices = 'idx_b';
 " 2>&1 | grep -E '^With |^\s+status:'
+
+echo "--- force_data_skipping_indices: not-useful index throws like a real read ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_force (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_force WHERE a = 1 SETTINGS force_data_skipping_indices = 'idx_b';
+" 2>&1 | grep -m1 -o 'INDEX_NOT_USED'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_force"
 
 echo "--- EXPLAIN WHATIF with function-expression index ---"
@@ -201,3 +218,19 @@ $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_repl
 " | grep -E '^\s+status:|^\s+source:|^With idx_a'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_pr"
+
+# Column-level SELECT is required: a user without access to the index column is denied.
+echo "--- CREATE requires column-level SELECT on the index column ---"
+user="u_04223_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_priv;
+    CREATE TABLE t_hypo_priv (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    DROP USER IF EXISTS ${user};
+    CREATE USER ${user} NOT IDENTIFIED;
+    GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv TO ${user};
+"
+$CLICKHOUSE_CLIENT --user "${user}" -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_priv (b) TYPE minmax GRANULARITY 1;
+" 2>&1 | grep -m1 -o 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv"
