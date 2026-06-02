@@ -510,7 +510,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
     row_input_format_params.connection_handling = format_settings.connection_handling;
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
-    row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+    row_input_format_params.allow_errors_ratio = static_cast<double>(format_settings.input_allow_errors_ratio);
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];
     row_input_format_params.timeout_overflow_mode = settings[Setting::timeout_overflow_mode];
 
