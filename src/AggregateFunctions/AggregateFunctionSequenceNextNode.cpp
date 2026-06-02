@@ -96,7 +96,7 @@ struct NodeBase
 
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > max_node_size_deserialize))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
@@ -106,7 +106,7 @@ struct NodeBase
         buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
-        UInt64 ulong_bitset;
+        UInt64 ulong_bitset = 0;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
         readBinary(node->can_be_base, buf);
@@ -329,7 +329,7 @@ public:
     {
         readBinary(data(place).sorted, buf);
 
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
 
         if (unlikely(size == 0))

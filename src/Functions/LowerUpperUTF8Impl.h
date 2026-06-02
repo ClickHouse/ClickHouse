@@ -87,7 +87,7 @@ struct LowerUpperUTF8Impl
             auto safe_dest_capacity = static_cast<int32_t>(std::min<size_t>(res_data.size() - curr_offset, INT32_MAX));
             auto safe_src_size = static_cast<int32_t>(src_size);
 
-            int32_t dst_size;
+            int32_t dst_size = 0;
             if constexpr (upper)
                 dst_size = ucasemap_utf8ToUpper(
                     case_map,

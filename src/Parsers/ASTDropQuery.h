@@ -20,7 +20,7 @@ public:
         Truncate,
     };
 
-    Kind kind;
+    Kind kind{};
     bool if_exists{false};
     bool if_empty{false};
 

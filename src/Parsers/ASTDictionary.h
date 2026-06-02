@@ -43,7 +43,7 @@ public:
     String layout_type;
     /// parameters (size_in_cells, ...)
     /// ASTExpressionList -> ASTPair -> (ASTLiteral key, ASTLiteral value).
-    ASTExpressionList * parameters;
+    ASTExpressionList * parameters{};
     /// has brackets after layout type
     bool has_brackets = true;
 

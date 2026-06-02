@@ -159,7 +159,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     while (!marks_reader->eof())
     {
         marks_reader->ignore(marks_per_granule * sizeof(MarkInCompressedFile));
-        size_t granularity;
+        size_t granularity = 0;
         readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_ptr->appendMark(granularity);
     }

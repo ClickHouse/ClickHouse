@@ -117,7 +117,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type;
+            const IDataType * nested_type = nullptr;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())

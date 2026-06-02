@@ -26,7 +26,7 @@ public:
     bool caches = false;
     bool full = false;
 
-    IAST * from;
+    IAST * from{};
 
     String cluster_str;
     String like;

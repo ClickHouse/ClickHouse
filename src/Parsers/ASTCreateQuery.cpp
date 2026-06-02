@@ -244,7 +244,7 @@ class ASTColumnsElement : public IAST
 {
 public:
     String prefix;
-    IAST * elem;
+    IAST * elem{};
 
     String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
 

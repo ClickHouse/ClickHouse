@@ -16,7 +16,7 @@ namespace DB
 class ASTUseQuery : public IAST
 {
 public:
-    IAST * database;
+    IAST * database{};
 
     String getDatabase() const
     {

@@ -678,7 +678,7 @@ using NameViewToNodeMapping = std::unordered_map<std::string_view, const Actions
 struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
-    bool is_storage_join;
+    bool is_storage_join{};
 };
 
 static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
@@ -1625,7 +1625,7 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
 {
-    size_t num_nodes;
+    size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
@@ -1633,7 +1633,7 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     ActionsDAG::NodeRawConstPtrs nodes(num_nodes);
     for (size_t i = 0; i < num_nodes; ++i)
     {
-        size_t node_id;
+        size_t node_id = 0;
         readVarUInt(node_id, in);
         if (node_id >= max_node_id)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);
@@ -1648,12 +1648,12 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     ActionsDAG actions_dag;
     {
-        UInt64 num_dags;
+        UInt64 num_dags = 0;
         readVarUInt(num_dags, ctx.in);
 
         if (num_dags != 1)

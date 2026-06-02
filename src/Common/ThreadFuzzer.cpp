@@ -300,7 +300,7 @@ void ThreadFuzzer::setup() const
 
     static constexpr UInt32 timer_precision = 1000000;
 
-    struct timeval interval;
+    struct timeval interval{};
     interval.tv_sec = cpu_time_period_us / timer_precision;
     interval.tv_usec = cpu_time_period_us % timer_precision;
 

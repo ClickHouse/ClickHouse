@@ -1782,7 +1782,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
 
-        bool noop;
+        bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);
         writeChecksums(checksums, {});
 
@@ -2021,7 +2021,7 @@ void IMergeTreeDataPart::loadTTLInfos()
         if (auto in = readFileIfExists("ttl.txt"))
         {
             assertString("ttl format version: ", *in);
-            size_t format_version;
+            size_t format_version = 0;
             readText(format_version, *in);
             assertChar('\n', *in);
 
@@ -2530,7 +2530,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
     {
         auto check_file_not_empty = [this](const String & file_path)
         {
-            UInt64 file_size;
+            UInt64 file_size = 0;
             if (!getDataPartStorage().existsFile(file_path) || (file_size = getDataPartStorage().getFileSize(file_path)) == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
