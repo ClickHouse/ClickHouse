@@ -64,7 +64,10 @@ def start_cluster():
                 "configs/config.d/include_from_path.xml",
                 "configs/config.d/include_from.xml",
             ],
-            env_variables={"MINIO_SECRET": minio_secret_key, "HOME": 'http://minio1:9001/root/data/'},
+            env_variables={
+                "MINIO_SECRET": minio_secret_key,
+                "TEST_SECURITY_S3_ENDPOINT": "http://minio1:9001/root/data/",
+            },
             stay_alive=True,
             with_minio=True,
             with_zookeeper=True,
@@ -675,7 +678,7 @@ def test_dynamic_disk_security_settings(start_cluster):
             SETTINGS disk = disk(
                 type = object_storage,
                 object_storage_type = s3,
-                endpoint = 'from_env HOME',
+                endpoint = 'from_env TEST_SECURITY_S3_ENDPOINT',
                 access_key_id = clickhouse,
                 secret_access_key = clickhouse)
             """,
@@ -724,7 +727,7 @@ def test_dynamic_disk_security_settings(start_cluster):
             SETTINGS disk = disk(
                 type = object_storage,
                 object_storage_type = s3,
-                endpoint = 'from_env HOME',
+                endpoint = 'from_env TEST_SECURITY_S3_ENDPOINT',
                 access_key_id = clickhouse,
                 secret_access_key = clickhouse)
             """,
@@ -742,7 +745,7 @@ def test_dynamic_disk_security_settings(start_cluster):
             SETTINGS disk = disk(
                 type = object_storage,
                 object_storage_type = s3,
-                endpoint = 'from_env HOME',
+                endpoint = 'from_env TEST_SECURITY_S3_ENDPOINT',
                 access_key_id = clickhouse,
                 secret_access_key = clickhouse)
             """,
@@ -766,7 +769,7 @@ def test_dynamic_disk_security_settings(start_cluster):
             CREATE TABLE test_security_from_env_ok (a Int32) ENGINE = MergeTree() ORDER BY tuple()
             SETTINGS disk = disk(
                 type = s3,
-                endpoint = 'from_env HOME',
+                endpoint = 'from_env TEST_SECURITY_S3_ENDPOINT',
                 access_key_id = 'minio',
                 secret_access_key = '{minio_secret_key}')
             """,
