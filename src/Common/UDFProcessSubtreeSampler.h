@@ -73,6 +73,12 @@ public:
     bool readStatFailedAnyPid() const noexcept { return read_stat_failed_any; }
     bool readPeakRssFailedAnyPid() const noexcept { return read_peak_rss_failed_any; }
 
+    /// Whether `walkSubtree` hit the `MAX_PIDS` cap during this borrow and
+    /// a candidate pid had to be dropped. When true, the subtree enumeration
+    /// is incomplete, so CPU and `PeakMemoryByteSeconds` will under-count
+    /// the unvisited descendants.
+    bool subtreeWalkTruncated() const noexcept { return subtree_truncated_any; }
+
 private:
     Stopwatch entry_watch;
     Stopwatch borrow_watch;
@@ -90,6 +96,7 @@ private:
     bool clear_refs_failed_any = false;
     bool read_stat_failed_any = false;
     bool read_peak_rss_failed_any = false;
+    bool subtree_truncated_any = false;
 
     std::atomic<UInt64> input_bytes{0};
     std::atomic<UInt64> output_bytes{0};
@@ -114,8 +121,10 @@ namespace UDFProcfs
 {
     /// Recursively enumerate the root pid plus every descendant by walking
     /// `/proc/<pid>/task/<tid>/children`. Returns at least {root_pid} when
-    /// procfs is unavailable.
-    std::vector<pid_t> walkSubtree(pid_t root_pid);
+    /// procfs is unavailable. `truncated` is set to true if a fresh
+    /// candidate pid was seen after the internal `MAX_PIDS` cap had been
+    /// reached, in which case the returned vector is incomplete.
+    std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated);
 
     /// Write "5\n" to /proc/<pid>/clear_refs to reset VmHWM. Returns
     /// false on open/write failure (e.g. seccomp denies `open` on

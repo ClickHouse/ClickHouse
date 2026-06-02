@@ -80,6 +80,7 @@ struct UDFProcfsFailureLoggedFlags
     std::atomic<bool> clear_refs{false};
     std::atomic<bool> read_stat{false};
     std::atomic<bool> read_peak_rss{false};
+    std::atomic<bool> subtree_truncated{false};
 };
 
 UDFProcfsFailureLoggedFlags & getUDFProcfsFailureFlags(const String & udf_name)
@@ -294,11 +295,12 @@ public:
                 }
 
                 /// If any of the three procfs reads silently failed during
-                /// this borrow, surface it once per UDF + op so an operator
-                /// running under a restrictive seccomp profile (or with /proc
-                /// unmounted) has a visible signal that the resource counters
-                /// they see are degraded.
-                if (sampler->clearRefsFailedAnyPid() || sampler->readStatFailedAnyPid() || sampler->readPeakRssFailedAnyPid())
+                /// this borrow, or the subtree walk hit the MAX_PIDS cap,
+                /// surface it once per UDF + op so an operator running under
+                /// a restrictive seccomp profile (or a UDF spawning more
+                /// descendants than the sampler can enumerate) has a visible
+                /// signal that the resource counters they see are degraded.
+                if (sampler->clearRefsFailedAnyPid() || sampler->readStatFailedAnyPid() || sampler->readPeakRssFailedAnyPid() || sampler->subtreeWalkTruncated())
                 {
                     const auto & udf_name = getName();
                     auto & failure_logged = getUDFProcfsFailureFlags(udf_name);
@@ -318,6 +320,13 @@ public:
                         LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
                             "UDF '{}': reading /proc/<pid>/status failed for at least one subtree pid. "
                             "PeakMemoryByteSeconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->subtreeWalkTruncated() && !failure_logged.subtree_truncated.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': descendant count exceeded the per-borrow MAX_PIDS cap, "
+                            "the subtree walk was truncated and additional descendants were not enumerated. "
+                            "UserTimeMicroseconds, SystemTimeMicroseconds and PeakMemoryByteSeconds will under-count. "
                             "Logged once per UDF.",
                             udf_name);
                 }

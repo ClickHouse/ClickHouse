@@ -42,8 +42,9 @@ namespace
 namespace UDFProcfs
 {
 
-std::vector<pid_t> walkSubtree(pid_t root_pid)
+std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
 {
+    truncated = false;
     std::vector<pid_t> result;
     if (root_pid <= 0)
         return result;
@@ -86,9 +87,16 @@ std::vector<pid_t> walkSubtree(pid_t root_pid)
                     continue;
                 if (std::find(result.begin(), result.end(), child) != result.end())
                     continue;
-                result.push_back(child);
+                /// Check the size cap BEFORE pushing so we can distinguish
+                /// "we filled to exactly MAX_PIDS without seeing more" (no
+                /// truncation) from "we saw another unique candidate but had
+                /// no room" (truncation).
                 if (result.size() >= MAX_PIDS)
+                {
+                    truncated = true;
                     break;
+                }
+                result.push_back(child);
             }
             if (result.size() >= MAX_PIDS)
                 break;
@@ -252,7 +260,10 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     /// clearRefs failure is silent — VmHWM keeps the worker's lifetime peak,
     /// which may inflate the reported peak_rss by an arbitrary amount but
     /// remains a correct upper bound on this borrow's peak.
-    auto pids = UDFProcfs::walkSubtree(root_pid);
+    bool walk_truncated = false;
+    auto pids = UDFProcfs::walkSubtree(root_pid, walk_truncated);
+    if (walk_truncated)
+        subtree_truncated_any = true;
     for (pid_t pid : pids)
     {
         pre_walk_pids.insert(pid);
@@ -318,7 +329,10 @@ void UDFProcessSubtreeSampler::recordReleased()
         pre_stime_sum += snap.stime_us;
     }
 
-    auto pids = UDFProcfs::walkSubtree(root_pid);
+    bool walk_truncated = false;
+    auto pids = UDFProcfs::walkSubtree(root_pid, walk_truncated);
+    if (walk_truncated)
+        subtree_truncated_any = true;
 
     UInt64 post_utime_sum = 0;
     UInt64 post_stime_sum = 0;
