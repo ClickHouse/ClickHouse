@@ -346,7 +346,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -363,14 +364,17 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
+
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
             paths[i],
             /* idx */i,
-            getFormatSettings(context),
-            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
+            hive_format_settings,
+            parse_hive_columns);
     }
 
     filterBlockWithExpression(actions, block);
@@ -382,11 +386,18 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings)
 {
     HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+
+    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
+    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
+    const auto hive_format_settings = hive_map.empty()
+        ? FormatSettings{}
+        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
