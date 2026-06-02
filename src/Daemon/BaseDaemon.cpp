@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
@@ -191,7 +190,7 @@ void BaseDaemon::closeFDs()
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        VectorWithMemoryTracking<int> fds;
+        std::vector<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
             fds.push_back(parse<int>(path.path().filename()));
 
@@ -471,7 +470,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
+    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
@@ -529,15 +528,36 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-void BaseDaemon::onTerminateRequestSignal()
+void BaseDaemon::handleSignal(int signal_id)
 {
+    if (!(signal_id == SIGINT ||
+        signal_id == SIGQUIT ||
+        signal_id == SIGTERM))
+        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+    std::lock_guard lock(signal_handler_mutex);
+    {
+        ++terminate_signals_counter;
+        signal_event.notify_all();
+    }
+
     is_cancelled = true;
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+    if (terminate_signals_counter >= 2)
+    {
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        call_default_signal_handler(signal_id);
+        /// If the above did not help.
+        _exit(128 + signal_id);
+    }
 }
 
 void BaseDaemon::waitForTerminationRequest()
 {
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
-    signal_listener->waitForTerminationRequest();
+    std::unique_lock<std::mutex> lock(signal_handler_mutex);
+    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
 
 

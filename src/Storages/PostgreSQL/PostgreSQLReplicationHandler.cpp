@@ -505,7 +505,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    StorageInMemoryMetadata storage_metadata = *nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -597,7 +597,7 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
     pqxx::result result{tx.exec(query_str)};
-    chassert(!result.empty());
+    assert(!result.empty());
     return result[0][0].as<std::string>() == "t";
 }
 
@@ -683,7 +683,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
 void PostgreSQLReplicationHandler::createReplicationSlot(
         pqxx::nontransaction & tx, String & start_lsn, String & snapshot_name, bool temporary)
 {
-    chassert(temporary || !user_managed_slot);
+    assert(temporary || !user_managed_slot);
 
     String query_str;
     String slot_name;
@@ -711,7 +711,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
 void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
-    chassert(temporary || !user_managed_slot);
+    assert(temporary || !user_managed_slot);
 
     std::string slot_name;
     if (temporary)
