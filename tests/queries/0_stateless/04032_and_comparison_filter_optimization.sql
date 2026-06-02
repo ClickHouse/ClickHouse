@@ -514,4 +514,16 @@ SELECT 'non_deterministic_transitive';
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 = number % 2 AND rand() % 2 = 1 AND number % 2 = 0 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM numbers(1) WHERE rand() % 2 = number % 2 AND rand() % 2 = 1 AND number % 2 = 0 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
 
+-- =====================================================================
+-- Section 17: NaN must not be pruned with range-ordering semantics
+-- =====================================================================
+
+-- `f < nan` is always false in query execution, so `f = 1 AND f < nan` is empty.
+-- accurateLess orders NaN after ordinary values, so without a NaN guard the EQUALS
+-- branch would treat accurateLess(1, nan) as true, prune `f < nan` and wrongly
+-- return the f = 1 row. The result must be empty for both setting values.
+SELECT 'nan_guard';
+SELECT count() FROM (SELECT number::Float64 AS f FROM numbers(3)) WHERE f = 1 AND f < nan SETTINGS optimize_redundant_comparisons = 0;
+SELECT count() FROM (SELECT number::Float64 AS f FROM numbers(3)) WHERE f = 1 AND f < nan SETTINGS optimize_redundant_comparisons = 1;
+
 DROP TABLE IF EXISTS 04032_t;

@@ -7,6 +7,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -631,6 +632,16 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
     const auto & rc = *right.converted_value;
     const auto lf = left.function;
     const auto rf = right.function;
+
+    /// FieldAccurateComparison orders NaN after all ordinary values, but less/lessOrEquals/equals
+    /// in query execution return false for any comparison involving NaN. Relying on range-ordering
+    /// here would unsoundly prune predicates: e.g. for `f = 1 AND f < nan` the EQUALS branch treats
+    /// accurateLess(1, nan) as true and drops `f < nan`, returning f = 1, while the original
+    /// predicate is always false. Skip pruning when either constant is NaN.
+    auto is_nan = [](const Field & f)
+    { return f.getType() == Field::Types::Float64 && isNaN(f.safeGet<Float64>()); };
+    if (is_nan(lc) || is_nan(rc))
+        return ValueComparisonResult::NONE;
 
     try
     {
