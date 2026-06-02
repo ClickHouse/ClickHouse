@@ -1769,8 +1769,7 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
 
 static const std::map<size_t, Strings> swapAggrs
     = {{1,
-        {"aggThrow",
-         "any",
+        {"any",
          "anyHeavy",
          "anyLast",
          "anyRespectNulls",
@@ -1786,7 +1785,6 @@ static const std::map<size_t, Strings> swapAggrs
          "flameGraph",
          "groupArray",
          "groupArrayIntersect",
-         "groupArrayLast",
          "groupArrayMovingAvg",
          "groupArrayMovingSum",
          "groupBitAnd",

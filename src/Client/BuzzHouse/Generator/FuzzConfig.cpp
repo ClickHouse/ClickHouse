@@ -1295,7 +1295,7 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 100 ORDER BY "num_tries" DESC LIMIT 3)"};
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
