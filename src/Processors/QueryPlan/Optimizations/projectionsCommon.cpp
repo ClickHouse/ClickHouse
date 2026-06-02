@@ -249,14 +249,6 @@ bool QueryDAG::build(QueryPlan::Node & node)
         outputs.insert(outputs.begin(), filter_node);
     }
 
-    /// Remove materialize() and identity() wrappers from the combined DAG.
-    /// This must happen after all expressions are merged and filter nodes are added
-    /// back to outputs, because:
-    /// 1. Removing wrappers before merging would change output column names (e.g.,
-    ///    "materialize(name)" → "name"), causing subsequent merges to fail when they
-    ///    try to match input names to the modified output names.
-    /// 2. removeTrivialWrappers calls removeUnusedActions, which can invalidate raw
-    ///    pointers (like filter_nodes) to nodes that are no longer reachable from outputs.
     if (dag)
         dag->removeTrivialWrappers();
 
