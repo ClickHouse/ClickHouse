@@ -60,12 +60,6 @@ class ExecutorTasks
     const static size_t TOO_MANY_IDLE_THRESHOLD = 4;
 
 public:
-    enum SpawnStatus
-    {
-        DO_NOT_SPAWN,
-        SHOULD_SPAWN,
-    };
-
     using Stack = std::stack<UInt64>;
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
@@ -77,8 +71,8 @@ public:
 
     void rethrowFirstThreadException();
 
-    SpawnStatus tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
-    SpawnStatus tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
+    void tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & self, std::unique_lock<std::mutex> & lock);
+    void tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock);
 
     /// It sets the task for specified thread `context`.
     /// If task was succeessfully found, one thread is woken up to process the remaining tasks.
@@ -109,9 +103,11 @@ public:
     /// Release CPU slots
     void freeCPU();
 
-    /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1)
-    /// Returns spawn status indicating if more threads should be spawned
-    SpawnStatus upscale(size_t slot_id);
+    /// Upscale to include slot_id. Updates use_threads to max(use_threads, slot_id + 1).
+    /// Returns the number of additional threads the caller may try to spawn next (0 means
+    /// "stop spawning": either pipeline width is saturated or enough idle threads can absorb
+    /// the work). Callers should still spawn one at a time and re-call upscale after each.
+    size_t upscale(size_t slot_id);
 
     /// Downscale by removing slot_id from active slots. Updates use_threads to highest active slot + 1
     void downscale(size_t slot_id);

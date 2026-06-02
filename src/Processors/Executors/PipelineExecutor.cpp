@@ -624,7 +624,9 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         size_t thread_num = slot->slot_id;
 
         /// Count of threads in use should be updated for proper finish() condition.
-        const auto spawn_status = tasks.upscale(thread_num);
+        /// `upscale` returns the remaining headroom for spawning. Even when >0 we spawn
+        /// one thread per iteration and re-enter `upscale` after the next `tryAcquire`.
+        const size_t remaining_capacity = tasks.upscale(thread_num);
 
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
@@ -645,7 +647,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
         slot.reset(); // To make tidy build happy (bugprone-use-after-move)
 
-        if (spawn_status == ExecutorTasks::DO_NOT_SPAWN)
+        if (remaining_capacity == 0)
             return;
     }
 }
