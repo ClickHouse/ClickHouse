@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
             {"read_in_order_use_virtual_row", false, true, "Enable the virtual row optimization by default. When reading in order of the primary key over many parts, it lets `MergingSortedTransform` reprioritize sources using primary key values from the sparse index, so parts that are not relevant for the query are not read. This significantly reduces peak memory consumption (see https://github.com/ClickHouse/ClickHouse/issues/52624)."},
+            {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
