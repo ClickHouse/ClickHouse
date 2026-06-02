@@ -56,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
+    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -63,6 +64,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
+    bool top_k_through_join;
     bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
@@ -79,6 +81,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
+    bool optimize_prewhere_after_pushdown;
     bool read_in_order;
     bool distinct_in_order;
     bool optimize_sorting_by_input_stream_properties;
@@ -87,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
+    bool push_limit_by_into_sort;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -102,6 +106,7 @@ struct QueryPlanOptimizationSettings
     UInt64 distributed_plan_max_rows_to_broadcast = 20000; /// Max number of rows to broadcast in distributed query plan
     bool distributed_plan_force_shuffle_aggregation = false; /// Force Shuffle strategy instead of PartialAggregation + Merge for distributed aggregation
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
+    bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
 
     /// ------------------------------------------------------
 
@@ -113,6 +118,12 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection;
     String force_projection_name;
 
+    /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
+    /// projection). Sets larger than this are treated as non-matching. Zero disables content-hash
+    /// comparison for IN-clause sets entirely (projection match never succeeds for nodes
+    /// containing such sets).
+    size_t max_set_size_for_projection_match = 0;
+
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
     bool is_parallel_replicas_initiator_with_projection_support = false;
@@ -120,6 +131,12 @@ struct QueryPlanOptimizationSettings
     /// If lazy materialization optimisation is enabled
     bool optimize_lazy_materialization = false;
     size_t max_limit_for_lazy_materialization = 0;
+
+    /// If lazy FINAL optimization for ReplacingMergeTree is enabled
+    bool optimize_lazy_final = false;
+    size_t max_rows_for_lazy_final = 0;
+    size_t max_bytes_for_lazy_final = 0;
+    float min_filtered_ratio_for_lazy_final = 0;
 
     /// Vector-search-related settings
     size_t max_limit_for_vector_search_queries;
@@ -132,6 +149,7 @@ struct QueryPlanOptimizationSettings
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
+    bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 
@@ -147,7 +165,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
 
     /// JOIN runtime filter settings
@@ -160,6 +178,9 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+
+    size_t min_columns_for_join_lazy_indexing = 0;
+    size_t max_limit_for_join_lazy_indexing = 0;
 
     /// Please, avoid using this
     ///

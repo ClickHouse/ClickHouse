@@ -24,21 +24,8 @@ namespace ErrorCodes
     DECLARE(ExternalCommandStderrReaction, stderr_reaction, ExternalCommandStderrReaction::NONE, "Reaction when external command outputs data to its stderr.", 0) \
     DECLARE(Bool, check_exit_code, false, "Throw exception if the command exited with non-zero status code.", 0) \
 
-DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
-
-struct ExecutableSettingsImpl : public BaseSettings<ExecutableSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
-
-namespace ExecutableSetting
-{
-LIST_OF_EXECUTABLE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, EXECUTABLE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, ExecutableSettings, ExecutableSetting)
 
 ExecutableSettings::ExecutableSettings()
     : script_name({})
@@ -56,13 +43,7 @@ ExecutableSettings::ExecutableSettings(const ExecutableSettings & settings)
 {
 }
 
-ExecutableSettings::ExecutableSettings(ExecutableSettings && settings) noexcept
-    : script_name(std::move(settings.script_name))
-    , script_arguments(std::move(settings.script_arguments))
-    , is_executable_pool(settings.is_executable_pool)
-    , impl(std::make_unique<ExecutableSettingsImpl>(std::move(*settings.impl)))
-{
-}
+ExecutableSettings::ExecutableSettings(ExecutableSettings && settings) noexcept = default;
 
 ExecutableSettings::~ExecutableSettings() = default;
 

@@ -51,7 +51,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
-        data_part->storage.getVirtualsPtr(),
         indices_to_recalc,
         data_part->getMarksFileExtension(),
         default_codec,
@@ -65,7 +64,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr);
+    writer->write(block, nullptr, nullptr);
     new_serialization_infos.add(block);
 }
 
