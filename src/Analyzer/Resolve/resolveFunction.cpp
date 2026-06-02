@@ -1708,10 +1708,29 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
               * If the argument types are still null, the function did not expect a lambda at this position.
               * This can happen when a lambda is passed where a concrete value is expected,
               * e.g. arrayFold(lambda, array, another_lambda_instead_of_initial_value).
+              *
+              * A nested DataTypeFunction with no return type is also an unresolved lambda placeholder:
+              * it is created at line ~1322 for any LambdaNode used as a function argument and only
+              * gets filled in if the outer function resolves that position as a lambda. If such a
+              * placeholder propagates into another lambda's argument types via getLambdaArgumentTypes
+              * (e.g. arrayFold copies the accumulator type into its lambda's argument list), the
+              * follow-up resolveLambda would type-check the body with an unresolved type and crash.
               */
             for (size_t i = 0; i < function_data_type_arguments_size; ++i)
             {
-                if (!function_data_type_argument_types[i])
+                const auto & argument_type = function_data_type_argument_types[i];
+                bool argument_is_unresolved_lambda = false;
+                if (!argument_type)
+                {
+                    argument_is_unresolved_lambda = true;
+                }
+                else if (const auto * inner_function_type = typeid_cast<const DataTypeFunction *>(argument_type.get()))
+                {
+                    if (!inner_function_type->getReturnType())
+                        argument_is_unresolved_lambda = true;
+                }
+
+                if (argument_is_unresolved_lambda)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
                         function_name,
