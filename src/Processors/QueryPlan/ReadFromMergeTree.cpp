@@ -2925,7 +2925,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     const bool has_filter_for_pk = (query_info.prewhere_info && !deferred_prewhere_info) || query_info.filter_actions_dag;
     if (apply_pk_selectivity_check && has_filter_for_pk && read_limit == 0 && !query_has_limit && !is_parallel_reading_from_replicas)
     {
-        const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
+        const double max_ratio = static_cast<double>(context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio]);
 
         /// Track whether the analysis result was already computed before we touched it.
         /// If it was (e.g. `optimizeUseNormalProjections` ran first and stored a result with
