@@ -20,7 +20,7 @@ CREATE HYPOTHETICAL INDEX [IF NOT EXISTS] name
     ON [db.]table_name (expression) TYPE type[(args)] [GRANULARITY value]
 ```
 
-The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no data is read or written — the index description is stored only in the current session.
+The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no index is built or written — only the index description is stored, in the current session.
 
 - `name` — index name; must be unique within `(database, table)` for this session.
 - `expression` — the column or expression to index.
@@ -110,7 +110,7 @@ Clears every hypothetical index defined in the current session, regardless of ta
 ## Scope and lifetime {#scope-and-lifetime}
 
 - Hypothetical indexes live only in the **current session** — they are invisible to other sessions and discarded when the session ends.
-- They never read or write data; real queries against the table are unaffected.
+- Defining or dropping one builds no index and never affects ordinary queries against the table. Empirical `EXPLAIN WHATIF` does read table data to build the candidate index in memory, and that scan counts against the session's read limits and quotas.
 - Inspect the current session's hypothetical indexes via [`system.hypothetical_indexes`](/operations/system-tables/hypothetical_indexes).
 
 ## Limitations {#limitations}
@@ -123,7 +123,9 @@ The empirical `skip_ratio` is an **upper bound**: it counts each surviving granu
 
 ## Required privileges {#required-privileges}
 
-`SELECT` on the target table.
+`CREATE HYPOTHETICAL INDEX` requires `SELECT` on the columns referenced by the index expression — column-level `SELECT` (for example `GRANT SELECT(b)`) is sufficient — because empirical `EXPLAIN WHATIF` reads those columns.
+
+`DROP HYPOTHETICAL INDEX` and `DROP ALL HYPOTHETICAL INDEXES` require no extra privilege; they only remove entries from the session-local store.
 
 ## See also {#see-also}
 
