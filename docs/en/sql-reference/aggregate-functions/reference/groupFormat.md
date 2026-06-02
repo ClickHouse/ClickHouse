@@ -39,6 +39,22 @@ The function is order-dependent. If you need a deterministic order, sort the inp
 Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied.
 :::
 
+## NULL handling {#null-handling}
+
+`groupFormat` treats `NULL` as data and emits it in the output (for example as `null` in `JSONEachRow`) when the argument has a concrete nullable type such as `Nullable(UInt8)`. The one exception is a literal untyped `NULL` argument (type `Nullable(Nothing)`): the generic `Null` aggregate combinator replaces the whole aggregate with a `NULL`-returning placeholder before `groupFormat` can format the row, so the result of the entire aggregate is `NULL` instead of a formatted row containing `null`.
+
+```sql
+SELECT groupFormat('JSONEachRow')(NULL)
+FROM numbers(1);
+-- \N
+
+SELECT groupFormat('JSONEachRow')(CAST(NULL, 'Nullable(UInt8)'))
+FROM numbers(1);
+-- {"c1":null}
+```
+
+If you want the per-row `{"c1":null}` shape, cast the argument to a concrete nullable type.
+
 ## Examples {#examples}
 
 ### Basic usage with JSONEachRow {#example-json}

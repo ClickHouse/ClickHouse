@@ -73,5 +73,15 @@ select
     direct = via_state as equal
 from numbers(3);
 
+-- NULL handling contract: a typed `Nullable(T)` payload is preserved as `null`
+-- in the formatted output, while a literal untyped `NULL` (`Nullable(Nothing)`)
+-- is replaced by the `Null` combinator with a `NULL`-returning placeholder
+-- before `groupFormat` can rebuild itself with the nullable argument types,
+-- so the whole aggregate returns `NULL`. See `docs/.../groupFormat.md`.
+select groupFormat('JSONEachRow')(CAST(NULL, 'Nullable(UInt8)')) from numbers(1);
+select groupFormat('JSONEachRow')(if(number = 1, CAST(NULL, 'Nullable(UInt8)'), toNullable(toUInt8(number)))) from numbers(3);
+select groupFormat('JSONEachRow')(NULL) from numbers(1);
+select groupFormat('JSONEachRow')(NULL) from numbers(3);
+
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

@@ -580,6 +580,12 @@ public:
             if (!filter(columns, row))
                 continue;
 
+            /// `Aggregator` can pass `nullptr` placeholders for rows whose key was not
+            /// inserted (e.g. when GROUP BY key-count limit is reached), so guard against
+            /// it like `IAggregateFunctionHelper::addBatch` does.
+            if (!places[row])
+                continue;
+
             nested_function->add(places[row] + place_offset, nested_columns.data(), row, arena);
         }
     }
