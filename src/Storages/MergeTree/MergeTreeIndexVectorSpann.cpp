@@ -105,8 +105,8 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
         Float64 nv = 0;
         for (size_t i = 0; i < dimensions; ++i)
         {
-            Float64 q = query[i];
-            Float64 v = vec[i];
+            Float64 q = static_cast<Float64>(query[i]);
+            Float64 v = static_cast<Float64>(vec[i]);
             dot += q * v;
             nq += q * q;
             nv += v * v;

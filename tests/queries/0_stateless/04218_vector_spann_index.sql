@@ -316,6 +316,18 @@ INSERT INTO tab_spann_centroid_k VALUES
     (0, [0.0, 0.0]), (1, [0.0, 0.01]), (2, [0.0, 0.02]),
     (3, [0.0, 0.03]), (4, [0.0, 0.04]), (5, [0.0, 0.05]);
 
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_centroid_k
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1, hnsw_candidate_list_size_for_search = 1
+)
+WHERE explain LIKE '%Name: idx%'
+    OR explain LIKE '%Description: vector_spann%';
+
 SELECT count(*), uniqExact(id) FROM (
     WITH [0.0, 0.0] AS reference_vec
     SELECT id
