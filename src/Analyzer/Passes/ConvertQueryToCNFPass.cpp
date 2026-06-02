@@ -741,8 +741,9 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
     /// reduces to
     ///     WHERE (SELECT a < c)
     /// because `b < d` is always false. A correlated subquery used as a whole predicate cannot be
-    /// decorrelated, so keep the original node instead of the collapsed one.
-    if (isCorrelatedQueryOrUnionNode(new_node))
+    /// decorrelated, so keep the original node instead of the collapsed one. `new_node` is null when
+    /// the filter reduces to a constant and is dropped entirely, which is fine to apply.
+    if (new_node && isCorrelatedQueryOrUnionNode(new_node))
         return;
 
     node = std::move(new_node);
