@@ -5,6 +5,8 @@
 
 SET query_plan_push_limit_by_into_sort = 1;
 SET max_threads = 12;
+-- This test inspects the pipeline shape of the LIMIT BY into sort optimization, so pin the unrelated virtual row optimization off.
+SET read_in_order_use_virtual_row = 0;
 
 -- `LIMIT BY` keys are not a prefix of the sort keys, so the optimization is not applied.
 -- The pipeline keeps only the final `LimitByTransform` above the sort.
