@@ -9,11 +9,17 @@ doc_type: 'reference'
 
 # Query Rewrite Rules {#query-rewrite-rules}
 
+:::note
+Query Rewrite Rules are an experimental feature. The `query_rules` setting is `EXPERIMENTAL`.
+:::
+
 Query Rewrite Rules provide capabilities to create, alter and drop rules which allow users to rewrite or reject specific queries.
 
 These rules reuse query parameter feature for query matching which allow substitutions in queries source and resulting templates.
 
 The rules are being applied in the order of their creation.
+
+Every `{name:Type}` placeholder referenced by a rule's result template must also appear in its source template, and a placeholder must not be repeated within the source template. Such rules are rejected at `CREATE RULE` / `ALTER RULE` time.
 
 ## Syntax {#syntax}
 
@@ -95,7 +101,9 @@ Format of table: `{original_query:String, applied_rules:Array(String), resulting
 
 ## System setting {#system-setting}
 
-System boolean setting `query_rules` activates query rewrite rules.  By default value is false.
+System boolean setting `query_rules` activates query rewrite rules. By default value is false. It is an `EXPERIMENTAL` setting.
+
+`query_rules` is a session/profile-level setting: it is evaluated before a query's own `SETTINGS` clause is interpreted, so `SELECT ... SETTINGS query_rules = ...` does not affect whether rules are applied to that query. Set it at the session or profile level instead.
 
 ## Access grants {#access-grants}
 

@@ -1338,6 +1338,11 @@ static BlockIO executeQueryImpl(
 #endif
         }
 
+        /// Apply query rewrite rules. This runs before `ASTQueryParameter`s are replaced
+        /// and before the query's own `SETTINGS` clause is interpreted
+        /// (`InterpreterSetQuery::applySettingsFromQuery` below), so `query_rules` is a
+        /// session/profile-level setting: `SELECT ... SETTINGS query_rules = ...` does not
+        /// affect whether rules are applied to that query.
         astTraversal(out_ast, context);
 
         const char * query_end = end;
