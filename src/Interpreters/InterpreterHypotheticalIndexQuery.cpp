@@ -86,7 +86,9 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
-        context->checkAccess(AccessType::SELECT, table_id);
+        /// No access check: a session-local drop leaks nothing (unlike CREATE, whose
+        /// column-level SELECT guards EXPLAIN WHATIF empirical leakage), and every entry
+        /// in the session store already passed that check at creation.
         auto index_name = query.index_name->as<ASTIdentifier &>().name();
         store.remove(table_id, index_name, query.if_exists);
         return {};

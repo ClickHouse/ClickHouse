@@ -77,3 +77,5 @@ With idx_a (minmax, hypothetical):
   source:           empirical
 --- CREATE requires column-level SELECT on the index column ---
 ACCESS_DENIED
+--- column-level SELECT user can create and drop a hypothetical index ---
+create+drop ok

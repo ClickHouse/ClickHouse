@@ -298,3 +298,21 @@ $CLICKHOUSE_CLIENT --user "${user}" -q "
 " 2>&1 | grep -m1 -o 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv"
+
+# A column-grant user that can CREATE a hypothetical index must also be able to DROP it.
+echo "--- column-level SELECT user can create and drop a hypothetical index ---"
+user2="u2_04223_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_priv2;
+    CREATE TABLE t_hypo_priv2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    DROP USER IF EXISTS ${user2};
+    CREATE USER ${user2} NOT IDENTIFIED;
+    GRANT SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 TO ${user2};
+"
+$CLICKHOUSE_CLIENT --user "${user2}" -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2 (b) TYPE minmax GRANULARITY 1;
+    DROP HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_priv2;
+    SELECT 'create+drop ok';
+" 2>&1 | grep -m1 -oE 'create\+drop ok|ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user2}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv2"
