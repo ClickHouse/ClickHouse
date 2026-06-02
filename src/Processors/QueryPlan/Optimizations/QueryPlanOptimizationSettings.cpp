@@ -75,7 +75,6 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -103,7 +102,6 @@ namespace Setting
     extern const SettingsFloat min_filtered_ratio_for_lazy_final;
     extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
-    extern const SettingsUInt64 query_plan_max_limit_for_join_lazy_indexing;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
@@ -261,9 +259,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
-
-    min_columns_for_join_lazy_indexing = from[Setting::query_plan_enable_optimizations] ? from[Setting::query_plan_min_columns_for_join_lazy_indexing] : 0;
-    max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
 
     max_threads = from[Setting::max_threads];
 
