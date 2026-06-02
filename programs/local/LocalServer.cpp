@@ -2,7 +2,6 @@
 
 #include <sys/resource.h>
 #include <Common/Config/getLocalConfigPath.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -41,7 +40,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
-#include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
@@ -146,7 +144,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
-    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsUInt64 thread_pool_queue_size;
@@ -350,12 +347,7 @@ static DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, Co
 
     UUID default_database_uuid;
 
-    /// Look up the persisted UUID via the per-database metadata symlink that
-    /// `DatabaseAtomic` creates at `metadata/<escapeForFileName(name)>`.
-    /// Using a hardcoded `"default"` here means a non-default `default_database`
-    /// (e.g. `--default_database=mydb`) silently loses data on restart because
-    /// the lookup misses the previous run's symlink and a fresh UUID is picked.
-    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / DatabaseCatalog::getMetadataDirPath(name_);
+    fs::path existing_path_symlink = fs::weakly_canonical(context->getPath()) / "metadata" / "default";
     if (FS::isSymlinkNoThrow(existing_path_symlink))
     {
         auto symlink_path = FS::readSymlink(existing_path_symlink);
@@ -810,12 +802,12 @@ void LocalServer::updateLoggerLevel(const String & logs_level)
 
 void LocalServer::processConfig()
 {
-    if (!queries.empty() && !queries_files.empty())
+    if (!queries.empty() && getClientConfiguration().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     pager = getClientConfiguration().getString("pager", "");
 
-    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
+    delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || getClientConfiguration().has("queries-file"));
     if (!is_interactive || delayed_interactive)
     {
         echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
@@ -902,9 +894,6 @@ void LocalServer::processConfig()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-
-    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
-        server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
