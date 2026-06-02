@@ -62,4 +62,38 @@ echo "--- reading outside user_files via a relative file:// path is rejected ---
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM url('file://../../../../../../../etc/passwd', 'CSV', 'a String')" 2>&1 \
     | grep -qiE "ACCESS_DENIED|not inside|not allowed|Exception" && echo "rejected" || echo "NOT REJECTED"
 
+echo "--- url_base-resolved relative URL is persisted as an absolute file:// URL (reload-safe) ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4"
+# `url_base` is applied as a query setting only at CREATE time (not on the later ATTACH), so the
+# resolved absolute URL must be materialized into the persisted args to survive the reload.
+${CLICKHOUSE_CLIENT} --url_base="file://${USER_FILES_PATH}/" -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4 (a UInt32, b String) ENGINE = URL('${REL}', 'CSV')"
+# The persisted engine definition carries a file:// scheme, not the original relative reference.
+${CLICKHOUSE_CLIENT} -q "SELECT engine_full LIKE '%file://%' FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_t4'"
+# Reload without url_base still dispatches to the File engine via the persisted absolute URL.
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4 ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_t4"
+
+echo "--- RENAME on ENGINE = URL('file://...') is metadata-only (URL semantics preserved) ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_r1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_r2"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_r1 (a UInt32, b String) ENGINE = URL('file://${ABS}', 'CSV')"
+${CLICKHOUSE_CLIENT} -q "RENAME TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_r1 TO ${CLICKHOUSE_TEST_UNIQUE_NAME}_r2"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_r2 ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_r2"
+
+echo "--- TRUNCATE on ENGINE = URL('file://...') is rejected (URL semantics preserved) ---"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_tr"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_tr (a UInt32, b String) ENGINE = URL('file://${ABS}', 'CSV')"
+${CLICKHOUSE_CLIENT} -q "TRUNCATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_tr" 2>&1 \
+    | grep -qiE "not supported|NOT_IMPLEMENTED" && echo "truncate-rejected" || echo "NOT REJECTED"
+# The underlying file is left intact.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_tr"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_tr"
+
+echo "--- urlCluster rejects non-URL schemes (no silent initiator-only read) ---"
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM urlCluster('test_shard_localhost', 'file://${ABS}', 'CSV', 'a UInt32, b String')" 2>&1 \
+    | grep -qiE "does not support the .* scheme|use the .*Cluster" && echo "cluster-rejected" || echo "NOT REJECTED"
+
 rm -f "$ABS" "${USER_FILES_PATH}/${OUT}"

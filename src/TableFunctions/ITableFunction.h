@@ -111,6 +111,10 @@ public:
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
+    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
+    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
+    virtual bool isClusterFunction() const { return false; }
+
 private:
     virtual StoragePtr executeImpl(
         const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
@@ -119,7 +123,6 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
-    virtual bool isClusterFunction() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.

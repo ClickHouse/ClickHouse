@@ -72,6 +72,8 @@ SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
+Scheme dispatch is not yet wired through [`urlCluster`](urlCluster.md): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.

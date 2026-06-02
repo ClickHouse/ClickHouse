@@ -26,3 +26,15 @@ URL
 headers-rejected
 --- reading outside user_files via a relative file:// path is rejected ---
 rejected
+--- url_base-resolved relative URL is persisted as an absolute file:// URL (reload-safe) ---
+1
+1	Hello
+2	World
+--- RENAME on ENGINE = URL('file://...') is metadata-only (URL semantics preserved) ---
+1	Hello
+2	World
+--- TRUNCATE on ENGINE = URL('file://...') is rejected (URL semantics preserved) ---
+truncate-rejected
+2
+--- urlCluster rejects non-URL schemes (no silent initiator-only read) ---
+cluster-rejected

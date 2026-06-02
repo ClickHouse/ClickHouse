@@ -370,6 +370,12 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
+    /// Materialize the `url_base`-resolved URL `uri` into the persisted engine args, so that
+    /// DETACH/ATTACH and server restart reproduce the originally-resolved URL even if `url_base`
+    /// is later changed or unset. Handles positional, key-value and named-collection argument
+    /// forms; skips userinfo URLs to avoid leaking credentials via `SHOW CREATE TABLE`.
+    static void materializeResolvedURLInEngineArgs(ASTs & args, const String & resolved_uri, const ContextPtr & context);
+
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
     struct Configuration : public StatelessTableEngineConfiguration

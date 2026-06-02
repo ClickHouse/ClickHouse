@@ -103,6 +103,17 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
     /// http(s) and unrecognized schemes keep the plain StorageURL behavior below.
     if (const auto target = classifyURLScheme(filename); target != URLSchemeTarget::URL)
     {
+        /// `urlCluster` reaches this code path too (it strips the cluster name and delegates to
+        /// `TableFunctionURL::parseArgumentsImpl`). Scheme dispatch builds a non-clustered delegate,
+        /// so the read would silently run on the initiator and ignore the requested cluster. Reject
+        /// such calls until the clustered delegates (`s3Cluster`, `fileCluster`, ...) are wired up.
+        if (isClusterFunction())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The urlCluster table function does not support the '{}' scheme (URL '{}'); "
+                "use the {}Cluster table function for this backend instead",
+                storageEngineNameForURLScheme(target), filename, tableFunctionNameForURLScheme(target));
+
         if (!configuration.headers.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

@@ -2020,6 +2020,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    materializeResolvedURLInEngineArgs(args, uri, context);
+}
+
+void StorageURL::materializeResolvedURLInEngineArgs(ASTs & args, const String & resolved_uri, const ContextPtr & context)
+{
     if (args.empty())
         return;
 
@@ -2028,7 +2033,7 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     /// rather than from the user-written engine arguments, and persisting them into the
     /// CREATE TABLE AST would expose secrets via `SHOW CREATE TABLE`. Persistence in this case
     /// relies on `url_base` being set with the same value at attach/restart time.
-    if (urlHasUserInfo(uri))
+    if (urlHasUserInfo(resolved_uri))
         return;
 
     /// Positional form: `URL('url', ...)` — replace the first literal argument.
@@ -2036,8 +2041,8 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         existing_literal && existing_literal->value.getType() == Field::Types::String)
     {
         const auto & current_url = existing_literal->value.safeGet<String>();
-        if (current_url != uri)
-            args[0] = make_intrusive<ASTLiteral>(uri);
+        if (current_url != resolved_uri)
+            args[0] = make_intrusive<ASTLiteral>(resolved_uri);
         return;
     }
 
@@ -2049,7 +2054,7 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     {
         Configuration unresolved;
         StorageURL::processNamedCollectionResult(unresolved, *named_collection);
-        if (unresolved.url == uri)
+        if (unresolved.url == resolved_uri)
             return;
     }
 
@@ -2067,11 +2072,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
         if (!key_ast || key_ast->name() != "url")
             continue;
-        func_args->children[1] = make_intrusive<ASTLiteral>(uri);
+        func_args->children[1] = make_intrusive<ASTLiteral>(resolved_uri);
         return;
     }
 
-    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(uri)};
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(resolved_uri)};
     args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
@@ -2130,10 +2135,11 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 
 namespace
 {
-/// Thin wrapper returned when the `URL` engine dispatches to another backend. It forwards everything
-/// to the delegate storage but keeps `addInferredEngineArgsToCreateQuery` as the IStorage no-op, so
-/// the persisted `ENGINE = URL(...)` arguments are never rewritten into the delegate's argument
-/// layout (which would corrupt `SHOW CREATE`/reload, e.g. the Azure engine expects >= 3 arguments).
+/// Thin wrapper returned when the `URL` engine dispatches to another backend. It forwards reads,
+/// writes and schema inference to the delegate storage, but keeps the persisted engine as
+/// `ENGINE = URL(...)` and preserves the `URL` engine's DDL semantics (metadata-only `RENAME`,
+/// no `TRUNCATE`), so the wrapper does not silently expose the delegate's destructive lifecycle
+/// operations on a table that is declared and shown as `URL`.
 class StorageURLSchemeDispatch final : public StorageProxy
 {
 public:
@@ -2142,8 +2148,9 @@ public:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment_)
-        : StorageProxy(table_id_), nested(std::move(nested_))
+        const String & comment_,
+        String resolved_url_)
+        : StorageProxy(table_id_), nested(std::move(nested_)), resolved_url(std::move(resolved_url_))
     {
         StorageInMemoryMetadata metadata;
         /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
@@ -2162,8 +2169,48 @@ public:
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
 
+    /// Keep the persisted syntax as `URL(...)`, but materialize the `url_base`-resolved URL into the
+    /// stored arguments. Otherwise a relative reference resolved via `url_base` (e.g.
+    /// `URL('data.csv')` with `SET url_base = 'file://.../'`) would persist without a scheme and, after
+    /// `DETACH`/`ATTACH` or restart without that setting, be loaded as a plain `URL` instead of
+    /// re-dispatching to the original backend.
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override
+    {
+        StorageURL::materializeResolvedURLInEngineArgs(args, resolved_url, context);
+    }
+
+    /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
+    /// touching the external resource, whereas forwarding to the delegate would move/remove backend
+    /// data or throw (e.g. `StorageFile::rename` rejects renaming a user-defined-file table).
+    void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id) override
+    {
+        renameInMemory(new_table_id);
+    }
+
+    void renameInMemory(const StorageID & new_table_id) override
+    {
+        nested->renameInMemory(new_table_id);
+        IStorage::renameInMemory(new_table_id);
+    }
+
+    /// Preserve the `URL` engine semantics: a plain `URL` table does not support `TRUNCATE`.
+    /// Forwarding to the delegate would otherwise truncate local files (`File`) or remove
+    /// object-storage keys (`S3`/`AzureBlobStorage`/`HDFS`) under a table declared as `URL`.
+    bool supportsTruncate() const override { return false; }
+
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        TableExclusiveLockHolder & lock) override
+    {
+        IStorage::truncate(query, metadata_snapshot, context, lock);
+    }
+
 private:
     StoragePtr nested;
+    /// The `url_base`-resolved URL, materialized into the persisted engine args on creation.
+    String resolved_url;
 };
 }
 
@@ -2171,9 +2218,11 @@ private:
 /// Returns nullptr when the scheme is handled by StorageURL itself (http, https, ...) or when
 /// the arguments are not a shape we can classify (then the plain URL path reports any errors).
 ///
-/// The persisted `ENGINE = URL(...)` AST (`args.engine_args`) is intentionally left untouched: the
-/// delegate arguments are built in a separate list, so `SHOW CREATE`, `DETACH`/`ATTACH` and restart
-/// keep the original `URL(...)` syntax and re-dispatch on reload.
+/// The persisted engine stays `ENGINE = URL(...)`: the delegate arguments are built in a separate
+/// list, so `SHOW CREATE`, `DETACH`/`ATTACH` and restart keep the original `URL(...)` syntax and
+/// re-dispatch on reload. The wrapper's `addInferredEngineArgsToCreateQuery` materializes the
+/// `url_base`-resolved URL back into those args so re-dispatch reproduces the original backend even
+/// if `url_base` later changes.
 static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments & args)
 {
     if (args.engine_args.empty())
@@ -2291,7 +2340,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     };
     auto delegate_storage = it->second.creator_fn(delegate_factory_args);
     return std::make_shared<StorageURLSchemeDispatch>(
-        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment);
+        std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment, configuration.url);
 }
 
 void registerStorageURL(StorageFactory & factory);
