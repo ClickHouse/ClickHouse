@@ -53,13 +53,10 @@
 /// allows ColumnBinaryOutputFormat to pre-allocate the output buffer in a
 /// single pass before writing, avoiding reallocation.
 ///
-/// String offset narrowing: ColumnString stores offsets as uint64; the inner
-/// per-string offset arrays in the data blob (COL_BYTES, Array(String)) are
-/// uint32. Individual columns are therefore limited to 4 GiB of string data.
-/// ColDescriptor fields are uint64 so the buffer as a whole is not bounded by
-/// this limit.
 /// COL_BYTES wire layout omits null terminators. ColumnString internally has
 /// no null terminators (see ColumnString.h); the wire matches exactly.
+/// All offset arrays in the data blob (COL_BYTES, Array outer offsets,
+/// recursive String/Array offsets inside COL_COMPLEX) are uint64.
 
 #include <cstring>
 #include <span>
@@ -117,9 +114,9 @@ static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 // ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
 //
 // COL_COMPLEX data block layout (recursive, mirrors the output decoder):
-//   Array(T):   uint32 offsets[n+1]  +  complexDataBlock(inner, total_elems)
+//   Array(T):   uint64 offsets[n+1]  +  complexDataBlock(inner, total_elems)
 //   Tuple(T..): complexDataBlock(field_0, n) + complexDataBlock(field_1, n) + ...
-//   String:     uint32 offsets[n+1]  +  null-terminated chars
+//   String:     uint64 offsets[n+1]  +  chars (no null terminators)
 //   Fixed:      raw bytes[n * elem_bytes]
 
 // Forward declaration — complexDataSize and writeComplexData are mutually recursive
@@ -132,7 +129,7 @@ inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
-        return (n + 1u) * 4u + complexDataSize(arr->getData(), total);
+        return (n + 1u) * 8u + complexDataSize(arr->getData(), total);
     }
     if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
     {
@@ -145,7 +142,7 @@ inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
     {
         const auto & str = assert_cast<const ColumnString &>(col);
         uint32_t chars = static_cast<uint32_t>(str.getChars().size());
-        return (n + 1u) * 4u + chars;
+        return (n + 1u) * 8u + chars;
     }
     // Fixed-width fallback (ColumnVector<T>, ColumnUInt8, etc.)
     return n * static_cast<uint32_t>(col.sizeOfValueIfFixed());
@@ -156,12 +153,12 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         const auto & ch_offs = arr->getOffsets();
-        uint32_t * wire_offs = reinterpret_cast<uint32_t *>(dst);
-        wire_offs[0] = 0u;
+        uint64_t * wire_offs = reinterpret_cast<uint64_t *>(dst);
+        wire_offs[0] = 0ull;
         for (uint32_t i = 0; i < n; ++i)
-            wire_offs[i + 1u] = static_cast<uint32_t>(ch_offs[i]);
+            wire_offs[i + 1u] = static_cast<uint64_t>(ch_offs[i]);
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
-        writeComplexData(arr->getData(), total, dst + (n + 1u) * 4u);
+        writeComplexData(arr->getData(), total, dst + (n + 1u) * 8u);
         return;
     }
     if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
@@ -179,15 +176,15 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     {
         const auto & ch_offs = str->getOffsets();
         const auto & chars   = str->getChars();
-        uint32_t * wire_offs = reinterpret_cast<uint32_t *>(dst);
-        uint8_t  * chars_dst = dst + (n + 1u) * 4u;
-        wire_offs[0] = 0u;
-        uint32_t wire_pos = 0u;
-        uint32_t ch_pos   = 0u;
+        uint64_t * wire_offs = reinterpret_cast<uint64_t *>(dst);
+        uint8_t  * chars_dst = dst + (n + 1u) * 8u;
+        wire_offs[0] = 0ull;
+        uint64_t wire_pos = 0ull;
+        uint64_t ch_pos   = 0ull;
         for (uint32_t i = 0; i < n; ++i)
         {
-            uint32_t end = static_cast<uint32_t>(ch_offs[i]);
-            uint32_t len = end - ch_pos;
+            uint64_t end = ch_offs[i];
+            uint64_t len = end - ch_pos;
             std::memcpy(chars_dst + wire_pos, chars.data() + ch_pos, len);
             wire_pos += len;
             wire_offs[i + 1u] = wire_pos;
@@ -265,9 +262,9 @@ inline uint64_t buildColDescriptor(
         desc.type        = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
         desc.null_offset = 0;
 
-        write_cursor = (write_cursor + 3ull) & ~3ull;
+        write_cursor = (write_cursor + 7ull) & ~7ull;
         desc.offsets_offset = write_cursor;
-        write_cursor += (num_rows + 1u) * sizeof(uint32_t);
+        write_cursor += (num_rows + 1u) * sizeof(uint64_t);
 
         const IColumn & nested = arr_col->getData();
         uint32_t total_elems = static_cast<uint32_t>(nested.size());
@@ -312,9 +309,9 @@ inline uint64_t buildColDescriptor(
             desc.null_offset = 0;
         }
 
-        write_cursor = (write_cursor + 3ull) & ~3ull;
+        write_cursor = (write_cursor + 7ull) & ~7ull;
         desc.offsets_offset = write_cursor;
-        write_cursor += (num_rows + 1u) * sizeof(uint32_t);
+        write_cursor += (num_rows + 1u) * sizeof(uint64_t);
 
         desc.data_offset = write_cursor;
         uint32_t total_chars = static_cast<uint32_t>(str_col->getChars().size());
@@ -421,10 +418,10 @@ inline void writeColData(
         const IColumn & nested  = arr_col->getData();
         uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
-        uint32_t * wire_outer = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
-        wire_outer[0] = 0u;
+        uint64_t * wire_outer = reinterpret_cast<uint64_t *>(buf.data() + desc.offsets_offset);
+        wire_outer[0] = 0ull;
         for (uint32_t i = 0; i < num_rows; ++i)
-            wire_outer[i + 1u] = static_cast<uint32_t>(ch_offsets[i]);
+            wire_outer[i + 1u] = static_cast<uint64_t>(ch_offsets[i]);
 
         writeComplexData(nested, total_elems, buf.data() + desc.data_offset);
         return;
@@ -454,16 +451,16 @@ inline void writeColData(
         const auto & ch_offsets = str_col->getOffsets();
         const auto & chars = str_col->getChars();
 
-        uint32_t * wire_offsets = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
+        uint64_t * wire_offsets = reinterpret_cast<uint64_t *>(buf.data() + desc.offsets_offset);
         uint8_t * data_dst = buf.data() + desc.data_offset;
 
-        wire_offsets[0] = 0;
-        uint32_t wire_pos = 0;
-        uint32_t ch_pos = 0;
+        wire_offsets[0] = 0ull;
+        uint64_t wire_pos = 0ull;
+        uint64_t ch_pos = 0ull;
         for (uint32_t i = 0; i < num_rows; ++i)
         {
-            uint32_t str_end = static_cast<uint32_t>(ch_offsets[i]);
-            uint32_t str_len = str_end - ch_pos;
+            uint64_t str_end = ch_offsets[i];
+            uint64_t str_len = str_end - ch_pos;
             std::memcpy(data_dst + wire_pos, chars.data() + ch_pos, str_len);
             wire_pos += str_len;
             wire_offsets[i + 1] = wire_pos;
@@ -505,13 +502,13 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            const uint32_t * outer_offs = reinterpret_cast<const uint32_t *>(p);
-            p += (n + 1u) * sizeof(uint32_t);
-            uint32_t total_elems = outer_offs[n];
+            const uint64_t * outer_offs = reinterpret_cast<const uint64_t *>(p);
+            p += (n + 1u) * sizeof(uint64_t);
+            uint32_t total_elems = static_cast<uint32_t>(outer_offs[n]);
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(n);
             for (uint32_t i = 0; i < n; ++i)
-                offsets_col->getData()[i] = static_cast<UInt64>(outer_offs[i + 1u]);
+                offsets_col->getData()[i] = outer_offs[i + 1u];
             return ColumnArray::create(std::move(nested_col), std::move(offsets_col));
         }
         if (const auto * tup_type = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -525,21 +522,21 @@ inline MutableColumnPtr readColumnFromDesc(
         }
         if (typeid_cast<const DataTypeString *>(type.get()))
         {
-            const uint32_t * wire_offs = reinterpret_cast<const uint32_t *>(p);
-            p += (n + 1u) * sizeof(uint32_t);
+            const uint64_t * wire_offs = reinterpret_cast<const uint64_t *>(p);
+            p += (n + 1u) * sizeof(uint64_t);
             const uint8_t * chars_src = p;
-            uint32_t total_chars = wire_offs[n];
+            uint64_t total_chars = wire_offs[n];
             p += total_chars;
             auto col_str = ColumnString::create();
             auto & chars   = col_str->getChars();
             auto & offsets = col_str->getOffsets();
             offsets.resize(n);
-            uint32_t ch_pos = 0u;
+            uint64_t ch_pos = 0ull;
             for (uint32_t i = 0; i < n; ++i)
             {
-                uint32_t wire_end   = wire_offs[i + 1u];
-                uint32_t wire_start = wire_offs[i];
-                uint32_t str_len    = wire_end - wire_start;
+                uint64_t wire_end   = wire_offs[i + 1u];
+                uint64_t wire_start = wire_offs[i];
+                uint64_t str_len    = wire_end - wire_start;
                 chars.resize(ch_pos + str_len);
                 std::memcpy(chars.data() + ch_pos, chars_src + wire_start, str_len);
                 ch_pos += str_len;
@@ -571,18 +568,18 @@ inline MutableColumnPtr readColumnFromDesc(
 
     if (raw_type == COL_BYTES)
     {
-        const uint32_t * wire_offsets = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+        const uint64_t * wire_offsets = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
         const uint8_t  * data         = buf.data() + desc.data_offset;
         auto col_str = ColumnString::create();
         auto & chars   = col_str->getChars();
         auto & offsets = col_str->getOffsets();
         offsets.resize(rows_to_dec);
-        uint32_t ch_pos = 0;
+        uint64_t ch_pos = 0ull;
         for (uint32_t i = 0; i < rows_to_dec; ++i)
         {
-            uint32_t wire_end   = wire_offsets[i + 1];
-            uint32_t wire_start = wire_offsets[i];
-            uint32_t str_len    = wire_end - wire_start;
+            uint64_t wire_end   = wire_offsets[i + 1];
+            uint64_t wire_start = wire_offsets[i];
+            uint64_t str_len    = wire_end - wire_start;
             chars.resize(ch_pos + str_len);
             std::memcpy(chars.data() + ch_pos, data + wire_start, str_len);
             ch_pos += str_len;
@@ -629,14 +626,14 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             // Top-level Array: encoder stores outer offsets at offsets_offset and
             // nested complex data (writeComplexData format) at data_offset.
-            const uint32_t * outer_offs =
-                reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
-            uint32_t total_elems = outer_offs[rows_to_dec];
+            const uint64_t * outer_offs =
+                reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+            uint32_t total_elems = static_cast<uint32_t>(outer_offs[rows_to_dec]);
             const uint8_t * nested_ptr = buf.data() + desc.data_offset;
             auto nested_col = decode(nested_ptr, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(rows_to_dec);
             for (uint32_t i = 0; i < rows_to_dec; ++i)
-                offsets_col->getData()[i] = static_cast<UInt64>(outer_offs[i + 1u]);
+                offsets_col->getData()[i] = outer_offs[i + 1u];
             col = maybe_nullable(ColumnArray::create(std::move(nested_col), std::move(offsets_col)));
         }
         else
