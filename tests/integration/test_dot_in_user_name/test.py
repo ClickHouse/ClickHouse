@@ -85,3 +85,30 @@ def test_user_references_entities_with_dots():
         "SELECT count()>0 FROM system.current_roles WHERE role_name = 'my.role'",
         user="dotted.user",
     ) == "1\n"
+
+
+def test_row_policy_for_user_with_dot():
+    """Verify that a row policy defined under `users.<name>.databases...filter` for a user
+    whose name contains a dot is applied to that user. The policy's `to_roles` is derived from
+    the user's ID, which must be computed from the un-escaped name for the filter to take effect."""
+
+    node.query("DROP TABLE IF EXISTS default.test_row_policy")
+    node.query("CREATE TABLE default.test_row_policy (x UInt8) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO default.test_row_policy VALUES (1), (2), (3)")
+
+    # The row policy is stored under the un-escaped name.
+    assert node.query(
+        "SELECT count()>0 FROM system.row_policies "
+        "WHERE short_name = 'dotted.user' AND database = 'default' AND table = 'test_row_policy'"
+    ) == "1\n"
+    assert node.query(
+        "SELECT count()>0 FROM system.row_policies WHERE short_name = 'dotted\\.user'"
+    ) == "0\n"
+
+    # The filter `x = 1` must actually apply when the dotted user reads the table.
+    assert node.query(
+        "SELECT x FROM default.test_row_policy ORDER BY x",
+        user="dotted.user",
+    ) == "1\n"
+
+    node.query("DROP TABLE default.test_row_policy")

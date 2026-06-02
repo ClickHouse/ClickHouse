@@ -31,7 +31,15 @@
             <quota>my.quota</quota>
             <grants>
                 <query>GRANT `my.role`</query>
+                <query>GRANT SELECT ON default.test_row_policy</query>
             </grants>
+            <databases>
+                <default>
+                    <test_row_policy>
+                        <filter>x = 1</filter>
+                    </test_row_policy>
+                </default>
+            </databases>
         </dotted.user>
     </users>
     <roles>
