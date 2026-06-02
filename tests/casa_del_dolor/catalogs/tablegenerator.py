@@ -95,6 +95,20 @@ class LakeTableGenerator:
                 return f"DECIMAL({new_prec},{new_scale})"
         return None
 
+    @staticmethod
+    def _refresh_table_model(spark: SparkSession, table: SparkTable):
+        schema = spark.table(table.get_table_full_path()).schema
+        new_columns = {}
+        for field in schema.fields:
+            generated = (
+                field.name in table.columns and table.columns[field.name].generated
+            )
+            new_columns[field.name] = SparkColumn(
+                field.name, field.dataType, field.nullable, generated
+            )
+        table.columns = new_columns
+        table.check_constraints.clear()
+
     def generate_common_alter_statements(
         self,
         spark: SparkSession,
@@ -1226,7 +1240,8 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                 res += f" ZORDER BY ({self.random_ordered_columns(table, False)})"
             return res + ";"
         if next_option in (3, 4):
-            # Restore
+            # Restore — executed here so we can refresh the in-memory model
+            # afterward (RESTORE can roll back schema-mutating alters).
             result = spark.sql(
                 f"DESCRIBE HISTORY {table.get_table_full_path()};"
             ).collect()
@@ -1236,10 +1251,16 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if len(snapshots) > 0 and (
                 len(timestamps) == 0 or random.randint(1, 2) == 1
             ):
-                return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(snapshots)};"
-            if len(timestamps) > 0:
-                return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
-            return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
+                stmt = f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(snapshots)};"
+            elif len(timestamps) > 0:
+                stmt = f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
+            else:
+                stmt = (
+                    f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
+                )
+            spark.sql(stmt)
+            self._refresh_table_model(spark, table)
+            return ""
         if next_option == 5:
             # Describe history
             return f"DESCRIBE HISTORY {table.get_table_full_path()};"

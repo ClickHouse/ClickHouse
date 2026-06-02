@@ -2271,10 +2271,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"file", "url"},
         /// Cluster variants of file-like sources
         {"fileCluster", "urlCluster"},
-        /// Object storage (url, access_key, secret_key, format, structure)
-        {"azureBlobStorage", "cosn", "gcs", "hdfs", "oss", "s3"},
-        /// Object storage cluster variants
-        {"azureBlobStorageCluster", "hdfsCluster", "s3Cluster"},
+        /// S3-compatible object storage (url, access_key, secret_key, format, structure)
+        {"cosn", "gcs", "oss", "s3"},
         /// Data lake table functions
         {"iceberg", "icebergS3", "deltaLake", "deltaLakeS3", "hudi", "paimon", "paimonS3"},
         /// Data lake Azure variants
@@ -2854,10 +2852,10 @@ ASTPtr QueryFuzzer::generatePredicate()
                     switch (fuzz_rand() % 3)
                     {
                         case 0: /// expr IS TRUE → isNotDistinctFrom(expr, true)
-                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, std::make_shared<ASTLiteral>(true));
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, make_intrusive<ASTLiteral>(true));
                             break;
                         case 1: /// expr IS FALSE → isNotDistinctFrom(expr, false)
-                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, std::make_shared<ASTLiteral>(false));
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, make_intrusive<ASTLiteral>(false));
                             break;
                         case 2: /// expr IS UNKNOWN → isNull(expr)
                             next_condition = makeASTFunction("isNull", expression_1);
@@ -3534,10 +3532,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "arrayShiftLeft",         "arrayShiftRight"},
         /// URL hierarchy generators (url → Array(String))
         {"URLHierarchy", "URLPathHierarchy"},
-        /// Trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",     "sinh", "cos",   "cosh",  "tan",    "tanh",     "asin",    "asinh",   "acos",  "acosh",     "atan",  "atanh",
-         "log",     "log2", "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",      "exp",   "exp2",      "exp10", "degrees",
-         "radians", "sqrt", "cbrt",  "erf",   "erfc",   "power",    "tgamma",  "sigmoid", "atan2", "factorial", "hypot"},
+        /// Unary trig functions, logarithms, exponentials and roots (number → Float64)
+        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh", "atan",
+         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",   "exp2",
+         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "tgamma",  "sigmoid"},
+        /// Binary math functions (number, number → Float64)
+        {"atan2", "hypot", "power"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
