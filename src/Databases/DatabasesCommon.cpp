@@ -353,54 +353,63 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
 
-    String old_comment;
-    ASTPtr create_query;
-    bool managed_by_shared_catalog = false;
-
-    {
-        std::lock_guard lock{mutex};
-
-        old_comment = comment;
-        comment = command.comment.value();
+    const String & new_comment = command.comment.value();
 
 #if CLICKHOUSE_CLOUD
-        managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
-        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
-            return;
-#endif
-
-        try
-        {
-            create_query = getCreateDatabaseQueryImpl();
-            if (!create_query)
-                throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-
-            if (!managed_by_shared_catalog)
-                DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
-        }
-        catch (...)
-        {
-            comment = old_comment;
-            throw;
-        }
-    }
-
-#if CLICKHOUSE_CLOUD
-    if (managed_by_shared_catalog)
+    if (SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName()))
     {
-        try
-        {
-            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
-            query_context->setVersionToWaitSharedCatalog(version_to_wait);
-        }
-        catch (...)
+        if (!SharedDatabaseCatalog::isInitialQuery(query_context))
         {
             std::lock_guard lock{mutex};
-            comment = old_comment;
-            throw;
+            comment = new_comment;
+            return;
         }
+
+        /// Build the create query with the new comment, but leave the in-memory value
+        /// untouched, so concurrent readers never observe an uncommitted comment.
+        ASTPtr create_query;
+        {
+            std::lock_guard lock{mutex};
+            const String old_comment = comment;
+            comment = new_comment;
+            try
+            {
+                create_query = getCreateDatabaseQueryImpl();
+            }
+            catch (...)
+            {
+                comment = old_comment;
+                throw;
+            }
+            comment = old_comment;
+        }
+        if (!create_query)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+
+        auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+        query_context->setVersionToWaitSharedCatalog(version_to_wait);
+
+        std::lock_guard lock{mutex};
+        comment = new_comment;
+        return;
     }
 #endif
+
+    std::lock_guard lock{mutex};
+    const String old_comment = comment;
+    comment = new_comment;
+    try
+    {
+        const ASTPtr create_query = getCreateDatabaseQueryImpl();
+        if (!create_query)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
+    }
+    catch (...)
+    {
+        comment = old_comment;
+        throw;
+    }
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
