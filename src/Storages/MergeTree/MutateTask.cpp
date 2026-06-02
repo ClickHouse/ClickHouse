@@ -2463,10 +2463,10 @@ private:
 
             /// `prepare` copies `source_part->checksums` wholesale, so a `<name>.proj`
             /// entry can be inherited for a projection whose directory was skipped during
-            /// hardlinking (it is in `files_to_skip`) and that produced no part. That
-            /// happens both for a zero-row rebuild and for drop/throw mode. Drop such
-            /// entries; otherwise `loadProjections` marks the projection broken on the
-            /// next consistency-checking load.
+            /// hardlinking (it is in `files_to_skip`) and that produced no part — both for
+            /// a zero-row rebuild and for drop/throw mode. Drop such entries; otherwise the
+            /// next load that verifies consistency (server startup or `ATTACH`) marks the
+            /// projection broken via `loadProjections`.
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
                 const auto projection_file = projection.getDirectoryName();
