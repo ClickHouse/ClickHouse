@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-fasttest
 
 -- Tests that multiMatchAny() utilizes the text index.
 -- Regex search is intended to be used with the ngrams (or sparseGrams) tokenizer: the literal runs
