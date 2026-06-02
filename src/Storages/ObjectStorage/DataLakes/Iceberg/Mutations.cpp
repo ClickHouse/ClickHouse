@@ -12,7 +12,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -67,8 +66,8 @@ struct DeleteFileWriteResult
 {
     /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
     Iceberg::IcebergPathFromMetadata path;
-    Int64 total_rows;
-    Int64 total_bytes;
+    Int64 total_rows{};
+    Int64 total_bytes{};
 };
 
 using DataFileWriteResultByPartitionKey = std::unordered_map<ChunkPartitioner::PartitionKey, DeleteFileWriteResult, ChunkPartitioner::PartitionKeyHasher>;
@@ -135,7 +134,7 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     const MutationCommands & commands,
     ContextPtr context,
     StorageMetadataPtr metadata,
-    StorageID storage_id,
+    StoragePtr storage_ptr,
     ObjectStoragePtr object_storage,
     String write_format,
     FileNamesGenerator & generator,
@@ -145,8 +144,6 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
     Poco::JSON::Object::Ptr data_schema)
 {
     chassert(commands.size() == 1);
-
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage_id, context);
     DataFileWriteResultByPartitionKey delete_data_result;
     DataFileStatisticsByPartitionKey delete_data_statistics;
     std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> delete_data_write_buffers;
@@ -312,8 +309,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                         DBMS_DEFAULT_BUFFER_SIZE,
                         context->getWriteSettings());
 
+                    ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
+                    FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, data_block, context, format_settings, nullptr);
+                        write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
@@ -560,6 +559,7 @@ static bool writeMetadataFiles(
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
+    StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
@@ -645,7 +645,7 @@ void mutate(
             commands,
             context,
             fresh_storage_metadata,
-            storage_id,
+            storage_ptr,
             object_storage,
             write_format,
             filename_generator,
@@ -720,7 +720,8 @@ void alter(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
 
     size_t i = 0;
-    while (i++ < MAX_TRANSACTION_RETRIES)
+    bool succeeded = false;
+    while (i < MAX_TRANSACTION_RETRIES)
     {
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
@@ -778,11 +779,20 @@ void alter(
                 object_storage,
                 context,
                 data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        {
+            succeeded = true;
             break;
+        }
+        ++i;
     }
 
-    if (i == MAX_TRANSACTION_RETRIES)
+    if (!succeeded)
         throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Too many unsuccessed retries to alter iceberg table");
+
+    /// Invalidate the metadata files cache so that subsequent operations on this table see the
+    /// schema we just wrote. See `PersistentTableComponents::invalidateMetadataCache` for the
+    /// rationale.
+    persistent_table_components.invalidateMetadataCache();
 }
 
 #endif
