@@ -398,6 +398,9 @@ namespace
         }
     }
 
+    /// The name for an access entity comes from a config key, so any dot in the
+    /// name is escaped with a backslash by Poco::XMLConfiguration.
+    /// This function removes the backslash to get the correct name.
     String unescapeDots(const String & name)
     {
         return Poco::replace(name, "\\.", ".");
