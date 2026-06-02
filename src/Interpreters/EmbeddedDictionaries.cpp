@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Poco/Util/Application.h>
@@ -98,6 +99,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 void EmbeddedDictionaries::reloadPeriodically()
 {
     DB::setThreadName(ThreadName::DICT_RELOAD);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (true)
     {

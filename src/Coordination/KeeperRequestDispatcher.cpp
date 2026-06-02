@@ -4,6 +4,7 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/HistogramMetrics.h>
@@ -557,6 +558,7 @@ void KeeperRequestDispatcher::dispatchThread()
     try
     {
         DB::setThreadName(ThreadName::KEEPER_REQUEST);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         int64_t operation_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds();
 
@@ -1088,6 +1090,7 @@ void KeeperRequestDispatcher::responseThread()
     try
     {
         DB::setThreadName(ThreadName::KEEPER_RESPONSE);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         while (!shutting_down.load())
         {

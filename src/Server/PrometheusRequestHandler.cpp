@@ -12,6 +12,7 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
@@ -554,6 +555,7 @@ void PrometheusRequestHandler::createImpl()
 void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
 {
     DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     applyHTTPResponseHeaders(response, response_headers);
 
     try

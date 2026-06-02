@@ -1,6 +1,7 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ErrnoException.h>
 
+#include <Common/ThreadStackRegistry.h>
 #if USE_NURAFT
 
 #    include <mutex>
@@ -388,6 +389,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 void KeeperTCPHandler::runImpl()
 {
     DB::setThreadName(ThreadName::KEEPER_HANDLER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);

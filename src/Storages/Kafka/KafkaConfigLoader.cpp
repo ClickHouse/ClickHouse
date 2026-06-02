@@ -15,6 +15,7 @@
 #include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <csignal>
 
@@ -75,12 +76,15 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     {
         case RD_KAFKA_THREAD_MAIN:
             DB::setThreadName(ThreadName::KAFKA_MAIN);
+            DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
             DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
+            DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
             break;
         case RD_KAFKA_THREAD_BROKER:
             DB::setThreadName(ThreadName::KAFKA_BROKER);
+            DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
             break;
     }
 

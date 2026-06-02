@@ -16,6 +16,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
@@ -232,6 +233,7 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 void KeeperDispatcher::snapshotThread()
 {
     DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;

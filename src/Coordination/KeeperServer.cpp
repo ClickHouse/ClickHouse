@@ -33,6 +33,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/ThreadStatus.h>
 
 #if USE_SSL
@@ -347,6 +348,7 @@ void KeeperServer::KeeperRaftServer::forceReconfigure(const nuraft::ptr<nuraft::
 void KeeperServer::KeeperRaftServer::commit_in_bg()
 {
     DB::setThreadName(ThreadName::KEEPER_COMMIT);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     /// Set up query profiler for the commit thread if configured.
     /// We create a new Context, as if this were a clickhouse query, and set setting
@@ -388,6 +390,7 @@ void KeeperServer::KeeperRaftServer::commit_in_bg()
 void KeeperServer::KeeperRaftServer::append_entries_in_bg()
 {
     DB::setThreadName(ThreadName::KEEPER_APPEND);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LockMemoryExceptionInThread blocker{VariableContext::Global};
     nuraft::raft_server::append_entries_in_bg();
 }

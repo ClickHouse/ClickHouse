@@ -4,6 +4,7 @@
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -423,6 +424,7 @@ void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
     DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::runWatchingThread");
     while (watching)

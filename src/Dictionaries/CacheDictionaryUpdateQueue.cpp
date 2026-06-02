@@ -2,6 +2,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 
 namespace CurrentMetrics
 {
@@ -135,6 +136,7 @@ template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 {
     setThreadName(ThreadName::CACHE_DICTIONARY_UPDATE_QUEUE);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (!update_queue.isFinished())
     {

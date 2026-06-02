@@ -22,6 +22,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/thread_local_rng.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -158,6 +159,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
+                DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
                 StoredObject object{object_path};
                 String local_path;

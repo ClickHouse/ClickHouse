@@ -38,6 +38,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -225,6 +226,7 @@ StorageKafka::StorageKafka(
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
     {
         DB::setThreadName(ThreadName::KAFKA_CLEANUP);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
         cleanConsumersByTTL();
     });
 }

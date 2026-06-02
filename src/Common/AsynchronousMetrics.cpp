@@ -19,6 +19,7 @@
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <boost/locale/date_time_facet.hpp>
@@ -444,6 +445,7 @@ auto get_next_update_time(std::chrono::seconds update_period)
 void AsynchronousMetrics::run()
 {
     DB::setThreadName(ThreadName::ASYNC_METRICS);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (true)
     {

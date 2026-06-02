@@ -4,6 +4,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/Context.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -133,6 +134,7 @@ int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_quer
 try
 {
     DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);

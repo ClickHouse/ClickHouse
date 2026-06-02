@@ -47,8 +47,16 @@ private:
         size_t pending_mutations;
     };
 
+    struct ThreadStackStats
+    {
+        UInt64 count = 0;
+        UInt64 resident_bytes = 0;
+        UInt64 virtual_bytes = 0;
+    };
+
     DetachedPartsStats detached_parts_stats{};
     MutationStats mutation_stats{};
+    ThreadStackStats thread_stack_stats{};
 
     /// /proc/self/smaps is walked at the slower heavy-metrics cadence rather
     /// than on every scrape, because it can be expensive on servers with many
@@ -57,7 +65,7 @@ private:
     std::optional<ReadBufferFromFilePRead> vm_smaps;
 
     void updateMutationAndDetachedPartsStats();
-    void updateThreadStackMetrics(AsynchronousMetricValues & new_values);
+    void updateThreadStackStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

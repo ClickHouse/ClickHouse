@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/StringUtils.h>
 #include <base/types.h>
 #include <functional>
@@ -870,6 +871,7 @@ TestKeeper::~TestKeeper()
 void TestKeeper::processingThread()
 {
     setThreadName(ThreadName::TEST_KEEPER_PROC);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     try
     {

@@ -1,6 +1,7 @@
 #include <Disks/IO/IOUringReader.h>
 #include <Common/ErrnoException.h>
 
+#include <Common/ThreadStackRegistry.h>
 #if USE_LIBURING
 
 #    include <future>
@@ -237,6 +238,7 @@ void IOUringReader::finalizeRequest(const EnqueuedIterator & requestIt)
 void IOUringReader::monitorRing()
 {
     DB::setThreadName(ThreadName::IO_URING_MONITOR);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (!cancelled.load(std::memory_order_relaxed))
     {

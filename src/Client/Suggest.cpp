@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/QueryScope.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Core/Protocol.h>
@@ -157,6 +158,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
             query_scope = QueryScope::create(my_context);
 
         setThreadName(ThreadName::SUGGEST);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         for (size_t retry = 0; retry < 10; ++retry)
         {

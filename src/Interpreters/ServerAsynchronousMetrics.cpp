@@ -590,7 +590,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     mutation_stats = current_mutation_stats;
 }
 
-void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] AsynchronousMetricValues & new_values)
+void ServerAsynchronousMetrics::updateThreadStackStats()
 {
 #if defined(OS_LINUX)
     if (!vm_smaps)
@@ -633,9 +633,9 @@ void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] Asynch
 
         vm_smaps->rewind();
 
-        uint64_t stack_rss_kb = 0;
-        uint64_t stack_size_kb = 0;
-        uint64_t stack_count = 0;
+        UInt64 stack_rss_kb = 0;
+        UInt64 stack_size_kb = 0;
+        UInt64 stack_count = 0;
         bool current_is_stack = false;
 
         constexpr size_t line_buf_size = 1024;
@@ -676,7 +676,7 @@ void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] Asynch
             }
             else if (current_is_stack)
             {
-                uint64_t * dest = nullptr;
+                UInt64 * dest = nullptr;
                 size_t value_offset = 0;
                 if (len >= 4 && data[0] == 'R' && data[1] == 's' && data[2] == 's' && data[3] == ':')
                 {
@@ -692,10 +692,10 @@ void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] Asynch
                 {
                     while (value_offset < len && data[value_offset] == ' ')
                         ++value_offset;
-                    uint64_t value = 0;
+                    UInt64 value = 0;
                     while (value_offset < len && data[value_offset] >= '0' && data[value_offset] <= '9')
                     {
-                        value = value * 10 + static_cast<uint64_t>(data[value_offset] - '0');
+                        value = value * 10 + static_cast<UInt64>(data[value_offset] - '0');
                         ++value_offset;
                     }
                     *dest += value;
@@ -725,26 +725,15 @@ void ServerAsynchronousMetrics::updateThreadStackMetrics([[maybe_unused]] Asynch
 
         /// stack_rss_kb and stack_size_kb are in integer kB (the kernel's
         /// unit in /proc/self/smaps); multiply by 1024 to expose bytes.
-        new_values["MemoryThreadStacksResident"] = { stack_rss_kb * 1024,
-            "Approximate resident set size of pthread stacks, summed from `Rss:`"
-            " of /proc/self/smaps VMAs whose start address matches the snapshot"
-            " of currently-registered thread stack bases at the start of the"
-            " scrape. Updated on the heavy-metrics cadence. May slightly"
-            " undercount under heavy thread churn (Linux only)." };
-        new_values["MemoryThreadStacksVirtual"] = { stack_size_kb * 1024,
-            "Approximate virtual size of pthread stacks, summed from `Size:`"
-            " of matching /proc/self/smaps VMAs. Updated on the heavy-metrics"
-            " cadence (Linux only)." };
-        new_values["MemoryThreadStacksCount"] = { stack_count,
-            "Number of pthread stack VMAs matched in /proc/self/smaps against"
-            " the snapshot taken at the start of the scrape. Updated on the"
-            " heavy-metrics cadence (Linux only)." };
+        thread_stack_stats.count = stack_count;
+        thread_stack_stats.resident_bytes = stack_rss_kb * 1024;
+        thread_stack_stats.virtual_bytes = stack_size_kb * 1024;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
         try { vm_smaps.emplace("/proc/self/smaps"); }
-        catch (...) { vm_smaps.reset(); } /// Ok, re-open failed; disable on next call.
+        catch (...) { vm_smaps.reset(); } /// NOLINT(bugprone-empty-catch) Ok, re-open failed; disable on next call.
     }
 #endif
 }
@@ -767,8 +756,11 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         updateMutationAndDetachedPartsStats();
 
         /// /proc/self/smaps is gated here because it forces the kernel to
-        /// walk page tables for every VMA of the process.
-        updateThreadStackMetrics(new_values);
+        /// walk page tables for every VMA of the process. The result is
+        /// cached in `thread_stack_stats`; the metric values themselves
+        /// are emitted unconditionally below so they remain present on
+        /// every scrape.
+        updateThreadStackStats();
 
         watch.stop();
 
@@ -816,6 +808,26 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
     new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
+
+#if defined(OS_LINUX)
+    /// Re-emit cached thread-stack stats on every scrape so the metrics
+    /// stay present between heavy-cadence refreshes. Values are zero until
+    /// the first heavy update has completed.
+    new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
+        "Approximate resident set size of pthread stacks, summed from `Rss:`"
+        " of /proc/self/smaps VMAs whose start address matches the snapshot"
+        " of currently-registered thread stack bases at the start of the"
+        " scrape. Refreshed on the heavy-metrics cadence. May slightly"
+        " undercount under heavy thread churn (Linux only)." };
+    new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
+        "Approximate virtual size of pthread stacks, summed from `Size:`"
+        " of matching /proc/self/smaps VMAs. Refreshed on the heavy-metrics"
+        " cadence (Linux only)." };
+    new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
+        "Number of pthread stack VMAs matched in /proc/self/smaps against"
+        " the snapshot taken at the start of the scrape. Refreshed on the"
+        " heavy-metrics cadence (Linux only)." };
+#endif
 }
 
 }

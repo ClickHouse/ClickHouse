@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -443,6 +444,7 @@ void ArrowFlightServer::start()
         try
         {
             DB::setThreadName(ThreadName::ARROW_FLIGHT_SERVER);
+            DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
             if (stopped)
                 return;
             auto serve_status = Serve();
@@ -462,6 +464,7 @@ void ArrowFlightServer::start()
             try
             {
                 DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
+                DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
                 while (!stopped)
                 {
                     calls_data->waitNextExpirationTime();
@@ -1278,6 +1281,7 @@ arrow::Status ArrowFlightServer::DoPut(
 arrow::Status ArrowFlightServer::tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const
 {
     DB::setThreadName(ThreadName::ARROW_FLIGHT);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     ThreadStatus thread_status;
     try
     {

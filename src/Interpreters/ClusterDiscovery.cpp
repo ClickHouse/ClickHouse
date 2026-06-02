@@ -14,6 +14,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/StringUtils.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/Types.h>
@@ -683,6 +684,7 @@ void ClusterDiscovery::start()
 bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 {
     DB::setThreadName(ThreadName::CLUSTER_DISCOVERY);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
     LOG_DEBUG(log, "Worker thread started");
 
     auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::runMainThread");

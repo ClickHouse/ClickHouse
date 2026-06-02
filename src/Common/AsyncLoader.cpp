@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 
 #include <fmt/ranges.h>
 
@@ -925,6 +926,7 @@ void AsyncLoader::worker(Pool & pool)
     {
         // This is inside the loop to also reset previous thread names set inside the jobs
         DB::setThreadName(ThreadName::ASYNC_TABLE_LOADER);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
         {
             std::unique_lock lock{mutex};

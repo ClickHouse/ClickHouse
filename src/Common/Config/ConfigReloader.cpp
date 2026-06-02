@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 
 
 namespace fs = std::filesystem;
@@ -84,6 +85,7 @@ ConfigReloader::~ConfigReloader()
 void ConfigReloader::run()
 {
     DB::setThreadName(ThreadName::CONFIG_RELOADER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (true)
     {

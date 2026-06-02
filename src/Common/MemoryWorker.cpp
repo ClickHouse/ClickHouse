@@ -12,6 +12,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 
 #include <fmt/ranges.h>
 
@@ -403,6 +404,7 @@ namespace
 void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     /// Set the biggest priority for this thread to avoid drift
     /// under the CPU starvation.
@@ -572,6 +574,7 @@ void MemoryWorker::purgeDirtyPagesThread()
     /// fast, they are still not free.
     /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
     DB::setThreadName(ThreadName::MEMORY_WORKER);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
 

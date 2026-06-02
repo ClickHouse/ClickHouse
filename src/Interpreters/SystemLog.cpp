@@ -11,6 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -618,6 +619,7 @@ template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
     DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     while (true)
     {

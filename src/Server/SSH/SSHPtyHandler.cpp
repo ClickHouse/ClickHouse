@@ -7,6 +7,7 @@
 #include <Access/SSH/SSHPublicKey.h>
 #include <Common/clibssh.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Core/Names.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Pipe.h>
@@ -502,6 +503,9 @@ SSHPtyHandler::~SSHPtyHandler()
 
 void SSHPtyHandler::run()
 {
+    /// Poco's TCP server pool reuses this OS thread across connections.
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
+
     ::ssh::SSHEvent event;
     auto peer_addr = socket().peerAddress();
     socket().close();

@@ -34,7 +34,10 @@ public:
     /// Idempotent: registers the current OS thread's stack base on first call,
     /// arranges for automatic removal when the OS thread exits. No-op on
     /// subsequent calls from the same thread. Safe to call from any context.
-    static void ensureCurrentThreadRegistered();
+    /// Best-effort: never throws. Failures (e.g. allocation under memory
+    /// pressure) leave the thread unregistered and that thread's stack is
+    /// not accounted for in the metric.
+    static void ensureCurrentThreadRegistered() noexcept;
 
     /// A snapshot of the currently-registered stack base addresses.
     /// One allocation per call. Used at scrape time only.

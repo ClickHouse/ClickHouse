@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
@@ -132,6 +133,7 @@ void TraceCollector::run()
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::TRACE_COLLECTOR);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);

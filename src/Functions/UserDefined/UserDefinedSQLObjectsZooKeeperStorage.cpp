@@ -16,6 +16,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 
@@ -157,6 +158,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::USER_DEFINED_WATCH);
+    DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
 
     auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue");
     while (watching_flag)

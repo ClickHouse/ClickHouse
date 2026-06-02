@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadStackRegistry.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
@@ -223,6 +224,7 @@ private:
     void cleanThread()
     {
         DB::setThreadName(ThreadName::SESSION_CLEANUP);
+        DB::ThreadStackRegistry::ensureCurrentThreadRegistered();
         std::unique_lock lock{mutex};
         while (!quit)
         {
