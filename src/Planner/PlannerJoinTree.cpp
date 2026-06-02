@@ -138,6 +138,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes
@@ -1812,10 +1813,12 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
-    bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator();
+    /// `JoinStepLogicalLookup` is not serializable, so it cannot be used when the query plan
+    /// is going to be serialized: either for execution with parallel replicas on the initiator,
+    /// or when `serialize_query_plan` is enabled (e.g. for distributed queries).
+    bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::serialize_query_plan];
     PreparedJoinStorage prepared_join;
-    /// `JoinStepLogicalLookup` is not serializable, so it cannot be used when the
-    /// query is planned for execution with parallel replicas on the initiator.
     bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
