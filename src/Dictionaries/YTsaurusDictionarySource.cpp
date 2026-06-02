@@ -11,17 +11,11 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Core/Settings.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
 
 #include <boost/algorithm/string/split.hpp>
 
 #endif
-
-namespace ProfileEvents
-{
-    extern const Event YTsaurusLookupThrottled;
-}
 
 namespace DB
 {
@@ -145,11 +139,9 @@ static ThrottlerPtr makeLookupThrottler(const YTsaurusSettings & settings)
     auto max_lookups_per_sec = settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
     if (!max_lookups_per_sec)
         return nullptr;
-    return std::make_shared<Throttler>(
-        max_lookups_per_sec,
-        ProfileEvents::YTsaurusLookupThrottled,
-        ProfileEvents::end()      /// No sleep time tracking for now
-    );
+    /// The `YTsaurusLookupThrottled` event is incremented by `YTsaurusClient::lookupRows` based on the return value of
+    /// `Throttler::throttle`, so that it counts only requests that were actually blocked, not every request passing through.
+    return std::make_shared<Throttler>(max_lookups_per_sec);
 }
 
 YTsarususDictionarySource::YTsarususDictionarySource(
