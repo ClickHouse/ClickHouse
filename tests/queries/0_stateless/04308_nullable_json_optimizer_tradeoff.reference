@@ -1,0 +1,13 @@
+int:count	2
+int:isNull	1
+int:isNotNull	2
+int:count_rewritten	1
+int:isNull_rewritten	1
+int:isNotNull_rewritten	1
+json:count	2
+json:isNull	1
+json:isNotNull	2
+json:count_not_rewritten	1
+json:isNull_not_rewritten	1
+json:isNotNull_not_rewritten	1
+json:data.null_returns_json_value	xx
