@@ -853,6 +853,18 @@ try
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
 
+        /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
+        /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
+        /// would corrupt the terminal. Respect an explicit choice of the charset by the user, and
+        /// do not change the output when it goes only into a file (the file should keep UTF-8).
+        if (stdout_is_a_tty
+            && !select_only_into_file
+            && !client_context->getSettingsRef()[Setting::output_format_pretty_grid_charset].changed
+            && !terminalSupportsUTF8())
+        {
+            format_settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
+        }
+
         /// We need to disable output format squashing semantics for streaming queries
         /// because otherwise data may not be disaplayed forever.
         if (parsed_query && hasStreamingTableExpression(*parsed_query))
@@ -967,19 +979,6 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
             settings[Setting::output_format_pretty_max_value_width].changed = false;
         }
 
-        context->setSettings(settings);
-    }
-
-    /// If we are writing to a terminal that does not support UTF-8 (e.g. with LANG=C),
-    /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
-    /// would corrupt the terminal. Respect an explicit choice of the charset by the user.
-    if (stdout_is_a_tty
-        && !context->getSettingsRef()[Setting::output_format_pretty_grid_charset].changed
-        && !terminalSupportsUTF8())
-    {
-        Settings settings = context->getSettingsCopy();
-        settings[Setting::output_format_pretty_grid_charset] = "ASCII";
-        settings[Setting::output_format_pretty_grid_charset].changed = false;
         context->setSettings(settings);
     }
 }
