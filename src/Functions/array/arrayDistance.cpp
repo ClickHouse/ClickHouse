@@ -391,12 +391,13 @@ constexpr bool is_common_mixed_pair = is_unordered_pair<LeftType, RightType, UIn
     || is_unordered_pair<LeftType, RightType, UInt8, Float64>
     || is_unordered_pair<LeftType, RightType, Float32, Float64>;
 
-/// Multi-target hot loop for non-const x non-const path.
+/// Multi-target hot loop for the native same-type path (LeftType == RightType == ResultType).
 /// The MULTITARGET macro generates _x86_64_v4, _x86_64_v3, and default versions
 /// so the compiler can auto-vectorize with the best available ISA.
 ///
-/// Templated only on <Kernel, ResultType> to avoid combinatorial explosion of
-/// LeftType x RightType x arch instantiations. Callers pre-convert data to ResultType.
+/// Mixed-type pairs do NOT use this kernel; they go through `executeDistanceMixed` which casts
+/// per element inside the hot loop instead of pre-converting full columns. Templating only on
+/// <Kernel, ResultType> here keeps the LeftType x RightType x arch instantiation explosion bounded.
 MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
     template <typename Kernel, typename ResultType>
