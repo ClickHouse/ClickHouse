@@ -128,9 +128,7 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
 
             if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
             {
-                /// `lenient_type_check` is set for row-level filters from row policies, which may use any
-                /// `canBeUsedInBooleanContext`-compatible column (e.g. `Int8`). Bail on projection
-                /// optimization instead of failing the query -- see issue #106099.
+                /// Lenient mode: caller accepts any boolean-context type, bail on projection. See #106099.
                 if (lenient_type_check)
                     return nullptr;
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
@@ -144,6 +142,12 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             }
             else
             {
+                /// The constant-`1` rewrite below would replace a passthrough filter column
+                /// (kept as a SELECT output by the bare-column dedup) with `1`. Bail on
+                /// projection so the real value is returned. See #106099.
+                if (lenient_type_check)
+                    return nullptr;
+
                 ColumnWithTypeAndName col;
                 col.name = node->result_name;
                 col.type = node->result_type;
@@ -166,8 +170,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         if (const auto & row_level_filter = reading->getRowLevelFilter())
         {
             appendExpression(row_level_filter->actions);
-            /// Row policies accept any boolean-context-compatible column type, so we cannot throw on
-            /// non-UInt8 here (issue #106099).
+            /// Row policies accept any boolean-context type, use lenient mode. See #106099.
             if (const auto * filter_expression
                 = findInOutputs(*dag, row_level_filter->column_name, row_level_filter->do_remove_column, /* lenient_type_check */ true))
                 filter_nodes.push_back(filter_expression);
@@ -209,13 +212,8 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
             return false;
 
         appendExpression(actions);
-        /// A `FilterStep` may carry a non-`UInt8` filter column when it was
-        /// produced by row policy / `additional_table_filters` with a bare
-        /// integer column. `FilterTransform` itself accepts every type that
-        /// satisfies `canBeUsedInBooleanContext`, so bail on projection
-        /// optimization instead of throwing -- the query then runs through the
-        /// normal read path. PREWHERE handling above stays strict so explicit
-        /// user `PREWHERE <non-bool>` still surfaces the type error.
+        /// `FilterStep` may carry a non-`UInt8` filter column from row policies and
+        /// `additional_table_filters`; use lenient mode. See #106099.
         const auto * filter_expression
             = findInOutputs(*dag, filter->getFilterColumnName(), filter->removesFilterColumn(), /* lenient_type_check */ true);
         if (!filter_expression)

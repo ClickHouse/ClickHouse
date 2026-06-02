@@ -303,17 +303,9 @@ try
     filter_info->column_name = expr_list->children.at(0)->getColumnName();
     filter_info->actions.removeUnusedActions(NameSet{filter_info->column_name});
 
-    /// `analyzer.simpleSelectActions` builds the DAG from a synthetic SELECT
-    /// containing the filter expression followed by every prerequisite column.
-    /// When a prerequisite happens to be the filter column itself (e.g. row
-    /// policy `USING c0` while reading `c0`), the analyzer emits the same
-    /// output node twice. Reset the output list to a single filter result and
-    /// re-export each input as a passthrough. For a bare-column filter the
-    /// filter result IS one of the inputs, so we skip that input and flip
-    /// `do_remove_column` off so `FilterTransform` does not erase the column
-    /// we want to keep. For a computed-column filter, `do_remove_column`
-    /// stays true so the filter column is stripped after filtering. See
-    /// issue #106099.
+    /// Bare-column filter (e.g. row policy `USING c0` reading `c0`): keep a single
+    /// output and disable the post-filter erase so the column survives. Computed-column
+    /// filters stay with `do_remove_column = true`. See issue #106099.
     auto & filter_outputs = filter_info->actions.getOutputs();
     const auto * filter_result_node = filter_outputs.front();
     filter_outputs = {filter_result_node};
@@ -1000,12 +992,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                     prepared_sets);
 
-                /// `generateFilterActions` sets `do_remove_column` to false for a
-                /// bare-input filter (e.g. `additional_table_filters = {'t':'x'}`)
-                /// and true for a computed-column filter. Forcing it true here
-                /// would make `FilterTransform` erase the only copy of the filter
-                /// column when the producer-side dedup left a single output
-                /// covering both the filter result and the requested passthrough.
+                /// `do_remove_column` is already set by the producer; do not override
+                /// it here or a bare-input passthrough loses its only copy. See #106099.
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
@@ -1015,10 +1003,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
                         prepared_sets);
 
-                /// Same as above: trust `generateFilterActions`. The parallel
-                /// replicas custom filter is always a computed expression
-                /// (`modulo(...) = 0` or similar), so the producer sets
-                /// `do_remove_column = true` on its own.
+                /// Same as above; the producer already sets `do_remove_column` correctly.
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 

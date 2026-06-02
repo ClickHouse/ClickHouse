@@ -563,14 +563,9 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     for (const auto & filter_input_node : filter_actions_dag.getInputs())
     {
-        /// When the filter expression is a bare column reference (e.g. row
-        /// policy `USING c0`), `filter_actions_outputs[0]` and the input node
-        /// are the same `ActionsDAG::Node`. Pushing it again would create a
-        /// same-pointer duplicate in the output list, which the downstream
-        /// validator (`ReadFromMergeTree::removeUnusedColumns`) rejects with
-        /// `LOGICAL_ERROR "Duplicate column name ..."`. Keep one copy and
-        /// disable the post-filter erase so the column survives for the
-        /// downstream query. See issue #106099.
+        /// Bare-column filter (e.g. row policy `USING c0`): the filter result already
+        /// is one of the inputs; keep a single output and skip the post-filter erase.
+        /// See issue #106099.
         if (filter_input_node == filter_actions_outputs[0])
         {
             remove_filter_column = false;

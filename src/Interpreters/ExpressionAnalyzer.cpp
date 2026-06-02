@@ -2093,10 +2093,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         if (storage && row_policy_info_)
         {
             row_policy_info = row_policy_info_;
-            /// `do_remove_column` is set by the producer (`generateFilterActions`)
-            /// based on whether the filter expression is a bare column reference
-            /// (false -- column survives) or a computed expression (true -- column
-            /// is stripped after filtering). See issue #106099.
+            /// `do_remove_column` is already set by the producer; do not override. See #106099.
         }
 
         if (prewhere_dag_and_flags = query_analyzer.appendPrewhere(chain, !first_stage); prewhere_dag_and_flags)

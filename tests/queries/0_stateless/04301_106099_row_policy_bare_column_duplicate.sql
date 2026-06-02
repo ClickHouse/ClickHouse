@@ -76,3 +76,27 @@ SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0
 SELECT count() FROM t_106099 SETTINGS additional_table_filters = {'t_106099':'c0'}, enable_analyzer = 1;
 
 DROP TABLE t_106099;
+
+-- `UInt8` bare-column passthrough must not be rewritten to constant `1` by
+-- projection optimization. Issue #106099.
+DROP TABLE IF EXISTS t_106099_u8;
+DROP ROW POLICY IF EXISTS pol_106099_u8 ON t_106099_u8;
+CREATE TABLE t_106099_u8 (c0 UInt8) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_106099_u8 VALUES (0), (2), (3);
+ALTER TABLE t_106099_u8 ADD PROJECTION p (SELECT c0 ORDER BY c0);
+ALTER TABLE t_106099_u8 MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
+CREATE ROW POLICY pol_106099_u8 ON t_106099_u8 USING c0 TO ALL;
+-- Result must be real values, not constant `1` (the projection helper bails
+-- because of the passthrough; the read path returns the original column).
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 0;
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS enable_analyzer = 1;
+SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 0;
+SELECT count() FROM t_106099_u8 SETTINGS enable_analyzer = 1;
+-- Forcing projection use must fail (projection is bailed, not silently skipped).
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 0; -- { serverError PROJECTION_NOT_USED }
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS force_optimize_projection = 1, enable_analyzer = 1; -- { serverError PROJECTION_NOT_USED }
+-- Same `UInt8` projection trap via `additional_table_filters`.
+DROP ROW POLICY pol_106099_u8 ON t_106099_u8;
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099_u8':'c0'}, enable_analyzer = 0;
+SELECT c0 FROM t_106099_u8 ORDER BY c0 SETTINGS additional_table_filters = {'t_106099_u8':'c0'}, enable_analyzer = 1;
+DROP TABLE t_106099_u8;
