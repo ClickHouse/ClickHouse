@@ -442,6 +442,18 @@ bool WorkloadEntityStorageBase::storeEntity(
             validator.initFromChanges(workload->changes);
         }
 
+        // Validate resource: cost unit cannot change via CREATE OR REPLACE — the scheduler
+        // hierarchy is built with unit-specific node types and would silently end up with the
+        // wrong scheduler/link type in release builds.
+        if (resource && old_entity)
+        {
+            auto * old_resource = typeid_cast<ASTCreateResourceQuery *>(old_entity.get());
+            if (old_resource && old_resource->unit != resource->unit)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cost unit of resource '{}' cannot be changed via CREATE OR REPLACE; drop and recreate the resource instead.",
+                    entity_name);
+        }
+
         // Validate resource
         if (resource)
         {
@@ -738,19 +750,33 @@ void WorkloadEntityStorageBase::applyEvent(
         if (workload && !workload->hasParent())
             root_name = workload->getWorkloadName();
 
-        // Update resource names
+        // Update resource names. First clear any role-name field that currently points to this
+        // resource: `CREATE OR REPLACE RESOURCE r (...)` may change `r`'s operation set, e.g.
+        // drop QUERY and add MEMORY RESERVATION. Without clearing, `query_resource` would still
+        // be "r" while `memory_reservation_resource` would also be "r" — leading to a
+        // `QuerySlot` or `MemoryReservation` receiving a `ResourceLink` for the wrong unit.
         if (resource)
         {
+            const String & name = resource->getResourceName();
+            if (master_thread_resource == name)
+                master_thread_resource.clear();
+            if (worker_thread_resource == name)
+                worker_thread_resource.clear();
+            if (query_resource == name)
+                query_resource.clear();
+            if (memory_reservation_resource == name)
+                memory_reservation_resource.clear();
+
             for (const auto & operation : resource->operations)
             {
                 if (operation.mode == ResourceAccessMode::MasterThread)
-                    master_thread_resource = resource->getResourceName();
+                    master_thread_resource = name;
                 if (operation.mode == ResourceAccessMode::WorkerThread)
-                    worker_thread_resource = resource->getResourceName();
+                    worker_thread_resource = name;
                 if (operation.mode == ResourceAccessMode::Query)
-                    query_resource = resource->getResourceName();
+                    query_resource = name;
                 if (operation.mode == ResourceAccessMode::MemoryReservation)
-                    memory_reservation_resource = resource->getResourceName();
+                    memory_reservation_resource = name;
             }
         }
 

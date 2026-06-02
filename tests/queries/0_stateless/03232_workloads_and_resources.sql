@@ -42,6 +42,20 @@ create or replace workload development in all settings priority = 2;
 create or replace resource 03232_write (write disk 03232_fake_disk_2);
 create or replace resource 03232_read (read disk 03232_fake_disk_2);
 
+-- CREATE OR REPLACE RESOURCE clears role-name fields when operations change.
+-- Without the fix, after the OR REPLACE below `master_thread_resource` would still point to
+-- `03232_role_a`, so `03232_role_b` could not claim MASTER THREAD.
+create resource 03232_role_a (master thread);
+create or replace resource 03232_role_a (worker thread);
+create resource 03232_role_b (master thread);
+drop resource 03232_role_a;
+drop resource 03232_role_b;
+
+-- CREATE OR REPLACE RESOURCE cannot change the cost unit — drop and recreate instead.
+create resource 03232_unit_change (query);
+create or replace resource 03232_unit_change (memory reservation); -- {serverError BAD_ARGUMENTS}
+drop resource 03232_unit_change;
+
 -- Test update settings with CREATE OR REPLACE WORKLOAD
 create or replace workload production in all settings priority = 1, weight = 9, max_io_requests = 100;
 create or replace workload development in all settings priority = 1, weight = 1, max_io_requests = 10;

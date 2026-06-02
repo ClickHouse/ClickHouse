@@ -3213,6 +3213,31 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActi
     }
 }
 
+// Regression: `CREATE OR REPLACE RESOURCE` must clear role-name fields that the previous
+// definition owned, and must reject changes to the resource's cost unit.
+TEST(SchedulerWorkloadResourceManager, CreateOrReplaceResourceChangesRoleAndRejectsUnitChange)
+{
+    ResourceTest t;
+
+    // Initial: r1 owns MASTER THREAD (CostUnit::CPUNanosecond).
+    t.query("CREATE RESOURCE r1 (MASTER THREAD)");
+
+    // Replace within the same unit. The fix must drop r1's MASTER THREAD ownership; without it
+    // `master_thread_resource` would still point to "r1" and r2 below could not claim the role.
+    t.query("CREATE OR REPLACE RESOURCE r1 (WORKER THREAD)");
+
+    t.query("CREATE RESOURCE r2 (MASTER THREAD)");
+
+    t.query("DROP RESOURCE r1");
+    t.query("DROP RESOURCE r2");
+
+    // Cost-unit change must be rejected — the scheduler hierarchy is built per unit and would
+    // silently end up with mismatched scheduler/link types in release builds.
+    t.query("CREATE RESOURCE r3 (QUERY)");
+    EXPECT_THROW(t.query("CREATE OR REPLACE RESOURCE r3 (MEMORY RESERVATION)"), DB::Exception);
+    t.query("DROP RESOURCE r3");
+}
+
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
 {
     // `max_memory_ratio` alone — sets `max_memory` to `ratio * host_RAM`.
