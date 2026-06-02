@@ -445,6 +445,9 @@
     M(BlobCopierThreads, "Number of threads in the thread pool of the object storage disk background replication process") \
     M(BlobCopierThreadsActive, "Number of threads in the thread pool of the object storage disk background replication process running a task") \
     M(BlobCopierThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background replication process") \
+    M(DiskObjectStorageCopyObjectThreads, "Number of threads in the thread pool used to parallelize copyObjectToAnotherObjectStorage calls inside object storage disk transactions") \
+    M(DiskObjectStorageCopyObjectThreadsActive, "Number of threads in the disk object storage copy thread pool running a task") \
+    M(DiskObjectStorageCopyObjectThreadsScheduled, "Number of queued or active tasks in the disk object storage copy thread pool") \
     \
     M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
