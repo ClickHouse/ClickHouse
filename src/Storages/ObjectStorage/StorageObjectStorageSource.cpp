@@ -143,7 +143,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -823,7 +823,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
 
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
