@@ -43,17 +43,24 @@ namespace Setting
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 {
-    return ColumnsDescription
-    {
-        {"database",std::make_shared<DataTypeString>(),"Database name."},
-        {"table",std::make_shared<DataTypeString>(),"Table name."},
-        {"made_current_at",std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),"Date & time when this snapshot was made current snapshot"},
-        {"snapshot_id",std::make_shared<DataTypeUInt64>(),"Snapshot id which is used to identify a snapshot."},
-        {"parent_id",std::make_shared<DataTypeUInt64>(),"Parent id of this snapshot."},
-        {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."},
-        {"operation",std::make_shared<DataTypeString>(),"Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNEXPECTED)."},
-        {"summary",std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),"Snapshot summary fields other than operation, as stored in the Iceberg metadata."}
-    };
+    return ColumnsDescription{
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name."},
+        {"made_current_at",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),
+         "Date & time when this snapshot was made current snapshot"},
+        {"snapshot_id", std::make_shared<DataTypeUInt64>(), "Snapshot id which is used to identify a snapshot."},
+        {"parent_id", std::make_shared<DataTypeUInt64>(), "Parent id of this snapshot."},
+        {"is_current_ancestor",
+         std::make_shared<DataTypeUInt8>(),
+         "Flag that indicates if this snapshot is an ancestor of the current snapshot."},
+        {"operation",
+         std::make_shared<DataTypeString>(),
+         "Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNKNOWN). The UNKNOWN status means either that we were unable to read "
+         "the summary or that it is empty (it's optional for v1). The correct 'operation' field is required"},
+        {"summary",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Snapshot summary fields"}};
 }
 
 void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
@@ -95,7 +102,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.getOperation()));
 
                     Map summary;
-                    if (snapshot_operation != Iceberg::SnapshotSummaryOperation::UNEXPECTED)
+                    if (snapshot_operation != Iceberg::SnapshotSummaryOperation::UNKNOWN)
                         summary = snapshot_summary.toMap();
 
                     res_columns[column_index++]->insert(std::move(summary));

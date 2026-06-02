@@ -32,7 +32,7 @@ SnapshotSummaryOperation SnapshotSummary::getOperation() const
             else if constexpr (std::is_same_v<SnapshotSummaryUpdateReplace, T>)
                 return SnapshotSummaryOperation::REPLACE;
             else
-                return SnapshotSummaryOperation::UNEXPECTED;
+                return SnapshotSummaryOperation::UNKNOWN;
         },
         update);
 }
