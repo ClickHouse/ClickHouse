@@ -50,6 +50,7 @@ def started_cluster():
             "pool_udf_per_row_child.py",
             "pool_udf_multi_layer.py",
             "pool_udf_lazy_pool.py",
+            "pool_udf_multi_mem.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -283,3 +284,51 @@ def test_lazy_pool_spawned_in_borrow(started_cluster):
     # so the three-bucket dispatch counts their full post value.
     assert cpu > 0, f"Expected UserTime > 0 (lazy Pool workers via bucket 3), got {cpu}"
     assert cpu < 60 * 1_000_000, f"UserTime suspiciously high: {cpu}"
+
+
+def test_peak_rss_max_across_live_descendants(started_cluster):
+    """peak_rss is `max` across live descendants, not `sum`.
+
+    Three helper subprocesses each allocate and touch a ~50 MiB
+    `bytearray` and stay alive throughout the borrow. The pre-walk
+    enrolls them in `pre_snapshot`; the post-walk reads each helper's
+    `VmHWM`. `recordReleased` then folds them with
+    `peak_rss = std::max(peak_rss, hwm_bytes)`.
+
+    `PeakMemoryByteSeconds / elapsed_seconds` recovers the effective
+    `peak_rss`. With `max` it lands around the per-helper RSS
+    (~60 MiB after Python interpreter footprint inherited at fork).
+    With `sum` it would land around ~180 MiB. The bounds below are
+    tight enough to falsify `sum` aggregation while leaving room for
+    the parent's own footprint to vary.
+    """
+    _skip_msan()
+    qid = "multi-mem-1"
+    _run(
+        "SELECT sum(test_pool_udf_multi_mem(number)) FROM numbers(10)",
+        qid,
+    )
+
+    byte_seconds = _profile_event_value(
+        qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds"
+    )
+    elapsed_us = _profile_event_value(
+        qid, "ExecutableUserDefinedFunctionElapsedMicroseconds"
+    )
+
+    assert byte_seconds > 0, (
+        f"Expected PeakMemoryByteSeconds > 0, got {byte_seconds}"
+    )
+    assert elapsed_us > 0, f"Expected Elapsed > 0, got {elapsed_us}"
+
+    # Invert the encoding `byte_seconds = peak_bytes × elapsed_us / 1e6`.
+    derived_peak_bytes = byte_seconds * 1_000_000 // elapsed_us
+
+    forty_mib = 40 * 1024 * 1024
+    hundred_mib = 100 * 1024 * 1024
+    assert forty_mib <= derived_peak_bytes <= hundred_mib, (
+        f"Expected derived peak in [40 MiB, 100 MiB] to lock max-not-sum "
+        f"semantics across 3 × ~50 MiB live helpers; got "
+        f"{derived_peak_bytes / 1024 / 1024:.1f} MiB "
+        f"(byte_seconds={byte_seconds}, elapsed_us={elapsed_us})"
+    )
