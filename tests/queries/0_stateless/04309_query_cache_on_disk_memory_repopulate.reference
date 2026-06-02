@@ -1,0 +1,27 @@
+-- populate memory and disk
+0	abc_0
+1	abc_1
+2	abc_2
+3	abc_3
+4	abc_4
+5	abc_5
+6	abc_6
+7	abc_7
+8	abc_8
+9	abc_9
+-- drop memory cache, only the disk entry remains
+0
+1
+-- run again with disk reads disabled: must repopulate the memory cache
+0	abc_0
+1	abc_1
+2	abc_2
+3	abc_3
+4	abc_4
+5	abc_5
+6	abc_6
+7	abc_7
+8	abc_8
+9	abc_9
+-- memory cache is now populated again
+1

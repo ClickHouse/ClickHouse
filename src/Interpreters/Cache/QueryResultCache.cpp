@@ -590,6 +590,12 @@ QueryResultCache::Key::Key(
 {
 }
 
+/// Version of the on-disk `key_metadata.txt` format. Bump whenever the serialized layout changes so that
+/// `deserialize` can intentionally reject (and `loadEntrysFromDisk` discard) entries written by an older or
+/// newer incompatible version instead of misparsing them.
+static constexpr UInt64 QUERY_RESULT_CACHE_DISK_FORMAT_VERSION = 1;
+
+static constexpr auto * token_format_version = "format_version: ";
 static constexpr auto * token_user_id = "user_id: ";
 static constexpr auto * token_current_user_roles = "current_user_roles: ";
 static constexpr auto * token_is_shared = "is_shared: ";
@@ -603,6 +609,10 @@ static constexpr auto * token_tag = "query_tag: ";
 
 void QueryResultCache::Key::serialize(WriteBuffer & buf) const
 {
+    writeText(token_format_version, buf);
+    writeText(std::to_string(QUERY_RESULT_CACHE_DISK_FORMAT_VERSION), buf);
+    writeText("\n", buf);
+
     writeText(token_user_id, buf);
     UUID uid = user_id ? *user_id : UUIDHelpers::Nil;
     writeUUIDText(uid, buf);
@@ -652,6 +662,17 @@ void QueryResultCache::Key::serialize(WriteBuffer & buf) const
 
 void QueryResultCache::Key::deserialize(ReadBuffer & buf)
 {
+    assertString(token_format_version, buf);
+    UInt64 format_version = 0;
+    readText(format_version, buf);
+    assertChar('\n', buf);
+    if (format_version != QUERY_RESULT_CACHE_DISK_FORMAT_VERSION)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported query result cache on-disk format version: {} (expected {})",
+            format_version,
+            QUERY_RESULT_CACHE_DISK_FORMAT_VERSION);
+
     assertString(token_user_id, buf);
     UUID uid;
     readUUIDText(uid, buf);
@@ -1108,6 +1129,13 @@ QueryResultCache::QueryResultCache(
 QueryResultCache::~QueryResultCache()
 {
     shutdown = true;
+
+    /// `disk_cache` owns `DiskEntry` shared pointers whose deleters read `shutdown`, `disk`, `path` and
+    /// `logger` (members declared after `disk_cache`, so destroyed before it). Destroy `disk_cache`
+    /// explicitly here, while those members are still alive, so the deleters never run on already-destroyed
+    /// state. With `shutdown == true` the deleters intentionally do not touch the disk (cache files are kept
+    /// across restart), so this only frees the in-memory bookkeeping.
+    disk_cache.clear();
 }
 
 void QueryResultCache::updateConfiguration(
@@ -1162,10 +1190,14 @@ QueryResultCacheWriter QueryResultCache::createWriter(
 
 bool QueryResultCache::isStale(const Key & key)
 {
+    /// Writer admission check (the only caller). A writer always (re)populates `memory_cache` and, when
+    /// allowed, unconditionally refreshes the disk entry via `writeDisk` (which removes the old one first).
+    /// Therefore freshness is decided by `memory_cache` only. Including `disk_cache` here would break the
+    /// contract of `enable_reads_from_query_cache_disk = 0`: after `SYSTEM DROP QUERY CACHE TYPE 'Memory'`
+    /// (or after a restart that loads only disk metadata) a query with disk reads disabled would miss memory,
+    /// execute normally, and then be denied the memory write because a non-stale disk entry exists - so the
+    /// memory cache would never be repopulated while that disk entry lives.
     if (auto entry = memory_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
-        return false;
-
-    if (auto entry = disk_cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
         return false;
 
     return true;
@@ -1222,6 +1254,20 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     catch (...)
     {
         tryLogCurrentException(logger, "Save query results to disk failed");
+
+        /// The write failed after `createDirectories`, so `entry_path` may hold a partial
+        /// `key_metadata.txt`/`results.bin` tree that is not owned by any `disk_cache` entry (`disk_cache.set`
+        /// was not reached). Remove it best-effort so a failed write (e.g. disk full) does not leak files that
+        /// `SYSTEM DROP QUERY CACHE TYPE 'Disk'` cannot reach until the next restart.
+        try
+        {
+            if (disk->existsDirectory(entry_path))
+                disk->removeRecursive(entry_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger, "Failed to remove partially written query result cache entry from disk");
+        }
     }
 }
 
@@ -1363,7 +1409,11 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
 
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += compress_out->count();
+        /// Account the compressed bytes actually written to the file (`out->count()` after finalize), not
+        /// `compress_out->count()` which is the uncompressed byte count. This keeps the disk weight consistent
+        /// with `disk->getFileSize` used by `deserializeEntry`/`loadDiskEntryHeaderAndSize` on reload, so
+        /// `QueryCacheDiskBytes`, `system.query_cache.result_size` and `max_disk_size_in_bytes` stay correct.
+        disk_entry->bytes_on_disk += out->count();
     }
 
     if (entry->totals.has_value())
@@ -1374,7 +1424,7 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         write_chunk(*entry->totals, writer);
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += compress_out->count();
+        disk_entry->bytes_on_disk += out->count(); /// Compressed bytes on disk (see comment above for results.bin).
     }
 
     if (entry->extremes.has_value())
@@ -1385,7 +1435,7 @@ void QueryResultCache::serializeEntry(const Key & key, const QueryResultCache::C
         write_chunk(*entry->extremes, writer);
         compress_out->finalize();
         out->finalize();
-        disk_entry->bytes_on_disk += compress_out->count();
+        disk_entry->bytes_on_disk += out->count(); /// Compressed bytes on disk (see comment above for results.bin).
     }
 }
 
