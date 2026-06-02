@@ -118,6 +118,12 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection;
     String force_projection_name;
 
+    /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
+    /// projection). Sets larger than this are treated as non-matching. Zero disables content-hash
+    /// comparison for IN-clause sets entirely (projection match never succeeds for nodes
+    /// containing such sets).
+    size_t max_set_size_for_projection_match = 0;
+
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
     bool is_parallel_replicas_initiator_with_projection_support = false;

@@ -1494,8 +1494,19 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             std::unordered_map<String, DataTypePtr> column_names;
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
+            NameSet order_by_names;
             for (const auto & elem : query.orderBy()->children)
-                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            {
+                auto name = elem->as<ASTOrderByElement>()->children.front()->getColumnName();
+                order_by_names.insert(name);
+                column_names.erase(name);
+            }
+            std::erase_if(column_names, [&](const auto & pair)
+            {
+                if (auto it = aliases.find(pair.first); it != aliases.end())
+                    return order_by_names.contains(it->second->getColumnName());
+                return false;
+            });
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);

@@ -19,6 +19,8 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
@@ -114,6 +116,27 @@ std::vector<uint32_t> linearOrToDocIds(PostingListCursorPtr cursor, size_t row_o
     return result;
 }
 
+/// Helper: resolve tokens to a deduped cursor vector via `postings`.
+std::vector<PostingListCursorPtr> resolveTokenCursors(
+    const PostingListCursorMap & postings,
+    const VectorWithMemoryTracking<String> & tokens)
+{
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(tokens.size());
+
+    absl::flat_hash_set<const PostingListCursor *> seen;
+    seen.reserve(tokens.size());
+
+    for (const auto & token : tokens)
+    {
+        auto it = postings.find(token);
+        if (it != postings.end() && seen.insert(it->second.get()).second)
+            cursors.push_back(it->second);
+    }
+
+    return cursors;
+}
+
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
@@ -125,7 +148,8 @@ std::vector<uint32_t> intersectAndCollect(
 {
     float effective_threshold = brute_force ? 0.0f : density_threshold;
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyIntersectPostingLists(*col, postings, tokens, 0, row_offset, num_rows, effective_threshold);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyIntersectPostingLists(*col, cursors, 0, row_offset, num_rows, effective_threshold);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -142,7 +166,8 @@ std::vector<uint32_t> unionAndCollect(
     size_t num_rows)
 {
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
-    lazyUnionPostingLists(*col, postings, tokens, 0, row_offset, num_rows);
+    auto cursors = resolveTokenCursors(postings, tokens);
+    lazyUnionPostingLists(*col, cursors, 0, row_offset, num_rows);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -3652,14 +3677,12 @@ TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({3, 4, 5});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
     auto col = ColumnUInt8::create(64, UInt8(0));
     EXPECT_THROW(
-        lazyUnionPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64),
+        lazyUnionPostingLists(*col, cursors, 0, huge_offset, 64),
         Exception);
 }
 
@@ -3667,9 +3690,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
 {
     auto info_a = makeEmbeddedInfo({1, 2, 3});
     auto info_b = makeEmbeddedInfo({2, 3, 4});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
+    std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
 
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
 
@@ -3677,7 +3698,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/1.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/1.0f),
             Exception);
     }
 
@@ -3685,7 +3706,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/0.0f),
+            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/0.0f),
             Exception);
     }
 }
@@ -3735,15 +3756,13 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     /// dense-memset path and exercise `findRowRangeEnd`.
     auto info_a = makeEmbeddedInfo({m - 3, m});
     auto info_b = makeEmbeddedInfo({m - 2, m});
-    PostingListCursorMap postings;
-    postings.emplace("a", makeEmbeddedCursor(info_a));
-    postings.emplace("b", makeEmbeddedCursor(info_b));
 
     // Brute-force path (forced via density_threshold = 0). This is the path that goes
     // through `linearOr` + `linearAnd` and was affected by the off-by-one.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);  // m - 3: only in a
         EXPECT_EQ(data[1], 0u);  // m - 2: only in b
@@ -3754,8 +3773,9 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     // Leapfrog path (density_threshold = 1.0). Uses direct size_t arithmetic so the bug
     // didn't manifest here; included for completeness as a regression guard.
     {
+        std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
+        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);
         EXPECT_EQ(data[1], 0u);
