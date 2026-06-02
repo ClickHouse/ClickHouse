@@ -223,6 +223,9 @@ private:
             return;
         }
 
+        if (ignore_user)
+            return;
+
         s3_settings.resetCredentialsForUserControlledRequest();
     }
 }
