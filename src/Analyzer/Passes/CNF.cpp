@@ -96,7 +96,7 @@ public:
         }
         else
         {
-            chassert(name == "not");
+            assert(name == "not");
         }
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -147,9 +147,9 @@ public:
             return;
         }
 
-        chassert(function_name == "not");
+        assert(function_name == "not");
         auto & arguments = function_node->getArguments().getNodes();
-        chassert(arguments.size() == 1);
+        assert(arguments.size() == 1);
         node = arguments[0];
         visit(node, !add_negation);
     }
@@ -196,7 +196,7 @@ public:
         if (name == "or")
         {
             auto & arguments = function_node->getArguments().getNodes();
-            chassert(arguments.size() == 2);
+            assert(arguments.size() == 2);
 
             size_t and_node_id = arguments.size();
 
@@ -279,7 +279,7 @@ private:
         }
         else
         {
-            chassert(name == "not");
+            assert(name == "not");
             auto & arguments = function_node->getArguments().getNodes();
             or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
         }
@@ -566,7 +566,6 @@ QueryTreeNodePtr CNF::toQueryTree() const
                 or_arguments.push_back(function_node_from_atom(atom));
 
             auto or_function = std::make_shared<FunctionNode>("or");
-            or_function->markAsOperator();
             or_function->getArguments().getNodes() = std::move(or_arguments);
             or_function->resolveAsFunction(or_resolver);
 
@@ -578,7 +577,6 @@ QueryTreeNodePtr CNF::toQueryTree() const
         return std::move(and_arguments[0]);
 
     auto and_function = std::make_shared<FunctionNode>("and");
-    and_function->markAsOperator();
     and_function->getArguments().getNodes() = std::move(and_arguments);
     and_function->resolveAsFunction(and_resolver);
 

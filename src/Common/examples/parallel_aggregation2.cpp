@@ -20,22 +20,20 @@
 #include <Common/CurrentMetrics.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric LocalThread;
-    extern const Metric LocalThreadActive;
-    extern const Metric LocalThreadScheduled;
-}
-
-namespace
-{
-
 using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
 using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 using Key = UInt64;
 using Value = UInt64;
 using Source = std::vector<Key>;
+
+
+namespace CurrentMetrics
+{
+    extern const Metric LocalThread;
+    extern const Metric LocalThreadActive;
+    extern const Metric LocalThreadScheduled;
+}
 
 template <typename Map>
 struct AggregateIndependent
@@ -101,7 +99,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        chassert(place != nullptr);
+                        assert(place != nullptr);
                         updater(place->getMapped()); // NOLINT
                         continue;
                     }
@@ -109,7 +107,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
 
                     bool inserted;
                     map.emplace(*it, place, inserted);
-                    chassert(place != nullptr);
+                    assert(place != nullptr);
 
                     if (inserted)
                         creator(place->getMapped());
@@ -220,7 +218,7 @@ struct Work
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << static_cast<double>(data.size()) / time_aggregated << " elem/sec.)"
+            << " (" << data.size() / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -245,13 +243,13 @@ struct Work
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
+            << " (" << size_before_merge / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in " << time_total
-            << " (" << static_cast<double>(data.size()) / time_total << " elem/sec.)"
+            << " (" << data.size() / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << result_map->size() << std::endl << std::endl;
     }
@@ -278,9 +276,8 @@ struct Merger
     void operator()(Value & dst, const Value & src) const { dst += src; }
 };
 
-}
 
-int mainEntryExampleParallelAggregation2(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     size_t n = std::stol(argv[1]);
     size_t num_threads = std::stol(argv[2]);
@@ -303,7 +300,7 @@ int mainEntryExampleParallelAggregation2(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl << std::endl;
     }
 

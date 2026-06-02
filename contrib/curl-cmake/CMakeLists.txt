@@ -15,7 +15,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/asyn-thrdd.c"
     "${LIBRARY_DIR}/lib/bufq.c"
     "${LIBRARY_DIR}/lib/bufref.c"
-    "${LIBRARY_DIR}/lib/cf-dns.c"
     "${LIBRARY_DIR}/lib/cf-h1-proxy.c"
     "${LIBRARY_DIR}/lib/cf-h2-proxy.c"
     "${LIBRARY_DIR}/lib/cf-haproxy.c"
@@ -38,6 +37,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
+    "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
     "${LIBRARY_DIR}/lib/curl_sha512_256.c"
     "${LIBRARY_DIR}/lib/curl_share.c"
@@ -47,7 +47,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/cw-out.c"
     "${LIBRARY_DIR}/lib/cw-pause.c"
     "${LIBRARY_DIR}/lib/dict.c"
-    "${LIBRARY_DIR}/lib/dnscache.c"
     "${LIBRARY_DIR}/lib/doh.c"
     "${LIBRARY_DIR}/lib/dynhds.c"
     "${LIBRARY_DIR}/lib/easy.c"
@@ -101,7 +100,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/pingpong.c"
     "${LIBRARY_DIR}/lib/pop3.c"
     "${LIBRARY_DIR}/lib/progress.c"
-    "${LIBRARY_DIR}/lib/protocol.c"
     "${LIBRARY_DIR}/lib/psl.c"
     "${LIBRARY_DIR}/lib/rand.c"
     "${LIBRARY_DIR}/lib/ratelimit.c"
@@ -125,8 +123,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/system_win32.c"
     "${LIBRARY_DIR}/lib/telnet.c"
     "${LIBRARY_DIR}/lib/tftp.c"
-    "${LIBRARY_DIR}/lib/thrdpool.c"
-    "${LIBRARY_DIR}/lib/thrdqueue.c"
     "${LIBRARY_DIR}/lib/transfer.c"
     "${LIBRARY_DIR}/lib/uint-bset.c"
     "${LIBRARY_DIR}/lib/uint-hash.c"
@@ -209,7 +205,7 @@ target_link_libraries (_curl PRIVATE OpenSSL::SSL ch_contrib::c-ares)
 
 # The library is large - avoid bloat (XXX: is it?)
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_curl PRIVATE -g1)
+    target_compile_options (_curl PRIVATE -g0)
 endif()
 
 add_library (ch_contrib::curl ALIAS _curl)
