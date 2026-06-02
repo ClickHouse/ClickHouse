@@ -46,6 +46,28 @@ TEST(Lexer, NullInputWithMaxQuerySize)
     EXPECT_EQ(TokenType::EndOfStream, token.type);
 }
 
+TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
+{
+    /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
+    /// in `SHOW CREATE DATABASE` for the `DataLakeCatalog` engine, otherwise secrets leak.
+    const String query =
+        "CREATE DATABASE test_unity ENGINE = DataLakeCatalog('http://localhost:8181') "
+        "SETTINGS aws_access_key_id = 'AKIA_PLAIN', aws_secret_access_key = 'plain_secret', "
+        "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query.data(), query.data() + query.size(), 0, 0, 0);
+
+    /// formatForLogging always hides secrets.
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_secret"), String::npos);
+    EXPECT_EQ(masked.find("storage_secret"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
+    EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());
