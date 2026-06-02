@@ -1,6 +1,9 @@
--- Tags: no-ordinary-database, no-fasttest
+-- Tags: no-ordinary-database, no-fasttest, no-async-insert, no-parallel-replicas
 -- Transactions are only supported with MergeTree engines on non-Ordinary databases,
--- and are disabled in the fast-test config.
+-- and are disabled in the fast-test config. They also don't compose with async
+-- inserts (an INSERT inside a transaction is NOT_IMPLEMENTED under async insert)
+-- or with reading from parallel replicas (the in-transaction SELECT does not see
+-- the MVCC snapshot consistently), so exclude those CI profiles too.
 
 -- `RESET SESSION` must refuse to run while a transaction is open. Silently
 -- rolling back would discard work without warning, and pretending to reset
