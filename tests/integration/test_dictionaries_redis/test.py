@@ -69,7 +69,9 @@ LAYOUTS = [
 ]
 
 DICTIONARIES = []
-
+REGR_DICTIONARIES = []
+REGR_KEY_FIELD = Field("KeyField", "String", is_key=True, default_value_for_get="missing")
+REGR_LAYOUTS = [Layout("complex_key_cache")]
 
 def get_dict(source, layout, fields, suffix_name=""):
     structure = DictionaryStructure(layout, fields)
@@ -84,6 +86,7 @@ def get_dict(source, layout, fields, suffix_name=""):
 
 def generate_dict_configs():
     global DICTIONARIES
+    global REGR_DICTIONARIES
     global cluster
 
     if os.path.exists(dict_configs_path):
@@ -136,11 +139,37 @@ def generate_dict_configs():
         path = os.path.join(dict_configs_path, fname)
         logging.debug(f"Found dictionary {path}")
         dictionaries.append(path)
+        
+    #Regression: simple storage with complex_key_cache layout
+    for i, field in enumerate(FIELDS):
+        REGR_DICTIONARIES.append([])
+
+        regr_source = SourceRedis(
+            "RedisSimpleRegression",
+            "localhost",
+            cluster.redis_port,
+            cluster.redis_host,
+            "6379",
+            "",
+            "clickhouse",
+            28,
+            storage_type="simple"
+            )
+        for layout in REGR_LAYOUTS:
+            fields = [REGR_KEY_FIELD] + [field]
+            REGR_DICTIONARIES[i].append(
+                get_dict(
+                    regr_source,
+                    layout,
+                    fields,
+                    field.name + "_regression"
+                )
+            )
+            dictionaries.append(REGR_DICTIONARIES[i][-1].config_path)
 
     node = cluster.add_instance(
         "node", main_configs=main_configs, dictionaries=dictionaries, with_redis=True
     )
-
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -150,6 +179,12 @@ def started_cluster():
         cluster.start()
         assert len(FIELDS) == len(VALUES)
         for dicts in DICTIONARIES:
+            for dictionary in dicts:
+                logging.debug(f"Preparing {dictionary.name}")
+                dictionary.prepare_source(cluster)
+                logging.debug(f"Prepared {dictionary.name}")
+
+        for dicts in REGR_DICTIONARIES:
             for dictionary in dicts:
                 logging.debug(f"Preparing {dictionary.name}")
                 dictionary.prepare_source(cluster)
@@ -205,3 +240,52 @@ def test_redis_dictionaries(started_cluster, id):
 
     # Checks, that dictionaries can be reloaded.
     node.query("system reload dictionaries")
+
+@pytest.mark.parametrize("id", list(range(len(FIELDS))), ids=get_entity_id)
+def test_redis_simple_complex_key_cache(started_cluster, id):
+    """
+    Regression: simple storage + complex_key_cache threw bad cast in cache miss.
+    """
+    field = FIELDS[id]
+    values = VALUES[id]
+    node = started_cluster.instances["node"]
+
+    for dct in REGR_DICTIONARIES[id]:
+        data = [
+            Row([REGR_KEY_FIELD, field], [f"{field.name}_key1", values[0]]),
+            Row([REGR_KEY_FIELD, field], [f"{field.name}_key2", values[1]])
+        ]
+
+        dct.load_data(data)
+
+        node.query(f"system reload dictionary {dct.name}")
+
+        queries_with_answers = []
+        for row in data:
+            for query in dct.get_select_get_queries(field, row):
+                queries_with_answers.append((query, row.get_value_by_name(field.name)))
+            
+            for query in dct.get_select_get_or_default_queries(field, row):
+                queries_with_answers.append((query, field.default_value_for_get))
+
+        for query, answer in queries_with_answers:
+            assert node.query(query) == str(answer) + "\n"
+
+def test_redis_simple_reject_multi_key(started_cluster):
+
+    node = started_cluster.instances["node"]
+    result = node.query_and_get_error(
+        """
+        CREATE DICTIONARY test_redis_multi_key_reject
+        (
+            key1 String,
+            key2 String,
+            value String
+        )
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(host 'localhost' port 6379 storage_type 'simple' db_index 0))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(0)
+        """
+    )
+    assert "requires exactly 1 key" in result

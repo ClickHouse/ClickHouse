@@ -86,6 +86,10 @@ namespace DB
                         key.name,
                         key.type->getName());
         }
+        else if (configuration.storage_type == RedisStorageType::SIMPLE && dict_struct.key && dict_struct.key->size() != 1)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Redis source with storage type 'simple' requires exactly 1 key, got {}",
+                            dict_struct.key->size());
     }
 
     RedisDictionarySource::RedisDictionarySource(const RedisDictionarySource & other)

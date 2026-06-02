@@ -48,5 +48,5 @@ Setting fields:
 |---------|-------------|
 | `host` | The Redis host. |
 | `port` | The port on the Redis server. |
-| `storage_type` | The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. Default value is `simple`. Optional. |
+| `storage_type` | The structure of internal Redis storage using for work with keys. `simple` is for simple sources and single-key complex sources (including `complex_key_cache`); only one `<key>` attribute is allowed. `hash_map` is for hashed sources with two keys. Ranged sources are unsupported. Default value is `simple`. Optional. |
 | `db_index` | The specific numeric index of Redis logical database. Default value is `0`. Optional. |
