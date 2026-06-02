@@ -75,6 +75,10 @@ With idx_a_minmax (minmax, hypothetical):
 With idx_a (minmax, hypothetical):
   status:       applicable
   source:           empirical
+--- parallel replicas via inner SETTINGS: EXPLAIN WHATIF still runs locally ---
+With idx_a (minmax, hypothetical):
+  status:       applicable
+  source:           empirical
 --- CREATE requires column-level SELECT on the index column ---
 ACCESS_DENIED
 --- column-level SELECT user can create and drop a hypothetical index ---

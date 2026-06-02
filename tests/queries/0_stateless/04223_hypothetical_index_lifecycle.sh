@@ -283,6 +283,19 @@ $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_repl
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_pr"
 
+# Parallel replicas requested via the inner SELECT SETTINGS must still run locally.
+echo "--- parallel replicas via inner SETTINGS: EXPLAIN WHATIF still runs locally ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_pr2;
+    CREATE TABLE t_hypo_pr2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    INSERT INTO t_hypo_pr2 SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_a ON t_hypo_pr2 (a) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_pr2 WHERE a > 500
+        SETTINGS enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1,
+                 cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_local_plan = 0;
+" | grep -E '^\s+status:|^\s+source:|^With idx_a'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_pr2"
+
 # Column-level SELECT is required: a user without access to the index column is denied.
 echo "--- CREATE requires column-level SELECT on the index column ---"
 user="u_04223_${CLICKHOUSE_DATABASE}"

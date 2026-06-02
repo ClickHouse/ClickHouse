@@ -123,10 +123,11 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Drop `force_data_skipping_indices` from nested SELECT `SETTINGS` (baseline planning
-/// has no hypothetical index, so a forced name would throw `INDEX_NOT_USED`), collecting
-/// the removed values so the contract can be re-validated after candidates are evaluated.
-void stripForcedDataSkippingIndices(IAST * node, std::vector<String> & removed)
+/// Strip nested SELECT `SETTINGS` that WHATIF must control: `force_data_skipping_indices`
+/// (collected into `removed_force` for later re-validation, else it throws `INDEX_NOT_USED`
+/// on the index-less baseline) and `enable_parallel_replicas` with its alias (the estimate
+/// is session-local and must stay on a local plan).
+void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
 {
     if (!node)
         return;
@@ -138,16 +139,19 @@ void stripForcedDataSkippingIndices(IAST * node, std::vector<String> & removed)
             if (auto * set_query = settings_ast->as<ASTSetQuery>())
                 std::erase_if(set_query->changes, [&](const auto & change)
                 {
-                    if (change.name != "force_data_skipping_indices")
-                        return false;
-                    removed.push_back(change.value.template safeGet<String>());
-                    return true;
+                    if (change.name == "force_data_skipping_indices")
+                    {
+                        removed_force.push_back(change.value.template safeGet<String>());
+                        return true;
+                    }
+                    return change.name == "enable_parallel_replicas"
+                        || change.name == "allow_experimental_parallel_reading_from_replicas";
                 });
         }
     }
 
     for (const auto & child : node->children)
-        stripForcedDataSkippingIndices(child.get(), removed);
+        stripWhatIfControlledSettings(child.get(), removed_force);
 }
 
 void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
@@ -629,7 +633,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
 
     auto select_query_copy = select_query->clone();
-    stripForcedDataSkippingIndices(select_query_copy.get(), forced_strings);
+    stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
