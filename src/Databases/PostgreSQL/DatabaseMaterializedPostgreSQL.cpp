@@ -7,7 +7,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -368,7 +367,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         /// We just came from createTable() and created nested table there. Add assert.
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
-        chassert(nested_table != nullptr);
+        assert(nested_table != nullptr);
 
         try
         {
@@ -566,7 +565,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_settings = true,
         .supports_table_overrides = true,
         .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 }

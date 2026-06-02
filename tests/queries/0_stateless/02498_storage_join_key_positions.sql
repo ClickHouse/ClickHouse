@@ -2,7 +2,6 @@
 -- It generates plan with _reading_ from storage join, but reading from storage join with complex keys is currently not supported.
 
 SET enable_parallel_replicas = 0;
-SET enable_join_transitive_predicates = 0; -- CI may inject True; transitive predicate inference deduplicates the duplicate key1 condition on line 61, reducing 4 conditions to 3 and making the join succeed instead of throwing INCOMPATIBLE_TYPE_OF_JOIN
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS tj;

@@ -46,7 +46,7 @@ void WriteBuffer::write(const char * from, size_t n)
     size_t bytes_copied = 0;
 
     /// Produces endless loop
-    chassert(!working_buffer.empty());
+    assert(!working_buffer.empty());
 
     while (bytes_copied < n)
     {

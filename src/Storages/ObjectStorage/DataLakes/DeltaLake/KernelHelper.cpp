@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -20,9 +21,7 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_AZURE_BLOB_STORAGE
     extern const int BAD_ARGUMENTS;
-#endif
 }
 
 namespace DB::S3AuthSetting
@@ -32,6 +31,47 @@ namespace DB::S3AuthSetting
 
 namespace DeltaLake
 {
+
+namespace
+{
+
+/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
+/// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
+/// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
+/// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
+/// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+{
+    if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
+            "the delta-kernel-rs FFI requires valid UTF-8 input.",
+            name);
+
+    KernelUtils::unwrapResult(
+        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        "set_builder_option");
+}
+
+/// RAII guard that frees an `EngineBuilder` unless released.
+/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
+/// via `ffi::free_engine_builder` to avoid leaking it.
+class BuilderGuard
+{
+public:
+    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    BuilderGuard(const BuilderGuard &) = delete;
+    BuilderGuard & operator=(const BuilderGuard &) = delete;
+    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+private:
+    ffi::EngineBuilder * builder = nullptr;
+};
+
+}
 
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
@@ -68,10 +108,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOption(builder, name, value);
         };
 
         const auto & credentials = client->getCredentials();
@@ -111,7 +152,7 @@ public:
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
-        return builder;
+        return guard.release();
     }
 
 private:
@@ -153,10 +194,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOption(builder, name, value);
         };
 
         const auto & endpoint = connection_params.endpoint;
@@ -190,20 +232,7 @@ public:
                 const auto & auth = std::get<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
                 /// delta-kernel-rs does not support azure_storage_connection_string directly.
                 /// Parse the connection string into individual components instead.
-                /// Translate Azure SDK std::logic_error subtypes (e.g. std::invalid_argument
-                /// from std::stoi for malformed ports inside the connection string's
-                /// BlobEndpoint URL) to DB::Exception so they don't trigger
-                /// abortOnFailedAssertion in debug/sanitizer builds.
-                Azure::Storage::_internal::ConnectionStringParts parsed;
-                try
-                {
-                    parsed = Azure::Storage::_internal::ParseConnectionString(auth.toUnderType());
-                }
-                catch (const std::logic_error & e)
-                {
-                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                        "Failed to parse Azure connection string: {}", e.what());
-                }
+                auto parsed = Azure::Storage::_internal::ParseConnectionString(auth.toUnderType());
 
                 if (!parsed.AccountName.empty())
                     set_option("azure_storage_account_name", parsed.AccountName);
@@ -274,7 +303,7 @@ public:
             "Using azure container: {}, data_path: {}",
             endpoint.container_name, data_path);
 
-        return builder;
+        return guard.release();
     }
 
 private:
