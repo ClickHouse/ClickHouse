@@ -1,0 +1,12 @@
+nullable_json_null:	1	xx	Dynamic
+nullable_json_null:	2	yy	Dynamic
+nullable_json_null:	3	\N	Dynamic
+nullable_json_foo:	1	\N	Dynamic
+nullable_json_foo:	2	bar	Dynamic
+nullable_json_foo:	3	\N	Dynamic
+isNull:	1	0	0
+isNull:	2	0	0
+isNull:	3	1	1
+plain_json_null:	xx	Dynamic
+nullable_int_null:	\N	1	UInt8
+nullable_int_null:	42	0	UInt8

@@ -136,6 +136,25 @@ void IDataType::forEachSubcolumn(
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
+
+                /// Skip the outer `Nullable` null-map static subcolumn (named `null`)
+                /// when the inner type can resolve the same name as a dynamic subcolumn
+                /// (e.g. `Nullable(JSON)` with a JSON key literally named `null`). In
+                /// that case `getSubcolumnData` returns the JSON value, but if we still
+                /// register the static UInt8 null-map subcolumn here, the planner picks
+                /// it up first (it has priority over dynamic) and the storage's column
+                /// extraction returns the JSON-key value — a type mismatch. The outer
+                /// null-map remains reachable via `isNull(x)` / `x IS NULL`.
+                if (subpath[i].type == ISerialization::Substream::NullMap
+                    && data.type
+                    && data.type->isNullable()
+                    && data.type->hasDynamicSubcolumnsData()
+                    && data.type->getDynamicSubcolumnData(name, data, /*initial_array_level=*/0, /*throw_if_null=*/false))
+                {
+                    subpath[i].visited = true;
+                    continue;
+                }
+
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
                 auto path_copy = subpath;
                 path_copy.resize(prefix_len);
@@ -157,6 +176,22 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
     size_t initial_array_level,
     bool throw_if_null)
 {
+    /// When `data.type` is `Nullable(T)` and `T` has dynamic subcolumns (e.g. `JSON`),
+    /// the `Nullable` serialization registers a `null` substream (the null-map of the
+    /// outer `Nullable`) that would otherwise shadow a `null` key inside `T`. So a
+    /// query like `SELECT data.null FROM t (data Nullable(JSON))` would return the
+    /// outer null-map byte instead of the `JSON` value at key `null`. Try the inner
+    /// type's dynamic resolution first; if it can resolve the requested name, return
+    /// that result (wrapped via `NullableSubcolumnCreator` so outer-row nulls still
+    /// propagate). The outer null-map is still reachable via `data IS NULL` /
+    /// `isNull(data)`. This is a no-op for `Nullable(T)` where `T` has no dynamic
+    /// subcolumns (e.g. `Nullable(Int32).null` still returns the null-map).
+    if (data.type->isNullable() && data.type->hasDynamicSubcolumnsData())
+    {
+        if (auto dynamic_res = data.type->getDynamicSubcolumnData(subcolumn_name, data, initial_array_level, /*throw_if_null=*/false))
+            return dynamic_res;
+    }
+
     std::unique_ptr<IDataType::SubstreamData> res;
     /// Track whether res was set by an exact name match, so that exact matches
     /// always take priority over prefix (dynamic subcolumn) matches.
