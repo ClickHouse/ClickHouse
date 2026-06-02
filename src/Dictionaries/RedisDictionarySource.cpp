@@ -12,6 +12,10 @@
 
 #include <Dictionaries/RedisSource.h>
 
+#include <DataTypes/IDataType.h>
+#include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
+
 namespace DB
 {
     namespace ErrorCodes
@@ -92,13 +96,6 @@ namespace DB
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                             "Redis source with storage type 'simple' requires exactly 1 key, got {}",
                             dict_struct.key->size());
-
-            const auto & key = dict_struct.key->at(0);
-            if (!isInteger(key.type) && !isString(key.type))
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                "Redis source supports only integer or string key, but key '{}' of type {} given",
-                            key.name,
-                            key.type->getName());
         }
     }
 
@@ -189,7 +186,14 @@ namespace DB
                 else if (isString(type))
                     keys << (*key_columns[0])[row].safeGet<String>();
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
+                {
+                    String str_key;
+                    WriteBufferFromString buf(str_key);
+                    auto serialization = type->getDefaultSerialization();
+                    serialization->serializeText(*key_columns[0], row, buf, FormatSettings{});
+                    buf.finalize();
+                    keys << str_key;
+                }
             }
             else
             {

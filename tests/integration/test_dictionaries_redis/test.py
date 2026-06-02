@@ -377,3 +377,70 @@ def test_redis_hash_map_negative_key(started_cluster):
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
     r.flushdb()
+
+def test_redis_complex_key_hashed_date(started_cluster):
+
+    node = started_cluster.instances["node"]
+
+    import redis as redis_client
+    r = redis_client.Redis(
+        host="localhost",
+        port=cluster.redis_port,
+        password="clickhouse",
+        db=31
+    )
+
+    r.set("2000-01-01", "found_date_key")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY IF NOT EXISTS test_redis_date_key
+        (
+            key Date,
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 31))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(0)
+        """
+    )
+
+    result = node.query("SELECT dictGet('test_redis_date_key', 'value', toDate('2000-01-01'))")
+    assert result.strip() == "found_date_key"
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_date_key")
+    r.flushdb()
+
+def test_redis_simple_complex_key_date_key(started_cluster):
+
+    node = started_cluster.instances["node"]
+
+    import redis as redis_client
+    r = redis_client.Redis(
+        host="localhost",
+        port=cluster.redis_port,
+        password="clickhouse",
+        db=31
+    )
+    r.set("2000-01-02", "found_date_cache")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY IF NOT EXISTS test_redis_date_cache_key
+        (
+            key Date,
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 31))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """
+    )
+
+    result = node.query("SELECT dictGet('test_redis_date_cache_key', 'value', toDate('2000-01-02'))")
+    assert result.strip() == "found_date_cache"
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_date_cache_key")
+    r.flushdb()
