@@ -233,12 +233,12 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    if (untracked_memory == 0)
+    Int64 current_untracked_memory = untracked_memory.load();
+    if (current_untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = untracked_memory;
-    untracked_memory = 0;
+    untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 

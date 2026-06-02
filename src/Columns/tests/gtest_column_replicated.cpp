@@ -2,6 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <gtest/gtest.h>
+#include "boost/geometry/strategies/concepts/within_concept.hpp"
 
 using namespace DB;
 
@@ -61,9 +62,9 @@ TEST(ColumnReplicated, PopBack)
     column->popBack(3);
     checkColumn(*column, {"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0});
     column->popBack(3);
-    checkColumn(*column, {"s1", "s2", "s3"}, {2, 1, 1});
+    checkColumn(*column, {"s2", "s3"}, {1, 0, 0});
     column->popBack(2);
-    checkColumn(*column, {"s1", "s2", "s3"}, {2});
+    checkColumn(*column, {"s3"}, {0});
 }
 
 TEST(ColumnReplicated, Filter)
@@ -71,7 +72,7 @@ TEST(ColumnReplicated, Filter)
     auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
     IColumnFilter filter = {0, 0, 0, 1, 1, 0, 0, 0, 0};
     auto filtered_column = column->filter(filter, 2);
-    checkColumn(*filtered_column, {"s1", "s2", "s3"}, {{2, 0}});
+    checkColumn(*filtered_column, {"s1", "s3"}, {1, 0});
 }
 
 TEST(ColumnReplicated, Index)
@@ -80,7 +81,7 @@ TEST(ColumnReplicated, Index)
     auto index_column = ColumnUInt64::create();
     index_column->getData() = {3, 4};
     auto filtered_column = column->index(*index_column, 0);
-    checkColumn(*filtered_column, {"s1", "s2", "s3"}, {2, 0});
+    checkColumn(*filtered_column, {"s1", "s3"}, {1, 0});
 }
 
 TEST(ColumnReplicated, Permute)
@@ -88,7 +89,7 @@ TEST(ColumnReplicated, Permute)
     auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
     IColumnPermutation permutation = {3, 4, 0, 1, 2, 5, 6, 7, 8};
     auto filtered_column = column->permute(permutation, 2);
-    checkColumn(*filtered_column, {"s1", "s2", "s3"}, {2, 0});
+    checkColumn(*filtered_column, {"s1", "s3"}, {1, 0});
 }
 
 TEST(ColumnReplicated, InsertRangeFrom)

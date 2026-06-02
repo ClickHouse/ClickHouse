@@ -1,4 +1,3 @@
-#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Core/SortCursor.h>
 #include <Interpreters/sortBlock.h>
@@ -115,13 +114,6 @@ void PartialSortingTransform::transform(Chunk & chunk)
         read_rows->add(chunk.getNumRows());
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
-    /// Materialize sort key columns that are ColumnReplicated to avoid index indirection during comparison and sorting.
-    for (const auto & col_desc : description)
-    {
-        auto & column_entry = block.getByName(col_desc.column_name);
-        column_entry.column = convertToFullColumnIfReplicationNotUseful(column_entry.column);
-    }
 
     /** If we've saved columns from previously blocks we could filter all rows from current block
       * which are unnecessary for sortBlock(...) because they obviously won't be in the top LIMIT rows.

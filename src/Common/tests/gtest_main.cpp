@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <base/sanitizer_options.h>
+
 #include <Common/tests/gtest_global_context.h>
 
 class ContextEnvironment : public testing::Environment
