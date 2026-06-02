@@ -2,6 +2,13 @@ When working with a branch, do not use rebase or amend - add new commits instead
 
 Do not commit to the master branch. Create a new branch for every task.
 
+Link related pull requests and issues explicitly, using full GitHub URLs, one relationship per line:
+- When a pull request fixes an issue, put `Closes: <full link to the issue>` on its own line in the pull request description. GitHub renders this as `Closes: #<number>` and closes the issue automatically when the pull request is merged into the default branch (auto-close only fires when targeting the default branch).
+- When an issue was caused by a pull request (a regression), put `Caused by: <full link to the pull request>` on its own line in the issue.
+- For any other relevant pull request or issue, put `Related: <full link>` on its own line.
+
+Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency. Only `Closes` triggers GitHub's automatic closing; `Caused by` and `Related` are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
+
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
 When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebar_label`, `sidebar_position`, `slug`, `title`, and `doc_type` fields, modelled on existing files such as `docs/en/development/continuous-integration.md`.
