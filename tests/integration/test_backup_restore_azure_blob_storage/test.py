@@ -568,6 +568,41 @@ def test_backup_restore_native_copy_disabled_by_disk_config(cluster):
     azure_query(node, f"DROP TABLE test_no_native_copy_restored")
 
 
+def test_backup_restore_native_copy_opt_out_stable_across_reload(cluster):
+    # SYSTEM RELOAD CONFIG must not lose the disk's use_native_copy = false opt-out.
+    node = cluster.instances["node_no_native_copy"]
+    azure_query(node, "SYSTEM RELOAD CONFIG")
+    azure_query(
+        node,
+        """
+        DROP TABLE IF EXISTS test_no_native_copy_reload;
+        CREATE TABLE test_no_native_copy_reload(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_no_native_copy'
+        """,
+    )
+    azure_query(node, f"INSERT INTO test_no_native_copy_reload VALUES (1, 'a')")
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(node, f"BACKUP TABLE test_no_native_copy_reload TO {backup_destination}")
+    azure_query(node, f"DROP TABLE IF EXISTS test_no_native_copy_reload_restored")
+
+    before = get_profile_event_count(node, "AzureCopyObject")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_no_native_copy_reload AS test_no_native_copy_reload_restored FROM {backup_destination};",
+    )
+    after = get_profile_event_count(node, "AzureCopyObject")
+    assert (
+        after == before
+    ), "use_native_copy=false opt-out must survive SYSTEM RELOAD CONFIG"
+    assert (
+        azure_query(node, f"SELECT * from test_no_native_copy_reload_restored")
+        == "1\ta\n"
+    )
+
+    azure_query(node, f"DROP TABLE test_no_native_copy_reload")
+    azure_query(node, f"DROP TABLE test_no_native_copy_reload_restored")
+
+
 def test_backup_restore_correct_block_ids(cluster):
     node = cluster.instances["node"]
     azure_query(
