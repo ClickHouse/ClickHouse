@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/ColumnsDescription.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -454,14 +455,23 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         auto default_desc = columns_desc.getDefault(column_name);
         if (default_desc && default_desc->kind == ColumnDefaultKind::Materialized)
         {
-            auto query = default_desc->expression->clone();
+            auto query = cloneAndExpandColumnDefaultExpression(*default_desc, columns_desc, context);
             auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
+            const auto & dependencies = syntax_result->requiredSourceColumns();
 
-            for (const auto & dependency : syntax_result->requiredSourceColumns())
+            bool has_updated_dependency = false;
+            for (const auto & dependency : dependencies)
             {
                 if (all_updated_columns.contains(dependency))
-                    required_source_columns.insert(dependency);
+                {
+                    has_updated_dependency = true;
+                    break;
+                }
             }
+
+            if (has_updated_dependency)
+                for (const auto & dependency : dependencies)
+                    required_source_columns.insert(dependency);
         }
     }
 

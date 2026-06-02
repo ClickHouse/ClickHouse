@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -79,6 +80,7 @@ bool injectRequiredColumnsRecursively(
     const AlterConversionsPtr & alter_conversions,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
+    ContextPtr context,
     Names & columns,
     NameSet & required_columns,
     NameSet & injected_columns)
@@ -135,19 +137,19 @@ bool injectRequiredColumnsRecursively(
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
     const auto column_default = storage_snapshot->getDefault(column_name);
-    ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
-    if (!default_expression)
+    if (!column_default || !column_default->expression)
         return false;
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
+    auto default_expression = cloneAndExpandColumnDefaultExpression(*column_default, storage_snapshot->metadata->getColumns(), context);
     default_expression->collectIdentifierNames(identifiers);
 
     bool result = false;
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            options, context, columns, required_columns, injected_columns);
 
     return result;
 }
@@ -162,6 +164,7 @@ bool injectRequiredColumnsRecursively(
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr context,
     bool with_subcolumns,
     Names & columns)
 {
@@ -192,6 +195,7 @@ NameSet injectRequiredColumns(
             alter_conversions,
             data_part_info_for_reader,
             options,
+            context,
             columns,
             required_columns,
             injected_columns);
@@ -460,6 +464,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
+    ContextPtr context,
     bool with_subcolumns)
 {
     MergeTreeReadTaskColumns result;
@@ -467,7 +472,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names column_to_read_after_prewhere = required_columns;
 
     /// Inject columns required for defaults evaluation
-    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, context, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -504,7 +509,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         {
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
-                with_subcolumns, step_column_names);
+                context, with_subcolumns, step_column_names);
         }
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
@@ -558,7 +563,8 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const PrewhereExprSteps & mutation_steps)
+    const PrewhereExprSteps & mutation_steps,
+    ContextPtr context)
 {
     return getReadTaskColumns(
         data_part_info_for_reader,
@@ -570,6 +576,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
         /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
+        context,
         storage_snapshot->storage.supportsSubcolumns());
 }
 
