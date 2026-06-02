@@ -114,7 +114,7 @@ S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPER
 
 S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept = default;
 
-bool S3AuthSettings::operator==(const S3AuthSettings & right)
+bool S3AuthSettings::operator==(const S3AuthSettings & right) const
 {
     if (headers != right.headers)
         return false;

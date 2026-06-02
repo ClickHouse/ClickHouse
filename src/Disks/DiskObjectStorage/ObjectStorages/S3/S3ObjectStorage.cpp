@@ -731,8 +731,9 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
+    auto current_auth_settings = current_settings->auth_settings;
     if (options.allow_client_change
-        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
+        && (!(current_auth_settings == modified_settings->auth_settings) || for_disk_s3))
     {
         auto new_client = getClient(uri, *modified_settings, context, for_disk_s3, disk_name);
         client.set(std::move(new_client));

@@ -49,7 +49,7 @@ struct S3AuthSettings
     ~S3AuthSettings();
 
     S3AuthSettings & operator=(S3AuthSettings && settings) noexcept;
-    bool operator==(const S3AuthSettings & right);
+    bool operator==(const S3AuthSettings & right) const;
 
     S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 

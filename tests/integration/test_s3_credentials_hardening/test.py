@@ -58,13 +58,18 @@ RELOAD_TRUSTED_ENDPOINT_CONFIG = """        <reload_trusted_endpoint>
             <header>X-Admin-Secret: TRUSTED_HEADER</header>
         </reload_trusted_endpoint>
 """
+RELOAD_TRUSTED_ENDPOINT_WITH_HEADER_CONFIG = """        <reload_trusted_endpoint>
+            <endpoint>http://resolver:18080/reload_trusted/</endpoint>
+            <header>X-Admin-Secret: TRUSTED_HEADER</header>
+        </reload_trusted_endpoint>
+"""
 RELOAD_TRUSTED_ENDPOINT_WITHOUT_CREDENTIALS_CONFIG = """        <reload_trusted_endpoint>
             <endpoint>http://resolver:18080/reload_trusted/</endpoint>
         </reload_trusted_endpoint>
 """
 
 
-def _set_reload_trusted_endpoint(enabled, with_credentials=True):
+def _set_reload_trusted_endpoint(enabled, with_credentials=True, with_header_only=False):
     config_path = os.path.join(
         os.path.dirname(__file__),
         cluster.instances_dir_name,
@@ -74,13 +79,17 @@ def _set_reload_trusted_endpoint(enabled, with_credentials=True):
         contents = config.read()
 
     contents = contents.replace(RELOAD_TRUSTED_ENDPOINT_CONFIG, "")
+    contents = contents.replace(RELOAD_TRUSTED_ENDPOINT_WITH_HEADER_CONFIG, "")
     contents = contents.replace(RELOAD_TRUSTED_ENDPOINT_WITHOUT_CREDENTIALS_CONFIG, "")
     if enabled:
-        endpoint_config = (
-            RELOAD_TRUSTED_ENDPOINT_CONFIG
-            if with_credentials
-            else RELOAD_TRUSTED_ENDPOINT_WITHOUT_CREDENTIALS_CONFIG
-        )
+        if with_header_only:
+            endpoint_config = RELOAD_TRUSTED_ENDPOINT_WITH_HEADER_CONFIG
+        else:
+            endpoint_config = (
+                RELOAD_TRUSTED_ENDPOINT_CONFIG
+                if with_credentials
+                else RELOAD_TRUSTED_ENDPOINT_WITHOUT_CREDENTIALS_CONFIG
+            )
         contents = contents.replace(
             "    </s3>\n", endpoint_config + "    </s3>\n"
         )
@@ -238,6 +247,34 @@ def test_s3_storage_refresh_drops_revoked_endpoint_credentials():
         node.query("DROP TABLE IF EXISTS s3_refresh_initial_endpoint")
         node.query("DROP TABLE IF EXISTS s3_refresh_user_credentials")
         node.query("DROP TABLE IF EXISTS s3_refresh_user_headers")
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_s3_storage_refresh_rebuilds_client_after_header_revocation():
+    node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint_header")
+    _set_reload_trusted_endpoint(True, with_header_only=True)
+    node.query("SYSTEM RELOAD CONFIG")
+    node.query(
+        f"""
+        CREATE TABLE s3_refresh_revoked_endpoint_header (leaked UInt8)
+        ENGINE = S3('{RELOAD_TRUSTED_ENDPOINT}', 'CSV')
+        """
+    )
+    try:
+        assert (
+            node.query("SELECT * FROM s3_refresh_revoked_endpoint_header").strip()
+            == "5"
+        )
+
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
+        assert (
+            node.query("SELECT * FROM s3_refresh_revoked_endpoint_header").strip()
+            == "0"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint_header")
         _set_reload_trusted_endpoint(False)
         node.query("SYSTEM RELOAD CONFIG")
 
