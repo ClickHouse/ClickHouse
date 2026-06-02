@@ -521,7 +521,6 @@ enum class IcebergMetadataLogLevel : uint8_t
     ManifestFileMetadata = 4,
     ManifestFileEntry = 5,
 };
-
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
 
 enum class ObjectStorageGranularityLevel : uint8_t
@@ -584,5 +583,12 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
+{
+    WILDCARD,
+    HIVE,
+};
+DECLARE_SETTING_ENUM(FileLikeEngineDefaultPartitionStrategy)
 
 }

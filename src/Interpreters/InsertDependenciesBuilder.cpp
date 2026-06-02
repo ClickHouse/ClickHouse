@@ -74,7 +74,6 @@
 #include <base/defines.h>
 
 #include <atomic>
-#include <cassert>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -493,7 +492,7 @@ private:
 };
 
 
-DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
     auto constraints = metadata->getConstraints();
 
@@ -1531,7 +1530,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
     String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())
