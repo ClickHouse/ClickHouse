@@ -17,6 +17,7 @@
 
 #include <Core/Defines.h>
 #include <memory>
+#include <cassert>
 #include <Common/HashTable/Hash.h>
 
 namespace DB

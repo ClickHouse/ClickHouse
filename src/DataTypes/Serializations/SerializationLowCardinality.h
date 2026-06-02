@@ -8,7 +8,7 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class SerializationLowCardinality final : public ISerialization
+class SerializationLowCardinality : public ISerialization
 {
 private:
     DataTypePtr dictionary_type;

@@ -473,7 +473,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        chassert(1 == arguments.size());
+        assert(1 == arguments.size());
 
         llvm::Value * result = nullptr;
         castType(arguments[0].type.get(), [&](const auto & type)

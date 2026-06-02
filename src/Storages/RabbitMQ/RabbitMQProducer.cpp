@@ -153,7 +153,7 @@ void RabbitMQProducer::setupChannel()
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
-    chassert(record_iter != delivery_record.end());
+    assert(record_iter != delivery_record.end());
 
     if (multiple)
     {

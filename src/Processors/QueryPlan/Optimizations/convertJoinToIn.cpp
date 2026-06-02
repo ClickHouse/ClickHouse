@@ -1,7 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -94,7 +93,7 @@ InConversion buildInConversion(
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
-    ColumnPtr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 1);
+    ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg =
         &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 

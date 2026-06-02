@@ -3,7 +3,6 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
@@ -36,7 +35,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
+    std::vector<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -168,7 +167,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(Strings component_names_)
+void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
 {
     component_names = std::move(component_names_);
 }

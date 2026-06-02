@@ -602,7 +602,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -1126,8 +1126,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    chassert(internal || CurrentThread::get().tryGetQueryContext());
-    chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    assert(internal || CurrentThread::get().tryGetQueryContext());
+    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1337,20 +1337,29 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
+        bool is_create_parameterized_view = false;
 
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 query_end = insert_query->data;
+
+            if (const auto * create_query = out_ast->as<ASTCreateQuery>())
+            {
+                is_create_parameterized_view = create_query->isParameterizedView();
+            }
+            else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
+            {
+                if (!explain_query->children.empty())
+                    if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
+                        is_create_parameterized_view = create_of_explain_query->isParameterizedView();
+            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
-        /// The visitor handles parameterized views internally: it substitutes parameters in
-        /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
-        /// in the SELECT body, which form the view's parameterizable interface.
+        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && !is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
@@ -2011,14 +2020,7 @@ static BlockIO executeQueryImpl(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
 {
     static std::mutex mutex;
-#if WITH_COVERAGE
-    /// Under LLVM coverage builds we use a fixed seed so that the set of AST mutations
-    /// (and therefore the set of branches taken inside `QueryFuzzer`) is stable run-to-run.
-    /// Without this, coverage of `QueryFuzzer.cpp` and friends flickers between coverage runs.
-    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(pcg64(0xC0FFEEULL));
-#else
     static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
-#endif
     return {fuzzer, std::unique_lock(mutex)};
 }
 
