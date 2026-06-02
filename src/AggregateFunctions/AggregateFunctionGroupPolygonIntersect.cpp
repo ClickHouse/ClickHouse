@@ -94,10 +94,17 @@ struct GroupPolygonIntersectData
             return;
         }
 
-        checkPolygonalStateBudget(total_points, other.total_points, function_name);
         total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
-        maybeReduce(function_name);
+
+        /// Intersect the combined chunks before enforcing the budget. The combined point
+        /// count can exceed the cap only because two partial states have not been intersected
+        /// yet, and intersection can only shrink the result, so a valid result must not be
+        /// rejected merely because of the merge-tree shape.
+        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+            reduce(function_name);
+        else
+            maybeReduce(function_name);
     }
 
     void maybeReduce(const char * function_name)
@@ -288,7 +295,10 @@ public:
                 data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
                 validateDeserializedMultiPolygon(data.chunks[i], getName().c_str());
             }
-            data.total_points = budget.points;
+            /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can
+            /// append closing points not charged against `budget.points`. Recount from the
+            /// normalized geometry and re-enforce the cap.
+            data.total_points = recountPolygonalPointsAndCheck(data.chunks, getName().c_str());
         }
     }
 
@@ -341,10 +351,13 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonIntersect(
 
 }
 
+void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Computes the intersection of all polygonal geometries in the group.
+
+Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
 
 For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
 
