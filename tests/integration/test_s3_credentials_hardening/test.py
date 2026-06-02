@@ -55,6 +55,7 @@ ROLE_ARN = "arn:aws:iam::123456789012:role/Test"
 ENDPOINT = "http://unreachable.invalid/bucket/object.tsv"
 UNTRUSTED_ENDPOINT = "http://resolver:18080/untrusted/object.csv"
 TRUSTED_ENDPOINT = "http://resolver:18080/trusted/object.csv"
+TRUSTED_PATH_BOUNDARY_EVIL_ENDPOINT = "http://resolver:18080/path_boundary_evil/object.csv"
 RELOAD_TRUSTED_ENDPOINT = "http://resolver:18080/reload_trusted/object.csv"
 RELOAD_TRUSTED_ENDPOINT_CONFIG = """        <reload_trusted_endpoint>
             <endpoint>http://resolver:18080/reload_trusted/</endpoint>
@@ -345,6 +346,13 @@ def test_endpoint_scoped_credentials_still_apply_with_no_sign_false():
         """
     )
     assert result.strip() == "2"
+
+
+def test_endpoint_scoped_credentials_match_path_boundary():
+    result = node.query(
+        f"SELECT * FROM s3('{TRUSTED_PATH_BOUNDARY_EVIL_ENDPOINT}', 'CSV', 'leaked UInt8')"
+    )
+    assert result.strip() == "0"
 
 
 def test_partial_endpoint_scoped_config_does_not_inherit_admin_keys():

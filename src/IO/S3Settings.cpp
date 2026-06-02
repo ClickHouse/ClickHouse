@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -41,6 +42,30 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 min_bytes_for_seek;
     extern const S3RequestSettingsUInt64 list_object_keys_size;
     extern const S3RequestSettingsUInt64 objects_chunk_size_to_delete;
+}
+
+namespace
+{
+
+bool pathStartsWithBoundary(const String & path, const String & prefix)
+{
+    if (prefix.empty() || prefix == "/")
+        return true;
+
+    if (!path.starts_with(prefix))
+        return false;
+
+    return path.size() == prefix.size() || prefix.ends_with("/") || path[prefix.size()] == '/';
+}
+
+bool endpointMatches(const Poco::URI & endpoint, const String & endpoint_prefix)
+{
+    Poco::URI prefix(endpoint_prefix);
+    return endpoint.getScheme() == prefix.getScheme()
+        && endpoint.getAuthority() == prefix.getAuthority()
+        && pathStartsWithBoundary(endpoint.getPath(), prefix.getPath());
+}
+
 }
 
 
@@ -161,16 +186,24 @@ std::optional<S3Settings> S3SettingsByEndpoint::getSettings(
     bool ignore_user) const
 {
     std::lock_guard lock(mutex);
-    auto next_prefix_setting = s3_settings.upper_bound(endpoint);
+    Poco::URI endpoint_uri(endpoint);
 
-    /// Linear time algorithm may be replaced with logarithmic with prefix tree map.
-    for (auto possible_prefix_setting = next_prefix_setting; possible_prefix_setting != s3_settings.begin();)
+    const S3Settings * matched_settings = nullptr;
+    size_t matched_prefix_size = 0;
+
+    for (const auto & [endpoint_prefix, settings] : s3_settings)
     {
-        std::advance(possible_prefix_setting, -1);
-        const auto & [endpoint_prefix, settings] = *possible_prefix_setting;
-        if (endpoint.starts_with(endpoint_prefix) && (ignore_user || settings.auth_settings.canBeUsedByUser(user)))
-            return possible_prefix_setting->second;
+        if (endpoint_prefix.size() > matched_prefix_size
+            && endpointMatches(endpoint_uri, endpoint_prefix)
+            && (ignore_user || settings.auth_settings.canBeUsedByUser(user)))
+        {
+            matched_settings = &settings;
+            matched_prefix_size = endpoint_prefix.size();
+        }
     }
+
+    if (matched_settings)
+        return *matched_settings;
 
     return {};
 }
