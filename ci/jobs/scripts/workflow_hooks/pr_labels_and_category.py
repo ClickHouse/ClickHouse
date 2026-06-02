@@ -1,6 +1,6 @@
 import re
 import sys
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 from praktika.info import Info
 from praktika.utils import Shell
@@ -47,6 +47,7 @@ CATEGORY_TO_LABEL = {
 
 # Labels for categories that don't require a changelog entry
 NO_CHANGELOG_REQUIRED_LABELS = {"pr-not-for-changelog", "pr-ci", "pr-documentation"}
+MISSING_CATEGORY_ERROR = "Change category is missing or invalid"
 
 
 class Labels:
@@ -212,27 +213,34 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     if not category:
         if "Reverts ClickHouse/" in pr_body:
             return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
-        return "Change category is missing or invalid", ""
+        return MISSING_CATEGORY_ERROR, ""
 
     matched, _label = find_category(category)
     if matched is None:
         if "Reverts ClickHouse/" in pr_body:
             return "", LABEL_CATEGORIES["pr-not-for-changelog"][0]
-        return f"Change category is missing or invalid: '{category}'", ""
+        return f"{MISSING_CATEGORY_ERROR}: '{category}'", ""
 
     return error, matched
 
 
-def infer_category_from_labels(pr_labels) -> Tuple[Optional[str], Optional[str], str]:
+def infer_category_from_labels(
+    pr_labels: Sequence[str],
+) -> Tuple[str, str, str]:
+    """Infer changelog category from PR labels.
+
+    Returns (category, label, error). If no category label is found, all values
+    are empty. If multiple category labels are found, returns an error.
+    """
     category_labels = [label for label in pr_labels if label in LABEL_CATEGORIES]
     if not category_labels:
-        return None, None, ""
+        return "", "", ""
 
     unique_labels = sorted(set(category_labels))
     if len(unique_labels) > 1:
         return (
-            None,
-            None,
+            "",
+            "",
             f"More than one category label found for fallback: {', '.join(unique_labels)}",
         )
 
@@ -240,12 +248,13 @@ def infer_category_from_labels(pr_labels) -> Tuple[Optional[str], Optional[str],
     return LABEL_CATEGORIES[label][0], label, ""
 
 
-def get_category_with_label_fallback(pr_body: str, pr_labels) -> Tuple[str, str]:
+def get_category_with_label_fallback(pr_body: str, pr_labels: Sequence[str]) -> Tuple[str, str]:
+    """Resolve changelog category from PR body with label-based fallback.
+
+    Returns (error, category).
+    """
     error, category = get_category(pr_body)
-    if (
-        (not category or error)
-        and error.startswith("Change category is missing or invalid")
-    ):
+    if error.startswith(MISSING_CATEGORY_ERROR):
         inferred_category, inferred_label, infer_error = infer_category_from_labels(
             pr_labels
         )

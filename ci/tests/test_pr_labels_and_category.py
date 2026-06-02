@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (  # noqa: E402
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
     get_category_with_label_fallback,
     infer_category_from_labels,
 )
