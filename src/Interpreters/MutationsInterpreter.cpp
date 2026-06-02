@@ -36,6 +36,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -117,6 +118,47 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
+}
+
+void addColumnsRequiredForDefaultConversions(
+    Names & required_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ContextPtr & context)
+{
+    if (!part)
+        return;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    auto source_columns = columns_desc.getAllPhysical();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    auto initial_required_columns = required_columns;
+
+    for (const auto & column_name : initial_required_columns)
+    {
+        auto metadata_column = columns_desc.tryGetPhysical(column_name);
+        if (!metadata_column)
+            continue;
+
+        auto part_column = part->tryGetColumn(column_name);
+        if (!part_column)
+            continue;
+
+        if (!isNullableOrLowCardinalityNullable(part_column->type) || isNullableOrLowCardinalityNullable(metadata_column->type))
+            continue;
+
+        auto default_desc = columns_desc.getDefault(column_name);
+        if (!default_desc)
+            continue;
+
+        auto default_expression = cloneAndExpandColumnDefaultExpression(*default_desc, columns_desc, context);
+        auto syntax_result = TreeRewriter(context).analyze(default_expression, source_columns);
+        for (const auto & dependency : syntax_result->requiredSourceColumns())
+        {
+            if (required_columns_set.emplace(dependency).second)
+                required_columns.push_back(dependency);
+        }
+    }
 }
 
 }
@@ -2069,6 +2111,7 @@ void MutationsInterpreter::Source::read(
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
+    addColumnsRequiredForDefaultConversions(required_columns, snapshot_, part, context_);
 
     if (!mutation_settings.can_execute)
     {

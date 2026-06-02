@@ -404,8 +404,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
-        /// We check types manually while iterating to avoid unnecessary copies
-        Block copy_block;
+        bool need_conversion = false;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
@@ -414,15 +413,27 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             auto column_in_part = getColumnInPart(*name_and_type);
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
+
+            need_conversion = true;
+            break;
+        }
+
+        if (!need_conversion)
+            return;
+
+        Block copy_block;
+        name_and_type = getColumns().begin();
+        for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
+        {
+            if (res_columns[pos] == nullptr)
+                continue;
+            auto column_in_part = getColumnInPart(*name_and_type);
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
         }
 
-        if (copy_block.empty())
-            return;
-
         DB::performRequiredConversions(copy_block, getColumns(),
             data_part_info_for_read->getContext(),
-            storage_snapshot->metadata->getColumns().getDefaults());
+            storage_snapshot->metadata->getColumns());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

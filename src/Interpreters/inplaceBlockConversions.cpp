@@ -155,7 +155,12 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
     return default_expr_list;
 }
 
-ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+ASTPtr convertRequiredExpressions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool forbid_default_defaults)
 {
     ASTPtr conversion_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & required_column : required_columns)
@@ -175,8 +180,8 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             /// However, we may still need to use type's default value in some cases
             /// (e.g. if a second ALTER removes the DEFAULT, but first is not completed).
             ASTPtr default_value;
-            if (auto it = column_defaults.find(required_column.name); it != column_defaults.end())
-                default_value = it->second.expression;
+            if (auto column_default = columns.getDefault(required_column.name))
+                default_value = cloneAndExpandColumnDefaultExpression(*column_default, columns, context);
             else if (!forbid_default_defaults)
                 default_value = make_intrusive<ASTLiteral>(required_column.type->getDefault());
             else
@@ -270,9 +275,14 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 }
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context, const ColumnDefaults & column_defaults, bool forbid_default_defaults)
+void performRequiredConversions(
+    Block & block,
+    const NamesAndTypesList & required_columns,
+    ContextPtr context,
+    const ColumnsDescription & columns,
+    bool forbid_default_defaults)
 {
-    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, column_defaults, forbid_default_defaults);
+    ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns, columns, context, forbid_default_defaults);
     if (conversion_expr_list->children.empty())
         return;
 

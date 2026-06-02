@@ -1410,7 +1410,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
             Block old_projection_block = projection.sample_block;
-            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
+            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns());
             new_projections.add(std::move(new_projection));
         }
         catch (const Exception & exception)
