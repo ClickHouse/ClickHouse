@@ -17,6 +17,20 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# Proposal #3 (multi-run coverage union): on the master baseline run, execute the
+# whole stateless suite this many times against the same instrumented server.
+# LLVM coverage counters accumulate in the process across all runs (and the
+# `%2m` profraw merge-pool unions repeated processes), so the published
+# `REFs/master/<sha>/llvm_coverage/llvm_coverage.info` baseline converges to
+# "every line reachable under any scheduling" instead of reflecting one run's
+# timing. This shrinks the run-to-run flicker that the newly-covered/diff
+# reports compare against. Pull-request coverage runs are intentionally left at
+# 1x (only the baseline is stabilised) because N-x is too expensive per PR.
+# Set to 1 to disable. Tune down / gate to nightly only if the master coverage
+# job runtime becomes a problem.
+LLVM_COVERAGE_UNION_RUNS = 3
+
+
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
@@ -338,6 +352,24 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         rerun_count = 50
+    elif (
+        is_llvm_coverage
+        and not is_per_test_coverage
+        and LLVM_COVERAGE_UNION_RUNS > 1
+        and info.git_branch == "master"
+        and not info.is_local_run
+    ):
+        # Proposal #3: union coverage over several runs of the suite on the master
+        # baseline only (PRs stay 1x). Each test runs LLVM_COVERAGE_UNION_RUNS times
+        # against the same instrumented server, so timing-/scheduling-dependent lines
+        # that execute in *some* runs get counted, making the published baseline
+        # stable run-to-run. Settings stay fixed (--no-random-settings already set
+        # above), so this unions scheduling variance, not input variance.
+        rerun_count = LLVM_COVERAGE_UNION_RUNS
+        print(
+            f"LLVM coverage master baseline: running suite {rerun_count}x to union "
+            f"scheduling-dependent coverage (proposal #3)"
+        )
 
     if is_flaky_check:
         # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
