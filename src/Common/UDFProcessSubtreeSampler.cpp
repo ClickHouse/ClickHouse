@@ -67,7 +67,7 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
         if (!dir)
             continue;
 
-        struct dirent * entry;
+        struct dirent * entry = nullptr;
         /// NOLINTNEXTLINE(concurrency-mt-unsafe) -- `dir` is a local `DIR *` not shared across threads.
         while ((entry = ::readdir(dir)) != nullptr)
         {

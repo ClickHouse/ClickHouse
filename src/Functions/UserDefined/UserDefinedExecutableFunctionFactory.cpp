@@ -86,7 +86,10 @@ struct UDFProcfsFailureLoggedFlags
 UDFProcfsFailureLoggedFlags & getUDFProcfsFailureFlags(const String & udf_name)
 {
     static std::mutex mutex;
-    static std::unordered_map<String, std::unique_ptr<UDFProcfsFailureLoggedFlags>> flags_by_udf;
+    /// Process-level state — keyed by UDF name, lives for the server's
+    /// lifetime, not query memory, so the regular MemoryTracker-backed
+    /// container alternatives do not apply here.
+    static std::unordered_map<String, std::unique_ptr<UDFProcfsFailureLoggedFlags>> flags_by_udf; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::lock_guard lock(mutex);
     auto & ptr = flags_by_udf[udf_name];
     if (!ptr)
