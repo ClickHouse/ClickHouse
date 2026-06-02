@@ -17,6 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
@@ -45,6 +46,11 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
+    extern const Event QueryCacheAgeSeconds;
+    extern const Event QueryCacheReadRows;
+    extern const Event QueryCacheReadBytes;
+    extern const Event QueryCacheWrittenRows;
+    extern const Event QueryCacheWrittenBytes;
 };
 
 namespace CurrentMetrics
@@ -252,6 +258,31 @@ bool isQueryResultCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
+/// Some additional settings are set for subqueries, they don't affect the result of SELECT queries,
+/// however with them similar subqueries can sometimes mismatch, so ignore this settings.
+bool isSubquerySpecificSetting(const String & setting_name)
+{
+    return setting_name == "use_structure_from_insertion_table_in_table_functions";
+}
+
+bool settingDoesNotAffectQueryResultCache(const String & setting_name)
+{
+    return setting_name == "log_comment"
+        /// As of today, the output format settings only affect the final output.
+        /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
+        || setting_name.starts_with("output_format_")
+        /// This setting is used to tune the server response, but does not affect the query behavior.
+        /// An example why it should not affect query caching:
+        /// - if you run a query as usual, and then run the same query with asking the server
+        /// for Content-Disposition: attachment to download the result.
+        || setting_name == "http_response_headers";
+}
+
+bool isSettingIgnoredInQueryResultCache(const String & setting_name)
+{
+    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name) || isSubquerySpecificSetting(setting_name);
+}
+
 class RemoveQueryResultCacheSettingsMatcher
 {
 public:
@@ -267,7 +298,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return isQueryResultCacheRelatedSetting(change.name);
+                return isSettingIgnoredInQueryResultCache(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
@@ -288,6 +319,11 @@ public:
                 if (set_clause->changes.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
+        }
+        else
+        {
+            /// Output options don't affect the cached data, as we do caching on a result block level.
+            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
         }
     }
 
@@ -406,7 +442,7 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() for why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
 
@@ -514,7 +550,8 @@ QueryResultCache::Key::Key(IASTHash ast_hash_,
     bool is_compressed_,
     const String & query_string_,
     const String & query_id_,
-    const String & tag_)
+    const String & tag_,
+    bool is_subquery_)
     : ast_hash(ast_hash_)
     , header(header_)
     , user_id(user_id_)
@@ -526,7 +563,7 @@ QueryResultCache::Key::Key(IASTHash ast_hash_,
     , query_string(query_string_)
     , query_id(query_id_)
     , tag(tag_)
-    , is_subquery(false)
+    , is_subquery(is_subquery_)
 {
 }
 
@@ -607,6 +644,9 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     /// query result cache now rejects empty chunks and thereby avoids this scenario.
     if (chunk.empty())
         return;
+
+    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenRows, chunk.getNumRows());
+    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenBytes, chunk.bytes());
 
     std::lock_guard lock(mutex);
 
@@ -803,6 +843,17 @@ void QueryResultCacheWriter::finalizeWrite()
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
 void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
+    /// Some bookkeeping for profile events
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
+    for (const auto & chunk : chunks)
+    {
+        total_rows += chunk.getNumRows();
+        total_bytes += chunk.bytes();
+    }
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
+
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
     if (totals.has_value())
@@ -875,6 +926,9 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, std::optional<OnD
 
     created_at = entry_key.created_at;
     expires_at = entry_key.expires_at;
+
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
 
     if (!entry_key.is_compressed)
     {
@@ -1058,7 +1112,8 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
     return cache.dump();
 }
 
-namespace FormatTokens {
+namespace FormatTokens
+{
     static constexpr std::string_view format_version_txt = "format_version.txt";
     static constexpr uint32_t current_version = 1;
 
@@ -1070,6 +1125,7 @@ namespace FormatTokens {
     static constexpr auto * token_is_compressed = "is_compressed: ";
     static constexpr auto * token_query_string = "query_string: ";
     static constexpr auto * token_tag = "tag: ";
+    static constexpr auto * token_is_subquery = "is_subquery: ";
     static constexpr auto * token_has_totals = "has_totals: ";
     static constexpr auto * token_has_extremes = "has_extremes: ";
 };
@@ -1091,7 +1147,7 @@ QueryResultCache::OnDiskCache::OnDiskCache(const std::filesystem::path& path_, s
     }
     catch (...)
     {
-        // Remove old cache files and create new format_version.txt
+        /// Ok: a corrupted or incompatible on-disk cache is not fatal. Remove old cache files and create a new format_version.txt.
         namespace fs = std::filesystem;
 
         fs::remove_all(query_cache_path);
@@ -1145,7 +1201,7 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData()
     }
     catch (...)
     {
-        LOG_TRACE(logger, "Unknown exception on reading metadata for QueryResultCache on disk.");
+        LOG_TRACE(logger, "Unknown exception on reading metadata for QueryResultCache on disk: {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
     }
 }
 
@@ -1265,6 +1321,12 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeText(entry_key.tag, entry_file);
         writeText("\n", entry_file);
 
+        /// `is_subquery` is part of `Key::operator==` and `KeyHasher`, so it must round-trip through the on-disk format.
+        /// Otherwise a persisted subquery entry would be loaded as a top-level entry and could collide with unrelated entries.
+        writeText(FormatTokens::token_is_subquery, entry_file);
+        writeBoolText(entry_key.is_subquery, entry_file);
+        writeText("\n", entry_file);
+
         Chunks & chunks = entry_mapped->chunks;
         const std::optional<Chunk> & totals = entry_mapped->totals;
         const std::optional<Chunk> & extremes = entry_mapped->extremes;
@@ -1320,7 +1382,7 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
     }
     catch (...)
     {
-        LOG_TRACE(logger, "Unknown exception on writing entry to disk cache");
+        LOG_TRACE(logger, "Unknown exception on writing entry to disk cache: {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
     }
 }
 
@@ -1393,6 +1455,11 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         readStringUntilNewlineInto(tag, entry_file);
         assertChar('\n', entry_file);
 
+        assertString(FormatTokens::token_is_subquery, entry_file);
+        bool is_subquery;
+        readBoolText(is_subquery, entry_file);
+        assertChar('\n', entry_file);
+
         NativeReader block_reader(entry_file, 0);
         Block block = block_reader.read();
         block.checkNumberOfRows();
@@ -1435,7 +1502,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 
         String query_id; /// dummy value, the query id is specific to the execution that produced the entry
 
-        Key key(ast_hash, header, user_id, current_user_roles, is_shared, created_at, expires_at, is_compressed, query_string, query_id, tag);
+        Key key(ast_hash, header, user_id, current_user_roles, is_shared, created_at, expires_at, is_compressed, query_string, query_id, tag, is_subquery);
         MappedPtr entry = std::make_shared<Mapped>(std::move(chunks), std::move(totals), std::move(extremes));
 
         return KeyMapped{key, entry};
@@ -1446,7 +1513,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
     }
     catch (...)
     {
-        LOG_TRACE(logger, "Unknown exception on reading entry from disk cache");
+        LOG_TRACE(logger, "Unknown exception on reading entry from disk cache: {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
     }
 
     return std::nullopt;

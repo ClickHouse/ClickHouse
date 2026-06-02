@@ -143,7 +143,8 @@ public:
             bool is_compressed_,
             const String & query_string_,
             const String & query_id,
-            const String & tag);
+            const String & tag,
+            bool is_subquery_);
 
         bool operator==(const Key & other) const;
     };
@@ -175,7 +176,8 @@ public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
-    class OnDiskCache {
+    class OnDiskCache
+    {
         using Key = QueryResultCache::Key;
         using Mapped = QueryResultCache::Entry;
         using MappedPtr = std::shared_ptr<Mapped>;
@@ -189,7 +191,8 @@ public:
 
         struct DiskEntryWeight
         {
-            size_t operator()(const DiskEntryMetadata & entry) const {
+            size_t operator()(const DiskEntryMetadata & entry) const
+            {
                 return entry.size_in_bytes;
             }
         };
