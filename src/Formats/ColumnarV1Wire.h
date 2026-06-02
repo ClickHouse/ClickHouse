@@ -6,7 +6,7 @@
 /// COLUMNAR_V1 is a flat columnar encoding used by the ColumnBinary I/O format
 /// and the WASM UDF ABI. It is designed for low-overhead host↔guest transfer:
 /// fixed-width columns serialize as a single memcpy; variable-width columns
-/// (strings) pay only the unavoidable UInt64→UInt32 offset conversion.
+/// (strings) pay the unavoidable uint64_t offset conversion.
 /// All functions are inline — safe to include
 /// from multiple TUs.
 ///

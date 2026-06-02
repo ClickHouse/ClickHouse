@@ -100,9 +100,9 @@ TEST(ColumnarV1Wire, StringEncodeDecodeRoundTrip)
 //
 // Input: 2 rows — row 0 = ["foo", "bar"], row 1 = ["baz"]
 // Expected layout:
-//   offsets_offset → uint32[3] = {0, 2, 3}   (outer row→element boundaries)
-//   data_offset →   uint32[4] = {0, 4, 8, 12} (inner per-string offsets w/ null terminators)
-//                   bytes     = "foo\0bar\0baz\0"
+//   offsets_offset → uint64[3] = {0, 2, 3}   (outer row→element boundaries)
+//   data_offset →   uint64[4] = {0, 3, 6, 9}  (inner per-string offsets, no null terminators)
+//                   chars     = "foobarbaz"
 
 TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
 {
@@ -126,33 +126,30 @@ TEST(ColumnarV1Wire, ArrayStringEncoderLayout)
     EXPECT_GT(desc.data_offset, desc.offsets_offset);
 
     // Outer offsets (at offsets_offset): {0, 2, 3}
-    const uint32_t * outer = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);  // row 0 has 2 elements
     EXPECT_EQ(outer[2], 3u);  // row 1 has 1 element
 
-    // Inner offsets (at data_offset): {0, 4, 8, 12} (each string + '\0')
-    const uint32_t * inner = reinterpret_cast<const uint32_t *>(buf.data() + desc.data_offset);
+    // Inner offsets (at data_offset): {0, 3, 6, 9} (no null terminators)
+    const uint64_t * inner = reinterpret_cast<const uint64_t *>(buf.data() + desc.data_offset);
     EXPECT_EQ(inner[0], 0u);
-    EXPECT_EQ(inner[1], 4u);   // "foo\0"
-    EXPECT_EQ(inner[2], 8u);   // "bar\0"
-    EXPECT_EQ(inner[3], 12u);  // "baz\0"
+    EXPECT_EQ(inner[1], 3u);  // "foo"
+    EXPECT_EQ(inner[2], 6u);  // "bar"
+    EXPECT_EQ(inner[3], 9u);  // "baz"
 
     // Chars (right after inner offsets)
-    const uint8_t * chars = buf.data() + desc.data_offset + 4u * 4u;
+    const uint8_t * chars = buf.data() + desc.data_offset + sizeof(uint64_t) * 4;
     EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars), 3), "foo");
-    EXPECT_EQ(chars[3], '\0');
-    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 4), 3), "bar");
-    EXPECT_EQ(chars[7], '\0');
-    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 8), 3), "baz");
-    EXPECT_EQ(chars[11], '\0');
+    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 3), 3), "bar");
+    EXPECT_EQ(std::string_view(reinterpret_cast<const char *>(chars + 6), 3), "baz");
 }
 
 // ── Array(UInt64) encoder: verify CH→WASM wire bytes ─────────────────────────
 //
 // Input: 3 rows — row 0 = [10, 20], row 1 = [], row 2 = [30]
 // Expected:
-//   offsets_offset → uint32[4] = {0, 2, 2, 3}  (outer)
+//   offsets_offset → uint64[4] = {0, 2, 2, 3}  (outer)
 //   data_offset    → uint64[3] = {10, 20, 30}  (packed)
 
 TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
@@ -175,7 +172,7 @@ TEST(ColumnarV1Wire, ArrayUInt64EncoderLayout)
     EXPECT_EQ(desc.type, COL_COMPLEX);
 
     // Outer offsets (at offsets_offset): {0, 2, 2, 3}
-    const uint32_t * outer = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);
     EXPECT_EQ(outer[2], 2u);
@@ -206,7 +203,7 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
     const uint32_t M        = 3;
 
     constexpr uint32_t data_off       = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
-    constexpr uint32_t outer_bytes    = (num_rows + 1u) * 4u;  // 12
+    constexpr uint32_t outer_bytes    = (num_rows + 1u) * 8u;  // 24 (uint64 offsets)
     constexpr uint32_t u64_bytes      = M * 8u;                // 24
     constexpr uint32_t f64_bytes      = M * 8u;                // 24
     constexpr uint32_t data_size      = outer_bytes + u64_bytes + f64_bytes;
@@ -227,7 +224,7 @@ TEST(ColumnarV1Wire, DecodeArrayOfTupleUInt64Float64)
     std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
 
     // Outer offsets
-    uint32_t * outer = reinterpret_cast<uint32_t *>(buf.data() + data_off);
+    uint64_t * outer = reinterpret_cast<uint64_t *>(buf.data() + data_off);
     outer[0] = 0;  outer[1] = 2;  outer[2] = 3;
 
     // Tuple field 0: UInt64
@@ -414,7 +411,7 @@ TEST(ColumnarV1Wire, ArrayOfTupleFloat64EncoderLayout)
     EXPECT_EQ(desc.type, COL_COMPLEX);
 
     // Outer offsets {0, 2, 3}
-    const uint32_t * outer = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+    const uint64_t * outer = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
     EXPECT_EQ(outer[0], 0u);
     EXPECT_EQ(outer[1], 2u);
     EXPECT_EQ(outer[2], 3u);
@@ -479,7 +476,7 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     EXPECT_EQ(discs[2], 0u);
     EXPECT_EQ(discs[3], static_cast<uint8_t>(ColumnVariant::NULL_DISCRIMINATOR));
 
-    // Row offsets at offsets_offset
+    // Row offsets at offsets_offset (Variant uses uint32_t for per-row positions)
     const uint32_t * row_offs = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
     EXPECT_EQ(row_offs[0], 0u);
     EXPECT_EQ(row_offs[1], 0u);
@@ -513,13 +510,12 @@ TEST(ColumnarV1Wire, VariantUInt64String)
     EXPECT_EQ(inner1.type, COL_BYTES);
     EXPECT_EQ(inner1.null_offset, 1u);  // sub_rows stored for WASM navigation
 
-    const uint32_t * str_offs = reinterpret_cast<const uint32_t *>(buf.data() + inner1.offsets_offset);
+    const uint64_t * str_offs = reinterpret_cast<const uint64_t *>(buf.data() + inner1.offsets_offset);
     EXPECT_EQ(str_offs[0], 0u);
-    EXPECT_EQ(str_offs[1], 3u);  // "hi\0"
+    EXPECT_EQ(str_offs[1], 2u);  // "hi" (no null terminator)
 
     const char * str_chars = reinterpret_cast<const char *>(buf.data() + inner1.data_offset);
     EXPECT_EQ(std::string_view(str_chars, 2), "hi");
-    EXPECT_EQ(str_chars[2], '\0');
 }
 
 // ── Nullable periodic string: must NOT use COL_IS_REPEAT ──────────────────────

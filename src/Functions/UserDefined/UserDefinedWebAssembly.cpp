@@ -413,13 +413,13 @@ private:
 // Wire format (all offsets are byte offsets from the buffer start):
 //
 //   BufHeader (8 bytes): num_rows:u32, num_cols:u32
-//   ColDescriptor[num_cols] (20 bytes each):
-//     type:u32, null_offset:u32, offsets_offset:u32, data_offset:u32, data_size:u32
+//   ColDescriptor[num_cols] (40 bytes each):
+//     type:u64, null_offset:u64, offsets_offset:u64, data_offset:u64, data_size:u64
 //   Data blocks at the described offsets.
 //
 //   type bits: ColType (0-6) | COL_IS_NULLABLE (0x20) | COL_IS_CONST (0x80)
 //
-//   COL_BYTES  (0): start-based u32 offsets[rows+1] + chars data (with null terms)
+//   COL_BYTES  (0): start-based u64 offsets[rows+1] + chars (no null terminators)
 //   COL_FIXED8 (1): u8[rows]
 //   COL_FIXED16(2): u16[rows]
 //   COL_FIXED64(4): u64/f64[rows]

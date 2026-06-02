@@ -14,13 +14,10 @@
 namespace DB
 {
 
-// TODO(ColumnBinary settings): add two FormatSettings knobs for diagnostics/benchmarking:
+// TODO(ColumnBinary settings): add a FormatSettings knob for diagnostics/benchmarking:
 //   column_binary_disable_preallocation  — return std::nullopt here to fall through to
 //     CH's normal heap-allocation path (eliminates the conservative-size scan entirely;
 //     useful to measure the overhead of the two-phase layout vs. a plain WriteBuffer).
-//   column_binary_disable_repeat_detection — pass detect_repeats=false to consume()'s
-//     buildColDescriptor() calls as well (skips detectPeriod() in both phases; lets you
-//     benchmark the COL_IS_REPEAT win in isolation without changing wire format).
 
 std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const Block & block, size_t rows) const
 {
