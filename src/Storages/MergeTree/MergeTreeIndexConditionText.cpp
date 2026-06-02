@@ -687,7 +687,8 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 
 #if USE_VECTORSCAN
     /// Compile the patterns as `multiMatchAny` execution does, so an invalid regexps raise exception instead of being silently pruned.
-    MultiRegexps::getOrSet</*SaveIndices=*/ false, /*WithEditDistance=*/ false>(needles, std::nullopt)->get();
+    if (!needles.empty())
+        MultiRegexps::getOrSet</*SaveIndices=*/ false, /*WithEditDistance=*/ false>(needles, std::nullopt)->get();
 #endif
 }
 
