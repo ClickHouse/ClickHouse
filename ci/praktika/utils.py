@@ -801,6 +801,7 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
 openssl rand -base64 32 >{aes_key_path}
