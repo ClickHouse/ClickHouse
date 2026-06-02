@@ -125,8 +125,9 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
 
 /// Strip nested SELECT `SETTINGS` that WHATIF must control: `force_data_skipping_indices`
 /// (collected into `removed_force` for later re-validation, else it throws `INDEX_NOT_USED`
-/// on the index-less baseline) and `enable_parallel_replicas` with its alias (the estimate
-/// is session-local and must stay on a local plan).
+/// on the index-less baseline), `enable_parallel_replicas` with its alias (the estimate is
+/// session-local and must stay on a local plan), and `use_skip_indexes_on_data_read` (on by
+/// default; if 1 the baseline defers existing-index pruning to read time and over-reports marks).
 void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
 {
     if (!node)
@@ -145,7 +146,8 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         return true;
                     }
                     return change.name == "enable_parallel_replicas"
-                        || change.name == "allow_experimental_parallel_reading_from_replicas";
+                        || change.name == "allow_experimental_parallel_reading_from_replicas"
+                        || change.name == "use_skip_indexes_on_data_read";
                 });
         }
     }

@@ -197,6 +197,19 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -m1 -o 'CANNOT_PARSE_TEXT'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_eff"
 
+# use_skip_indexes_on_data_read defaults on, deferring existing-index pruning to read time;
+# the static baseline must hold even when the inner SELECT re-enables it.
+echo "--- use_skip_indexes_on_data_read = 1 on the inner SELECT keeps the static baseline ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_skipread;
+    CREATE TABLE t_hypo_skipread (a UInt64, b UInt64, INDEX idx_real b TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_skipread SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_h ON t_hypo_skipread (a) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_skipread WHERE b = 42 SETTINGS use_skip_indexes_on_data_read = 1;
+" | grep -E '^  parts:|^  marks:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_skipread"
+
 # read_overflow_mode = 'break' must not report a partial scan as a complete empirical estimate.
 echo "--- read limit (break mode) does not report partial empirical as ok ---"
 $CLICKHOUSE_CLIENT -n -q "
