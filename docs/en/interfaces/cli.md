@@ -7,6 +7,10 @@ title: 'clickhousectl'
 doc_type: 'reference'
 ---
 
+import BetaBadge from '@theme/badges/BetaBadge';
+
+<BetaBadge/>
+
 `clickhousectl` is the CLI for ClickHouse: local and cloud.
 
 With `clickhousectl` you can:
