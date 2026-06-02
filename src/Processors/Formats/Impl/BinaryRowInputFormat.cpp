@@ -126,7 +126,7 @@ bool BinaryFormatReader<with_defaults>::readFieldImpl(IColumn & column, const Se
 {
     if constexpr (with_defaults)
     {
-        UInt8 is_default;
+        UInt8 is_default = 0;
         readBinary(is_default, *in);
         if (is_default)
         {
@@ -170,7 +170,16 @@ void BinaryFormatReader<with_defaults>::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
         throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD,
-                        "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
+                        "Cannot skip unknown field in RowBinary format, because its type is unknown");
+
+    if constexpr (with_defaults)
+    {
+        UInt8 is_default;
+        readBinary(is_default, *in);
+        if (is_default)
+            return;
+    }
+
     Field field;
     read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in, format_settings);
 }
@@ -180,6 +189,7 @@ BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuf
 {
 }
 
+void registerInputFormatRowBinary(FormatFactory & factory);
 void registerInputFormatRowBinary(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -205,8 +215,18 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     {
         return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, false, false, settings);
     });
+
+    factory.registerInputFormat("RowBinaryWithNamesAndTypesAndDefaults", [](
+         ReadBuffer & buf,
+         const Block & sample,
+         const IRowInputFormat::Params & params,
+         const FormatSettings & settings)
+    {
+        return std::make_shared<BinaryRowInputFormat<true>>(buf, std::make_shared<const Block>(sample), params, /*with_names=*/true, /*with_types=*/true, settings);
+    });
 }
 
+void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory);
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("RowBinaryWithNamesAndTypes", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -214,7 +234,10 @@ void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
         return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
     });
 
-
+    factory.registerSchemaReader("RowBinaryWithNamesAndTypesAndDefaults", [](ReadBuffer & buf, const FormatSettings & settings)
+    {
+        return std::make_shared<BinaryWithNamesAndTypesSchemaReader>(buf, settings);
+    });
 }
 
 
