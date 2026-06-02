@@ -1,0 +1,21 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_env_reload>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/env_reload/</endpoint>
+                <metadata_path>/var/lib/clickhouse/disks/s3_env_reload/</metadata_path>
+                <persistent_removal_log>true</persistent_removal_log>
+            </s3_env_reload>
+        </disks>
+        <policies>
+            <s3_env_reload>
+                <volumes>
+                    <main>
+                        <disk>s3_env_reload</disk>
+                    </main>
+                </volumes>
+            </s3_env_reload>
+        </policies>
+    </storage_configuration>
+</clickhouse>

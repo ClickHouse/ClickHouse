@@ -60,6 +60,11 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
 }
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsBool use_environment_credentials;
+}
+
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 list_object_keys_size;
@@ -703,6 +708,9 @@ void S3ObjectStorage::applyNewSettings(
     /// Apply config settings. For disk configs these take priority over endpoint defaults.
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
     modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+    if (for_disk_s3)
+        modified_settings->auth_settings[S3AuthSetting::use_environment_credentials]
+            = settings_from_config->auth_settings[S3AuthSetting::use_environment_credentials];
 
     if (!for_disk_s3)
     {

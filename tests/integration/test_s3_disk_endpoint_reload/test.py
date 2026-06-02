@@ -5,12 +5,22 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/s3.xml"],
+    with_minio=True,
+)
+node_env = cluster.add_instance(
+    "node_env",
+    main_configs=["configs/config.d/s3_env.xml"],
+    env_variables={
+        "AWS_ACCESS_KEY_ID": "minio",
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+    },
     with_minio=True,
 )
 
@@ -89,3 +99,24 @@ def test_s3_disk_endpoint_credentials_are_revoked_on_reload():
         set_s3_reload_config(endpoint_enabled=True, disk_credentials_enabled=True)
         node.query("SYSTEM RELOAD CONFIG")
         node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_s3_disk_default_environment_credentials_survive_reload():
+    table_name = f"s3_env_reload_{uuid.uuid4().hex}"
+
+    try:
+        node_env.query(
+            f"""
+            CREATE TABLE {table_name} (x UInt64)
+            ENGINE = MergeTree ORDER BY tuple()
+            SETTINGS storage_policy = 's3_env_reload'
+            """
+        )
+        node_env.query(f"INSERT INTO {table_name} VALUES (1)")
+
+        node_env.query("SYSTEM RELOAD CONFIG")
+        node_env.query(f"INSERT INTO {table_name} VALUES (2)")
+
+        assert node_env.query(f"SELECT count() FROM {table_name}").strip() == "2"
+    finally:
+        node_env.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
