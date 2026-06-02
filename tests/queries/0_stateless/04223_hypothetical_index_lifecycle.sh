@@ -156,7 +156,6 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -m1 -o 'INDEX_NOT_USED'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_force"
 
-# read_overflow_mode = 'break' must not report a partial scan as a complete empirical estimate.
 echo "--- force_data_skipping_indices = '' throws like a real read ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_force2;
@@ -167,6 +166,38 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -m1 -o 'CANNOT_PARSE_TEXT'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_force2"
 
+# Inner-SELECT SETTINGS apply on the effective query context, not the outer EXPLAIN context.
+echo "--- use_skip_indexes = 0 on the inner SELECT reports not_applicable ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_eff;
+    CREATE TABLE t_hypo_eff (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_eff SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_eff (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_eff WHERE b = 42 SETTINGS use_skip_indexes = 0;
+" | grep -E '^With |^\s+status:|^\s+reason:'
+
+# When skip indexes are effectively off, the forced list is ignored and never parsed (no throw).
+echo "--- use_skip_indexes = 0 makes force_data_skipping_indices = '' a no-op ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_eff (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_eff WHERE b = 42 SETTINGS use_skip_indexes = 0, force_data_skipping_indices = '';
+" 2>&1 | grep -E '^With |^\s+status:|CANNOT_PARSE_TEXT|INDEX_NOT_USED'
+
+echo "--- ignore_data_skipping_indices on the inner SELECT drops the candidate by name ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_eff (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_eff WHERE b = 42 SETTINGS ignore_data_skipping_indices = 'idx_b';
+" | grep -E '^With |^\s+status:|^\s+reason:'
+
+echo "--- ignore_data_skipping_indices = '' on the inner SELECT throws like a real read ---"
+$CLICKHOUSE_CLIENT -n -q "
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_eff (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_eff WHERE b = 42 SETTINGS ignore_data_skipping_indices = '';
+" 2>&1 | grep -m1 -o 'CANNOT_PARSE_TEXT'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_eff"
+
+# read_overflow_mode = 'break' must not report a partial scan as a complete empirical estimate.
 echo "--- read limit (break mode) does not report partial empirical as ok ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_break;

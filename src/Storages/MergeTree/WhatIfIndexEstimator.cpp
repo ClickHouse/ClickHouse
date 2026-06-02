@@ -39,6 +39,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
+    extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
@@ -466,7 +467,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
-    /// Mirror what a real read would do under the user's session settings
+    /// `context` here is the effective query context (after inner SELECT `SETTINGS`),
+    /// so these gates mirror what a real read sees.
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -474,12 +476,15 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
+    /// Mirror the real read's `ignore_data_skipping_indices`: parse when the setting is
+    /// changed (an empty value throws `CANNOT_PARSE_TEXT`, exactly as a real read), then
+    /// drop the candidate if its exact name is listed.
     {
         const auto & user_settings = context->getSettingsRef();
-        const auto & ignored_str = user_settings[Setting::ignore_data_skipping_indices].value;
-        if (!ignored_str.empty())
+        if (user_settings[Setting::ignore_data_skipping_indices].changed)
         {
-            auto ignored_names = parseIdentifiersOrStringLiteralsToSet(ignored_str, user_settings);
+            auto ignored_names = parseIdentifiersOrStringLiteralsToSet(
+                user_settings[Setting::ignore_data_skipping_indices].toString(), user_settings);
             if (ignored_names.contains(index_desc.name))
             {
                 result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -620,18 +625,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto select_query_copy = select_query->clone();
     stripForcedDataSkippingIndices(select_query_copy.get(), forced_strings);
 
-    /// The real read only honors `force_data_skipping_indices` when skip indexes are
-    /// enabled. When they are off the forced list is ignored (and not even parsed).
-    NameSet forced_indices;
-    if (context->getSettingsRef()[Setting::use_skip_indexes])
-    {
-        /// Parse every changed value (including ""): the parser throws `CANNOT_PARSE_TEXT`
-        /// on an unparseable force list exactly as a real read does.
-        for (const auto & forced_string : forced_strings)
-            for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, context->getSettingsRef()))
-                forced_indices.insert(name);
-    }
-
     SelectQueryOptions query_options;
     query_options.setExplain();
     QueryPlan plan;
@@ -669,6 +662,29 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
+
+    /// FINAL prevents skip indexes from pruning granules (the merge needs every
+    /// granule), so a hypothetical index can't help. Report not_applicable
+    const bool query_with_final = read_step->isQueryWithFinal();
+
+    /// Mirror the effective skip-index state of a real read (`ReadFromMergeTree`):
+    /// `use_skip_indexes` on the effective query context (after inner SELECT `SETTINGS`),
+    /// and disabled under FINAL unless `use_skip_indexes_if_final` is set.
+    const auto & effective_settings = plan_context->getSettingsRef();
+    const bool effective_use_skip_indexes = effective_settings[Setting::use_skip_indexes]
+        && !(query_with_final && !effective_settings[Setting::use_skip_indexes_if_final]);
+
+    /// The real read only honors `force_data_skipping_indices` when skip indexes are
+    /// effectively enabled; otherwise the forced list is ignored and not even parsed.
+    NameSet forced_indices;
+    if (effective_use_skip_indexes)
+    {
+        /// Parse every changed value (including ""): the parser throws `CANNOT_PARSE_TEXT`
+        /// on an unparseable force list exactly as a real read does.
+        for (const auto & forced_string : forced_strings)
+            for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, effective_settings))
+                forced_indices.insert(name);
+    }
 
     auto analysis_ptr = read_step->getAnalyzedResult();
     if (!analysis_ptr)
@@ -741,10 +757,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
-    /// FINAL prevents skip indexes from pruning granules (the merge needs every
-    /// granule), so a hypothetical index can't help. Report not_applicable
-    const bool query_with_final = read_step->isQueryWithFinal();
-
     for (const auto & index_desc : hypo_indexes)
     {
         if (query_with_final)
@@ -759,7 +771,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             continue;
         }
 
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, context);
+        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, plan_context);
         result.index_results.push_back(std::move(index_result));
     }
 
