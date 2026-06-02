@@ -317,7 +317,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
 }
 
 /// Check whether all the function in chain are monotonic
-bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)

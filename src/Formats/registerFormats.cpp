@@ -158,6 +158,7 @@ void registerFileExtensions(FormatFactory & factory);
 
 void registerFormatDocumentations(FormatFactory & factory);
 
+void registerFormats();
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
