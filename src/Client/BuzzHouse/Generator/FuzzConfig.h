@@ -10,19 +10,19 @@
 #include "config.h"
 
 #if USE_SIMDJSON
-#    include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
 #elif USE_RAPIDJSON
-#    include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::RapidJSONParser;
 }
 #else
-#    include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::DummyJSONParser;

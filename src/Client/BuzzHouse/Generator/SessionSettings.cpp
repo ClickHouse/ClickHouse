@@ -1,4 +1,5 @@
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
+#include <Common/ProfileEvents.h>
 
 namespace DB
 {
@@ -1578,7 +1579,27 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {},
          false)},
     {"trace_profile_events", trueOrFalseSettingNoOracle},
-    {"trace_profile_events_list", CHSetting(nastyStrings, {}, false)},
+    {"trace_profile_events_list",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             const auto end = ProfileEvents::end();
+             if (end == 0 || rg.nextBool())
+                 return String("''");
+             const uint32_t count = rg.randomInt<uint32_t>(1, std::min(static_cast<uint32_t>(end), UINT32_C(5)));
+             String ret = "'";
+             for (uint32_t i = 0; i < count; ++i)
+             {
+                 if (i > 0)
+                     ret += ',';
+                 ret += ProfileEvents::getName(
+                     static_cast<ProfileEvents::Event>(rg.randomInt<uint32_t>(0, static_cast<uint32_t>(end) - 1)));
+             }
+             ret += "'";
+             return ret;
+         },
+         {},
+         false)},
     {"transform_null_in", trueOrFalseSettingNoOracle},
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_allow_duplicated_key_with_literal_and_nested_object", trueOrFalseSettingNoOracle},
