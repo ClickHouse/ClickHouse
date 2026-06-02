@@ -781,7 +781,6 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
 }
 
-void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
     // these functions used to be called *Map, with now these names occupied by

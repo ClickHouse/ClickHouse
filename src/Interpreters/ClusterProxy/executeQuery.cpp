@@ -101,7 +101,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -387,7 +387,7 @@ void executeQuery(
         if (new_settings_ref[Setting::skip_unavailable_shards])
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
+            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
             if (max_num > 0 || max_ratio > 0)
                 unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }

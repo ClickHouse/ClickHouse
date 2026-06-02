@@ -7,7 +7,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
 
 #include <IO/WriteHelpers.h>
@@ -23,7 +22,6 @@
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
-#include <csignal>
 #include <ranges>
 
 
@@ -82,7 +80,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
     auto logger = getLogger("TimeoutReadBufferFromFileDescriptor");
     auto describe_fd = [](const auto & pollfd) { return fmt::format("(fd={}, flags={})", pollfd.fd, fcntl(pollfd.fd, F_GETFL)); };
 
-    int res = 0;
+    int res;
 
     while (true)
     {
@@ -122,7 +120,7 @@ static int pollWithTimeout(pollfd * pfds, size_t num, size_t timeout_millisecond
 
 static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
-    pollfd pfd{};
+    pollfd pfd;
     pfd.fd = fd;
     pfd.events = static_cast<int16_t>(events);
     pfd.revents = 0;
@@ -334,7 +332,7 @@ private:
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
-    pollfd pfds[2]{};
+    pollfd pfds[2];
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
@@ -555,7 +553,7 @@ namespace
                     if (!executor && configuration.read_number_of_rows_from_process_output)
                     {
                         readText(configuration.number_of_rows_to_read, timeout_command_out);
-                        char dummy = 0;
+                        char dummy;
                         readChar(dummy, timeout_command_out);
 
                         size_t max_block_size = configuration.number_of_rows_to_read;

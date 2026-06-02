@@ -99,7 +99,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 
         if (profile_callback)
         {
-            ProfileInfo info{};
+            ProfileInfo info;
             info.bytes_requested = to_read;
             info.bytes_read = res;
             info.nanoseconds = watch.elapsed();
@@ -117,7 +117,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    chassert(!internal_buffer.empty());
+    assert(!internal_buffer.empty());
 
     size_t bytes_read = readImpl(internal_buffer.begin(), 1, internal_buffer.size(), file_offset_of_buffer_end);
 
@@ -152,10 +152,10 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos = 0;
+    size_t new_pos;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
+        assert(offset >= 0);
         new_pos = offset;
     }
     else if (whence == SEEK_CUR)
@@ -179,8 +179,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
         pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-        chassert(pos >= working_buffer.begin());
-        chassert(pos <= working_buffer.end());
+        assert(pos >= working_buffer.begin());
+        assert(pos <= working_buffer.end());
 
         return new_pos;
     }
@@ -264,7 +264,7 @@ std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 
 bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
 {
-    struct stat stat{};
+    struct stat stat;
     auto res = ::fstat(fd, &stat);
     return res == 0 && S_ISREG(stat.st_mode);
 }

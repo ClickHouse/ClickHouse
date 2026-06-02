@@ -578,7 +578,6 @@ static ParsedTemplateFormatString fillRowFormat(const FormatSettings & settings,
         allow_indexes);
 }
 
-void registerInputFormatTemplate(FormatFactory & factory);
 void registerInputFormatTemplate(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -607,7 +606,6 @@ void registerInputFormatTemplate(FormatFactory & factory)
     }
 }
 
-void registerTemplateSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})

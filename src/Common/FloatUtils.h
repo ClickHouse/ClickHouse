@@ -10,8 +10,8 @@ inline float convertFloat16ToFloat32(uint16_t float16_value)
     uint32_t old_exponent = (float16_value & 0b01111100'00000000) >> 10;
     uint32_t old_mantissa = float16_value & 0b00000011'11111111;
 
-    uint32_t new_exponent = 0;
-    uint32_t new_mantissa = 0;
+    uint32_t new_exponent;
+    uint32_t new_mantissa;
     uint32_t new_sign = old_sign << 16;
 
     if (unlikely(old_exponent == 0x1F))

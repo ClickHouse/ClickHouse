@@ -66,13 +66,16 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
             const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -309,7 +312,9 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
+                auto hive_format_settings = format_settings;
+                hive_format_settings.allow_number_leading_zeros = true;
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
             }
         }
     }
@@ -348,8 +353,7 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings)
+    const ContextPtr & context)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -366,17 +370,14 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-    const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
-    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
-
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
             paths[i],
             /* idx */i,
-            hive_format_settings,
-            parse_hive_columns);
+            getFormatSettings(context),
+            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
     }
 
     filterBlockWithExpression(actions, block);
@@ -388,18 +389,11 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context,
-    const std::optional<FormatSettings> & format_settings)
+    ContextPtr context)
 {
     HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
-
-    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
-    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
-    const auto hive_format_settings = hive_map.empty()
-        ? FormatSettings{}
-        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -506,6 +500,8 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
+            FormatSettings hive_format_settings;
+            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),

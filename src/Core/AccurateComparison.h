@@ -26,12 +26,7 @@ bool lessOp(A a, B b)
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
-    {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a < b;
-#pragma clang diagnostic pop
-    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))
@@ -107,12 +102,7 @@ bool equalsOp(A a, B b)
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
-    {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a == b;
-#pragma clang diagnostic pop
-    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))

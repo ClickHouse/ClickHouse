@@ -168,7 +168,7 @@ void MergeTreeSink::consume(Chunk & chunk)
         if (!support_parallel_write && temp_part->part->getDataPartStorage().supportParallelWrite())
             support_parallel_write = true;
 
-        size_t max_insert_delayed_streams_for_parallel_write = 0;
+        size_t max_insert_delayed_streams_for_parallel_write;
 
         if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
             max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];

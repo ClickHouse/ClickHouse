@@ -8,7 +8,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
-#include <Core/UUID.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -53,7 +52,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -70,7 +68,6 @@
 #include <IO/ForkWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -185,22 +182,8 @@ namespace ProfileEvents
 
 namespace
 {
-
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-/// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
-bool hasStreamingTableExpression(const DB::IAST & ast)
-{
-    if (const auto * table_expression = ast.as<DB::ASTTableExpression>())
-        if (table_expression->stream_settings)
-            return true;
-
-    for (const auto & child : ast.children)
-        if (hasStreamingTableExpression(*child))
-            return true;
-
-    return false;
-}
 
 void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
@@ -382,44 +365,6 @@ public:
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
-/// Wrapper for write buffer to execute callback before flush.
-/// Used to prevent progress flickering.
-/// The nested buffer is treated as a borrowed reference: this wrapper
-/// neither finalizes nor cancels it, because the nested buffer (e.g. the client's
-/// persistent `std_out`) is shared and reused across queries.
-class FlushCallbackWriteBuffer : public WriteBufferWithOwnMemoryDecorator
-{
-public:
-    template <typename WriteBufferT>
-    FlushCallbackWriteBuffer(WriteBufferT && out_, std::function<void()> on_flush_callback_)
-        : WriteBufferWithOwnMemoryDecorator(std::forward<WriteBufferT>(out_))
-        , on_flush_callback(std::move(on_flush_callback_))
-    {
-    }
-
-    void nextImpl() override
-    {
-        if (on_flush_callback)
-            on_flush_callback();
-
-        if (out->isCanceled())
-            return;
-
-        out->write(working_buffer.begin(), offset());
-        /// Propagate the explicit flush to the nested buffer so that small result blocks
-        /// are streamed to the underlying sink immediately instead of waiting for the
-        /// nested buffer to fill up.
-        out->next();
-    }
-
-    void finalizeImpl() override { next(); }
-
-    /// Do not propagate cancellation to the nested buffer.
-    void cancelImpl() noexcept override {}
-
-private:
-    std::function<void()> on_flush_callback;
-};
 
 ClientBase::~ClientBase() = default;
 
@@ -560,7 +505,7 @@ void ClientBase::adjustQueryEnd(
     // all_queries_end);
     if (newline <= next_query_begin)
     {
-        chassert(newline >= this_query_end);
+        assert(newline >= this_query_end);
         this_query_end = newline;
     }
     else
@@ -604,6 +549,18 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
+
+    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
+    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
 
     try
     {
@@ -716,7 +673,7 @@ try
             return;
         }
 
-        WriteBuffer * underlying_buf = nullptr;
+        WriteBuffer * out_buf = nullptr;
         if (!pager.empty() && !isEmbeeddedClient())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
@@ -729,33 +686,12 @@ try
             config.terminate_in_destructor_strategy.terminate_in_destructor = true;
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
-            underlying_buf = &pager_cmd->in;
+            out_buf = &pager_cmd->in;
         }
         else
         {
-            underlying_buf = std_out.get();
+            out_buf = std_out.get();
         }
-
-        /// Use the flush callback wrapper to prevent progress flickering
-        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
-            underlying_buf,
-            [this]()
-            {
-                /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_indication.clearProgressOutput(*tty_buf, lock);
-                }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_table.clearTableOutput(*tty_buf, lock);
-                }
-            }
-        );
-
-        WriteBuffer * out_buf = std_out_wrapper.get();
 
         select_into_file = false;
         select_into_file_and_stdout = false;
@@ -812,7 +748,7 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
                         std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
@@ -851,14 +787,6 @@ try
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
-
-        /// We need to disable output format squashing semantics for streaming queries
-        /// because otherwise data may not be disaplayed forever.
-        if (parsed_query && hasStreamingTableExpression(*parsed_query))
-        {
-            format_settings.pretty.squash_consecutive_ms = 0;
-            format_settings.pretty.squash_max_wait_ms = 0;
-        }
 
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
@@ -902,10 +830,6 @@ catch (...)
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
-
-    if (std_out_wrapper)
-        std_out_wrapper->cancel();
-    std_out_wrapper.reset();
 
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
@@ -983,7 +907,7 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
-    struct stat file_stat{};
+    struct stat file_stat;
     return fstat(fd, &file_stat) == 0
         && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
 }
@@ -1469,7 +1393,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
         }
     }
-    chassert(retries_left > 0);
+    assert(retries_left > 0);
 }
 
 
@@ -1825,27 +1749,11 @@ void ClientBase::resetOutput()
     output_format.reset();
     pending_progress.reset();
 
-    /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
-    /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
-    if (out_file_buf)
-    {
-        if (out_file_buf->isCanceled())
-            out_file_buf.reset();
-        else
-            out_file_buf->finalize();
-    }
-    out_file_buf.reset();
-
-    if (std_out_wrapper)
-    {
-        if (std_out_wrapper->isCanceled())
-            std_out_wrapper.reset();
-        else
-            std_out_wrapper->finalize();
-    }
-    std_out_wrapper.reset();
-
     logs_out_stream.reset();
+
+    if (out_file_buf)
+        out_file_buf->finalize();
+    out_file_buf.reset();
 
     out_logs_buf.reset();
 
@@ -2790,7 +2698,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end = nullptr;
+    const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
     const char * prev_query_begin = all_queries_text.data();

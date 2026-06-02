@@ -17,7 +17,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 
@@ -40,6 +39,7 @@ namespace fs = std::filesystem;
 
 namespace DB::ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -56,6 +56,30 @@ namespace ProfileEvents
     extern const Event DeltaLakePartitionPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
+}
+
+namespace DB
+{
+
+Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
+{
+    try
+    {
+        ReadBufferFromString buffer(value);
+        auto col = data_type->createColumn();
+        auto serialization = data_type->getDefaultSerialization();
+        serialization->deserializeWholeText(*col, buffer, FormatSettings{});
+        return (*col)[0];
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot parse {} for data type {}: {}",
+            value, data_type->getName(), getCurrentExceptionMessage(false));
+    }
+}
+
 }
 
 namespace DeltaLake

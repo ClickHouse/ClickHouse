@@ -705,7 +705,7 @@ void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFa
 
 int BackupCoordinationStageSync::parseStartNode(const String & start_node_contents, const String & host) const
 {
-    int version = 0;
+    int version;
     if (start_node_contents.empty())
     {
         version = kInitialVersion;

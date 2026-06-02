@@ -28,7 +28,6 @@
 #include <base/safeExit.h>
 #include <base/Numa.h>
 #include <Common/PoolId.h>
-#include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ClickHouseRevision.h>
@@ -228,7 +227,6 @@ namespace ServerSetting
     extern const ServerSettingsString default_database;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -333,7 +331,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
-    extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
     extern const ServerSettingsString query_condition_cache_policy;
@@ -491,7 +488,6 @@ namespace ProfileEvents
 
 namespace fs = std::filesystem;
 
-int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
     DB::Server app;
@@ -550,10 +546,7 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-namespace
-{
-
-std::string getCanonicalPath(std::string && path, const std::string & base = {})
+static std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
@@ -565,13 +558,11 @@ std::string getCanonicalPath(std::string && path, const std::string & base = {})
     return std::move(path);
 }
 
-Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
+static Poco::Net::TCPServerParams::Ptr makeServerParams(const ServerSettings & server_settings)
 {
     Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
     params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
     return params;
-}
-
 }
 
 Poco::Net::SocketAddress Server::socketBindListen(
@@ -594,9 +585,6 @@ Poco::Net::SocketAddress Server::socketBindListen(
 
     return address;
 }
-
-namespace
-{
 
 Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
 {
@@ -634,8 +622,6 @@ bool getListenTry(const Poco::Util::AbstractConfiguration & config, const Server
             });
     }
     return listen_try;
-}
-
 }
 
 
@@ -775,7 +761,7 @@ void Server::defineOptions(Poco::Util::OptionSet & options)
 }
 
 
-[[maybe_unused]] static void checkForUsersNotInMainConfig(
+void checkForUsersNotInMainConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
     const std::string & config_path,
@@ -812,7 +798,7 @@ String readLine(const String & path)
 int readNumber(const String & path)
 {
     ReadBufferFromFile in(path);
-    int result = {};
+    int result;
     readText(result, in);
     return result;
 }
@@ -1028,9 +1014,6 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
 }
 
-namespace
-{
-
 void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings, ContextMutablePtr context, Poco::Logger * log)
 {
     try
@@ -1133,7 +1116,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
     }
 }
 
-void initializeAzureSDKLogger(
+static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
     [[ maybe_unused ]] int server_logs_level)
 {
@@ -1172,12 +1155,8 @@ void initializeAzureSDKLogger(
 #endif
 }
 
-}
-
 #if defined(SANITIZER)
-namespace
-{
-std::vector<String> getSanitizerNames()
+static std::vector<String> getSanitizerNames()
 {
     std::vector<String> names;
 
@@ -1195,7 +1174,6 @@ std::vector<String> getSanitizerNames()
 #endif
 
     return names;
-}
 }
 #endif
 
@@ -1428,17 +1406,16 @@ try
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
-    /// Under thread sanitizer we use frame-pointer-based unwinding (via abseil) which does not
-    /// call dl_iterate_phdr in the signal handler, so the PHDR cache is not needed.
-#if defined(THREAD_SANITIZER)
-    bool has_trace_collector = config().has("trace_log");
-    LOG_INFO(log, "Query Profiler will use frame-pointer-based stack unwinding under sanitizers.");
-#else
     bool has_trace_collector = hasPHDRCache() && config().has("trace_log");
+
+#if defined(SANITIZER)
+    LOG_INFO(log, "Query Profiler is disabled because it cannot work under sanitizers"
+        " when two different stack unwinding methods will interfere with each other.");
+#endif
+
     if (!hasPHDRCache())
         LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they require PHDR cache to be created"
             " (otherwise the function 'dl_iterate_phdr' is not lock free and not async-signal safe).");
-#endif
 
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
@@ -1877,7 +1854,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim{};
+        rlimit rlim;
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -1900,7 +1877,7 @@ try
 #if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
-        rlimit rlim{};
+        rlimit rlim;
         if (getrlimit(RLIMIT_NPROC, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -2312,9 +2289,6 @@ try
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
-                new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
-
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
             const double merges_mutations_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
@@ -2382,15 +2356,9 @@ try
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
 
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
-
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
-            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
-            global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
+            global_context->setOSCPUOverloadSettings(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection], new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]);
 
             size_t remote_read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
             size_t remote_write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
@@ -2429,6 +2397,10 @@ try
 
             if (config().has("keeper_server"))
             {
+#if USE_NURAFT
+                if (config().getBool("keeper_server.standalone_keeper", false))
+                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+#endif
                 global_context->updateKeeperConfiguration(config());
             }
 
@@ -2440,7 +2412,7 @@ try
             {
                 const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
                 const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
-                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * static_cast<double>(new_ratio)));
+                global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(static_cast<double>(new_pool_size) * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
@@ -2624,7 +2596,7 @@ try
 
             /// Update core dump size limit.
             {
-                rlimit rlim{};
+                rlimit rlim;
                 if (getrlimit(RLIMIT_CORE, &rlim) == 0)
                 {
                     rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
@@ -3510,7 +3482,7 @@ void Server::createServers(
 
     for (const auto & listen_host : listen_hosts)
     {
-        const char * port_name = nullptr;
+        const char * port_name;
 
         if (server_type.shouldStart(ServerType::Type::HTTP))
         {
@@ -3797,7 +3769,7 @@ void Server::createInterserverServers(
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
     {
-        const char * port_name = nullptr;
+        const char * port_name;
 
         if (server_type.shouldStart(ServerType::Type::INTERSERVER_HTTP))
         {
