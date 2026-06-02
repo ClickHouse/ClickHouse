@@ -3,7 +3,7 @@ if (NOT TARGET ch_contrib::nuraft)
     return ()
 endif ()
 
-set (CLICKHOUSE_KEEPER_UTILS_SOURCES KeeperUtils.cpp)
+set (CLICKHOUSE_KEEPER_UTILS_SOURCES KeeperUtils.cpp SnapshotAnalyzer.cpp)
 
 set (CLICKHOUSE_KEEPER_UTILS_LINK
     PRIVATE
