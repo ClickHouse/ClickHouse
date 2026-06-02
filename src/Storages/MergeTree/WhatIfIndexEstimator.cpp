@@ -108,9 +108,8 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Remove `force_data_skipping_indices` from every nested SELECT's `SETTINGS`.
-/// Baseline planning has no hypothetical index, so a forced hypothetical name
-/// would otherwise throw `INDEX_NOT_USED` before the candidate is evaluated.
+/// Drop `force_data_skipping_indices` from nested SELECT `SETTINGS`: baseline planning
+/// has no hypothetical index, so a forced name would throw `INDEX_NOT_USED`.
 void stripForcedDataSkippingIndices(IAST * node)
 {
     if (!node)
@@ -160,10 +159,8 @@ bool tryEstimateWithStatistics(
     if (parts.empty())
         return false;
 
-    /// The filter may reference columns outside the index. Attributing their
-    /// selectivity to the hypothetical index would overestimate its skip ratio,
-    /// so fall through to `applicability_only` unless the filter is purely on
-    /// the index's columns
+    /// Only estimate when the filter is purely on the index's columns, otherwise
+    /// other columns' selectivity would inflate the hypothetical index's skip ratio.
     NameSet index_columns_set;
     for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
         index_columns_set.insert(col);
@@ -405,10 +402,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         }
     }
 
-    /// The stored `IndexDescription` was built against the schema at `CREATE
-    /// HYPOTHETICAL INDEX` time. Rebuild it from the original AST against the
-    /// current metadata so an `ALTER TABLE ... MODIFY/DROP/RENAME COLUMN`
-    /// either yields a fresh descriptor or surfaces as `not_applicable`
+    /// Rebuild against current metadata so a schema change since CREATE either
+    /// yields a fresh descriptor or surfaces as `not_applicable`.
     IndexDescription fresh_index_desc;
     try
     {
@@ -514,14 +509,10 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
-    /// Baseline planning runs against real metadata, which lacks the hypothetical
-    /// index. A forced hypothetical name would make `selectRangesToRead` throw
-    /// `INDEX_NOT_USED`, so drop the forced list (session-level here, inner-query
-    /// `SETTINGS` are stripped from the query below) — candidates are evaluated later
+    /// Drop forced skip indexes for baseline planning: session-level here, inner-query
+    /// `SETTINGS` below (see `stripForcedDataSkippingIndices`).
     local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
 
-    /// Strip `force_data_skipping_indices` from the query's own `SETTINGS` too,
-    /// otherwise the interpreter re-applies it on top of `local_context`
     auto select_query_copy = select_query->clone();
     stripForcedDataSkippingIndices(select_query_copy.get());
 

@@ -6,19 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# All hypothetical-index state is session-scoped, so each scenario uses
-# a single $CLICKHOUSE_CLIENT invocation that sets up and asserts what it needs
+# State is session-scoped, so each scenario sets up and asserts within one invocation.
 
-# =========================================================
-# Empty system.hypothetical_indexes — a fresh session has none
-# =========================================================
+# A fresh session has no hypothetical indexes.
 echo "--- empty system table ---"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.hypothetical_indexes"
 
-# =========================================================
-# Drop and recreate the table — the old hypothetical index must NOT
-# apply to the new table (the store keys on UUID)
-# =========================================================
+# Store keys on UUID: after DROP/CREATE the old index must not apply to the new table.
 echo "--- drop/recreate: old index applies before drop ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_lc;
@@ -37,11 +31,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_lc"
 
-# =========================================================
-# After DROP/CREATE on the same name, a stale entry from the old UUID
-# must still be removable via DROP HYPOTHETICAL INDEX, and re-creating
-# the index on the new table must purge it so it doesn't pile up
-# =========================================================
+# A stale entry from the old UUID is removable by name, and re-creating purges it.
 echo "--- drop/recreate: stale entry is removable by name ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_stale;
@@ -67,9 +57,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stale"
 
-# =========================================================
-# IF NOT EXISTS is silent on duplicate; second CREATE with no IF errors
-# =========================================================
+# IF NOT EXISTS is silent on duplicate; DROP IF EXISTS is silent on missing.
 echo "--- IF NOT EXISTS is silent on duplicate ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_dup;
@@ -171,9 +159,7 @@ $CLICKHOUSE_CLIENT -n -q "
 "
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_tf"
 
-# =========================================================
-# Applicability: set index on column b, predicate on column c → not applicable
-# =========================================================
+# set index on b, predicate on c -> not applicable.
 echo "--- applicability: predicate doesn't reference index column ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_app;
@@ -184,9 +170,7 @@ $CLICKHOUSE_CLIENT -n -q "
     EXPLAIN WHATIF SELECT * FROM t_hypo_app WHERE c = 'foo';
 " | grep -E '^\s+status:|^\s+reason:|^With '
 
-# =========================================================
-# Applicability: query has no WHERE — no filter predicate
-# =========================================================
+# No WHERE -> no filter predicate -> not applicable.
 echo "--- applicability: query has no filter ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_a_minmax ON t_hypo_app (a) TYPE minmax GRANULARITY 1;
@@ -195,11 +179,7 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_app"
 
-# =========================================================
-# EXPLAIN WHATIF must work even when the session enables parallel
-# replicas — hypothetical indexes are session-local to the initiator,
-# so the WHATIF plan must stay on the local MergeTree read
-# =========================================================
+# Hypothetical indexes are session-local, so WHATIF must stay on the local read.
 echo "--- parallel replicas: EXPLAIN WHATIF still runs locally ---"
 $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --cluster_for_parallel_replicas=parallel_replicas --parallel_replicas_local_plan=1 -n -q "
     DROP TABLE IF EXISTS t_hypo_pr;
