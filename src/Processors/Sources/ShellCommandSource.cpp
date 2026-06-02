@@ -792,8 +792,26 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
         /// runs here so `clear_refs` and the utime/stime baseline cover only
         /// the work attributable to this borrow.
+        ///
+        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
+        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
+        /// If it throws here, `process_holder` is still a local — ownership
+        /// does not transfer to `ShellCommandSource` until further below — so
+        /// stack unwinding would destroy it without calling `returnObject`,
+        /// permanently shrinking the pool's effective capacity by one. Swallow
+        /// the exception so the local stays intact for the normal hand-off;
+        /// sampling is best-effort and dropping one pre baseline is harmless.
         if (source_configuration.sampler)
-            source_configuration.sampler->recordPidAcquired(process->getPid());
+        {
+            try
+            {
+                source_configuration.sampler->recordPidAcquired(process->getPid());
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
+        }
     }
     else
     {
