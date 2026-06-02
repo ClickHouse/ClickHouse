@@ -1,5 +1,5 @@
-# Tags: no-fasttest, no-old-analyzer
-# no-fasttest: requires object storage
+-- Tags: no-fasttest, no-old-analyzer
+-- no-fasttest: requires object storage
 
 DROP TABLE IF EXISTS test_3;
 CREATE TABLE test_3(id UInt64, a Array(Int64)) ENGINE = MergeTree ORDER BY id;

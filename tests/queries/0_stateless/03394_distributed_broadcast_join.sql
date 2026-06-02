@@ -1,5 +1,5 @@
-# Tags: no-fasttest, no-old-analyzer
-# no-fasttest: requires object storage
+-- Tags: no-fasttest, no-old-analyzer
+-- no-fasttest: requires object storage
 
 CREATE TABLE small(sid UInt64, s Array(Int64)) ENGINE = MergeTree ORDER BY sid;
 CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;

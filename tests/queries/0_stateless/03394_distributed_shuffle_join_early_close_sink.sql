@@ -1,4 +1,4 @@
-# Tags: long, no-fasttest, no-old-analyzer
+-- Tags: long, no-fasttest, no-old-analyzer
 
 SET query_plan_join_swap_table = 0;
 
