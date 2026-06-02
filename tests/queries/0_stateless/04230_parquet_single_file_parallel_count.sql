@@ -25,3 +25,19 @@ SELECT count() FROM file('04230.parquet')
     SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
 SELECT count() FROM file('04230.parquet')
     SETTINGS parallelize_output_from_storages = 1, max_threads = 1, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+
+-- The queries above cover the cache-read side. The cache-write side needs its own
+-- guard: an unfiltered bucketed *data* read (not `need_only_count`, no filter) would
+-- otherwise call `addNumRowsToCache` once per bucket and store a single bucket's
+-- partial count under the whole-file key. We use a fresh file so its count cache
+-- starts empty, run an unfiltered bucketed read (`SELECT sum(number)`, which is split
+-- across buckets), and then assert that a cached `SELECT count()` still returns the
+-- true total rather than a poisoned per-bucket count. Without the `!file_bucket_info`
+-- guard on `addNumRowsToCache`, the final `count()` would read a partial cached value.
+INSERT INTO FUNCTION file('04230_write.parquet') SELECT * FROM numbers(3200)
+    SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
+
+SELECT sum(number) FROM file('04230_write.parquet')
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 0, use_cache_for_count_from_files = 1;
+SELECT count() FROM file('04230_write.parquet')
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
