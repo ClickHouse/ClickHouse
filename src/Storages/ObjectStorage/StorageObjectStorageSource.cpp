@@ -574,8 +574,12 @@ Chunk StorageObjectStorageSource::generate()
             }
         }
 
+        /// Do not write the count cache for a bucketed read: `total_rows_in_file` then holds
+        /// only this bucket's rows, and the cache key ignores the bucket id, so the partial
+        /// count would be stored as the whole-object total and poison later count queries.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -737,8 +741,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
+    /// The count cache stores the object's total row count, keyed by path (the bucket id is
+    /// not part of the key). When this reader was assigned only a subset of the object's row
+    /// groups (file_bucket_info is set, e.g. for cluster table functions), the cache is
+    /// inapplicable: reading it would report the whole-object total for a single bucket and
+    /// over-count, so it must be skipped — mirroring `StorageFileSource`.
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
+        = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] && !object_info->file_bucket_info
+        ? try_get_num_rows_from_cache()
+        : std::nullopt;
 
     if (num_rows_from_cache)
     {
