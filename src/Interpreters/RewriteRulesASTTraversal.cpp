@@ -133,10 +133,17 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                 /// binding, applyRule throws REWRITE_RULE_UNKNOWN_QUERY_PARAMETER when
                 /// substituting the parameter in the resulting query template.
                 auto * query_parameter = top2->as<ASTQueryParameter>();
+                /// When the parameter is wrapped in a single-child `ASTExpressionList`,
+                /// both `top1` and `top2` are the wrapper. We must bind the inner node,
+                /// not the wrapper, otherwise `applyRule` substitutes an extra
+                /// `ASTExpressionList` layer into the resulting template.
+                ASTPtr bound_node = top1;
                 if (!query_parameter
                     && top2->as<ASTExpressionList>() && top2->children.size() == 1)
                 {
                     query_parameter = top2->children[0]->as<ASTQueryParameter>();
+                    if (query_parameter && top1->children.size() == 1)
+                        bound_node = top1->children[0];
                 }
                 if (query_parameter)
                 {
@@ -148,7 +155,7 @@ bool astTraversal(ASTPtr &ast, ContextPtr context)
                             query_parameter->name
                         );
                     }
-                    matching_map.emplace(query_parameter->name, top1->clone());
+                    matching_map.emplace(query_parameter->name, bound_node->clone());
                     continue;
                 }
                 /// Deeper parameters may exist below — continue BFS into children.
