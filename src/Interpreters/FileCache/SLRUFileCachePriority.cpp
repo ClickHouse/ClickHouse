@@ -4,9 +4,11 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/randomSeed.h>
+#include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
+#include <random>
 
 
 namespace ProfileEvents
@@ -20,6 +22,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char file_cache_slru_downgrade_fail_before_finalize[];
 }
 
 namespace
@@ -480,6 +488,14 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         LRUIterator prev_nested_iterator;
         /// New iterator to entry in probationary queue.
         LRUIterator new_nested_iterator;
+
+        void rollbackState()
+        {
+            /// Invalidate the new probationary `PreActive` entry, and
+            /// reset the old protected entry's `Evicting` flag back to `Active`.
+            new_nested_iterator.invalidate();
+            prev_nested_iterator.getEntry()->resetFlag(Entry::State::Evicting);
+        }
     };
     /// RAII wrapper to protect against the case when afterEvictState callback
     /// is not called because of some unexpected exception.
@@ -502,11 +518,11 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
         ~DowngradedEntriesInfos()
         {
-            /// Invalidate new unused iterators.
-            /// If entries number is non-zero here, it must mean there was
-            /// some exception because of which we failed to process new iterators.
+            /// Roll back unfinalized downgrades on destruction.
+            /// A non-empty list here means the write- or state-finalization callbacks
+            /// threw partway.
             for (auto & entry : *this)
-                entry.new_nested_iterator.invalidate();
+                entry.rollbackState();
         }
     };
     auto downgraded_entries = std::make_shared<DowngradedEntriesInfos>(downgrade_candidates->size());
@@ -548,6 +564,14 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     /// Set incrementing size callback, as explained in the previous comment.
     res.setAfterEvictStateFunc([=, this](const CacheStateGuard::Lock & lk)
     {
+        fiu_do_on(FailPoints::file_cache_slru_downgrade_fail_before_finalize,
+        {
+            static constexpr double fault_probability = 0.001;
+            if (std::bernoulli_distribution(fault_probability)(thread_local_rng))
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                                "Injected fault before SLRU downgrade finalization");
+        });
+
         chassert(downgraded_entries->getSize() > 0);
         while (true)
         {
@@ -555,15 +579,18 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             if (!info.has_value())
                 break;
 
-            auto * iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
-            chassert(iterator);
+            SLRUIterator * iterator;
             try
             {
+                iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
+                chassert(iterator);
                 info->new_nested_iterator.incrementSize(info->entry_size, lk);
             }
             catch (...)
             {
-                info->new_nested_iterator.invalidate();
+                /// This entry was already popped off `downgraded_entries`
+                /// (in downgraded_entries->next()), so its destructor will not roll it back.
+                info->rollbackState();
                 throw;
             }
             iterator->setIterator(std::move(info->new_nested_iterator), /* is_protected */false, lk);
@@ -790,8 +817,20 @@ bool SLRUFileCachePriority::modifySizeLimits(
     if (max_size == max_size_ && max_elements == max_elements_ && size_ratio == size_ratio_)
         return false; /// Nothing to change.
 
+    const size_t prev_protected_size = protected_queue.getSizeLimit(lock);
+    const size_t prev_protected_elements = protected_queue.getElementsLimit(lock);
+
     protected_queue.modifySizeLimits(getRatio(max_size_, size_ratio_), getRatio(max_elements_, size_ratio_), 0, lock);
-    probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
+
+    try
+    {
+        probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
+    }
+    catch (...)
+    {
+        protected_queue.modifySizeLimits(prev_protected_size, prev_protected_elements, 0, lock);
+        throw;
+    }
 
     max_size = max_size_;
     max_elements = max_elements_;

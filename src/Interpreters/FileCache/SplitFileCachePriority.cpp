@@ -205,6 +205,33 @@ EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(
     const IFileCachePriority::OriginInfo & origin_info,
     const CacheStateGuard::Lock & lock)
 {
+    if (is_total_space_cleanup)
+    {
+        /// First evict as much as possible from Data
+        /// and if something remains - evict from System.
+        auto & data_priority = getPriority(SegmentType::Data);
+        auto & system_priority = getPriority(SegmentType::System);
+
+        const size_t evict_size_from_data = std::min(size, data_priority.getSize(lock));
+        const size_t evict_elements_from_data = std::min(elements, data_priority.getElementsCount(lock));
+
+        size -= evict_size_from_data;
+        elements -= evict_elements_from_data;
+
+        auto info = data_priority.collectEvictionInfo(
+            evict_size_from_data, evict_elements_from_data, /* reservee */nullptr,
+            is_total_space_cleanup, origin_info, lock);
+
+        const size_t evict_size_from_system = size ? std::min(size, system_priority.getSize(lock)) : 0;
+        const size_t evict_elements_from_system = elements ? std::min(elements, system_priority.getElementsCount(lock)) : 0;
+
+        info->add(system_priority.collectEvictionInfo(
+            evict_size_from_system, evict_elements_from_system, /* reservee */nullptr,
+            is_total_space_cleanup, origin_info, lock));
+
+        return info;
+    }
+
     const auto type = getPriorityType(origin_info.segment_type);
     return getPriority(type).collectEvictionInfo(size, elements, reservee, is_total_space_cleanup, origin_info, lock);
 }
@@ -222,6 +249,23 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
+    if (is_total_space_cleanup)
+    {
+        chassert(!reservee);
+        bool success = getPriority(SegmentType::Data).collectCandidatesForEviction(
+            eviction_info, stat, res, invalidated_entries, /* reservee */nullptr,
+            continue_from_last_eviction_pos, max_candidates_size,
+            is_total_space_cleanup, origin_info, priority_guard, state_guard);
+
+        /// Collect candidates even if success == false, we will process them anyway.
+        success &= getPriority(SegmentType::System).collectCandidatesForEviction(
+            eviction_info, stat, res, invalidated_entries, /* reservee */nullptr,
+            continue_from_last_eviction_pos, max_candidates_size,
+            is_total_space_cleanup, origin_info, priority_guard, state_guard);
+
+        return success;
+    }
+
     const auto type = getPriorityType(origin_info.segment_type);
     return getPriority(type).collectCandidatesForEviction(
         eviction_info, stat, res, invalidated_entries, reservee,
