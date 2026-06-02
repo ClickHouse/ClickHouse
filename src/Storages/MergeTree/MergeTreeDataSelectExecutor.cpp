@@ -2104,10 +2104,13 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     else if (bulk_filtering)
     {
         /// Chunked streaming evaluation. Read skip-index granules (not data rows) in spans
-        /// of up to `chunk_size_index_granules`, run the condition on each chunk, accumulate
-        /// surviving (chunk-local) indices with an offset back to global granule positions,
-        /// and free the chunk's columns before reading the next one. Keeps working memory
-        /// bounded at O(chunk × bytes_per_granule) instead of O(part_size × ...).
+        /// of up to `chunk_size_index_granules`, run the condition on each chunk, and emit
+        /// `MarkRange`s for the surviving granules right away, freeing the chunk's columns
+        /// before reading the next one. Keeps working memory bounded at
+        /// O(chunk × bytes_per_granule) instead of O(part_size × ...): nothing here scales
+        /// with the part size, not even the list of survivors — for unselective predicates
+        /// that pass most granules (a target workload of this feature), accumulating
+        /// survivors first would reintroduce the per-part term we are trying to avoid.
         ///
         /// The constant matches ClickHouse's default `max_block_size` so the skip-index
         /// evaluation has the same working-set shape as ordinary column reads. The
@@ -2115,11 +2118,9 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// regardless of the chunk boundary chosen here.
         constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
-        std::vector<size_t> global_survivors;
-        /// Each range's granules sit at contiguous positions in `global_granule_num` space,
-        /// but ranges may be non-adjacent in the file. We chunk within a range.
-        size_t global_granule_base = 0;
-
+        /// Granules survive in ascending global position order — ranges are processed in
+        /// order, chunks tile each range in order, and `getPossibleGranules` returns
+        /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -2127,38 +2128,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             while (chunk_begin < index_range.end)
             {
                 const size_t chunk_end = std::min(chunk_begin + chunk_size_index_granules, index_range.end);
-                const size_t count = chunk_end - chunk_begin;
 
-                /// Fresh container per chunk so its columns' growth stays bounded by `count`
-                /// and the memory is released before the next chunk starts.
+                /// Fresh container per chunk so its columns' growth stays bounded by the
+                /// chunk size and the memory is released before the next chunk starts.
                 MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
                 reader.readRange(chunk_begin, chunk_end, chunk_granules);
 
-                auto chunk_survivors = condition->getPossibleGranules(chunk_granules);
-                for (size_t local_idx : chunk_survivors)
-                    global_survivors.push_back(global_granule_base + local_idx);
-
-                global_granule_base += count;
-                chunk_begin = chunk_end;
-            }
-        }
-
-        if (global_survivors.empty())
-            return {res, read_hints};
-
-        /// Second pass: walk ranges and emit mark ranges for surviving (global) granule
-        /// positions. Identical to the single-pass logic that was here, just using the
-        /// accumulated `global_survivors` vector.
-        auto it = global_survivors.begin();
-        size_t current_granule_num = 0;
-        for (size_t i = 0; i < ranges_size; ++i)
-        {
-            const MarkRange & index_range = index_ranges[i];
-
-            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
-            {
-                if (current_granule_num == *it)
+                for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
                 {
+                    const size_t index_mark = chunk_begin + local_idx;
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
@@ -2167,17 +2145,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;
-
-                    ++it;
-                    if (it == global_survivors.end())
-                        break;
                 }
 
-                ++current_granule_num;
+                chunk_begin = chunk_end;
             }
-
-            if (it == global_survivors.end())
-                break;
         }
     }
     else
