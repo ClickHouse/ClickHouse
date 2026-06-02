@@ -57,6 +57,11 @@ public:
 
     const Values & getValues() const { return values; }
 
+    /// Approximate number of heap-allocated bytes owned by this object:
+    /// the `values` vector (including each name's string capacity) plus the
+    /// `name_sorted_index` and `value_to_index` lookup vectors.
+    size_t allocatedBytes() const;
+
     /// Check if value exists in enum
     bool hasValue(T value) const;
 

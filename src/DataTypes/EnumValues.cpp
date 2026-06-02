@@ -197,6 +197,17 @@ bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
 }
 
 template <typename T>
+size_t EnumValues<T>::allocatedBytes() const
+{
+    size_t bytes = values.capacity() * sizeof(typename Values::value_type);
+    for (const auto & [name, _] : values)
+        bytes += name.capacity();
+    bytes += name_sorted_index.capacity() * sizeof(typename decltype(name_sorted_index)::value_type);
+    bytes += value_to_index.capacity() * sizeof(typename decltype(value_to_index)::value_type);
+    return bytes;
+}
+
+template <typename T>
 Names EnumValues<T>::getAllRegisteredNames() const
 {
     Names result;
