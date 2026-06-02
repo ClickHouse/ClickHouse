@@ -3,9 +3,10 @@
 -- Tests that the text index runs the same argument validation as `multiSearchAny` and `multiMatchAny` before it
 -- prunes granules. The skip-index path can decide a predicate is false without executing the real function, but the
 -- functions reject some constant arguments (more than 255 needles for `multiSearchAny`; `allow_hyperscan`, the regexp
--- length limits and the expensive-regexp rejection for `multiMatchAny`) before scanning. Without the shared
--- validation, an invalid query could prune all granules and return 0 instead of raising the exception the function
--- itself would raise. Every invalid case below must throw the same exception with and without the index.
+-- length limits, the expensive-regexp rejection and any pattern Hyperscan fails to compile for `multiMatchAny`)
+-- before scanning. Without the shared validation, an invalid query could prune all granules and return 0 instead of
+-- raising the exception the function itself would raise. Every invalid case below must throw the same exception with
+-- and without the index.
 
 DROP TABLE IF EXISTS tab;
 
@@ -45,6 +46,17 @@ SELECT count() FROM tab WHERE multiMatchAny(str, ['hello.{51}']) SETTINGS use_sk
 
 SELECT '-- the same expensive regexp is accepted when reject_expensive_hyperscan_regexps = 0';
 SELECT count() FROM tab WHERE multiMatchAny(str, ['hello.{51}']) SETTINGS reject_expensive_hyperscan_regexps = 0, use_skip_indexes = 1;
+
+-- The settings checks above accept `abc[`, but Hyperscan rejects it when it compiles the pattern set. `abc[` analyzes
+-- to the token `abc`, which is absent from the data, so without compiling the pattern set the index would prune every
+-- granule and return 0 instead of raising the exception that the function raises.
+SELECT '-- multiMatchAny with a regexp Hyperscan cannot compile raises an exception, with and without the index';
+SELECT count() FROM tab WHERE multiMatchAny(str, ['abc[']) SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE multiMatchAny(str, ['abc[']) SETTINGS use_skip_indexes = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- the same applies when only one needle in the set is malformed';
+SELECT count() FROM tab WHERE multiMatchAny(str, ['hello', 'abc[']) SETTINGS use_skip_indexes = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE multiMatchAny(str, ['hello', 'abc[']) SETTINGS use_skip_indexes = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- valid multiMatchAny uses the index and returns the matching rows';
 SELECT id FROM tab WHERE multiMatchAny(str, ['hello', 'qux']) ORDER BY id SETTINGS use_skip_indexes = 1;

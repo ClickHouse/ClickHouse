@@ -8,5 +8,7 @@
 -- multiMatchAny with an expensive regexp raises an exception when reject_expensive_hyperscan_regexps = 1, with and without the index
 -- the same expensive regexp is accepted when reject_expensive_hyperscan_regexps = 0
 0
+-- multiMatchAny with a regexp Hyperscan cannot compile raises an exception, with and without the index
+-- the same applies when only one needle in the set is malformed
 -- valid multiMatchAny uses the index and returns the matching rows
 1

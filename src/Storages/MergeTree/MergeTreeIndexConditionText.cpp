@@ -665,6 +665,35 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
+{
+    if (patterns.empty())
+        return;
+
+    VectorWithMemoryTracking<std::string_view> needles;
+    needles.reserve(patterns.size());
+
+    for (const auto & pattern : patterns)
+    {
+        if (pattern.getType() == Field::Types::String)
+            needles.emplace_back(pattern.safeGet<String>());
+    }
+
+    /// Validate the patterns exactly as `multiMatchAny` execution would, so the index
+    /// does not silently prune granules where the function would raise an exception instead.
+    checkHyperscanFunctionArguments(
+        needles,
+        settings[Setting::allow_hyperscan],
+        settings[Setting::max_hyperscan_regexp_length],
+        settings[Setting::max_hyperscan_regexp_total_length],
+        settings[Setting::reject_expensive_hyperscan_regexps]);
+
+#if USE_VECTORSCAN
+    /// Compile the patterns as `multiMatchAny` execution does, so an invalid regexps raise exception instead of being silently pruned.
+    MultiRegexps::getOrSet</*SaveIndices=*/ false, /*WithEditDistance=*/ false>(needles, std::nullopt)->get();
+#endif
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -995,8 +1024,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
+        /// Compile the pattern as `match` execution does, so an invalid regexp raises exception instead of being silently pruned.
+        const auto & pattern = value_field.safeGet<String>();
+        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern);
+
         out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
-        auto tokens_for_queries = regexpToTokensForQueries(value_field.safeGet<String>());
+        auto tokens_for_queries = regexpToTokensForQueries(pattern);
 
         if (tokens_for_queries.empty())
             return false;
@@ -1053,26 +1086,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & patterns = value_field.safeGet<Array>();
-
-        /// Validate the patterns exactly as `multiMatchAny` execution would, so the index
-        /// does not silently prune granules where the function would raise an exception instead.
-        {
-            VectorWithMemoryTracking<std::string_view> needles;
-            needles.reserve(patterns.size());
-
-            for (const auto & pattern : patterns)
-            {
-                if (pattern.getType() == Field::Types::String)
-                    needles.emplace_back(pattern.safeGet<String>());
-            }
-
-            checkHyperscanFunctionArguments(
-                needles,
-                settings[Setting::allow_hyperscan],
-                settings[Setting::max_hyperscan_regexp_length],
-                settings[Setting::max_hyperscan_regexp_total_length],
-                settings[Setting::reject_expensive_hyperscan_regexps]);
-        }
+        validateRegexpPatterns(patterns, settings);
 
         /// multiMatchAny(haystack, []) is always false.
         if (patterns.empty())
