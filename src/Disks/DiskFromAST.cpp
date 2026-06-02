@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::string getOrCreateCustomDisk(
+static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
