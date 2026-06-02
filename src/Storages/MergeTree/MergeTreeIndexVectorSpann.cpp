@@ -363,6 +363,20 @@ void MergeTreeIndexGranuleVectorSpann::deserializeBinaryWithMultipleStreams(
         readIntBinary(centroid_offsets[i].length, regular_buf);
     }
 
+    UInt64 expected_offset = 0;
+    for (UInt64 i = 0; i < centroid_count; ++i)
+    {
+        if (centroid_offsets[i].offset != expected_offset)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "vector_spann centroid offset mismatch at centroid {} "
+                "(got {}, expected {})",
+                i,
+                centroid_offsets[i].offset,
+                expected_offset);
+        expected_offset += centroid_offsets[i].length;
+    }
+
     postings_by_centroid.assign(centroid_count, {});
     for (UInt64 i = 0; i < centroid_count; ++i)
         readPostingList(posting_buf, postings_by_centroid[i], static_cast<size_t>(params.dimensions), centroid_offsets[i].length);
