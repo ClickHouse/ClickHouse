@@ -135,32 +135,47 @@ struct LinfNorm
 };
 
 
-/// Auto-vectorized single-array norm reduction kernel, modeled after the `arrayDotProduct` kernel.
-/// Manual unrolling with independent accumulators breaks the FP dependency chain so the compiler can
-/// keep several SIMD registers in flight and (for `L2`/`L2Squared`) fuse `a*b + c` into FMA. The macro
-/// emits an `x86_64_v4` (AVX-512) variant and a default (SSE2/NEON) variant; the caller dispatches on the
-/// running CPU. Returns the pre-`finalize` reduction (e.g. the sum of squares for `L2`).
+/// Auto-vectorized norm reduction kernel, modeled after the `arrayDotProduct` kernel. Manual unrolling
+/// with independent accumulators breaks the FP dependency chain so the compiler can keep several SIMD
+/// registers in flight and (for `L2`/`L2Squared`) fuse `a*b + c` into FMA.
+///
+/// The whole row loop lives inside this single multitarget call: an `x86_64_v4` (AVX-512) specialisation
+/// cannot be inlined into the `v2`-baseline caller, so a per-row call would impose a hard boundary every
+/// ~150 elements that interrupts the hardware prefetcher's stream. Batching all rows into one call keeps
+/// the load stream continuous across row boundaries, which matters for the bandwidth-bound `Float64` paths.
 MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType> static ResultType NO_SANITIZE_UNDEFINED NO_INLINE),
-    normImpl,
-    MULTITARGET_FUNCTION_BODY((const ResultType * __restrict data, size_t count, const typename Kernel::ConstParams & params) {
+    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    normBatchImpl,
+    MULTITARGET_FUNCTION_BODY((
+        const ResultType * __restrict data,
+        const ColumnArray::Offset * __restrict offsets,
+        ResultType * __restrict result_data,
+        size_t input_rows_count,
+        const typename Kernel::ConstParams & params) {
         constexpr size_t unroll_count = 16;
-        ResultType partial_results[unroll_count]{};
+        ColumnArray::Offset prev = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            const size_t count = offsets[row] - prev;
+            const ResultType * __restrict row_data = data + prev;
 
-        size_t i = 0;
-        const size_t unrolled_end = count / unroll_count * unroll_count;
-        for (; i < unrolled_end; i += unroll_count)
+            ResultType partial_results[unroll_count]{};
+            size_t i = 0;
+            const size_t unrolled_end = count / unroll_count * unroll_count;
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], row_data[i + s], params);
+
+            ResultType result = 0;
             for (size_t s = 0; s < unroll_count; ++s)
-                partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], data[i + s], params);
+                result = Kernel::template combine<ResultType>(result, partial_results[s], params);
 
-        ResultType result = 0;
-        for (auto & partial_result : partial_results)
-            result = Kernel::template combine<ResultType>(result, partial_result, params);
+            for (; i < count; ++i)
+                result = Kernel::template accumulate<ResultType>(result, row_data[i], params);
 
-        for (; i < count; ++i)
-            result = Kernel::template accumulate<ResultType>(result, data[i], params);
-
-        return result;
+            result_data[row] = Kernel::finalize(result, params);
+            prev = offsets[row];
+        }
     }))
 
 
@@ -274,29 +289,28 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        ColumnArray::Offset prev = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
+        if constexpr (std::is_same_v<ResultType, ArgumentType>
+            && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
         {
-            const auto off = offsets[row];
-            const size_t array_size = off - prev;
-
-            if constexpr (std::is_same_v<ResultType, ArgumentType>
-                && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
-            {
-                /// SIMD-optimized path for same-type floating point: runtime-dispatched to AVX-512 when
-                /// available, else the baseline variant. This is where `L2`/`L2Squared` pick up FMA.
-                ResultType result;
+            /// SIMD-optimized path for same-type floating point: the entire row loop is handled in a single
+            /// multitarget call, runtime-dispatched to AVX-512 when available, else the baseline variant.
+            /// This keeps the load stream continuous across rows (see `normBatchImpl`).
 #if USE_MULTITARGET_CODE
-                if (isArchSupported(TargetArch::x86_64_v4))
-                    result = normImpl_x86_64_v4<Kernel, ResultType>(data.data() + prev, array_size, kernel_params);
-                else
-#endif
-                    result = normImpl<Kernel, ResultType>(data.data() + prev, array_size, kernel_params);
-                result_data[row] = Kernel::finalize(result, kernel_params);
-            }
+            if (isArchSupported(TargetArch::x86_64_v4))
+                normBatchImpl_x86_64_v4<Kernel, ResultType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
             else
+#endif
+                normBatchImpl<Kernel, ResultType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
+        }
+        else
+        {
+            /// Scalar path for widened types (integers cast up to Float64, BFloat16 cast to Float32).
+            ColumnArray::Offset prev = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
             {
-                /// Scalar path for widened types (integers cast up to Float64, BFloat16 cast to Float32).
+                const auto off = offsets[row];
+                const size_t array_size = off - prev;
+
                 static constexpr size_t VEC_SIZE = 4;
                 ResultType results[VEC_SIZE] = {0};
                 size_t i = 0;
@@ -312,8 +326,8 @@ private:
                     result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev + i]), kernel_params);
 
                 result_data[row] = Kernel::finalize(result, kernel_params);
+                prev = off;
             }
-            prev = off;
         }
         return result_col;
     }
