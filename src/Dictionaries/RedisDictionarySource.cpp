@@ -13,6 +13,8 @@
 #include <Dictionaries/RedisSource.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 
@@ -103,6 +105,13 @@ namespace DB
                 !which.isDateTime() && !which.isUUID() && !isString(key.type))
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                                 "Redis source only supports integers, float32, float64, string, date, datetime and uuid, but key '{}' of type {} given",
+                                key.name,
+                                key.type->getName());
+
+            if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(key.type.get());
+                date_time_type && date_time_type->hasExplicitTimeZone())
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Redis source does not support DateTime keys with an explicit timezone, but key '{}' of type {} given",
                                 key.name,
                                 key.type->getName());
         }

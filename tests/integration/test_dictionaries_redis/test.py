@@ -11,6 +11,9 @@ from helpers.external_sources import SourceRedis
 cluster = ClickHouseCluster(__file__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 dict_configs_path = os.path.join(SCRIPT_DIR, "configs/dictionaries")
+xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
+if xdist_worker:
+    dict_configs_path = os.path.join(dict_configs_path, xdist_worker)
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],
@@ -91,7 +94,8 @@ def generate_dict_configs():
 
     if os.path.exists(dict_configs_path):
         shutil.rmtree(dict_configs_path)
-    os.mkdir(dict_configs_path)
+
+    os.makedirs(dict_configs_path, exist_ok=True)
 
     for i, field in enumerate(FIELDS):
         DICTIONARIES.append([])
@@ -139,8 +143,7 @@ def generate_dict_configs():
         path = os.path.join(dict_configs_path, fname)
         logging.debug(f"Found dictionary {path}")
         dictionaries.append(path)
-        
-    #Regression: simple storage with complex_key_cache layout
+
     for i, field in enumerate(FIELDS):
         REGR_DICTIONARIES.append([])
 
@@ -238,7 +241,6 @@ def test_redis_dictionaries(started_cluster, id):
         for query, answer in queries_with_answers:
             assert node.query(query) == str(answer) + "\n"
 
-    # Checks, that dictionaries can be reloaded.
     node.query("system reload dictionaries")
 
 @pytest.mark.parametrize("id", list(range(len(FIELDS))), ids=get_entity_id)
@@ -359,7 +361,7 @@ def test_redis_hash_map_negative_key(started_cluster):
     node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
     r.flushdb()
 
-def test_redis_complex_key_hashed_date(started_cluster):
+def test_redis_complex_key_date(started_cluster):
 
     node = started_cluster.instances["node"]
 
@@ -370,9 +372,9 @@ def test_redis_complex_key_hashed_date(started_cluster):
         password="clickhouse",
         db=31
     )
+    r.flushdb()
 
     r.set("2000-01-01", "found_date_key")
-
     node.query(
         f"""
         CREATE DICTIONARY IF NOT EXISTS test_redis_date_key
@@ -386,26 +388,12 @@ def test_redis_complex_key_hashed_date(started_cluster):
         LIFETIME(0)
         """
     )
-
     result = node.query("SELECT dictGet('test_redis_date_key', 'value', toDate('2000-01-01'))")
     assert result.strip() == "found_date_key"
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_date_key")
-    r.flushdb()
 
-def test_redis_simple_complex_key_date_key(started_cluster):
-
-    node = started_cluster.instances["node"]
-
-    import redis as redis_client
-    r = redis_client.Redis(
-        host="localhost",
-        port=cluster.redis_port,
-        password="clickhouse",
-        db=31
-    )
     r.set("2000-01-02", "found_date_cache")
-
     node.query(
         f"""
         CREATE DICTIONARY IF NOT EXISTS test_redis_date_cache_key
@@ -419,11 +407,11 @@ def test_redis_simple_complex_key_date_key(started_cluster):
         LIFETIME(0)
         """
     )
-
     result = node.query("SELECT dictGet('test_redis_date_cache_key', 'value', toDate('2000-01-02'))")
     assert result.strip() == "found_date_cache"
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_date_cache_key")
+
     r.flushdb()
 
 def assert_dictionary_rejected(node, name, ddl, expected):
@@ -488,4 +476,20 @@ def test_redis_simple_reject_invalid_key(started_cluster):
         LIFETIME(0)
         """,
         "Redis source only supports integers",
+    )
+    assert_dictionary_rejected(
+        node,
+        "test_redis_tz_datetime_reject",
+        f"""
+        CREATE DICTIONARY test_redis_tz_datetime_reject
+        (
+            key DateTime('Asia/Tokyo'),
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """,
+        "does not support DateTime keys with an explicit timezone",
     )
