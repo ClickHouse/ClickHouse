@@ -263,6 +263,8 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     applyEndpointCredentialsOrReset(*s3_settings, url, context);
+    if (has_user_supplied_credentials)
+        s3_settings->resetCredentialsForUserControlledRequest();
 
     if (collection.has("use_environment_credentials")
         && collection.get<bool>("use_environment_credentials"))
@@ -766,26 +768,33 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     bool user_supplied_secret_access_key = false;
     bool user_supplied_session_token = false;
     bool user_supplied_no_sign_request = false;
+    std::optional<String> user_access_key_id;
+    std::optional<String> user_secret_access_key;
+    std::optional<String> user_session_token;
+    bool user_no_sign_request = false;
 
     if (auto access_key_id_value = getFromPositionOrKeyValue<String>("access_key_id", args, engine_args_to_idx, key_value_args);
         access_key_id_value.has_value())
     {
-        s3_settings->auth_settings[S3AuthSetting::access_key_id] = access_key_id_value.value();
-        user_supplied_access_key_id = !access_key_id_value.value().empty();
+        user_access_key_id = access_key_id_value.value();
+        s3_settings->auth_settings[S3AuthSetting::access_key_id] = *user_access_key_id;
+        user_supplied_access_key_id = !user_access_key_id->empty();
     }
 
     if (auto secret_access_key_value = getFromPositionOrKeyValue<String>("secret_access_key", args, engine_args_to_idx, key_value_args);
         secret_access_key_value.has_value())
     {
-        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = secret_access_key_value.value();
-        user_supplied_secret_access_key = !secret_access_key_value.value().empty();
+        user_secret_access_key = secret_access_key_value.value();
+        s3_settings->auth_settings[S3AuthSetting::secret_access_key] = *user_secret_access_key;
+        user_supplied_secret_access_key = !user_secret_access_key->empty();
     }
 
     if (auto session_token_value = getFromPositionOrKeyValue<String>("session_token", args, engine_args_to_idx, key_value_args);
         session_token_value.has_value())
     {
-        s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
-        user_supplied_session_token = !session_token_value.value().empty();
+        user_session_token = session_token_value.value();
+        s3_settings->auth_settings[S3AuthSetting::session_token] = *user_session_token;
+        user_supplied_session_token = !user_session_token->empty();
     }
 
     if (extra_credentials_result.role_arn_provided
@@ -796,13 +805,15 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 
     if (no_sign_request)
     {
-        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+        user_no_sign_request = no_sign_request;
+        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = user_no_sign_request;
         user_supplied_no_sign_request = true;
     }
     else if (auto no_sign_value = getFromPositionOrKeyValue<bool>("no_sign", args, {}, key_value_args);
         no_sign_value.has_value())
     {
-        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
+        user_no_sign_request = no_sign_value.value();
+        s3_settings->auth_settings[S3AuthSetting::no_sign_request] = user_no_sign_request;
         user_supplied_no_sign_request = true;
     }
 
@@ -811,6 +822,27 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         || user_supplied_session_token
         || user_supplied_no_sign_request
         || !headers_from_ast.empty();
+
+    if (has_user_supplied_credentials)
+    {
+        const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
+        const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
+
+        s3_settings->resetCredentialsForUserControlledRequest();
+        if (user_access_key_id)
+            s3_settings->auth_settings[S3AuthSetting::access_key_id] = *user_access_key_id;
+        if (user_secret_access_key)
+            s3_settings->auth_settings[S3AuthSetting::secret_access_key] = *user_secret_access_key;
+        if (user_session_token)
+            s3_settings->auth_settings[S3AuthSetting::session_token] = *user_session_token;
+        if (user_supplied_no_sign_request)
+            s3_settings->auth_settings[S3AuthSetting::no_sign_request] = user_no_sign_request;
+        if (extra_credentials_result.found)
+        {
+            s3_settings->auth_settings[S3AuthSetting::role_arn] = user_role_arn;
+            s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
+        }
+    }
 
     if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
         storage_class_name.has_value())
@@ -1143,6 +1175,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
+        s3_settings->resetCredentialsForUserControlledRequest();
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
         s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = biglake_adc_client_id;
         s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = biglake_adc_client_secret;
