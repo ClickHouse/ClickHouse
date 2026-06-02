@@ -24,6 +24,7 @@
 #include <libnuraft/ptr.hxx>
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
+#include <libnuraft/snapshot_sync_ctx.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
@@ -774,6 +775,7 @@ void KeeperServer::shutdownRaftServer()
 void KeeperServer::shutdown()
 {
     shutdownRaftServer();
+    nuraft::snapshot_io_mgr::shutdown_instance();
     state_manager->flushAndShutDownLogStore();
     state_machine->shutdownStorage();
 }
