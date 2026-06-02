@@ -543,10 +543,10 @@ private:
 
     struct SpaceFillingCurveDescription
     {
-        size_t key_column_pos;
+        size_t key_column_pos{};
         String function_name;
         std::vector<String> arguments;
-        SpaceFillingCurveType type;
+        SpaceFillingCurveType type{};
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;

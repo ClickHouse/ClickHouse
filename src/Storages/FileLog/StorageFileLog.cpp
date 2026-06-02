@@ -243,8 +243,8 @@ StorageFileLog::StorageFileLog(
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
-        assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-        assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+        chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+        chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
@@ -441,7 +441,7 @@ void StorageFileLog::deserialize()
 
 UInt64 StorageFileLog::getInode(const String & file_name)
 {
-    struct stat file_stat;
+    struct stat file_stat{};
     if (stat(file_name.c_str(), &file_stat))
     {
         throw Exception(ErrorCodes::CANNOT_STAT, "Can not get stat info of file {}", file_name);
@@ -557,8 +557,8 @@ void StorageFileLog::openFilesAndSetPos()
 
 void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -577,8 +577,8 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
 void StorageFileLog::storeMetas(size_t start, size_t end)
 {
-    assert(start < end);
-    assert(end <= file_infos.file_names.size());
+    chassert(start < end);
+    chassert(end <= file_infos.file_names.size());
 
     for (size_t i = start; i < end; ++i)
     {
@@ -616,8 +616,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode;
-    UInt64 last_written_pos;
+    UInt64 inode = 0;
+    UInt64 last_written_pos = 0;
 
     if (in->eof()) /// File is empty.
     {
@@ -844,6 +844,7 @@ void StorageFileLog::wakeUp()
     cv.notify_one();
 }
 
+void registerStorageFileLog(StorageFactory & factory);
 void registerStorageFileLog(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
@@ -963,9 +964,9 @@ bool StorageFileLog::updateFileInfos()
         /// For table just watch one file, we can not use directory monitor to watch it
         if (!path_is_directory)
         {
-            assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-            assert(file_infos.file_names.size() == file_infos.context_by_name.size());
-            assert(file_infos.file_names.size() == 1);
+            chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+            chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
+            chassert(file_infos.file_names.size() == 1);
 
             if (auto it = file_infos.context_by_name.find(file_infos.file_names[0]); it != file_infos.context_by_name.end())
             {
@@ -988,8 +989,8 @@ bool StorageFileLog::updateFileInfos()
         LOG_ERROR(log, "Error happened during watching directory {}: {}", directory_watch->getPath(), error.error_msg);
 
     /// These file infos should always have same size(one for one) before update and after update
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     auto events = directory_watch->getEventsAndReset();
 
@@ -1098,8 +1099,8 @@ bool StorageFileLog::updateFileInfos()
     file_infos.file_names.swap(valid_files);
 
     /// These file infos should always have same size(one for one)
-    assert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
-    assert(file_infos.file_names.size() == file_infos.context_by_name.size());
+    chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
+    chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
 }
