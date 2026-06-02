@@ -96,6 +96,7 @@ std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & c
     return std::make_unique<ShuffleSendStep>(ctx.input_headers.front(), exchange_id, std::move(key_names), num_buckets);
 }
 
+void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ShuffleSend", ShuffleSendStep::deserialize);

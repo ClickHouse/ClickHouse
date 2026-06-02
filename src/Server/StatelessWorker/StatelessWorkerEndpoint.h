@@ -25,4 +25,8 @@ private:
     std::shared_ptr<StatelessTaskExecutor> task_runner;
 };
 
+struct DistributedQueryTaskDescription;
+
+void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
+
 }

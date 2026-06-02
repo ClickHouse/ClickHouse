@@ -102,7 +102,7 @@ private:
     const String file_name;
 };
 
-void registerReadFromFileStep(QueryPlanStepRegistry & registry)
+static void registerReadFromFileStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromFile", ReadFromFileStep::deserialize);
 }
@@ -179,12 +179,12 @@ private:
     void updateOutputHeader() override {}
 };
 
-void registerPrintTSVStep(QueryPlanStepRegistry & registry)
+static void registerPrintTSVStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("PrintTSV", PrintTSVStep::deserialize);
 }
 
-SharedHeader prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
+static SharedHeader prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
 {
     ReadBufferFromString read_buffer(data);
 
@@ -221,14 +221,14 @@ SharedHeader prepareSourceFileInNativeFormat(const String & file_name, const Str
     return shared_header;
 }
 
-QueryPlanStepPtr createSourceStepFromFileInNativeFormat(SharedHeader header, const String & file_name)
+static QueryPlanStepPtr createSourceStepFromFileInNativeFormat(SharedHeader header, const String & file_name)
 {
     auto step = std::make_unique<ReadFromFileStep>(std::move(header), file_name);
     return step;
 }
 
 /// Simple plan that joins two tables
-QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
+static QueryPlan createHashJoinQueryPlan(const String & data_a, const String & data_b)
 {
     const String file_name_a = "/tmp/file_a";
     const String file_name_b = "/tmp/file_b";
@@ -492,7 +492,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node
 }
 }
 
-void executeTestWithExchangeKind(const String & exchangeKind)
+static void executeTestWithExchangeKind(const String & exchangeKind)
 try
 {
     DistributedQueryPlan distributed_query_plan;

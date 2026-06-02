@@ -4850,6 +4850,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     return step;
 }
 
+void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize);

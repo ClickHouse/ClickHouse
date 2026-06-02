@@ -468,14 +468,14 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-String serializeQueryPlan(const QueryPlan & query_plan)
+static String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
     query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     return out.str();
 }
 
-QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
+static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
     auto plan_and_sets = QueryPlan::deserialize(in, context);
@@ -609,7 +609,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     }
 }
 
-void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
+static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
 {
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 

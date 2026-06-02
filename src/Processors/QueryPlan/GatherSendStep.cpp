@@ -51,6 +51,7 @@ std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ct
     return std::make_unique<GatherSendStep>(ctx.input_headers.front(), exchange_id);
 }
 
+void registerGatherSendStep(QueryPlanStepRegistry & registry);
 void registerGatherSendStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("GatherSend", GatherSendStep::deserialize);

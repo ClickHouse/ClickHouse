@@ -82,6 +82,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization
     return std::make_unique<ReadFromPreparedSource>(Pipe(source));
 }
 
+void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromStorage", ReadFromStorageStep::deserialize);

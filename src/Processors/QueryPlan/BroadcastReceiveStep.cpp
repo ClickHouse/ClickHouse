@@ -56,6 +56,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastReceiveStep::deserialize(Deserializatio
     return std::make_unique<BroadcastReceiveStep>(ctx.output_header, exchange_id, list_of_shard_ids);
 }
 
+void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry);
 void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("BroadcastReceive", BroadcastReceiveStep::deserialize);

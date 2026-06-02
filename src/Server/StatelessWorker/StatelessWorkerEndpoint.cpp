@@ -88,7 +88,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     }
 }
 
-void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
+static void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
     UInt64 version;
     readVarUInt(version, in);

@@ -71,6 +71,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastSendStep::deserialize(Deserialization &
     return std::make_unique<BroadcastSendStep>(ctx.input_headers.front(), exchange_id, num_buckets);
 }
 
+void registerBroadcastSendStep(QueryPlanStepRegistry & registry);
 void registerBroadcastSendStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("BroadcastSend", BroadcastSendStep::deserialize);

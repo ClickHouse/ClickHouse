@@ -56,6 +56,7 @@ std::unique_ptr<IQueryPlanStep> ShuffleReceiveStep::deserialize(Deserialization 
     return std::make_unique<ShuffleReceiveStep>(ctx.output_header, exchange_id, list_of_shard_ids);
 }
 
+void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ShuffleReceive", ShuffleReceiveStep::deserialize);
