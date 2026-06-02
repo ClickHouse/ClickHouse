@@ -80,8 +80,8 @@ Coordination::ACLs getDefaultACLs();
 struct ZooKeeperRequestWithCallbacks
 {
     Coordination::ZooKeeperRequestPtr request;
-    std::vector<std::function<void()>> on_success_callbacks;
-    std::vector<std::function<void()>> on_failure_callbacks;
+    /// Response may be nullptr, meaning some error.
+    std::function<void(const Coordination::Response *)> callback {};
 };
 
 struct RequestGenerator

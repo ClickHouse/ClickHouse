@@ -390,31 +390,23 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         auto promise = std::make_shared<std::promise<RequestResult>>();
         auto future = promise->get_future();
 
-        auto success_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_success_callbacks));
-        auto failure_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_failure_callbacks));
+        auto inner_callback = std::move(request_with_callbacks.callback);
 
         auto watch = std::make_shared<Stopwatch>();
 
         Coordination::ResponseCallback callback =
             [promise,
-             success_callbacks,
-             failure_callbacks,
+             inner_callback,
              watch,
              generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
+            if (inner_callback)
+                inner_callback(&response);
             if (response.error == Coordination::Error::ZOK)
-            {
-                for (const auto & cb : *success_callbacks)
-                    cb();
                 promise->set_value(RequestResult{response.bytesSize(), elapsed});
-            }
             else
-            {
-                for (const auto & cb : *failure_callbacks)
-                    cb();
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-            }
         };
 
         auto & request = request_with_callbacks.request;
@@ -438,8 +430,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...) // Ok: handle_request_exception logs and counts the error
         {
-            for (const auto & cb : *failure_callbacks)
-                cb();
+            if (inner_callback)
+                inner_callback(nullptr);
             handle_request_exception(slot.request);
         }
     }

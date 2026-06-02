@@ -10,6 +10,7 @@
 #include <Common/CacheLine.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/NonblockingBoundedQueue.h>
+#include <Common/SharedMutex.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/KeeperContext.h>
@@ -56,8 +57,7 @@ private:
         int64_t zxid = 0;
         Coordination::OpNum op_num = Coordination::OpNum::Error;
         bool is_write = false;
-        std::vector<std::function<void()>> on_success_callbacks;
-        std::vector<std::function<void()>> on_failure_callbacks;
+        std::function<void(const Coordination::Response *)> callback;
     };
 
     static_assert(std::is_nothrow_move_assignable_v<QueueItem>);
@@ -116,6 +116,8 @@ private:
     int64_t tick_time_ms = 500;
 
     DB::KeeperContextPtr keeper_context;
+
+    DB::SharedMutex state_machine_storage_mutex;
     std::unique_ptr<Storage> storage;
 
     BenchmarkContext benchmark_context;

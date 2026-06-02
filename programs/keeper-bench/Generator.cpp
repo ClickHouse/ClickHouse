@@ -506,7 +506,7 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordin
             paths_created_index.erase(request->path);
             paths_created_vec.pop_back();
 
-            return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
+            return {.request = request};
         }
     }
 
@@ -539,21 +539,18 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordin
     if (data)
         request->data = data->getString();
 
-    const auto on_success = [&, candidate = node_candidate] mutable
+    auto callback = [&, candidate = std::move(node_candidate)](const Coordination::Response * response) mutable
     {
         std::lock_guard lock(paths_mutex);
         paths_pending.erase(candidate);
-        paths_created_index[candidate] = paths_created_vec.size();
-        paths_created_vec.push_back(std::move(candidate));
+        if (response && response->error == Coordination::Error::ZOK)
+        {
+            paths_created_index[candidate] = paths_created_vec.size();
+            paths_created_vec.push_back(std::move(candidate));
+        }
     };
 
-    const auto on_failure = [&, candidate = std::move(node_candidate)]
-    {
-        std::lock_guard lock(paths_mutex);
-        paths_pending.erase(candidate);
-    };
-
-    return {.request = request, .on_success_callbacks = {std::move(on_success)}, .on_failure_callbacks = {std::move(on_failure)}};
+    return {.request = request, .callback = std::move(callback)};
 }
 
 void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -581,7 +578,7 @@ ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(const Coordinati
     auto request = std::make_shared<ZooKeeperSetRequest>();
     request->path = path.getPath();
     request->data = data.getString();
-    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
+    return {.request = request};
 }
 
 void SetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
@@ -626,7 +623,7 @@ ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(const Coordinati
         request->has_watch = true;
         request->watch_callback = watch_callback_ptr;
     }
-    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
+    return {.request = request};
 }
 
 void GetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
@@ -671,7 +668,7 @@ ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordinat
         request->has_watch = true;
         request->watch_callback = watch_callback_ptr;
     }
-    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
+    return {.request = request};
 }
 
 void ListRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
@@ -710,8 +707,7 @@ std::string MultiRequestGenerator::descriptionImpl()
 ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordination::ACLs & acls)
 {
     Coordination::Requests ops;
-    std::vector<std::function<void()>> on_success_callbacks;
-    std::vector<std::function<void()>> on_failure_callbacks;
+    std::vector<std::function<void(const Coordination::Response *)>> inner_callbacks;
 
     if (size)
     {
@@ -721,16 +717,7 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
         {
             auto request_with_callbacks = request_getter.getRequestGenerator()->generate(acls);
             ops.push_back(std::move(request_with_callbacks.request));
-            on_success_callbacks.insert(
-                on_success_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
-            );
-            on_failure_callbacks.insert(
-                on_failure_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.end())
-            );
+            inner_callbacks.push_back(std::move(request_with_callbacks.callback));
         }
     }
     else
@@ -739,23 +726,30 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
         {
             auto request_with_callbacks = request_generator->generate(acls);
             ops.push_back(std::move(request_with_callbacks.request));
-            on_success_callbacks.insert(
-                on_success_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
-            );
-            on_failure_callbacks.insert(
-                on_failure_callbacks.end(),
-                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.begin()),
-                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.end())
-            );
+            inner_callbacks.push_back(std::move(request_with_callbacks.callback));
         }
     }
 
+    auto callback = [inner_callbacks_ = std::move(inner_callbacks)](const Coordination::Response * response)
+    {
+        const Coordination::MultiResponse * multi = nullptr;
+        if (response)
+        {
+            multi = dynamic_cast<const Coordination::MultiResponse *>(response);
+            chassert(multi);
+        }
+        for (size_t i = 0; i < inner_callbacks_.size(); ++i)
+        {
+            const Coordination::Response * inner_response = multi ? multi->responses.at(i).get() : nullptr;
+            if (inner_callbacks_[i])
+                inner_callbacks_[i](inner_response);
+        }
+    };
+
     return {
         .request = std::make_shared<ZooKeeperMultiRequest>(ops, acls),
-        .on_success_callbacks = std::move(on_success_callbacks),
-        .on_failure_callbacks = std::move(on_failure_callbacks)};
+        .callback = std::move(callback),
+    };
 }
 
 void MultiRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)

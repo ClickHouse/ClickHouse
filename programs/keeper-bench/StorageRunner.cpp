@@ -211,7 +211,12 @@ void StorageRunner::setupStorage()
         try
         {
             storage->preprocessRequest(request, setup_session_id, 0, zxid);
-            storage->processRequest(request, setup_session_id, zxid);
+            auto responses = storage->processRequest(request, setup_session_id, zxid);
+            for (const auto & response : responses)
+            {
+                if (response.response->error != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromPath(response.response->error, path);
+            }
         }
         catch (...)
         {
@@ -324,8 +329,7 @@ void StorageRunner::generatorThread(size_t idx)
         item.session_id = session_id;
         item.op_num = item.request->getOpNum();
         item.is_write = !item.request->isReadRequest();
-        item.on_success_callbacks = std::move(request_with_callbacks.on_success_callbacks);
-        item.on_failure_callbacks = std::move(request_with_callbacks.on_failure_callbacks);
+        item.callback = std::move(request_with_callbacks.callback);
 
         if (item.is_write)
             pushBlocking(*preprocess_queue, std::move(item));
@@ -353,6 +357,7 @@ void StorageRunner::preprocessThread()
         watch.restart();
         try
         {
+            std::shared_lock lock(state_machine_storage_mutex);
             storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid);
         }
         catch (...)
@@ -397,6 +402,7 @@ void StorageRunner::commitThread()
         Coordination::KeeperResponsesForSessions responses;
         try
         {
+            std::shared_lock lock(state_machine_storage_mutex);
             responses = storage->processLocalRequests(batch, /*check_acl=*/false);
         }
         catch (...)
@@ -448,6 +454,7 @@ void StorageRunner::commitThread()
         Coordination::KeeperResponsesForSessions responses;
         try
         {
+            std::shared_lock lock(state_machine_storage_mutex);
             responses = storage->processRequest(write_item.request, write_item.session_id, write_item.zxid);
         }
         catch (...)
@@ -466,20 +473,20 @@ void StorageRunner::commitThread()
 
         period_stats.writes_committed.fetch_add(1, std::memory_order_relaxed);
 
-        /// Fire generator callbacks based on response error (so CreateRequestGenerator's
-        /// paths_created bookkeeping stays consistent with storage state).
-        bool success = !responses.empty() && responses.front().response
-            && responses.front().response->error == Coordination::Error::ZOK;
-        if (success)
+        /// processRequest produces one response for the request + any number of WatchResponse-s
+        /// for triggered watches.
+        const Coordination::Response * main_response = nullptr;
+        for (const auto & response : responses)
         {
-            for (auto & cb : write_item.on_success_callbacks)
-                cb();
+            if (dynamic_cast<const Coordination::WatchResponse *>(response.response.get()))
+                continue;
+            chassert(!main_response);
+            main_response = response.response.get();
         }
-        else
-        {
-            for (auto & cb : write_item.on_failure_callbacks)
-                cb();
-        }
+        chassert(main_response);
+
+        if (write_item.callback)
+            write_item.callback(main_response);
 
         /// With probability 1/writes_per_read_batch, drain and process reads.
         if (read_trigger_dist(rng) == 0)
@@ -523,7 +530,11 @@ void StorageRunner::report(double period_seconds, bool snapshot_mode_during_peri
     }
 #endif
 
-    uint64_t znode_count = storage ? storage->getNodesCount() : 0;
+    uint64_t znode_count;
+    {
+        std::lock_guard lock(state_machine_storage_mutex);
+        znode_count = storage ? storage->getNodesCount() : 0;
+    }
 
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     out << std::fixed << std::setprecision(1);
@@ -601,6 +612,7 @@ void StorageRunner::runBenchmark()
             bool want_snapshot_now = snapshot_enabled.load(std::memory_order_relaxed);
             if (snapshot_toggle_periods > 0 && (period_idx % snapshot_toggle_periods == 0))
             {
+                std::lock_guard lock(state_machine_storage_mutex);
                 if (snapshot_enabled.load())
                 {
                     storage->disableSnapshotMode();
