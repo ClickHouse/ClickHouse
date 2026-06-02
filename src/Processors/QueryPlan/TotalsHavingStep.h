@@ -31,6 +31,14 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
+    const String & getFilterColumnName() const { return filter_column_name; }
+
+    bool hasCorrelatedExpressions() const override
+    {
+        if (actions_dag)
+            return actions_dag->hasCorrelatedColumns();
+        return false;
+    }
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;

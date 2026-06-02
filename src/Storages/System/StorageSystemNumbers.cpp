@@ -19,10 +19,11 @@ StorageSystemNumbers::StorageSystemNumbers(
     const StorageID & table_id,
     bool multithreaded_,
     const std::string & column_name_,
-    std::optional<UInt64> limit_,
+    std::optional<UInt128> limit_,
     UInt64 offset_,
-    UInt64 step_)
-    : StorageWithCommonVirtualColumns(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_), column_name(column_name_), step(step_)
+    UInt64 step_,
+    bool descending_)
+    : StorageWithCommonVirtualColumns(table_id), multithreaded(multithreaded_), limit(limit_), offset(offset_), column_name(column_name_), step(step_), descending(descending_)
 {
     StorageInMemoryMetadata storage_metadata;
     /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
