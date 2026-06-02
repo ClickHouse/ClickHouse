@@ -37,7 +37,7 @@ std::unordered_set<uintptr_t> & registry()
     return *stacks;
 }
 
-void registryInsert(uintptr_t base)
+[[maybe_unused]] void registryInsert(uintptr_t base)
 {
     if (base == 0)
         return;
@@ -45,7 +45,7 @@ void registryInsert(uintptr_t base)
     registry().insert(base);
 }
 
-void registryErase(uintptr_t base)
+[[maybe_unused]] void registryErase(uintptr_t base)
 {
     if (base == 0)
         return;
