@@ -30,7 +30,7 @@ public:
     ResourceAllocation & allocation;
 
     /// Allocation decrease size.
-    ResourceCost size;
+    ResourceCost size = 0;
 
     /// Set only by `removeAllocation` (via `processActivation`) to signal that the allocation
     /// is being removed. Normal decreases never set this — an allocation may stay alive at zero.
