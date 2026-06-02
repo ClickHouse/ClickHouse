@@ -714,19 +714,18 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
             /// tasks — instead of deep-copying the Roaring bitmap and re-running `toUint32Array` in
             /// every task. The condition always has a posting cache (a per-query one is created in its
             /// constructor when the global cache is disabled), so no null check is needed.
-            auto key = TextIndexPostingsCache::hash(
-                granule->getIndexIdForCaches(), column_name, static_cast<UInt64>(TextIndexPostingsCacheKind::Flat));
+            auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), column_name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
 
             auto cell = condition_text.postingsCache()->getOrSet(key, [&]
             {
-                auto flat = std::make_shared<std::vector<UInt32>>(query_builder.postings->cardinality());
-                query_builder.postings->toUint32Array(flat->data());
-                auto new_cell = std::make_shared<TextIndexPostingsCacheCell>();
-                new_cell->value = FlatPostingsPtr(std::move(flat));
-                return new_cell;
+                PaddedPODArray<UInt32> flat(query_builder.postings->cardinality());
+                query_builder.postings->toUint32Array(flat.data());
+                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
             });
 
-            auto flat_postings = std::get<FlatPostingsPtr>(cell->value);
+            /// Alias the cell so the cursor keeps it alive but views the inner flattened array directly,
+            /// without a second heap allocation or level of indirection.
+            auto flat_postings = FlatPostingsPtr(cell, &std::get<PaddedPODArray<UInt32>>(cell->value));
 
             /// The flattened array is sorted and self-describing (cardinality, range, density all
             /// derive from it), so the cursor needs no separate `TokenPostingsInfo`.

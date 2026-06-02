@@ -1,7 +1,6 @@
 #pragma once
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/container/inlined_vector.h>
 
 #include <base/defines.h>
 #include <base/types.h>
@@ -20,9 +19,6 @@ struct TokenPostingsInfo;
 class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
-
-/// Inline capacity for the embedded posting list buffer.
-constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 
 /// Operation type for padding the column with the posting list.
 enum class PadOp { Or, And };
@@ -57,18 +53,15 @@ public:
     /// creates a per-query one when the global cache is disabled.
     PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache & postings_cache_, const String & index_id_ = {});
 
-    /// Embedded posting list (small inline postings, or a materialized rare-token bitmap).
-    /// The cursor owns a copy of `info_` and pre-decodes the postings into `embedded_values`.
-    explicit PostingListCursor(const TokenPostingsInfo & info_);
-
-    /// Embedded posting list backed by a pre-flattened, shared, immutable sorted array.
-    /// Used for the analyzer-folded postings of eagerly-read tokens: the flattened array is
-    /// built once per granule and shared across all per-task cursors, avoiding a per-cursor
-    /// Roaring deep copy and `toUint32Array` materialization. Cardinality, density and the
-    /// row-id range are derived directly from the (sorted) array, so no `TokenPostingsInfo`
-    /// is needed. The cursor only keeps its own read position; the array data is read-only
-    /// and safe to share across threads.
-    explicit PostingListCursor(std::shared_ptr<const std::vector<UInt32>> shared_values_);
+    /// Fully-materialized posting list backed by a pre-flattened, shared, immutable sorted array.
+    /// Used both for the analyzer-folded postings of eagerly-read tokens and for any postings the
+    /// caller has already decoded into an array (e.g. small embedded postings or a materialized
+    /// rare-token bitmap): the array is built once and shared across all per-task cursors, avoiding
+    /// a per-cursor Roaring deep copy and `toUint32Array` materialization. Cardinality, density and
+    /// the row-id range are derived directly from the (sorted) array, so no `TokenPostingsInfo` is
+    /// needed. The cursor only keeps its own read position; the array data is read-only and safe to
+    /// share across threads.
+    explicit PostingListCursor(FlatPostingsPtr shared_values_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
@@ -104,12 +97,12 @@ private:
     /// For compressed postings: obtains the decoded segment (payload + packed block index) — from the
     /// shared `TextIndexPostingsCache` if available, otherwise built via `buildPostingSegment` — and
     /// points the segment views at it. Does NOT decode any packed block data yet.
-    /// For embedded postings: no-op — `embedded_values` already holds the decoded array.
+    /// For shared-array cursors: no-op — `shared_values` already holds the decoded array.
     void prepareSegment(size_t segment_idx);
 
     /// Reads and parses one compressed segment from `stream` into an immutable `PostingListSegment`.
     /// Invoked on a cache miss (or directly when no posting cache is available).
-    PostingListSegmentPtr buildPostingSegment(size_t segment_idx);
+    PostingListSegment buildPostingSegment(size_t segment_idx);
 
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
@@ -128,17 +121,15 @@ private:
     template <PadOp op>
     void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// On-disk description of the posting list. For compressed postings this is a
-    /// non-owning pointer into the granule's token map (which outlives the cursor);
-    /// for embedded/rare postings the info is owned via `owned_info` to keep the
-    /// materialized bitmap alive.
+    /// On-disk description of the posting list: a non-owning pointer into the granule's token map
+    /// (which outlives the cursor). Set only for compressed cursors; stays null for the shared-array
+    /// cursor, which derives everything it needs from the flattened array and reads no segments.
     MergeTreeReaderStream * stream = nullptr;
-    std::shared_ptr<TokenPostingsInfo> owned_info;
     const TokenPostingsInfo * info = nullptr;
 
     /// Bounded cache used to memoize decoded segments across per-task cursors (and queries, when the
     /// global cache is enabled). Set for compressed cursors via the stream constructor; stays null for
-    /// embedded cursors, which never read segments (`prepareSegment` returns early for `is_embedded`).
+    /// shared-array cursors, which never read segments (`prepareSegment` returns early for `is_embedded`).
     TextIndexPostingsCache * postings_cache = nullptr;
     /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
     String index_id;
@@ -147,28 +138,22 @@ private:
     bool is_embedded = false;
     double density_val = 0;
 
-    /// Pre-decoded embedded postings.
-    /// Inline buffer for small embedded posting lists; spills to the heap when the
-    /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
-    absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
+    /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted
+    /// array. Built once (per granule in production, per cursor in tests) and shared across per-task
+    /// cursors. Held to keep the buffer alive for the cursor's lifetime; `decoded_values_ptr` points
+    /// into it.
+    FlatPostingsPtr shared_values;
 
-    /// When set (shared-array embedded ctor), the embedded postings are read from this shared,
-    /// immutable, sorted array instead of `embedded_values`. Built once per granule and shared
-    /// across per-task cursors. Held to keep the buffer alive for the cursor's lifetime;
-    /// `decoded_values_ptr` points into it.
-    std::shared_ptr<const std::vector<UInt32>> shared_values;
-
-    /// Row-id range [begin, end] covered by an embedded posting list, used for the dense-range
-    /// shortcut in `linearOr` / `linearAnd`. Populated by both embedded constructors (from
-    /// `info_.ranges`, or from the sorted array's first/last element).
+    /// Row-id range [begin, end] covered by a shared-array posting list, used for the dense-range
+    /// shortcut in `linearOr` / `linearAnd`. Derived from the sorted array's first/last element.
     size_t embedded_range_begin = 0;
     size_t embedded_range_end = 0;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
-    /// point at this buffer. For embedded posting lists, `decoded_values_ptr` instead
-    /// points directly at `embedded_values`, avoiding a copy and supporting embedded
-    /// lists larger than BLOCK_SIZE.
+    /// point at this buffer. For shared-array cursors, `decoded_values_ptr` instead
+    /// points directly into `shared_values`, avoiding a copy and supporting lists
+    /// larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
@@ -206,9 +191,6 @@ private:
         size_t blocks_decoded = 0;
         size_t advance_count = 0;
         size_t segments_prepared = 0;
-        /// "Skipped" counters are shared between the OR and AND paths: a region is skipped either
-        /// because the segment is fully dense (`segments_skipped_dense`) or because its output is
-        /// already resolved — all-ones for OR, all-zeros for AND (`*_skipped_resolved`).
         size_t segments_skipped_dense = 0;
         size_t segments_skipped_resolved = 0;
         size_t blocks_skipped_resolved = 0;

@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <Common/PODArray.h>
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -50,6 +52,8 @@ using PostingListSegmentPtr = std::shared_ptr<const PostingListSegment>;
 
 /// A flattened, sorted array of posting list row ids. Used to back the lazy "prebuilt" cursor over
 /// the analyzer-folded postings of eagerly-read tokens (built once via `toUint32Array`, then shared).
-using FlatPostingsPtr = std::shared_ptr<const std::vector<UInt32>>;
+/// `PaddedPODArray` (not `std::vector`) so the cursor's vectorized linear scans may over-read past the
+/// last element into the trailing SIMD padding without a separate bounds guard.
+using FlatPostingsPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
 
 }

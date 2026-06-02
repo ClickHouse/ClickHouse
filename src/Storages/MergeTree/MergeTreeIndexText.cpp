@@ -669,9 +669,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
         auto postings = postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
-        auto cell = std::make_shared<TextIndexPostingsCacheCell>();
-        cell->value = std::move(*postings);
-        return cell;
+        return std::make_shared<TextIndexPostingsCacheCell>(std::move(*postings));
     };
 
     auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx]);
