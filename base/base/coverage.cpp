@@ -3,6 +3,18 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 
+#if WITH_COVERAGE && !WITH_COVERAGE_DEPTH
+/// Regular coverage build (WITH_COVERAGE=ON, WITH_COVERAGE_DEPTH=OFF), the build
+/// that produces the published HTML/lcov reports. The full depth machinery below
+/// is not compiled in, but we still need to be able to flush the LLVM profile
+/// counters to the .profraw file from shutdown paths that bypass the libprofile
+/// atexit handler (see dumpCoverageReportIfPossible() below). Declare just the
+/// runtime entry point; it is provided by the -fprofile-instr-generate runtime.
+#include <mutex>
+extern "C" void __llvm_profile_dump();  // NOLINT
+#endif
+
+
 /// WITH_COVERAGE_DEPTH enables the default implementation of code coverage,
 /// that dumps a map to the filesystem.
 
@@ -424,7 +436,18 @@ void resetCoverage()
 
 void dumpCoverageReportIfPossible()
 {
-#if WITH_COVERAGE_DEPTH
+#if WITH_COVERAGE
+    /// Persist the in-memory LLVM coverage counters to the .profraw file now.
+    ///
+    /// LLVM writes the profile automatically only from an atexit handler, i.e. on a
+    /// clean exit(). Several shutdown paths deliberately bypass that: the server's
+    /// "shutdown forcefully" branch calls safeExit() -> _exit(), and BaseDaemon::kill()
+    /// calls _exit() as well. On those paths everything this process executed — in
+    /// particular background/scheduled work (merges, ACME, RabbitMQ, ...) that finishes
+    /// late in a test - would otherwise be lost, which is a major source of run-to-run
+    /// coverage flakiness. Both call sites already invoke this function for exactly that
+    /// reason; previously it was a no-op unless WITH_COVERAGE_DEPTH was set, so the
+    /// regular coverage build (which produces the reports) never actually flushed here.
     static std::mutex mutex;
     std::lock_guard lock(mutex);
     __llvm_profile_dump(); // NOLINT
