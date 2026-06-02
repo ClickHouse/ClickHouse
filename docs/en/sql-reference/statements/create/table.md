@@ -339,6 +339,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
+Existing constraints across all tables can be inspected via the [`system.constraints`](/operations/system-tables/constraints) table.
+
 ### ASSUME {#assume}
 
 The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.

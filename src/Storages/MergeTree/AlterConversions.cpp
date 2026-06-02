@@ -341,7 +341,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     for (const auto & patch : patch_parts)
     {
-        bool has_column_in_patch;
+        bool has_column_in_patch = false;
         const auto & patch_conversions = patch.part->getAlterConversions();
 
         /// If patch has lightweight delete we have to always apply it.

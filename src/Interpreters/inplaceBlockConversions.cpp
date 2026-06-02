@@ -299,7 +299,7 @@ void performRequiredConversions(
     }
 }
 
-bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+static bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     for (const auto & required_column : required_columns)
     {

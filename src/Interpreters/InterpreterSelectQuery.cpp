@@ -245,7 +245,7 @@ namespace ErrorCodes
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
-FilterDAGInfoPtr generateFilterActions(
+static FilterDAGInfoPtr generateFilterActions(
     const StorageID & table_id,
     const ASTPtr & row_policy_filter_expression,
     const ContextPtr & context,
@@ -1495,8 +1495,19 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             std::unordered_map<String, DataTypePtr> column_names;
             for (const auto & column : result_block.getColumnsWithTypeAndName())
                 column_names[column.name] = column.type;
+            NameSet order_by_names;
             for (const auto & elem : query.orderBy()->children)
-                column_names.erase(elem->as<ASTOrderByElement>()->children.front()->getColumnName());
+            {
+                auto name = elem->as<ASTOrderByElement>()->children.front()->getColumnName();
+                order_by_names.insert(name);
+                column_names.erase(name);
+            }
+            std::erase_if(column_names, [&](const auto & pair)
+            {
+                if (auto it = aliases.find(pair.first); it != aliases.end())
+                    return order_by_names.contains(it->second->getColumnName());
+                return false;
+            });
             for (const auto & [name, type] : column_names)
             {
                 source_columns.emplace_back(name, type);
@@ -2811,7 +2822,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_sync_remote)
         {
-            if (auto streams_with_ratio = static_cast<double>(max_streams) * settings[Setting::max_streams_to_max_threads_ratio];
+            if (auto streams_with_ratio = static_cast<double>(max_streams) * static_cast<double>(settings[Setting::max_streams_to_max_threads_ratio]);
                 canConvertTo<size_t>(streams_with_ratio))
                 max_streams = static_cast<size_t>(streams_with_ratio);
             else
@@ -3730,6 +3741,7 @@ bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
     return result;
 }
 
+void registerInterpreterSelectQuery(InterpreterFactory & factory);
 void registerInterpreterSelectQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
