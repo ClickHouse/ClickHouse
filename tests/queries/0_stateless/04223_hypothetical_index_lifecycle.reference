@@ -33,6 +33,8 @@ With idx_b (minmax, hypothetical):
   status:       applicable
 --- force_data_skipping_indices: not-useful index throws like a real read ---
 INDEX_NOT_USED
+--- force_data_skipping_indices = '' throws like a real read ---
+CANNOT_PARSE_TEXT
 --- read limit (break mode) does not report partial empirical as ok ---
   source:           applicability_only
   empirical_status: unsupported

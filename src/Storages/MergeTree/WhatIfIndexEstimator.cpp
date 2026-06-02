@@ -620,11 +620,12 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto select_query_copy = select_query->clone();
     stripForcedDataSkippingIndices(select_query_copy.get(), forced_strings);
 
+    /// Parse every changed value (including ""): the parser throws `CANNOT_PARSE_TEXT`
+    /// on an unparseable force list exactly as a real read does.
     NameSet forced_indices;
     for (const auto & forced_string : forced_strings)
-        if (!forced_string.empty())
-            for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, context->getSettingsRef()))
-                forced_indices.insert(name);
+        for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, context->getSettingsRef()))
+            forced_indices.insert(name);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
