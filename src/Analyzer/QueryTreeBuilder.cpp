@@ -797,22 +797,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                         = std::move(by_list);
                 }
 
-                if (function->order_by_combinator
-                    && function->order_by_combinator_columns)
-                {
-                    auto order_by_list
-                        = std::make_shared<ListNode>();
-                    const auto & order_by_cols
-                        = function->order_by_combinator_columns
-                            ->as<ASTExpressionList>()
-                            ->children;
-                    for (const auto & col : order_by_cols)
-                        order_by_list->getNodes().push_back(
-                            buildExpression(col, context));
-                    function_node->getOrderByColumnsNode()
-                        = std::move(order_by_list);
-                }
-
                 result = std::move(function_node);
             }
         }

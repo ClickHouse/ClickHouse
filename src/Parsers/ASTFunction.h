@@ -45,18 +45,13 @@ public:
 
 
     /// Aggregate function combinators
-    /// TOTALS, BY, ORDER BY inside
+    /// TOTALS, BY inside
     /// function arguments
     bool totals_combinator = false;
     bool by_combinator = false;
-    bool order_by_combinator = false;
 
     /// Columns after BY: avg(x BY a, b)
     ASTPtr by_combinator_columns;
-
-    /// Sort clause after ORDER BY:
-    /// groupArray(x ORDER BY y DESC)
-    ASTPtr order_by_combinator_columns;
 
     /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
     bool isOperator() const { return flags<ASTFunctionFlags>().is_operator; }

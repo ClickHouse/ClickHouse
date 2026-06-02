@@ -1225,34 +1225,9 @@ public:
                 return true;
             }
 
-            // ORDER BY combinator
-            ParserKeyword order_by_kw(
-                Keyword::ORDER_BY);
 
-            bool order_by_matched = order_by_kw.ignore(pos, expected);
-
-            if (!has_totals && !has_by
-                && order_by_matched)
-            {
-                has_order_by = true;
-                if (!isCurrentElementEmpty()
-                    || !elements.empty())
-                    if (!mergeElement())
-                        return false;
-
-                ParserOrderByExpressionList
-                    order_parser;
-                if (!order_parser.parse(
-                        pos, order_by_columns,
-                        expected))
-                    return false;
-            }
-
-
-            // Only one of the TOTALS, BY and ORDER BY combinators can be at the one time
-            if ((has_totals && has_by)
-                || (has_totals && has_order_by)
-                || (has_by && has_order_by))
+            // Only one of the TOTALS and BY combinators can be at the one time
+            if (has_totals && has_by)
                 return false;
 
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
@@ -1405,14 +1380,6 @@ public:
                 function_node->children.push_back(
                     function_node->by_combinator_columns);
             }
-            if (has_order_by)
-            {
-                function_node->order_by_combinator = true;
-                function_node->order_by_combinator_columns
-                    = std::move(order_by_columns);
-                function_node->children.push_back(
-                    function_node->order_by_combinator_columns);
-            }
 
             elements = {std::move(function_node)};
             finished = true;
@@ -1430,12 +1397,10 @@ private:
 
     bool has_totals = false;
     bool has_by = false;
-    bool has_order_by = false;
 
     String function_name;
     ASTPtr parameters;
     ASTPtr by_columns;
-    ASTPtr order_by_columns;
 
     bool allow_function_parameters;
     bool is_compound_name;

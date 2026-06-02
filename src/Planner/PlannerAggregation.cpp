@@ -4,15 +4,9 @@
 #include <Analyzer/FunctionNode.h>
 
 #include <Planner/PlannerActionsVisitor.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggregate_function_nodes, const PlannerContext & planner_context)
 {
@@ -66,14 +60,6 @@ AggregateDescriptions extractAggregateDescriptions(const QueryTreeNodes & aggreg
                 aggregate_description.by_columns->emplace_back(
                     std::move(by_name));
             }
-        }
-        
-        if (aggregate_function_node_typed.hasOrderByCombinator())
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Combinator ORDER BY for aggregate functions is not yet implemented. "
-                "Parser and query tree support is in place, but execution is not. "
-                "See https://github.com/ClickHouse/ClickHouse/issues/34156");
         }
 
 

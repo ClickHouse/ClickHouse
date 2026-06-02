@@ -135,22 +135,6 @@ public:
         return is_totals_combinator;
     }
 
-    bool hasOrderByCombinator() const
-    {
-        return children[order_by_columns_child_index]
-            && !children[order_by_columns_child_index]->as<ListNode &>().getNodes().empty();
-    }
-
-    QueryTreeNodePtr & getOrderByColumnsNode()
-    {
-        return children[order_by_columns_child_index];
-    }
-
-    const QueryTreeNodePtr & getOrderByColumnsNode() const
-    {
-        return children[order_by_columns_child_index];
-    }
-
     void setTotalsCombinator()
     {
         is_totals_combinator = true;
@@ -270,8 +254,7 @@ private:
     static constexpr size_t arguments_child_index = 1;
     static constexpr size_t window_child_index = 2;
     static constexpr size_t by_columns_child_index = 3;
-    static constexpr size_t order_by_columns_child_index = 4;
-    static constexpr size_t children_size = order_by_columns_child_index + 1;
+    static constexpr size_t children_size = by_columns_child_index + 1;
 };
 
 }

@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
-#include <Common/logger_useful.h>
 
 #include "config.h"
 

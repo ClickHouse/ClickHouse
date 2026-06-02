@@ -314,14 +314,6 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             function_ast->by_combinator_columns);
     }
 
-    if (hasOrderByCombinator())
-    {
-        function_ast->order_by_combinator = true;
-        auto order_by_list = getOrderByColumnsNode()->toAST(new_options);
-        function_ast->order_by_combinator_columns = order_by_list;
-        function_ast->children.push_back(function_ast->order_by_combinator_columns);
-    }
-
     return function_ast;
 }
 

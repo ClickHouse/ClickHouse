@@ -472,15 +472,11 @@ ProjectionName QueryAnalyzer::calculateFunctionProjectionName(const QueryTreeNod
                 .getByColumnsNode()
                 ->as<ListNode &>().getNodes();
         buffer << " BY ";
-        for (size_t i = 0;
-            i < by_nodes.size(); ++i)
+        for (size_t i = 0; i < by_nodes.size(); ++i)
         {
-            if (auto * id = by_nodes[i]
-                    ->as<IdentifierNode>())
-                buffer << id->getIdentifier()
-                    .getFullName();
-            else if (auto * col = by_nodes[i]
-                    ->as<ColumnNode>())
+            if (auto * id = by_nodes[i]->as<IdentifierNode>())
+                buffer << id->getIdentifier().getFullName();
+            else if (auto * col = by_nodes[i]->as<ColumnNode>())
                 buffer << col->getColumnName();
             if (i + 1 != by_nodes.size())
                 buffer << ", ";

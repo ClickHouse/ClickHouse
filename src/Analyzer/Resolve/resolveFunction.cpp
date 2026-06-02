@@ -1116,15 +1116,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             false /*allow_table_expression*/);
     }
 
-    if (function_node_ptr->hasOrderByCombinator())
-    {
-        resolveExpressionNodeList(
-            function_node_ptr->getOrderByColumnsNode(),
-            scope,
-            false /*allow_lambda_expression*/,
-            false /*allow_table_expression*/);
-    }
-
     auto & function_node = *function_node_ptr;
 
     /// Replace right IN function argument if it is table or table function with subquery that read ordinary columns
