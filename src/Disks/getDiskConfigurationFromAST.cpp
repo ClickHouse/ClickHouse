@@ -3,7 +3,6 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
-#include <Core/SettingsFields.h>
 #include <Core/Settings.h>
 #include <Disks/DiskFactory.h>
 #include <Interpreters/Context.h>
