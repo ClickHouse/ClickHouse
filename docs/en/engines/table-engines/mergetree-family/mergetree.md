@@ -1231,7 +1231,7 @@ Behavior on the leader vs. on followers:
 Unsupported operations under `leader_election`:
 
 - `ALTER TABLE` — schema, indices, projections, statistics, TTLs, and settings live in each replica's local metadata and are not replicated across nodes. Applying an `ALTER` on the leader would leave followers with stale metadata, so after failover the new leader would interpret shared parts with the wrong schema. `ALTER` is rejected on all nodes. To change schema or settings, recreate the table on every node. The exceptions are `COMMENT TABLE` and `COMMENT COLUMN`, which are pure-text and have no effect on data interpretation.
-- `RENAME TABLE` — under the default `Atomic` database the data path is `UUID`-stable and the rename is metadata-only, so `RENAME TABLE` is safe (it does not propagate the new name to followers, but it does not move the shared data either). Under the deprecated `Ordinary` database the rename would move the shared data path, and the followers' cached `relative_data_path` would not be updated; in that case `RENAME TABLE` is rejected.
+- `RENAME TABLE` — rejected on all `leader_election` tables. The lease path is fixed at startup and there is no protocol to broadcast a new name to the followers, so even under the default `Atomic` database (where the rename would otherwise be a metadata-only operation, because the data path is `UUID`-stable) the followers would keep tracking the old path. Drop and recreate the table to rename it.
 - `ReplicatedMergeTree` — the `leader_election` setting is only honoured by `MergeTree`. Setting it on `ReplicatedMergeTree` is rejected at create/attach because that engine already uses ZooKeeper for active/standby coordination.
 
 Example: enabling leader election on an S3-backed table.
