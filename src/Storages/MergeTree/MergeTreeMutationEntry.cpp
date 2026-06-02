@@ -121,6 +121,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
+    , is_registered(true)
 {
     block_number = parseFileName(file_name);
     auto buf = disk->readFile(path_prefix + file_name, getReadSettings());
@@ -159,7 +160,26 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
 {
+    if (file_name.empty())
+        return;
+
     if (is_temp && startsWith(file_name, "tmp_"))
+    {
+        try
+        {
+            removeFile();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        return;
+    }
+
+    /// Committed to disk but never registered in `current_mutations_by_version`.
+    /// Remove the orphaned `mutation_*.txt` so it is not replayed on restart.
+    /// See #80648.
+    if (!is_temp && !is_registered)
     {
         try
         {

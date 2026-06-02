@@ -83,6 +83,7 @@ namespace FailPoints
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
     extern const char mt_alter_throw_in_start_mutation[];
+    extern const char mt_throw_after_mutation_commit[];
 }
 
 namespace Setting
@@ -735,6 +736,17 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
 
     Int64 version = block_holder->block.number;
     entry.commit(version);
+
+    /// From here until `addPreparedMutationEntry` registers the entry in
+    /// `current_mutations_by_version`, a throw would leave `mutation_*.txt`
+    /// on disk without an in-memory counterpart. The destructor of
+    /// `MergeTreeMutationEntry` removes the orphaned file because
+    /// `is_registered` is still false. See #80648.
+    fiu_do_on(FailPoints::mt_throw_after_mutation_commit,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation commit");
+    });
+
     String mutation_id = entry.file_name;
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
@@ -747,6 +759,10 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     auto [it, inserted] = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry));
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", prepared.version);
+
+    /// Transfer ownership of `mutation_*.txt` to the registered entry so its
+    /// destructor will not remove the file. See #80648.
+    it->second.is_registered = true;
 
     incrementMutationsCounters(mutation_counters, *it->second.commands);
 
