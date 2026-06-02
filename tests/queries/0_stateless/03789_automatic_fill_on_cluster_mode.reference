@@ -11,3 +11,5 @@ Test 4: DROP TABLE with automatic mode executed successfully
 Test 4 verification: DROP TABLE contains ON CLUSTER
 1
 Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER
+Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER
+2

@@ -10,3 +10,6 @@ Test 3 verification: RENAME TABLE does NOT contain ON CLUSTER
 Test 4: DROP TABLE in Replicated DB with auto-fill succeeds
 Test 4 verification: DROP TABLE does NOT contain ON CLUSTER
 1
+Test 5: multi-table DROP listing a Replicated-DB table is not rewritten ON CLUSTER
+Test 5 verification: multi-table DROP does NOT contain ON CLUSTER
+1

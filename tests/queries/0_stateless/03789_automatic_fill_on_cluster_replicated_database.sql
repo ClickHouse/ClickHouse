@@ -58,4 +58,26 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE '%DROP TABLE test_repl_auto%'
   AND query LIKE '%ON CLUSTER%';
 
+SELECT 'Test 5: multi-table DROP listing a Replicated-DB table is not rewritten ON CLUSTER';
+-- A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables` while the
+-- query-level database stays empty. Operate from an ordinary current database so the guard must
+-- inspect the per-target databases instead of falling back to the current one. The drop must skip
+-- auto-fill because one of the listed tables lives in a Replicated database.
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
+
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi (id UInt32) ENGINE = MergeTree ORDER BY id;
+
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi, {CLICKHOUSE_DATABASE_1:Identifier}.test_ord_multi;
+
+USE {CLICKHOUSE_DATABASE:Identifier};
+SYSTEM FLUSH LOGS query_log;
+SELECT 'Test 5 verification: multi-table DROP does NOT contain ON CLUSTER';
+SELECT count() = 0 FROM system.query_log WHERE type = 'QueryFinish'
+  AND query LIKE '%DROP TABLE%test_repl_multi%'
+  AND query LIKE '%ON CLUSTER%';
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};

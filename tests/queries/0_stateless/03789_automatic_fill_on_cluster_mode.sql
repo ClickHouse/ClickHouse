@@ -56,3 +56,12 @@ SELECT 'Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER';
 -- Both statements must succeed locally instead of throwing.
 CREATE TEMPORARY TABLE test_auto_fill_temp (id UInt32) ENGINE = Memory;
 DROP TEMPORARY TABLE test_auto_fill_temp;
+
+SELECT 'Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER';
+-- User-defined functions are replicated automatically and reject a non-empty cluster with
+-- `ON CLUSTER is not allowed because used-defined functions are replicated automatically`,
+-- so auto-fill must skip them. Both statements must succeed locally instead of throwing.
+DROP FUNCTION IF EXISTS test_auto_fill_function;
+CREATE FUNCTION test_auto_fill_function AS (x) -> x + 1;
+SELECT test_auto_fill_function(1);
+DROP FUNCTION test_auto_fill_function;

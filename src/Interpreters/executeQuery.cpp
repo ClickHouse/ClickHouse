@@ -29,6 +29,15 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -1448,7 +1457,41 @@ static BlockIO executeQueryImpl(
                 /// query into one that throws, so skip auto-fill for temporary objects.
                 bool target_is_temporary = false;
 
-                if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
+                /// User-defined functions, workloads and resources are replicated automatically and
+                /// their interpreters explicitly reject a non-empty cluster with `ON CLUSTER is not
+                /// allowed because ... are replicated automatically`. Although these statements inherit
+                /// `ASTQueryWithOnCluster`, filling the cluster here would turn an ordinary local query
+                /// into one that throws, so skip auto-fill for them.
+                bool target_forbids_on_cluster
+                    = out_ast->as<ASTCreateSQLFunctionQuery>() || out_ast->as<ASTCreateWasmFunctionQuery>()
+                    || out_ast->as<ASTDropFunctionQuery>() || out_ast->as<ASTCreateWorkloadQuery>()
+                    || out_ast->as<ASTDropWorkloadQuery>() || out_ast->as<ASTCreateResourceQuery>()
+                    || out_ast->as<ASTDropResourceQuery>();
+
+                if (const auto * drop_query = out_ast->as<ASTDropQuery>())
+                {
+                    target_is_temporary = drop_query->isTemporary();
+
+                    /// A multi-table `DROP TABLE a.t1, b.t2` keeps its targets in `database_and_tables`
+                    /// while `getDatabase` stays empty, so inspect every listed table and skip auto-fill
+                    /// if any of them lives in a `Replicated` database.
+                    if (drop_query->database_and_tables)
+                    {
+                        const auto & list = drop_query->database_and_tables->as<ASTExpressionList &>();
+                        for (const auto & child : list.children)
+                        {
+                            const auto * identifier = child->as<ASTTableIdentifier>();
+                            if (identifier && is_replicated_database(identifier->getDatabaseName()))
+                            {
+                                target_is_replicated_database = true;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                        target_is_replicated_database = is_replicated_database(drop_query->getDatabase());
+                }
+                else if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
                 {
                     target_is_temporary = query_with_table->isTemporary();
                     target_is_replicated_database = is_replicated_database(query_with_table->getDatabase());
@@ -1466,7 +1509,7 @@ static BlockIO executeQueryImpl(
                     }
                 }
 
-                if (!target_is_replicated_database && !target_is_temporary)
+                if (!target_is_replicated_database && !target_is_temporary && !target_forbids_on_cluster)
                 {
                     query_with_on_cluster->cluster = settings[Setting::cluster_for_automatic_fill_mode].toString();
                     query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
