@@ -445,6 +445,7 @@ template class TableFunctionObjectStorage<HudiClusterDefinition, StorageS3HudiCo
 #endif
 
 #if USE_AVRO
+void registerTableFunctionIceberg(TableFunctionFactory & factory);
 void registerTableFunctionIceberg(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
@@ -484,6 +485,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 
 
 #if USE_AVRO
+void registerTableFunctionPaimon(TableFunctionFactory & factory);
 void registerTableFunctionPaimon(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
@@ -522,6 +524,7 @@ void registerTableFunctionPaimon(TableFunctionFactory & factory)
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
+void registerTableFunctionDeltaLake(TableFunctionFactory & factory);
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
 #if USE_AWS_S3
@@ -556,6 +559,7 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 #endif
 
 #if USE_AWS_S3
+void registerTableFunctionHudi(TableFunctionFactory & factory);
 void registerTableFunctionHudi(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudi>(
