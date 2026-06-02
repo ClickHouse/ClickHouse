@@ -1,4 +1,4 @@
--- Verifies that the eight TextIndexLazy* ProfileEvents fire when the corresponding
+-- Verifies that the nine TextIndexLazy* ProfileEvents fire when the corresponding
 -- code paths in MergeTreeIndexTextPostingListCursor are exercised. Without this guard,
 -- a regression that silently disables a skip optimisation (or never reaches the lazy
 -- cursor path) would not be caught: the query results would stay correct because the
@@ -142,6 +142,7 @@ SELECT 'all events fired across tagged queries:';
 SELECT
     sum(ProfileEvents['TextIndexLazyPackedBlocksDecoded'])      > 0 AS blocks_decoded,
     sum(ProfileEvents['TextIndexLazySegmentsPrepared'])         > 0 AS segs_prepared,
+    sum(ProfileEvents['TextIndexLazySegmentsBuilt'])            > 0 AS segs_built,
     sum(ProfileEvents['TextIndexLazySegmentsSkippedDense'])     > 0 AS seg_dense,
     sum(ProfileEvents['TextIndexLazySegmentsSkippedResolved'])  > 0 AS seg_resolved,
     sum(ProfileEvents['TextIndexLazyBlocksSkippedResolved'])    > 0 AS block_resolved,

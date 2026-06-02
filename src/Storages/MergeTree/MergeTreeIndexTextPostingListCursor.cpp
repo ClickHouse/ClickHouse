@@ -85,9 +85,7 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
     }
 
     chassert(std::ranges::is_sorted(*shared_values));
-
-    /// Zero-copy: iterate directly over the shared, immutable, pre-flattened array.
-    /// No per-cursor Roaring copy or `toUint32Array` materialization.
+    /// Iterate directly over the shared, immutable, pre-flattened array.
     decoded_count = shared_values->size();
     decoded_values_ptr = shared_values->data();
 

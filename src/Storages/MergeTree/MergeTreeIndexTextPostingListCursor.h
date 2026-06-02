@@ -1,15 +1,11 @@
 #pragma once
 
 #include <absl/container/flat_hash_map.h>
-
 #include <base/defines.h>
 #include <base/types.h>
-
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListSegment.h>
-
 #include <memory>
-#include <span>
 #include <vector>
 
 namespace DB
@@ -115,10 +111,7 @@ private:
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
 
-    /// Bounded cache used to memoize decoded segments across per-task cursors (and queries, when the
-    /// global cache is enabled). Optional: when null, a compressed cursor decodes each segment directly
-    /// instead of going through the cache. Always null for shared-array cursors, which never read
-    /// segments (`prepareSegment` returns early for `is_embedded`).
+    /// Bounded cache used to memoize decoded segments across per-task cursors.
     TextIndexPostingsCache * postings_cache = nullptr;
     /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
     String index_id_for_cache;
@@ -127,10 +120,7 @@ private:
     bool is_embedded = false;
     double density_val = 0;
 
-    /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted
-    /// array. Built once (per granule in production, per cursor in tests) and shared across per-task
-    /// cursors. Held to keep the buffer alive for the cursor's lifetime; `decoded_values_ptr` points
-    /// into it.
+    /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted array.
     FlatPostingsPtr shared_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
