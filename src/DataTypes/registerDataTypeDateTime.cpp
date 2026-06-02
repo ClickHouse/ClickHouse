@@ -558,10 +558,10 @@ SELECT * FROM tab ORDER BY event_id;
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+┌─event_id─┬──────time─┐
+│        1 │ 14:30:25 │
+│        2 │ 14:30:25 │
+└──────────┴───────────┘
 ```
 
 **2.** Filtering on `Time` values
@@ -572,10 +572,10 @@ SELECT * FROM tab WHERE time = toTime('14:30:25')
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+┌─event_id─┬──────time─┐
+│        1 │ 14:30:25 │
+│        2 │ 14:30:25 │
+└──────────┴───────────┘
 ```
 
 `Time` column values can be filtered using a string value in `WHERE` predicate. It will be converted to `Time` automatically:
@@ -585,10 +585,10 @@ SELECT * FROM tab WHERE time = '14:30:25'
 ```
 
 ``` text
-   ┌─event_id─┬──────time─┐
-1. │        1 │ 14:30:25 │
-2. │        2 │ 14:30:25 │
-   └──────────┴───────────┘
+┌─event_id─┬──────time─┐
+│        1 │ 14:30:25 │
+│        2 │ 14:30:25 │
+└──────────┴───────────┘
 ```
 
 **3.** Inspecting the resulting type:
@@ -598,9 +598,9 @@ SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
 ```
 
 ``` text
-   ┌────column─┬─type─┐
-1. │ 14:30:25 │ Time │
-   └───────────┴──────┘
+┌────column─┬─type─┐
+│ 14:30:25 │ Time │
+└───────────┴──────┘
 ```
 
 ## Addition with Date {#addition-with-date}
@@ -613,9 +613,9 @@ SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
 ```
 
 ```text
-   ┌────────────datetime─┐
-1. │ 2024-07-15 14:30:25 │
-   └─────────────────────┘
+┌────────────datetime─┐
+│ 2024-07-15 14:30:25 │
+└─────────────────────┘
 ```
 
 See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.
@@ -705,11 +705,11 @@ SELECT * FROM tab64 ORDER BY event_id;
 ```
 
 ``` text
-   ┌─event_id─┬────────time─┐
-1. │        1 │ 14:30:25.000 │
-2. │        2 │ 14:30:25.123 │
-3. │        3 │ 14:30:25.000 │
-   └──────────┴──────────────┘
+┌─event_id─┬────────time─┐
+│        1 │ 14:30:25.000 │
+│        2 │ 14:30:25.123 │
+│        3 │ 14:30:25.000 │
+└──────────┴──────────────┘
 ```
 
 2. Filtering on `Time64` values
@@ -719,10 +719,10 @@ SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
 ```
 
 ``` text
-   ┌─event_id─┬────────time─┐
-1. │        1 │ 14:30:25.000 │
-2. │        3 │ 14:30:25.000 │
-   └──────────┴──────────────┘
+┌─event_id─┬────────time─┐
+│        1 │ 14:30:25.000 │
+│        3 │ 14:30:25.000 │
+└──────────┴──────────────┘
 ```
 
 ``` sql
@@ -730,9 +730,9 @@ SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
 ```
 
 ``` text
-   ┌─event_id─┬────────time─┐
-1. │        2 │ 14:30:25.123 │
-   └──────────┴──────────────┘
+┌─event_id─┬────────time─┐
+│        2 │ 14:30:25.123 │
+└──────────┴──────────────┘
 ```
 
 Note: `toTime64` parses numeric literals as seconds with a fractional part according to the specified precision, so provide the intended fractional digits explicitly.
@@ -744,9 +744,9 @@ SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
 ```
 
 ``` text
-   ┌────────column─┬─type──────┐
-1. │ 14:30:25.250 │ Time64(3) │
-   └───────────────┴───────────┘
+┌────────column─┬─type──────┐
+│ 14:30:25.250 │ Time64(3) │
+└───────────────┴───────────┘
 ```
 
 ## Addition with Date {#addition-with-date}
@@ -759,9 +759,9 @@ SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(d
 ```
 
 ```text
-   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
-1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
-   └────────────────────────────┴────────────────┘
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
 ```
 
 See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.

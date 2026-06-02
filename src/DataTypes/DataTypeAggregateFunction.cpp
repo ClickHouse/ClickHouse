@@ -368,10 +368,10 @@ There are two aggregate function [combinators](/sql-reference/aggregate-function
 commonly used with the `AggregateFunction` type:
 
 - The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
-  function name, produces `AggregateFunction` intermediate states.
+function name, produces `AggregateFunction` intermediate states.
 - The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
-  function combinator, which is used to get the final result of an aggregation
-  from the intermediate states.
+function combinator, which is used to get the final result of an aggregation
+from the intermediate states.
 
 ## Syntax {#syntax}
 
@@ -382,7 +382,7 @@ AggregateFunction(aggregate_function_name, types_of_arguments...)
 **Parameters**
 
 - `aggregate_function_name` - The name of an aggregate function. If the function
-   is parametric, then its parameters should be specified too.
+is parametric, then its parameters should be specified too.
 - `types_of_arguments` - The types of the aggregate function arguments.
 
 for example:
@@ -426,8 +426,8 @@ There is a special Session level setting `aggregate_function_input_format` that 
 It supports the following formats:
 
 - `state` - binary string with the serialized state (the default).
-  If you dump data into, for example, the `TabSeparated` format with a `SELECT`
-  query, then this dump can be loaded back using the `INSERT` query.
+If you dump data into, for example, the `TabSeparated` format with a `SELECT`
+query, then this dump can be loaded back using the `INSERT` query.
 - `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
 - `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
 
@@ -456,7 +456,7 @@ See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregat
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
-  combinator.
+combinator.
 - [State](/sql-reference/aggregate-functions/combinators#-state) combinator.
 )DOCS_MD",
             .syntax = "AggregateFunction(name, types...)",

@@ -478,7 +478,7 @@ It is possible to convert an ordinary column with type `T` to a `Variant` column
 
 ```sql
 SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
- ```
+```
 
 ```text
 ┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
@@ -746,9 +746,9 @@ SELECT *, toTypeName(v) FROM test WHERE v = 42;
 ```
 
 ```text
-   ┌─v──┬─toTypeName(v)───────────┐
-1. │ 42 │ Variant(String, UInt32) │
-   └────┴─────────────────────────┘
+┌─v──┬─toTypeName(v)───────────┐
+│ 42 │ Variant(String, UInt32) │
+└────┴─────────────────────────┘
 ```
 
 The comparison operator is automatically applied to each variant type separately, allowing filtering on Variant columns.
@@ -758,32 +758,32 @@ The comparison operator is automatically applied to each variant type separately
 The result type depends on what the function returns for each variant:
 
 - **Different result types**: `Variant(T1, T2, ...)`
-  ```sql
-  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
-  INSERT INTO test2 VALUES (42::UInt64), (42.42);
-  SELECT v + 1 AS result, toTypeName(result) FROM test2;
-  ```
+```sql
+CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
+INSERT INTO test2 VALUES (42::UInt64), (42.42);
+SELECT v + 1 AS result, toTypeName(result) FROM test2;
+```
 
-  ```text
-  ┌─result─┬─toTypeName(plus(v, 1))──┐
-  │     43 │ Variant(Float64, UInt64) │
-  │  43.42 │ Variant(Float64, UInt64) │
-  └────────┴─────────────────────────┘
-  ```
+```text
+┌─result─┬─toTypeName(plus(v, 1))──┐
+│     43 │ Variant(Float64, UInt64) │
+│  43.42 │ Variant(Float64, UInt64) │
+└────────┴─────────────────────────┘
+```
 
 - **Type incompatibility**: `NULL` for incompatible variants
-  ```sql
-  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
-  INSERT INTO test3 VALUES ([1,2,3]), (42);
-  SELECT v + 10 AS result, toTypeName(result) FROM test3;
-  ```
+```sql
+CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+INSERT INTO test3 VALUES ([1,2,3]), (42);
+SELECT v + 10 AS result, toTypeName(result) FROM test3;
+```
 
-  ```text
-  ┌─result─┬─toTypeName(plus(v, 10))─┐
-  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
-  │     52 │ Nullable(UInt64)        │
-  └────────┴─────────────────────────┘
-  ```
+```text
+┌─result─┬─toTypeName(plus(v, 10))─┐
+│   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
+│     52 │ Nullable(UInt64)        │
+└────────┴─────────────────────────┘
+```
 
 :::note
 **Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT,

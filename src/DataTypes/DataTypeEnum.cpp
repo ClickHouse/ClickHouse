@@ -485,7 +485,7 @@ An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable
 ```sql
 CREATE TABLE t_enum_nullable
 (
-    x Nullable( Enum8('hello' = 1, 'world' = 2) )
+    x Nullable(Enum8('hello' = 1, 'world' = 2))
 )
 ENGINE = TinyLog
 ```

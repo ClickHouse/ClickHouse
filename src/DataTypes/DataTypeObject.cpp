@@ -987,17 +987,17 @@ SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 will return:
 
 ```response title="Response"
-   ┌─json───────────────────┐
-1. │ {"a":{"b":{"c":"42"}}} │
-   └────────────────────────┘
+┌─json───────────────────┐
+│ {"a":{"b":{"c":"42"}}} │
+└────────────────────────┘
 ```
 
 and **not**:
 
 ```sql
-   ┌─json───────────┐
-1. │ {"a.b.c":"42"} │
-   └────────────────┘
+┌─json───────────┐
+│ {"a.b.c":"42"} │
+└────────────────┘
 ```
 :::
 
@@ -1011,7 +1011,7 @@ For example:
 
 ```sql title="Query"
 CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -1138,7 +1138,7 @@ The `JSON` type supports reading nested objects as sub-columns with type `JSON` 
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -2186,7 +2186,7 @@ Before creating `JSON` column and loading data into it, consider the following t
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
-  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
+While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
 
 ## Further Reading {#further-reading}
 

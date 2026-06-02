@@ -122,14 +122,14 @@ Integer types have the following aliases:
 | `Int8`  | `TINYINT`, `INT1`, `BYTE`, `TINYINT SIGNED`, `INT1 SIGNED`                        |
 | `Int16` | `SMALLINT`, `SMALLINT SIGNED`                                                     |
 | `Int32` | `INT`, `INTEGER`, `MEDIUMINT`, `MEDIUMINT SIGNED`, `INT SIGNED`, `INTEGER SIGNED` |
-| `Int64` | `BIGINT`, `SIGNED`, `BIGINT SIGNED`, `TIME`                                       |
+| `Int64` | `BIGINT`, `SIGNED`, `BIGINT SIGNED`                                               |
 
 Unsigned integer types have the following aliases:
 
 | Type     | Alias                                                    |
 |----------|----------------------------------------------------------|
 | `UInt8`  | `TINYINT UNSIGNED`, `INT1 UNSIGNED`                      |
-| `UInt16` | `SMALLINT UNSIGNED`                                      |
+| `UInt16` | `SMALLINT UNSIGNED`, `YEAR`                              |
 | `UInt32` | `MEDIUMINT UNSIGNED`, `INT UNSIGNED`, `INTEGER UNSIGNED` |
 | `UInt64` | `UNSIGNED`, `BIGINT UNSIGNED`, `BIT`, `SET`              |
 )DOCS_MD",
@@ -166,8 +166,8 @@ If you need accurate calculations, in particular if you work with financial or b
 ```sql
 CREATE TABLE IF NOT EXISTS float_vs_decimal
 (
-   my_float Float64,
-   my_decimal Decimal64(3)
+my_float Float64,
+my_decimal Decimal64(3)
 )
 ENGINE=MergeTree
 ORDER BY tuple();
@@ -274,7 +274,7 @@ values with different sign bits or different mantissa payloads. For example:
 - `0./0.` produces a `NaN` whose sign bit is 1 on most x86 platforms.
 - The literal `nan` produces a `NaN` whose sign bit is 0.
 - After [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230), the AArch64 NEON path of
-  `log` returns a `NaN` whose sign bit differs from glibc's scalar `log` on negative inputs.
+`log` returns a `NaN` whose sign bit differs from glibc's scalar `log` on negative inputs.
 
 Hash tables in ClickHouse compare keys byte-wise, so different `NaN` bit patterns hash to
 different buckets and are treated as distinct values by set-semantics operations including

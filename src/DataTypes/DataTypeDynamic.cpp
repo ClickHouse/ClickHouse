@@ -199,7 +199,7 @@ SELECT toTypeName(d.String), toTypeName(d.Int64), toTypeName(d.`Array(Int64)`), 
 ```
 
 ```sql
-SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;```
+SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;
 ```
 
 ```text
@@ -685,7 +685,7 @@ SELECT d, dynamicType(d) FROM test ORDER BY d SETTINGS allow_suspicious_types_in
 ```
 
 ```text
-┌─v───┬─dynamicType(v)─┐
+┌─d───┬─dynamicType(d)─┐
 │ 1   │ Int64          │
 │ 100 │ Int64          │
 │ 1   │ UInt32         │

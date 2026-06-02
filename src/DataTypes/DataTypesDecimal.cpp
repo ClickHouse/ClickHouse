@@ -666,11 +666,11 @@ Depending on P parameter value Decimal(P, S) is a synonym for:
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
-- Decimal(P, S) - ( -1 \* 10^(P - S), 1 \* 10^(P - S) )
-- Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
-- Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
-- Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
-- Decimal256(S) - ( -1 \* 10^(76 - S), 1 \* 10^(76 - S) )
+- Decimal(P, S) - (-1 \* 10^(P - S), 1 \* 10^(P - S))
+- Decimal32(S) - (-1 \* 10^(9 - S), 1 \* 10^(9 - S))
+- Decimal64(S) - (-1 \* 10^(18 - S), 1 \* 10^(18 - S))
+- Decimal128(S) - (-1 \* 10^(38 - S), 1 \* 10^(38 - S))
+- Decimal256(S) - (-1 \* 10^(76 - S), 1 \* 10^(76 - S))
 
 For example, Decimal32(4) can contain numbers from -99999.9999 to 99999.9999 with 0.0001 step.
 
