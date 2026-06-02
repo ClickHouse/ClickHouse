@@ -87,10 +87,13 @@ def generate_cluster_def_no_native_copy(port):
         <disks>
             <blob_storage_disk_no_native_copy>
                 <type>azure_blob_storage</type>
-                <!-- Same connection string as the backup destination, so endpoint settings match. -->
-                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
+                <!-- Declared via storage_account_url while the backup target uses a connection string;
+                     both must normalize to the same service URL for the opt-out to apply. -->
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
                 <container_name>cont</container_name>
                 <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
                 <use_native_copy>false</use_native_copy>
             </blob_storage_disk_no_native_copy>
             <hdd>

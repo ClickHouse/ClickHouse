@@ -627,6 +627,31 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     return settings;
 }
 
+namespace
+{
+
+/// Normalize an endpoint (connection string or blob URL) to the canonical blob service URL,
+/// so the same account matches whichever form it is expressed in.
+String getServiceURL(const String & endpoint)
+{
+#if USE_AZURE_BLOB_STORAGE
+    if (isConnectionString(endpoint))
+    {
+        try
+        {
+            return Azure::Storage::_internal::ParseConnectionString(endpoint).BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
+    }
+#endif
+    return endpoint;
+}
+
+}
+
 std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool allow_native_copy)
 {
     auto settings = getRequestSettings(context->getSettingsRef());
@@ -635,7 +660,7 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
     /// endpoint config may explicitly disable it, and `allow_azure_native_copy = 0` always wins.
     bool use_native_copy = true;
 
-    auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
+    auto endpoint_settings = context->getStorageAzureSettings().getSettings(getServiceURL(endpoint));
     if (endpoint_settings && endpoint_settings->use_native_copy_changed)
         use_native_copy = endpoint_settings->use_native_copy;
 
@@ -730,7 +755,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
             auto request_settings = AzureBlobStorage::getRequestSettings(config, key_path, settings);
 
             azure_settings.emplace(
-                    endpoint.storage_account_url,
+                    AzureBlobStorage::getServiceURL(endpoint.storage_account_url),
                     std::move(*request_settings));
         }
     }
