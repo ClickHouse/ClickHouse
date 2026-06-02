@@ -609,7 +609,7 @@ ALWAYS_INLINE void decodeRuntime(
 //    W == other    → encodeRuntime/decodeRuntime: runtime-W uint64_t batching
 // =============================================================================
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 void), encodeDispatch, MULTITARGET_FUNCTION_BODY((
     const char * __restrict__ src,
@@ -640,16 +640,11 @@ ALWAYS_INLINE void encode(
         encodeDispatch_x86_64_v4(src, dst, num_elements, element_bytes);
         return;
     }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        encodeDispatch_x86_64_v3(src, dst, num_elements, element_bytes);
-        return;
-    }
 #endif
     encodeDispatch(src, dst, num_elements, element_bytes);
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 void), decodeDispatch, MULTITARGET_FUNCTION_BODY((
     const char * __restrict__ src,
@@ -678,11 +673,6 @@ ALWAYS_INLINE void decode(
     if (isArchSupported(TargetArch::x86_64_v4))
     {
         decodeDispatch_x86_64_v4(src, dst, num_elements, element_bytes);
-        return;
-    }
-    if (isArchSupported(TargetArch::x86_64_v3))
-    {
-        decodeDispatch_x86_64_v3(src, dst, num_elements, element_bytes);
         return;
     }
 #endif
