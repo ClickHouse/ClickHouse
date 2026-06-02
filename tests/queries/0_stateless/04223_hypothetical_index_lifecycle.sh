@@ -84,6 +84,16 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -E '^[0-9]+$|UNKNOWN_IDENTIFIER'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_dup2"
 
+# IF NOT EXISTS is also a no-op when the name matches an existing real secondary index.
+echo "--- IF NOT EXISTS is a no-op when the name matches a real secondary index ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_dup3;
+    CREATE TABLE t_hypo_dup3 (a UInt64, b UInt64, INDEX idx_real b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX IF NOT EXISTS idx_real ON t_hypo_dup3 (b) TYPE minmax GRANULARITY 1;
+    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_dup3';
+" 2>&1 | grep -E '^[0-9]+$|BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_dup3"
+
 echo "--- DROP TABLE hides the entry from system.hypothetical_indexes ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_orphan;

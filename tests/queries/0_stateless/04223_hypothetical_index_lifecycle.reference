@@ -15,6 +15,8 @@ With idx_b (minmax, hypothetical):
 1
 --- IF NOT EXISTS is a no-op even with an invalid replacement declaration ---
 1
+--- IF NOT EXISTS is a no-op when the name matches a real secondary index ---
+0
 --- DROP TABLE hides the entry from system.hypothetical_indexes ---
 1
 0

@@ -66,8 +66,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
 
-    context->checkAccess(AccessType::SELECT, table_id);
-
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
     if (!merge_tree)
         throw Exception(
@@ -88,6 +86,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
+        context->checkAccess(AccessType::SELECT, table_id);
         auto index_name = query.index_name->as<ASTIdentifier &>().name();
         store.remove(table_id, index_name, query.if_exists);
         return {};
@@ -95,18 +94,20 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// CREATE HYPOTHETICAL INDEX
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
+    auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
 
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
-    /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS` (a duplicate no-op should
-    /// not throw on an otherwise-invalid replacement declaration).
+    /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a
+    /// hypothetical index already uses it or a real secondary index does.
     if (query.if_not_exists)
     {
         for (const auto & existing : store.getForTable(table_id))
             if (existing.name == index_ast.name)
                 return {};
+        if (metadata->getSecondaryIndices().has(index_ast.name))
+            return {};
     }
 
-    auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
     auto index_desc = IndexDescription::getIndexFromAST(
         query.index_decl,
         metadata->getColumns(),
