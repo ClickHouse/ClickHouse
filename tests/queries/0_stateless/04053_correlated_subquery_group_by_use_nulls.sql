@@ -94,3 +94,32 @@ FROM numbers(4) AS a
 GROUP BY a.number
 WITH ROLLUP
 ORDER BY a.number ASC NULLS FIRST;
+
+-- A correlated column feeding a type-sensitive parent function (`if`/`multiIf`/`tuple`)
+-- while a sibling occurrence sits inside a comparison: the direct occurrence becomes
+-- `Nullable` while the comparison stays non-`Nullable`, so the parent function's
+-- return type must reflect the `Nullable` branch. These used to throw
+-- "Unexpected return type from if. Expected UInt64. Got Nullable(UInt64)".
+SELECT number, (SELECT if(number > 2, 5, number)), sum(number) AS val
+FROM numbers(6)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST;
+
+SELECT number, (SELECT if(number > 2, number, 0))
+FROM numbers(4)
+GROUP BY number
+WITH CUBE
+ORDER BY number ASC NULLS FIRST;
+
+SELECT number, (SELECT multiIf(number > 2, number, number < 1, 100, 0))
+FROM numbers(4)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST;
+
+SELECT number, (SELECT (number, number > 2))
+FROM numbers(4)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST;
