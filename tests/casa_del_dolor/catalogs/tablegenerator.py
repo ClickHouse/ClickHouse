@@ -850,7 +850,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
-                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+                res += f", max_concurrent_deletes => {random.randint(1, 20)}"
             if random.randint(1, 2) == 1:
                 res += f", prefix_listing => {random.choice(['true', 'false'])}"
             timestamps = self.get_timestamps(spark, table)
@@ -913,7 +913,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
             if random.randint(1, 2) == 1:
-                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
+                res += f", max_concurrent_deletes => {random.randint(1, 20)}"
             if random.randint(1, 2) == 1:
                 res += f", clean_expired_metadata => {random.choice(['true', 'false'])}"
             res += ")"
