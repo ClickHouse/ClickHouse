@@ -36,7 +36,7 @@ struct PaimonTableSchema
     std::vector<String> primary_keys;
     std::unordered_map<String, String> options;
     std::optional<String> comment;
-    Int64 time_millis;
+    Int64 time_millis{};
     std::vector<DataField> fields;
     std::unordered_map<String, size_t> fields_by_name_indexes;
     Poco::JSON::Object::Ptr raw_json_object;
