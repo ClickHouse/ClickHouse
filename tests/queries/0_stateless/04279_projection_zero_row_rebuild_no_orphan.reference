@@ -1,6 +1,12 @@
-after_delete_broken_projection_parts
+rebuild_after_delete_broken
 0
-after_reload_broken_projection_parts
+rebuild_after_reload_broken
 0
-visible_rows
+rebuild_visible_rows
+0
+drop_after_delete_broken
+0
+drop_after_reload_broken
+0
+drop_visible_rows
 0

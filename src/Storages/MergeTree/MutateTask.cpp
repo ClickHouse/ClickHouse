@@ -2461,14 +2461,24 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
-            /// Drop inherited `<name>.proj` entries for projections scheduled to rebuild
-            /// that produced no part (zero-row rebuild). Otherwise `checksums.txt`
-            /// references a non-existent directory and `loadProjections` marks the
-            /// projection broken.
-            for (const auto * projection : ctx->projections_to_recalc)
+            /// Drop inherited `<name>.proj` checksum entries for any projection whose
+            /// directory was not hardlinked into the new part (it is in `files_to_skip`)
+            /// and that produced no rebuilt projection part (absent from
+            /// `getProjectionParts()`). `prepare` copies `source_part->checksums`
+            /// wholesale, so without this the new part keeps a `<name>.proj` entry that
+            /// points at a directory which does not exist on disk. This happens both when
+            /// a rebuilt projection yields zero rows (`lightweight_mutation_projection_mode
+            /// = 'rebuild'`) and when the projection is intentionally dropped
+            /// (`'drop'`/`'throw'`, where `projections_to_recalc` stays empty but every
+            /// projection directory is still skipped). On the next consistency-checking
+            /// load `loadProjections` would otherwise mark the projection broken instead
+            /// of absent.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
-                if (!ctx->new_data_part->getProjectionParts().contains(projection->name))
-                    ctx->new_data_part->checksums.files.erase(projection->name + ".proj");
+                const auto projection_file = projection.getDirectoryName();
+                if (ctx->files_to_skip.contains(projection_file)
+                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
             }
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
