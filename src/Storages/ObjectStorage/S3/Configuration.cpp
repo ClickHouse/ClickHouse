@@ -298,8 +298,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>(
-        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    if (collection.has("partition_columns_in_data_file"))
+    {
+        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
+        partition_columns_in_data_file_was_set = true;
+    }
+    else
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
+
     if (collection.has("role_arn"))
         s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.get<String>("role_arn");
     /// The check looks only at the keys in the named collection itself, not at the merged
@@ -749,6 +755,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         partition_columns_in_data_file_value.has_value())
     {
         partition_columns_in_data_file = partition_columns_in_data_file_value.value();
+        partition_columns_in_data_file_was_set = true;
     }
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
@@ -1133,7 +1140,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     const bool has_user_supplied_credentials = parsed_arguments.has_user_supplied_credentials;
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    assert(s3_settings != nullptr);
+    chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";

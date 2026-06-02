@@ -35,12 +35,13 @@ namespace DeltaLake
 namespace
 {
 
-/// Forwards to `ffi::set_builder_option` after validating the value.
-/// The Rust FFI decodes `(ptr, len)` as `&str` via `std::str::from_utf8` and panics on
-/// invalid UTF-8, which crosses the `extern "C"` boundary and aborts the server via
-/// `panic_in_cleanup`. Binary credentials (e.g. raw `MD5(...)` bytes) trigger this.
-/// Translate to a normal `BAD_ARGUMENTS` exception instead.
-void setBuilderOptionChecked(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
+/// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
+/// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
+/// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
+/// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -48,8 +49,27 @@ void setBuilderOptionChecked(ffi::EngineBuilder * builder, const std::string & n
             "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
             "the delta-kernel-rs FFI requires valid UTF-8 input.",
             name);
-    ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+
+    KernelUtils::unwrapResult(
+        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        "set_builder_option");
 }
+
+/// RAII guard that frees an `EngineBuilder` unless released.
+/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
+/// via `ffi::free_engine_builder` to avoid leaking it.
+class BuilderGuard
+{
+public:
+    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    BuilderGuard(const BuilderGuard &) = delete;
+    BuilderGuard & operator=(const BuilderGuard &) = delete;
+    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+private:
+    ffi::EngineBuilder * builder = nullptr;
+};
 
 }
 
@@ -88,10 +108,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            setBuilderOptionChecked(builder, name, value);
+            setBuilderOption(builder, name, value);
         };
 
         const auto & credentials = client->getCredentials();
@@ -131,7 +152,7 @@ public:
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
-        return builder;
+        return guard.release();
     }
 
 private:
@@ -173,10 +194,11 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            setBuilderOptionChecked(builder, name, value);
+            setBuilderOption(builder, name, value);
         };
 
         const auto & endpoint = connection_params.endpoint;
@@ -294,7 +316,7 @@ public:
             "Using azure container: {}, data_path: {}",
             endpoint.container_name, data_path);
 
-        return builder;
+        return guard.release();
     }
 
 private:

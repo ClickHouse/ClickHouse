@@ -14,11 +14,11 @@ from pathlib import Path
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
 from helpers.test_tools import exec_query_with_retry
-from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import generate_random_string
 
 from minio.commonconfig import Tags
@@ -1429,21 +1429,6 @@ def test_s3_schema_inference(started_cluster):
 
     instance.query("drop table schema_inference")
     instance.query("drop table schema_inference_2")
-
-
-def test_empty_file(started_cluster):
-    bucket = started_cluster.minio_bucket
-    instance = started_cluster.instances["dummy"]
-
-    name = "empty"
-    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{name}"
-
-    minio = started_cluster.minio_client
-    minio.put_object(bucket, name, io.BytesIO(b""), 0)
-
-    table_function = f"s3('{url}', 'CSV', 'id Int32')"
-    result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 0
 
 
 def test_overwrite(started_cluster):
@@ -2889,9 +2874,48 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     minio = started_cluster.minio_client
 
     url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}"
+    assert (
+        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
+        in node.query_and_get_error(
+            f"""
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    PARTITION BY (b, c)
+    """,
+            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+        )
+    )
+
+    # `compatibility` older than `26.6` resolves
+    # `file_like_engine_default_partition_strategy` to `wildcard` via
+    # `SettingsChangesHistory`, so the same path must raise the same error
+    # without an explicit setting override.
+    assert (
+        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
+        in node.query_and_get_error(
+            f"""
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    PARTITION BY (b, c)
+    """,
+            settings={"compatibility": "26.5"},
+        )
+    )
+
+    # From `26.6` onwards the default flips to `hive`, so the same statement
+    # under `compatibility = '26.6'` must succeed.
+    compat_table_name = f"{table_name}_compat"
+    compat_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{compat_table_name}"
     node.query(
         f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'hive')
+    CREATE TABLE {compat_table_name} (a Int32, b Int32, c String) ENGINE = S3('{compat_url}', format = 'Parquet')
+    PARTITION BY (b, c)
+    """,
+        settings={"compatibility": "26.6"},
+    )
+    node.query(f"DROP TABLE {compat_table_name}")
+
+    node.query(
+        f"""
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """
     )

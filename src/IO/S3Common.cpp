@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/Settings.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -68,7 +69,7 @@ PreformattedMessage sanitizeS3PreformattedMessage(PreformattedMessage msg)
 bool S3Exception::isRetryableError() const
 {
     /// Looks like these list is quite conservative, add more codes if you wish
-    static const std::unordered_set<Aws::S3::S3Errors> unretryable_errors = {
+    static const UnorderedSetWithMemoryTracking<Aws::S3::S3Errors> unretryable_errors = {
         Aws::S3::S3Errors::NO_SUCH_KEY,
         Aws::S3::S3Errors::ACCESS_DENIED,
         Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID,
