@@ -86,10 +86,20 @@ namespace DB
                         key.name,
                         key.type->getName());
         }
-        else if (configuration.storage_type == RedisStorageType::SIMPLE && dict_struct.key && dict_struct.key->size() != 1)
-            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+        else if (configuration.storage_type == RedisStorageType::SIMPLE && dict_struct.key)
+        {
+            if (dict_struct.key->size() != 1)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                             "Redis source with storage type 'simple' requires exactly 1 key, got {}",
                             dict_struct.key->size());
+
+            const auto & key = dict_struct.key->at(0);
+            if (!isInteger(key.type) && !isString(key.type))
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Redis source supports only integer or string key, but key '{}' of type {} given",
+                            key.name,
+                            key.type->getName());
+        }
     }
 
     RedisDictionarySource::RedisDictionarySource(const RedisDictionarySource & other)
@@ -188,7 +198,12 @@ namespace DB
                 {
                     const auto & type = dict_struct.key->at(i).type;
                     if (isInteger(type))
-                        key << DB::toString(key_columns[i]->get64(row));
+                    {
+                        if (WhichDataType(type).isUInt())
+                            key << DB::toString(key_columns[i]->get64(row));
+                        else
+                            key << DB::toString(key_columns[i]->getInt(row));
+                    }
                     else if (isString(type))
                         key << (*key_columns[i])[row].safeGet<String>();
                     else

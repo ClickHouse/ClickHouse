@@ -342,3 +342,38 @@ def test_redis_simple_negative_key(started_cluster):
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_large_uint_key")
     r.flushdb()
+
+def test_redis_hash_map_negative_key(started_cluster):
+
+    node = started_cluster.instances["node"]
+
+    import redis as redis_client
+    r = redis_client.Redis(
+        host="localhost",
+        port=cluster.redis_port,
+        password="clickhouse",
+        db=30
+    )
+
+    r.hset("-1", "field1", "found_negative_hash")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY IF NOT EXISTS test_redis_hash_negative_key
+        (
+            key1 Int8,
+            key2 String,
+            value String
+        )
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'hash_map' db_index 30))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """
+    )
+
+    result = node.query("SELECT dictGet('test_redis_hash_negative_key', 'value', tuple(toInt8(-1), 'field1'))")
+    assert result.strip() == "found_negative_hash"
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_negative_key")
+    r.flushdb()
