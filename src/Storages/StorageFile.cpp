@@ -115,6 +115,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_file;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -2028,7 +2029,15 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                     static_cast<Int64>(file_stat.st_ino),
                     file_stat.st_size);
 
-                auto metadata_cache = ctx->tryGetParquetMetadataCache();
+                /// Honor `use_parquet_metadata_cache`: when it is disabled we must neither
+                /// make the split decision from a previously cached footer nor populate the
+                /// cache from this path. Passing a null cache makes both
+                /// `trySplitParquetFileFromCacheOnly` (returns empty) and
+                /// `splitParquetFileWithCache` (parses without caching) honor the setting,
+                /// matching `StorageObjectStorageSource`.
+                auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                    ? ctx->tryGetParquetMetadataCache()
+                    : nullptr;
 
                 /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
                 /// when the footer is already cached from a previous query against this file. The
