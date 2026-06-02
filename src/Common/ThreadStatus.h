@@ -165,8 +165,12 @@ private:
 class ThreadStatus : public boost::noncopyable
 {
 public:
-    /// Linux's PID (or TGID) (the same id is shown by ps util)
-    const UInt64 thread_id = 0;
+    static constexpr UInt64 NO_OS_THREAD = 0;
+
+    const UInt64 thread_id = NO_OS_THREAD;
+
+    /// Whether this ThreadStatus owns a dedicated OS thread (as opposed to a fiber).
+    bool boundToOSThread() const { return thread_id != NO_OS_THREAD; }
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -222,6 +226,7 @@ protected:
 
         UInt64 elapsedMilliseconds() const;
         UInt64 elapsedMilliseconds(const TimePoint & current) const;
+        UInt64 elapsedMicroseconds() const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };
@@ -245,7 +250,8 @@ protected:
     LoggerPtr log = nullptr;
 
 public:
-    explicit ThreadStatus();
+    ThreadStatus();
+    explicit ThreadStatus(UInt64 thread_id_);
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;

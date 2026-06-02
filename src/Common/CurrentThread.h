@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/FiberLocal.h>
 #include <Common/IThrottler.h>
 #include <Common/Scheduler/ResourceLink.h>
 
@@ -33,6 +34,9 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 
+#if defined(OS_LINUX)
+extern Silk::FiberLocal<ThreadStatus *, Silk::CurrentThreadSlot> current_thread;
+#else
 /**
  * We use **constinit** here to tell the compiler the current_thread variable is initialized.
  * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
@@ -43,6 +47,7 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
  * - https://github.com/ClickHouse/ClickHouse/pull/40078
  */
 extern thread_local constinit ThreadStatus * current_thread;
+#endif
 
 /** Collection of static methods to work with thread-local objects.
   * Allows to attach and detach query/process (thread group) to a thread
