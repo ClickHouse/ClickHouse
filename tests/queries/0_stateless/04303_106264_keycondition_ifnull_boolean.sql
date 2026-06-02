@@ -38,3 +38,53 @@ SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0);
 
 DROP TABLE t_ifnull_nullable;
 DROP TABLE t_ifnull_keycond;
+
+-- The rewrite is applied to the shared canonicalized predicate that every secondary
+-- index consumes (ReadFromMergeTree::buildIndexes feeds `filter_dag.predicate` to each
+-- `createIndexCondition`), so skip indexes that build their own RPN from the predicate
+-- must prune through the ifNull/coalesce wrapper exactly as the bare comparison does.
+-- 1 = the skip index pruned granules (used < total). A truthy fallback ifNull(X, 1) is
+-- not rewritten, so it must not prune (0).
+SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
+
+DROP TABLE IF EXISTS t_ifnull_bf;
+CREATE TABLE t_ifnull_bf (x String, INDEX idx x TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_ifnull_bf SELECT number FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHERE x = '100');
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 0));
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHERE coalesce(equals(x, '100'), 0));
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 1));
+DROP TABLE t_ifnull_bf;
+
+DROP TABLE IF EXISTS t_ifnull_tb;
+CREATE TABLE t_ifnull_tb (x String, INDEX idx x TYPE tokenbf_v1(16000, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_ifnull_tb SELECT number FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tb WHERE x = '100');
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tb WHERE ifNull(equals(x, '100'), 0));
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tb WHERE coalesce(equals(x, '100'), 0));
+DROP TABLE t_ifnull_tb;
+
+DROP TABLE IF EXISTS t_ifnull_tx;
+CREATE TABLE t_ifnull_tx (x String, INDEX idx x TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_ifnull_tx SELECT number FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tx WHERE x = '100');
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tx WHERE ifNull(equals(x, '100'), 0));
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tx WHERE coalesce(equals(x, '100'), 0));
+DROP TABLE t_ifnull_tx;
