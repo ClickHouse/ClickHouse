@@ -13,7 +13,10 @@ jobs:
         uses: ClickHouse/checkout@v1
         with:
           token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
-          fetch-depth: 200
+          # Full history: the 24h commit scan is paginated and can cover more than a few
+          # hundred commits, so a shallow clone may not contain every candidate merge SHA,
+          # which would make `git revert` fail and be misreported as an unrevertable conflict.
+          fetch-depth: 0
       - name: Configure git identity
         run: |
           git config user.name "clickhouse-robot-gh"
@@ -179,6 +182,24 @@ jobs:
             echo "  Issues on PR head commit:"
             echo "$pr_issues" | sed 's/^/    - /'
 
+            # Require that the same check that failed on the merge commit also failed (or
+            # never completed) on the PR head. A failure on the PR head in an unrelated
+            # check does not prove the master failure came from this PR, so without an
+            # intersection we treat the master failure as flaky and skip. The PR head names
+            # carry a " (failed)"/" (incomplete)"/" (pending)" suffix that we strip first.
+            merge_failure_names=$(echo "$merge_failures" | sed '/^$/d' | sort -u)
+            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
+            common_failures=$(comm -12 <(echo "$merge_failure_names") <(echo "$pr_issue_names"))
+
+            if [ -z "$common_failures" ]; then
+              echo "  PR head has issues, but none match the checks that failed on the merge commit — likely flaky, skipping."
+              echo ""
+              continue
+            fi
+
+            echo "  Checks failing on both the merge commit and the PR head:"
+            echo "$common_failures" | sed 's/^/    - /'
+
             # Check for existing revert PRs (open or closed)
             existing_reverts=$(gh pr list --repo "$GH_REPO" --search "Revert \"#$pr_number:" --state all --json number --jq '.[].number')
             if [ -n "$existing_reverts" ]; then
@@ -204,8 +225,9 @@ jobs:
 
             git push origin "$branch_name" --force-with-lease
 
-            # Format the failure list for the PR body
+            # Format the failure lists for the PR body
             failures_list=$(echo "$merge_failures" | sort -u | sed 's/^/- /')
+            common_failures_list=$(echo "$common_failures" | sed 's/^/- /')
 
             pr_body=$(cat <<EOF
           This reverts #$pr_number ($pr_title) because it was merged with failing CI checks.
@@ -213,7 +235,8 @@ jobs:
           **Failed checks on the merge commit ($sha):**
           $failures_list
 
-          The original PR's head commit also had failed or incomplete checks, confirming this is not a flaky failure.
+          The same checks also failed or never completed on the original PR's head commit, confirming this is not a flaky failure:
+          $common_failures_list
 
           ### Changelog category (leave one):
           - CI Fix or Improvement (changelog entry is not required)
