@@ -2135,12 +2135,14 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * elem = static_cast<Poco::XML::Element *>(node);
                 if (elem->hasAttribute("incl"))
                 {
-                    /// `incl="X"` is resolved by `ConfigProcessor` via `getNodeByPath`, so `X`
-                    /// may be a path (e.g. `my_payload.value` or `my_payload[1].field`), while
-                    /// only the first path component is the top-level tag that leaks into the
-                    /// merged config. Normalize the same way as the `config://` branch above.
+                    /// `incl="X"` is resolved by `ConfigProcessor` via `Poco::XML::Node::getNodeByPath`,
+                    /// whose path syntax separates components with `/` and uses `[N]` for indices
+                    /// (e.g. `servers/server[1]`). Only the first component is the top-level tag that
+                    /// leaks into the merged config, so strip at the first `/` or `[`. Note this is a
+                    /// DOM path, not the dotted `Poco::Util` key syntax used by the `config://` branch,
+                    /// so `.` is a literal name character here and must not be treated as a separator.
                     String value = elem->getAttribute("incl");
-                    auto sep_pos = value.find_first_of(".[");
+                    auto sep_pos = value.find_first_of("/[");
                     if (sep_pos != String::npos)
                         value.resize(sep_pos);
                     if (!value.empty())
