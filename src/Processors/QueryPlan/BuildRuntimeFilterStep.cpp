@@ -164,7 +164,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
-    bool allow_to_use_not_exact_filter;
+    bool allow_to_use_not_exact_filter = false;
     readBinary(allow_to_use_not_exact_filter, ctx.in);
 
     const UInt64 exact_values_limit = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit];

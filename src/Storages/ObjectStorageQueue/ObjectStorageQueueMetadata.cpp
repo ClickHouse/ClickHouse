@@ -715,7 +715,7 @@ void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
     const auto table_path = zookeeper_path / "registry" / id;
     const auto self = Info::create(storage_id);
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     getKeeperRetriesControl(log).retryLoop([&]
     {
         code = getZooKeeper()->tryCreate(
@@ -739,7 +739,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
     auto zk_retries = getKeeperRetriesControl(log);
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     const size_t max_tries = 1000;
     for (size_t i = 0; i < max_tries; ++i)
     {
@@ -827,7 +827,7 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
     Strings registered;
     if (active)
     {
-        Coordination::Error code;
+        Coordination::Error code = {};
         zk_retries.retryLoop([&] { code = getZooKeeper()->tryGetChildren(registry_path, registered); });
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
             throw zkutil::KeeperException(code);
@@ -847,7 +847,7 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
 
     if (code == Coordination::Error::ZOK)
@@ -1098,7 +1098,7 @@ private:
     const size_t total_nodes;
     LoggerPtr log;
     std::map<UInt128, std::string> virtual_nodes;
-    size_t nodes_num;
+    size_t nodes_num{};
 };
 
 std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
@@ -1260,7 +1260,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
     Strings nodes;
-    Coordination::Error code;
+    Coordination::Error code = {};
     auto zk_retries = getKeeperRetriesControl(log);
     zk_retries.retryLoop([&]
     {
@@ -1488,7 +1488,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
 
     Strings persistent_processing_nodes;
 
-    Coordination::Error code;
+    Coordination::Error code = {};
     zk_retries.retryLoop([&]
     {
         code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);

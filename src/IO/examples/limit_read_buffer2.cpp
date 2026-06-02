@@ -53,7 +53,7 @@ try
         {
             WriteBufferFromString out(dst);
 
-            char x;
+            char x = {};
             readChar(x, in);
 
             auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
@@ -71,7 +71,7 @@ try
         if (dst != "b")
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Incorrect destination value: {}, expected 'b'", dst);
 
-        char y;
+        char y = {};
         readChar(y, in);
         if (y != 'c')
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed!, Read incorrect value from underlying buffer: {}, expected 'c'", y);
@@ -88,7 +88,7 @@ try
         {
             auto limit_in = LimitReadBuffer(in, {.read_no_more = 1});
 
-            char x;
+            char x = {};
             readChar(x, limit_in);
 
             if (limit_in.count() != 1)

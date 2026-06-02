@@ -132,7 +132,7 @@ static String getOneTimePassword(const String & secret [[ maybe_unused ]], const
                  : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
-    cotp_error_t error;
+    cotp_error_t error = {};
     auto result = std::unique_ptr<char, CStringDeleter>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
 
     if (result == nullptr || (error != NO_ERROR && error != VALID))
