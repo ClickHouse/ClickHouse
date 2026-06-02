@@ -67,8 +67,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
     if (execute_args)
         res->execute_args = res->children.emplace_back(execute_args->clone()).get();
-    if (refresh)
-        res->refresh = res->children.emplace_back(refresh->clone()).get();
 
     return res;
 }
@@ -601,7 +599,6 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&sql_security, nullptr);
     f(&rename_to, nullptr);
     f(&execute_args, nullptr);
-    f(&refresh, nullptr);
 }
 
 

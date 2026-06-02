@@ -466,7 +466,7 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
     const Array & params, const AggregateFunctionProperties & properties) const
 {
-    chassert(!arguments.empty());
+    assert(!arguments.empty());
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).

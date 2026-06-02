@@ -170,7 +170,7 @@ void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n
 
 std::string_view ColumnArray::getDataAt(size_t n) const
 {
-    chassert(n < size());
+    assert(n < size());
 
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
@@ -1222,7 +1222,7 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnArray::create(data->cloneEmpty());
 

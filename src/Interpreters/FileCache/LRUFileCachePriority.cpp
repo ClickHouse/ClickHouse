@@ -760,14 +760,8 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
-    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
-    /// so pin it locally to keep the mutex alive until `~unique_lock`.
-    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
-    /// debug consistency check; non-overcommit policies leave the guard unset.
-    auto stat_guard = cache_usage_stat_guard;
-    auto lock = stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
+    auto lock = cache_usage_stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
         : std::nullopt;
 
     state->sub(size, elements);
