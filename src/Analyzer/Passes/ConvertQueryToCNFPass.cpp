@@ -30,6 +30,17 @@ namespace Setting
 namespace
 {
 
+/// Constraint-based optimization is scoped to a single query node: each (sub)query is optimized
+/// independently. Subqueries must therefore be treated as opaque boundaries, both when one is a
+/// clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just the subquery) and
+/// when one is nested inside an expression (e.g. `exists((subquery))`). Crossing the boundary would
+/// rewrite a subquery's correlated columns, which must stay plain ColumnNodes for decorrelation.
+bool isSubquery(const QueryTreeNodePtr & node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto cnf_form = Analyzer::CNF::tryBuildCNF(node, context);
@@ -418,15 +429,9 @@ public:
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
 
-    /// Do not descend into subqueries — constraint graph is scoped to the outer query's table expressions.
-    /// Walking into QUERY/UNION nodes would collect correlated column references from subqueries,
-    /// which could then be incorrectly substituted by SubstituteColumnVisitor, corrupting the
-    /// correlated_columns_list (replacing ColumnNodes with FunctionNodes and causing bad cast crashes).
     static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
     {
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY
-            && child_type != QueryTreeNodeType::UNION;
+        return !isSubquery(child);
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
@@ -483,15 +488,9 @@ public:
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
     {}
 
-    /// Do not descend into subqueries — constraint-based substitution is scoped to the outer query.
-    /// Without this guard, the visitor walks into QueryNode children (including correlated_columns_list)
-    /// and can replace ColumnNodes with FunctionNodes from the constraint graph, causing bad cast crashes
-    /// in CollectTopLevelColumnIdentifiersVisitor which expects correlated columns to be ColumnNodes.
     static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
     {
-        auto child_type = child->getNodeType();
-        return child_type != QueryTreeNodeType::QUERY
-            && child_type != QueryTreeNodeType::UNION;
+        return !isSubquery(child);
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -603,16 +602,24 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
 
         auto run_for_all = [&](const auto function)
         {
-            function(query_node.getProjectionNode());
+            /// The needChildVisit guards in the visitors only stop subqueries nested inside a larger
+            /// expression; a clause that is itself a subquery is the visit root, so guard it here.
+            const auto run_unless_subquery = [&](QueryTreeNodePtr & node)
+            {
+                if (!isSubquery(node))
+                    function(node);
+            };
+
+            run_unless_subquery(query_node.getProjectionNode());
 
             if (query_node.hasWhere())
-                function(query_node.getWhere());
+                run_unless_subquery(query_node.getWhere());
 
             if (query_node.hasPrewhere())
-                function(query_node.getPrewhere());
+                run_unless_subquery(query_node.getPrewhere());
 
             if (query_node.hasHaving())
-                function(query_node.getHaving());
+                run_unless_subquery(query_node.getHaving());
         };
 
         std::set<UInt64> components;
@@ -726,6 +733,18 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
+
+    /// Constraint reduction can collapse a filter into a bare correlated subquery. For example,
+    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns
+    /// are equal), the filter
+    ///     WHERE (b < d) OR (SELECT a < c)
+    /// reduces to
+    ///     WHERE (SELECT a < c)
+    /// because `b < d` is always false. A correlated subquery used as a whole predicate cannot be
+    /// decorrelated, so keep the original node instead of the collapsed one.
+    if (isCorrelatedQueryOrUnionNode(new_node))
+        return;
+
     node = std::move(new_node);
 }
 
