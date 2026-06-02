@@ -41,4 +41,8 @@ WHERE database = currentDatabase() AND table = 't_alter_null' AND name = 'a';
 ALTER TABLE t_alter_null ADD COLUMN f Nullable(Int32) NULL; -- { serverError ILLEGAL_SYNTAX_FOR_DATA_TYPE }
 ALTER TABLE t_alter_null MODIFY COLUMN c Nullable(Int32) NULL; -- { serverError ILLEGAL_SYNTAX_FOR_DATA_TYPE }
 
+-- A type that cannot be nested inside Nullable is rejected, the same way as in CREATE TABLE.
+ALTER TABLE t_alter_null ADD COLUMN g Array(Int32) NULL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+ALTER TABLE t_alter_null MODIFY COLUMN a Array(Int32) NULL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP TABLE t_alter_null;
