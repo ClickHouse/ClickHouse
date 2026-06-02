@@ -1,5 +1,7 @@
--- Tags: no-fasttest
--- ^ JSON data type is not enabled in fast-test image.
+-- Tags: no-fasttest, no-old-analyzer
+-- ^ JSON data type is not enabled in fast-test image; `FunctionToSubcolumnsPass`
+--   is a new-analyzer pass with no old-analyzer equivalent, so the A2 rewrite
+--   assertions cannot fire under the old analyzer (EXPLAIN reads `data` directly).
 --
 -- Companion test for https://github.com/ClickHouse/ClickHouse/issues/106085 fix
 -- in `IDataType::forEachSubcolumn`. The fix hides the static `.null` substream
