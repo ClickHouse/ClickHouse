@@ -301,7 +301,8 @@ def test_redis_simple_negative_key(started_cluster):
         password="clickhouse",
         db=29
     )
-    r.set("-1", "found_it")
+    r.set("-1", "found_negative")
+    r.set("13824756489203974851", "found_large_uint")
 
     node.query(
         f"""
@@ -318,7 +319,26 @@ def test_redis_simple_negative_key(started_cluster):
     )
 
     result = node.query("SELECT dictGet('test_redis_negative_key', 'value', toInt8(-1))")
-    assert result.strip() == "found_it"
+    assert result.strip() == "found_negative"
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY IF NOT EXISTS test_redis_large_uint_key
+        (
+            key UInt64,
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 29))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """
+    )
+
+    result = node.query("SELECT dictGet('test_redis_large_uint_key', 'value', toUInt64(13824756489203974851))")
+    assert result.strip() == "found_large_uint"
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_large_uint_key")
     r.flushdb()
