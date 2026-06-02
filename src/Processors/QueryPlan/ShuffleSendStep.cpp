@@ -66,7 +66,7 @@ void serializeNames(const Names & names, WriteBuffer & out)
 
 void deserializeNames(Names & names, ReadBuffer & in)
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, in);
     names.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -90,7 +90,7 @@ std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & c
     Names key_names;
     deserializeNames(key_names, ctx.in);
 
-    size_t num_buckets;
+    size_t num_buckets = 0;
     readVarUInt(num_buckets, ctx.in);
 
     return std::make_unique<ShuffleSendStep>(ctx.input_headers.front(), exchange_id, std::move(key_names), num_buckets);

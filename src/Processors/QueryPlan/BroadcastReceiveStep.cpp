@@ -43,7 +43,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastReceiveStep::deserialize(Deserializatio
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
-    size_t shard_id_count;
+    size_t shard_id_count = 0;
     readVarUInt(shard_id_count, ctx.in);
     Strings list_of_shard_ids;
     list_of_shard_ids.reserve(shard_id_count);

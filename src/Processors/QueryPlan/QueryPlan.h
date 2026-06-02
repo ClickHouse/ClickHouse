@@ -245,9 +245,9 @@ struct ExchangeDescription
     };
 
     String name;
-    Kind kind;
-    size_t source_bucket_count;
-    size_t destination_bucket_count;
+    Kind kind = Kind::Persisted;
+    size_t source_bucket_count = 0;
+    size_t destination_bucket_count = 0;
 };
 
 using ExchangeDescriptions = std::unordered_map<String, ExchangeDescription>;

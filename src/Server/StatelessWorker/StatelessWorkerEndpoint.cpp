@@ -90,7 +90,7 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 
 static void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, in);
     if (version > DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -104,7 +104,7 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
     readStringBinary(task.task_id, in);
     readStringBinary(task_description.serialized_query_plan, in);
 
-    size_t parameters_size;
+    size_t parameters_size = 0;
     readVarUInt(parameters_size, in);
     for (size_t i = 0; i < parameters_size; ++i)
     {
@@ -114,7 +114,7 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
         task.parameters.parameters[name] = field;
     }
 
-    size_t input_files_size;
+    size_t input_files_size = 0;
     readVarUInt(input_files_size, in);
     task.input_exchange_streams.resize(input_files_size);
     for (size_t i = 0; i < input_files_size; ++i)
@@ -124,7 +124,7 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
         readStringBinary(task.input_exchange_streams[i].destination_bucket, in);
     }
 
-    size_t output_files_size;
+    size_t output_files_size = 0;
     readVarUInt(output_files_size, in);
     task.output_exchange_streams.resize(output_files_size);
     for (size_t i = 0; i < output_files_size; ++i)
@@ -134,14 +134,14 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
         readStringBinary(task.output_exchange_streams[i].destination_bucket, in);
     }
 
-    size_t exchanges_size;
+    size_t exchanges_size = 0;
     readVarUInt(exchanges_size, in);
     for (size_t i = 0; i < exchanges_size; ++i)
     {
         String name;
         readStringBinary(name, in);
         ExchangeDescription exchange;
-        UInt64 kind;
+        UInt64 kind = 0;
         readVarUInt(kind, in);
         exchange.kind = static_cast<ExchangeDescription::Kind>(kind);
         readVarUInt(exchange.source_bucket_count, in);
@@ -149,7 +149,7 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
         task_description.exchanges[name] = exchange;
     }
 
-    size_t exchange_stream_sources_size;
+    size_t exchange_stream_sources_size = 0;
     readVarUInt(exchange_stream_sources_size, in);
     for (size_t i = 0; i < exchange_stream_sources_size; ++i)
     {

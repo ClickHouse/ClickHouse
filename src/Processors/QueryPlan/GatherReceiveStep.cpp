@@ -64,11 +64,11 @@ std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization &
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
 
-    size_t num_buckets;
+    size_t num_buckets = 0;
     readVarUInt(num_buckets, ctx.in);
 
     std::optional<SortDescription> maintain_sort_description;
-    bool has_maintain_sort_description;
+    bool has_maintain_sort_description = false;
     readVarUInt(has_maintain_sort_description, ctx.in);
     if (has_maintain_sort_description)
     {

@@ -65,7 +65,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastSendStep::deserialize(Deserialization &
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
 
-    size_t num_buckets;
+    size_t num_buckets = 0;
     readVarUInt(num_buckets, ctx.in);
 
     return std::make_unique<BroadcastSendStep>(ctx.input_headers.front(), exchange_id, num_buckets);
