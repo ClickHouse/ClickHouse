@@ -99,8 +99,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || key == "google_adc_client_id"
             || key == "google_adc_client_secret"
             || key == "google_adc_refresh_token"
-            || key == "header"
-            || key == "access_header";
+            || startsWith(key, "header")
+            || startsWith(key, "access_header");
     };
 
     for (const auto & arg : disk_args)

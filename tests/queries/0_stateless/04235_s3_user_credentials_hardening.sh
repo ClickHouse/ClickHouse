@@ -313,6 +313,30 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_zk=1 -q "
     -- { serverError ACCESS_DENIED }
 "
 
+# Header keys are accepted by prefix in `S3AuthSettings`, so dynamic S3 disks
+# must reject indirect values for numbered forms too.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_header',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_header/',
+        header1 = 'from_env ${DB}_HEADER')
+    -- { serverError ACCESS_DENIED }
+"
+
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_access_header',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_access_header/',
+        access_header1 = 'from_env ${DB}_ACCESS_HEADER')
+    -- { serverError ACCESS_DENIED }
+"
+
 # `include` could supply credential-bearing S3 fields from server config, so it
 # is not allowed for newly created dynamic S3 disk metadata.
 $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
