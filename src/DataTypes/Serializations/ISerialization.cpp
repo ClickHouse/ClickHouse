@@ -305,7 +305,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -548,6 +548,7 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     for (const auto & elem : path)
     {
         if (elem.type == Substream::NullMap
+            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
