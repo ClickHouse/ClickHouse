@@ -21,30 +21,9 @@
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
-#include <absl/container/flat_hash_map.h>
-
 
 namespace DB
 {
-
-/// Per-output-bucket storage layout.
-/// Duplicate timestamps within a bucket are merged by max(value).
-enum class OverTimeBucketKind : UInt8
-{
-    /// All (timestamp, value) pairs stored in a hash map. Used by aggregates that need every sample
-    /// (avg, sum, count, stddev, quantile, …).
-    Map,
-    /// Same logical content as Map but in a sorted unique vector, allowing O(n) merge and direct
-    /// push into the sliding-window deque. Used by min, max, first, ts_of_first, ts_of_min, ts_of_max:
-    /// these need all samples in the window because the relevant sample (e.g. the minimum) may have
-    /// an earlier timestamp than the latest sample in the bucket and could expire while other samples
-    /// from the same bucket remain in the window.
-    SortedUnique,
-    /// Stores only the single sample with the maximum timestamp per bucket. When that sample expires
-    /// from the sliding window, all other samples in the bucket (which have ts ≤ max_ts) are
-    /// guaranteed to have expired too. Used by present_over_time, absent_over_time, ts_of_last_over_time.
-    SingleSample,
-};
 
 /// Mirrors Prometheus `promql/quantile.go` func quantile(q float64, values vectorByValueHeap) float64
 /// https://github.com/prometheus/prometheus/blob/da1f89e7360a19c5de2b0df4b43411ac706a76a9/promql/quantile.go
@@ -69,7 +48,201 @@ inline Float64 quantile(Float64 q, VectorWithMemoryTracking<Float64> & values)
     return values[lower_index] * (1.0 - weight) + values[upper_index] * weight;
 }
 
-template <typename TimestampType, typename ValueType>
+/// Per-bucket samples kept in an append-only vector. Sort + dedup-by-max(value) (per timestamp)
+/// is performed lazily on the first read, then memoized via `sorted`. Compared with the previous
+/// `absl::flat_hash_map`-backed bucket this trades the hash table's per-sample lookup and slot
+/// overhead for a single in-place sort per state, and shrinks per-sample memory roughly 2x.
+/// Logical semantics are preserved: when two samples within a bucket share a timestamp, the
+/// larger value wins.
+///
+/// Used by aggregates that need every sample in the active window (avg, sum, count, min, max,
+/// first, stddev, stdvar, quantile, mad, ts_of_first, ts_of_min, ts_of_max).
+template <typename TimestampTypeT, typename ValueTypeT>
+struct TimeseriesOverTimeVectorBucket
+{
+    using TimestampType = TimestampTypeT;
+    using ValueType = ValueTypeT;
+
+    /// Logical state of the bucket is the set of (timestamp, max-merged value) samples. Sorting
+    /// and deduplicating only canonicalizes the internal order, so the storage is `mutable` and
+    /// the lazy work can run from `const` observers (`serialize`, `appendActiveSamplesToWindow`).
+    mutable VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> samples;
+    mutable bool sorted = true;
+
+    void add(TimestampType timestamp, ValueType value)
+    {
+        samples.emplace_back(timestamp, value);
+        sorted = false;
+    }
+
+    void merge(const TimeseriesOverTimeVectorBucket & other)
+    {
+        if (other.samples.empty())
+            return;
+        samples.reserve(samples.size() + other.samples.size());
+        for (const auto & sample : other.samples)
+            samples.push_back(sample);
+        sorted = false;
+    }
+
+    /// Sort by timestamp ascending and collapse runs of equal timestamps by `max(value)`.
+    /// Idempotent; the cached flag short-circuits repeated calls.
+    void sortAndDedup() const
+    {
+        if (sorted)
+            return;
+
+        std::sort(samples.begin(), samples.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+        size_t write = 0;
+        for (size_t read = 0; read < samples.size(); ++read)
+        {
+            if (write > 0 && samples[write - 1].first == samples[read].first)
+                samples[write - 1].second = std::max(samples[write - 1].second, samples[read].second);
+            else
+            {
+                if (write != read)
+                    samples[write] = samples[read];
+                ++write;
+            }
+        }
+        samples.resize(write);
+        sorted = true;
+    }
+
+    /// Append samples in the Prometheus half-open lookback `(current_timestamp - window, current_timestamp]`.
+    /// A sample is active iff `ts + window > current_timestamp` (equivalently `ts > current_timestamp - window`,
+    /// but we avoid the subtraction so unsigned `TimestampType` never underflows).
+    template <typename WindowType>
+    void appendActiveSamplesToWindow(
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
+        TimestampType current_timestamp,
+        WindowType window) const
+    {
+        sortAndDedup();
+        for (const auto & sample : samples)
+        {
+            if (sample.first + window > current_timestamp)
+                samples_in_window.push_back(sample);
+        }
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        sortAndDedup();
+        writeBinaryLittleEndian(samples.size(), buf);
+        for (const auto & [timestamp, value] : samples)
+        {
+            writeBinaryLittleEndian(timestamp, buf);
+            writeBinaryLittleEndian(value, buf);
+        }
+    }
+
+    template <typename CheckTimestampInRange>
+    void deserialize(ReadBuffer & buf, CheckTimestampInRange && check_timestamp_in_range)
+    {
+        size_t sample_count = 0;
+        readBinaryLittleEndian(sample_count, buf);
+
+        samples.clear();
+        samples.reserve(sample_count);
+
+        for (size_t s = 0; s < sample_count; ++s)
+        {
+            TimestampType timestamp;
+            readBinaryLittleEndian(timestamp, buf);
+            check_timestamp_in_range(timestamp);
+
+            ValueType value;
+            readBinaryLittleEndian(value, buf);
+
+            samples.emplace_back(timestamp, value);
+        }
+        /// Payloads written by older versions used an unspecified hash-map iteration order, so
+        /// the deserialized vector may need canonicalizing before the first read.
+        sorted = false;
+    }
+};
+
+/// Stores only the sample with the maximum timestamp per bucket. Sufficient when the operation only
+/// needs to know whether any sample is present in the window (present/absent) or needs the latest
+/// sample's timestamp or value (ts_of_last). When `max_ts` expires from the sliding window, all other
+/// samples in the bucket (which have ts ≤ max_ts) are guaranteed to have expired too.
+template <typename TimestampTypeT, typename ValueTypeT>
+struct TimeseriesOverTimeSingleSampleBucket
+{
+    using TimestampType = TimestampTypeT;
+    using ValueType = ValueTypeT;
+
+    TimestampType max_ts{};
+    ValueType value_at_max_ts{};
+    bool has_sample{false};
+
+    void add(TimestampType timestamp, ValueType value)
+    {
+        if (!has_sample || timestamp > max_ts)
+        {
+            max_ts = timestamp;
+            value_at_max_ts = value;
+            has_sample = true;
+        }
+        else if (timestamp == max_ts)
+        {
+            value_at_max_ts = std::max(value_at_max_ts, value);
+        }
+    }
+
+    void merge(const TimeseriesOverTimeSingleSampleBucket & other)
+    {
+        if (other.has_sample)
+            add(other.max_ts, other.value_at_max_ts);
+    }
+
+    template <typename WindowType>
+    void appendActiveSamplesToWindow(
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
+        TimestampType current_timestamp,
+        WindowType window) const
+    {
+        if (has_sample && max_ts + window > current_timestamp)
+            samples_in_window.push_back({max_ts, value_at_max_ts});
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        writeBinaryLittleEndian(has_sample ? size_t(1) : size_t(0), buf);
+        if (has_sample)
+        {
+            writeBinaryLittleEndian(max_ts, buf);
+            writeBinaryLittleEndian(value_at_max_ts, buf);
+        }
+    }
+
+    template <typename CheckTimestampInRange>
+    void deserialize(ReadBuffer & buf, CheckTimestampInRange && check_timestamp_in_range)
+    {
+        has_sample = false;
+        max_ts = {};
+        value_at_max_ts = {};
+
+        size_t sample_count = 0;
+        readBinaryLittleEndian(sample_count, buf);
+
+        for (size_t s = 0; s < sample_count; ++s)
+        {
+            TimestampType timestamp;
+            readBinaryLittleEndian(timestamp, buf);
+            check_timestamp_in_range(timestamp);
+
+            ValueType value;
+            readBinaryLittleEndian(value, buf);
+
+            add(timestamp, value);
+        }
+    }
+};
+
 struct AggregateFunctionTimeseriesAvgOverTimeOperation
 {
     static String getName() { return "timeSeriesAvgOverTimeToGrid"; }
@@ -338,14 +511,15 @@ struct AggregateFunctionTimeseriesTsOfMinOverTimeOperation
             return;
         }
 
-        auto best = samples_in_window.begin();
-        for (auto it = samples_in_window.begin(); it != samples_in_window.end(); ++it)
+        auto best = samples_in_window.front();
+        for (const auto & sample : samples_in_window)
         {
-            if (it->second < best->second)
-                best = it;
+            /// Match VictoriaMetrics `rollupTmin`: last timestamp for the minimum value.
+            if (sample.second <= best.second)
+                best = sample;
         }
 
-        Float64 ts_sec = static_cast<Float64>(best->first) / static_cast<Float64>(timestamp_scale_multiplier);
+        Float64 ts_sec = static_cast<Float64>(best.first) / static_cast<Float64>(timestamp_scale_multiplier);
         result = static_cast<ValueType>(ts_sec);
         null = 0;
     }
@@ -364,14 +538,15 @@ struct AggregateFunctionTimeseriesTsOfMaxOverTimeOperation
             return;
         }
 
-        auto best = samples_in_window.begin();
-        for (auto it = samples_in_window.begin(); it != samples_in_window.end(); ++it)
+        auto best = samples_in_window.front();
+        for (const auto & sample : samples_in_window)
         {
-            if (it->second > best->second)
-                best = it;
+            /// Match VictoriaMetrics `rollupTmax`: last timestamp for the maximum value.
+            if (sample.second >= best.second)
+                best = sample;
         }
 
-        Float64 ts_sec = static_cast<Float64>(best->first) / static_cast<Float64>(timestamp_scale_multiplier);
+        Float64 ts_sec = static_cast<Float64>(best.first) / static_cast<Float64>(timestamp_scale_multiplier);
         result = static_cast<ValueType>(ts_sec);
         null = 0;
     }
@@ -435,43 +610,13 @@ struct AggregateFunctionTimeseriesMadOverTimeOperation
     }
 };
 
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeMapBucket;
-
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSortedUniqueBucket;
-
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSingleSampleBucket;
-
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeMapBucketPolicy
-{
-    static constexpr OverTimeBucketKind bucket_kind = OverTimeBucketKind::Map;
-    using Bucket = TimeseriesOverTimeMapBucket<TimestampTypeT, ValueTypeT>;
-};
-
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSortedUniqueBucketPolicy
-{
-    static constexpr OverTimeBucketKind bucket_kind = OverTimeBucketKind::SortedUnique;
-    using Bucket = TimeseriesOverTimeSortedUniqueBucket<TimestampTypeT, ValueTypeT>;
-};
-
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSingleSampleBucketPolicy
-{
-    static constexpr OverTimeBucketKind bucket_kind = OverTimeBucketKind::SingleSample;
-    using Bucket = TimeseriesOverTimeSingleSampleBucket<TimestampTypeT, ValueTypeT>;
-};
-
 template <
     bool has_array_arguments,
     typename TimestampTypeT,
     typename IntervalTypeT,
     typename ValueTypeT,
     typename OperationT,
-    template <typename, typename> class BucketPolicyT>
+    template <typename, typename> class BucketT>
 struct AggregateFunctionTimeseriesOverTimeTraits
 {
     static constexpr bool array_arguments = has_array_arguments;
@@ -480,293 +625,108 @@ struct AggregateFunctionTimeseriesOverTimeTraits
     using IntervalType = IntervalTypeT;
     using ValueType = ValueTypeT;
     using Operation = OperationT;
-    using BucketPolicy = BucketPolicyT<TimestampType, ValueType>;
-    using Bucket = typename BucketPolicy::Bucket;
-
-    static constexpr OverTimeBucketKind bucket_kind = BucketPolicy::bucket_kind;
+    using Bucket = BucketT<TimestampType, ValueType>;
 
     static String getName() { return Operation::getName(); }
 };
 
-/// Per-bucket multiset with deduplication rule: duplicate timestamps merge by max(value). Used by aggregates that still
-/// require all timestamps in-window (quantile, sum, avg, …).
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeMapBucket
-{
-    using TimestampType = TimestampTypeT;
-    using ValueType = ValueTypeT;
-
-    absl::flat_hash_map<TimestampType, ValueType> samples;
-
-    void add(TimestampType timestamp, ValueType value)
-    {
-        auto it = samples.find(timestamp);
-        if (it != samples.end())
-            it->second = std::max(it->second, value);
-        else
-            samples[timestamp] = value;
-    }
-
-    void merge(const TimeseriesOverTimeMapBucket & other)
-    {
-        samples.reserve(samples.size() + other.samples.size());
-        for (const auto & [timestamp, value] : other.samples)
-            add(timestamp, value);
-    }
-};
-
-/// Same logical state as TimeseriesOverTimeMapBucket but stored as a sorted unique sequence of timestamps. Avoids hash
-/// table overhead and allows pushing into the sliding window without an extra sort per bucket.
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSortedUniqueBucket
-{
-    using TimestampType = TimestampTypeT;
-    using ValueType = ValueTypeT;
-
-    VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> samples;
-
-    void add(TimestampType timestamp, ValueType value)
-    {
-        auto it = std::lower_bound(
-            samples.begin(), samples.end(), timestamp, [](const std::pair<TimestampType, ValueType> & a, const TimestampType & ts) { return a.first < ts; });
-
-        if (it != samples.end() && it->first == timestamp)
-            it->second = std::max(it->second, value);
-        else
-            samples.insert(it, {timestamp, value});
-    }
-
-    void merge(const TimeseriesOverTimeSortedUniqueBucket & other)
-    {
-        if (other.samples.empty())
-            return;
-        if (samples.empty())
-        {
-            samples = other.samples;
-            return;
-        }
-
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> merged;
-        merged.reserve(samples.size() + other.samples.size());
-
-        auto a = samples.begin();
-        auto b = other.samples.begin();
-        const auto a_end = samples.end();
-        const auto b_end = other.samples.end();
-
-        while (a != a_end && b != b_end)
-        {
-            if (a->first < b->first)
-            {
-                merged.push_back(*a);
-                ++a;
-            }
-            else if (b->first < a->first)
-            {
-                merged.push_back(*b);
-                ++b;
-            }
-            else
-            {
-                merged.push_back({a->first, std::max(a->second, b->second)});
-                ++a;
-                ++b;
-            }
-        }
-        while (a != a_end)
-        {
-            merged.push_back(*a);
-            ++a;
-        }
-        while (b != b_end)
-        {
-            merged.push_back(*b);
-            ++b;
-        }
-        samples.swap(merged);
-    }
-};
-
-/// Stores only the sample with the maximum timestamp per bucket. Sufficient when the operation only
-/// needs to know whether any sample is present in the window (present/absent), or needs the latest
-/// sample's timestamp or value (ts_of_last). When max_ts expires from the sliding window, all other
-/// samples in the bucket (ts ≤ max_ts) are also guaranteed to have expired.
-template <typename TimestampTypeT, typename ValueTypeT>
-struct TimeseriesOverTimeSingleSampleBucket
-{
-    using TimestampType = TimestampTypeT;
-    using ValueType = ValueTypeT;
-
-    TimestampType max_ts{};
-    ValueType value_at_max_ts{};
-    bool has_sample{false};
-
-    void add(TimestampType timestamp, ValueType value)
-    {
-        if (!has_sample || timestamp > max_ts)
-        {
-            max_ts = timestamp;
-            value_at_max_ts = value;
-            has_sample = true;
-        }
-        else if (timestamp == max_ts)
-        {
-            value_at_max_ts = std::max(value_at_max_ts, value);
-        }
-    }
-
-    void merge(const TimeseriesOverTimeSingleSampleBucket & other)
-    {
-        if (other.has_sample)
-            add(other.max_ts, other.value_at_max_ts);
-    }
-};
-
 /// Template aliases matching the 5-parameter template template signature required by
-/// createAggregateFunctionTimeseries. The 5th bool parameter is unused for _over_time functions.
+/// `createAggregateFunctionTimeseries`. The 5th bool parameter is unused for _over_time functions.
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesAvgOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesAvgOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesMinOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesMinOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesMaxOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesMaxOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesSumOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesSumOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesCountOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesCountOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesStddevPopOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesStddevPopOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesStdvarPopOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesStdvarPopOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesPresentOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesPresentOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSingleSampleBucketPolicy>;
+    TimeseriesOverTimeSingleSampleBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesAbsentOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesAbsentOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSingleSampleBucketPolicy>;
+    TimeseriesOverTimeSingleSampleBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesFirstOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesFirstOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesTsOfLastOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesTsOfLastOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSingleSampleBucketPolicy>;
+    TimeseriesOverTimeSingleSampleBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesTsOfFirstOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesTsOfFirstOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesTsOfMinOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesTsOfMinOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesTsOfMaxOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesTsOfMaxOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeSortedUniqueBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesQuantileOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesQuantileOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 template <bool array_arguments, typename TimestampType, typename IntervalType, typename ValueType, bool /*unused*/>
 using AggregateFunctionTimeseriesMadOverTimeTraits = AggregateFunctionTimeseriesOverTimeTraits<
-    array_arguments,
-    TimestampType,
-    IntervalType,
-    ValueType,
+    array_arguments, TimestampType, IntervalType, ValueType,
     AggregateFunctionTimeseriesMadOverTimeOperation<TimestampType, ValueType>,
-    TimeseriesOverTimeMapBucketPolicy>;
+    TimeseriesOverTimeVectorBucket>;
 
 
 template <typename Traits>
@@ -781,7 +741,6 @@ public:
     using ValueType = typename Traits::ValueType;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesOverTime<Traits>, Traits>;
-    using Base::Base;
     using Bucket = typename Base::Bucket;
 
     explicit AggregateFunctionTimeseriesOverTime(const DataTypes & argument_types_,
@@ -794,55 +753,17 @@ public:
 
     static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
     {
-        if constexpr (Traits::bucket_kind == OverTimeBucketKind::SingleSample)
-        {
-            writeBinaryLittleEndian(bucket.has_sample ? size_t(1) : size_t(0), buf);
-            if (bucket.has_sample)
-            {
-                writeBinaryLittleEndian(bucket.max_ts, buf);
-                writeBinaryLittleEndian(bucket.value_at_max_ts, buf);
-            }
-        }
-        else
-        {
-            writeBinaryLittleEndian(bucket.samples.size(), buf);
-            for (const auto & sample : bucket.samples)
-            {
-                writeBinaryLittleEndian(sample.first, buf);
-                writeBinaryLittleEndian(sample.second, buf);
-            }
-        }
+        bucket.serialize(buf);
     }
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count;
-        readBinaryLittleEndian(sample_count, buf);
-        if constexpr (Traits::bucket_kind == OverTimeBucketKind::Map || Traits::bucket_kind == OverTimeBucketKind::SortedUnique)
-            bucket.samples.reserve(sample_count);
-
-        for (size_t s = 0; s < sample_count; ++s)
+        bucket.deserialize(buf, [&](TimestampType timestamp)
         {
-            TimestampType timestamp;
-            readBinaryLittleEndian(timestamp, buf);
             Base::checkTimestampInRange(timestamp, bucket_index);
-
-            ValueType value;
-            readBinaryLittleEndian(value, buf);
-
-            bucket.add(timestamp, value);
-        }
+        });
     }
 
-private:
-    void fillResultValue(
-        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
-        ValueType & result, UInt8 & null) const
-    {
-        Traits::Operation::fillResultValue(samples_in_window, result, null, extra_param, Base::timestamp_scale_multiplier);
-    }
-
-public:
     void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
     {
         ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
@@ -869,70 +790,27 @@ public:
         const auto & buckets = Base::data(place)->buckets;
 
         DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
             const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
 
-            /// Prometheus-style half-open lookback `(current_timestamp - window, current_timestamp]`.
-            /// A sample is outside iff `ts + window <= current_timestamp`, equivalently `ts <= current_timestamp - window`
-            /// when the subtraction is defined. We avoid `current_timestamp - window` so unsigned `TimestampType`
-            /// never underflows when `current_timestamp < window`.
-            const auto ts_outside_active_lookback = [&](TimestampType ts)
-            {
-                return ts + Base::window <= current_timestamp;
-            };
-
             /// Pop before ingesting the current bucket so nothing outside the window is ever observed by `fillResultValue`.
-            while (!samples_in_window.empty() && ts_outside_active_lookback(samples_in_window.front().first))
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
                 samples_in_window.pop_front();
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
-            {
-                if constexpr (Traits::bucket_kind == OverTimeBucketKind::SortedUnique)
-                {
-                    const auto & samples = bucket_it->second.samples;
-                    /// `samples` is sorted by timestamp; `ts_outside_active_lookback` is monotone false → true along the axis,
-                    /// so this is the first index with `ts + window > current_timestamp` (same as `upper_bound` for exclusive
-                    /// left edge `current_timestamp - window` without performing that subtraction).
-                    const auto begin_in_window = std::partition_point(
-                        samples.begin(),
-                        samples.end(),
-                        [&](const std::pair<TimestampType, ValueType> & sample) { return ts_outside_active_lookback(sample.first); });
+                bucket_it->second.appendActiveSamplesToWindow(samples_in_window, current_timestamp, Base::window);
 
-                    for (auto it = begin_in_window; it != samples.end(); ++it)
-                        samples_in_window.push_back(*it);
-                }
-                else if constexpr (Traits::bucket_kind == OverTimeBucketKind::Map)
-                {
-                    timestamps_buffer.clear();
-                    for (const auto & [timestamp, value] : bucket_it->second.samples)
-                    {
-                        if (!ts_outside_active_lookback(timestamp))
-                            timestamps_buffer.emplace_back(timestamp, value);
-                    }
-                    std::sort(timestamps_buffer.begin(), timestamps_buffer.end());
-
-                    for (const auto & sample : timestamps_buffer)
-                        samples_in_window.push_back(sample);
-                }
-                else /// SingleSample
-                {
-                    if (bucket_it->second.has_sample && !ts_outside_active_lookback(bucket_it->second.max_ts))
-                        samples_in_window.push_back({bucket_it->second.max_ts, bucket_it->second.value_at_max_ts});
-                }
-            }
-
-            fillResultValue(samples_in_window, values[i], nulls[i]);
+            Traits::Operation::fillResultValue(samples_in_window, values[i], nulls[i], extra_param, Base::timestamp_scale_multiplier);
         }
     }
 
     static constexpr UInt16 FORMAT_VERSION = 1;
 
-protected:
-    const Float64 extra_param{};
+private:
+    Float64 extra_param;
 };
 
 }
