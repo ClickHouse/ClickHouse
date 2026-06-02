@@ -1,6 +1,7 @@
 -- Complementary coverage for arrayDistance after the SIMD multi-target refactor:
--- ensures that the new multi-target kernels and the castData pre-conversion path
--- agree bit-for-bit with explicitly cast inputs, across:
+-- ensures that the streaming mixed-type kernels (`executeDistanceMixed` and
+-- `executeDistanceConstMixed`, which cast per element rather than buffering a
+-- whole column) agree bit-for-bit with explicitly cast inputs, across:
 --   * const-left / non-const variants for L1 / L2Squared / Linf (L2 and cosine
 --     are already covered in 04267_array_distance_mixed_types)
 --   * large-array cases under a tight memory limit, for all five SIMD distances.
