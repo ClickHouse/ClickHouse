@@ -65,17 +65,17 @@ String serializeStorageType(RedisStorageType storage_type);
 struct RedisConfiguration
 {
     String host;
-    uint32_t port;
-    uint32_t db_index;
+    uint32_t port{};
+    uint32_t db_index{};
     String password;
-    RedisStorageType storage_type;
-    uint32_t pool_size;
     uint32_t connect_timeout_ms = DEFAULT_REDIS_CONNECT_TIMEOUT_MS;
     uint32_t receive_timeout_ms = DEFAULT_REDIS_RECEIVE_TIMEOUT_MS;
     uint32_t max_retries = DEFAULT_REDIS_MAX_RETRIES;
     uint32_t retry_delay_ms = DEFAULT_REDIS_RETRY_DELAY_MS;
     RedisTopologyMode topology_mode = RedisTopologyMode::Standalone;
     std::vector<RedisEndpoint> startup_nodes;
+    RedisStorageType storage_type{};
+    uint32_t pool_size{};
 };
 
 static uint32_t DEFAULT_REDIS_DB_INDEX = 0;
