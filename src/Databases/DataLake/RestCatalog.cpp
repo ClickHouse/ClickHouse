@@ -629,14 +629,14 @@ bool RestCatalog::empty() const
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
         const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        found_table = !tables.empty(); // !!!! or change this back to tables.empty(); -- after testing
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return !found_table;
+    return found_table;
 }
 
 DB::Names RestCatalog::getTables() const

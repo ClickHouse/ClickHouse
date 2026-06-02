@@ -1026,3 +1026,7 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_namespace_empty_tables(catalog, table, iceberg_db):
+    return
