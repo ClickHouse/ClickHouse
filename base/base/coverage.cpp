@@ -442,8 +442,8 @@ void dumpCoverageReportIfPossible()
     /// LLVM writes the profile automatically only from an atexit handler, i.e. on a
     /// clean exit(). Several shutdown paths deliberately bypass that: the server's
     /// "shutdown forcefully" branch calls safeExit() -> _exit(), and BaseDaemon::kill()
-    /// calls _exit() as well. On those paths everything this process executed — in
-    /// particular background/scheduled work (merges, ACME, RabbitMQ, ...) that finishes
+    /// calls _exit() as well. On those paths everything this process executed (in
+    /// particular background/scheduled work: merges, ACME, RabbitMQ, ...) that finishes
     /// late in a test - would otherwise be lost, which is a major source of run-to-run
     /// coverage flakiness. Both call sites already invoke this function for exactly that
     /// reason; previously it was a no-op unless WITH_COVERAGE_DEPTH was set, so the
