@@ -485,7 +485,7 @@ ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64
 
     if (persistent_components.hasMetadataCache())
     {
-        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path);
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path + ":" + toString(schema_id));
         auto log_ptr = log;
         auto client = table_client;
         auto partition_default_name = persistent_components.partition_default_name;
