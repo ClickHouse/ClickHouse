@@ -296,6 +296,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 /* config_prefix */ "s3",
                 contextPtr->getSettingsRef()
             );
+            s3_settings->resetCredentialsForUserControlledRequest();
             s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
             std::shared_ptr<S3::Client> dst_client = getClient(
