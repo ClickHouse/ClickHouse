@@ -402,7 +402,10 @@ MergeTreeIndexAggregatorVectorSpann::MergeTreeIndexAggregatorVectorSpann(
 {
 }
 
-std::vector<UInt64> MergeTreeIndexAggregatorVectorSpann::selectCentroidsRandom() const
+/// Select `ceil(n * centroid_ratio)` centroid row indices, evenly spaced in [0, n).
+/// Deterministic (same input → same centroids) so replicated part builds stay byte-identical.
+/// This is a simple initial strategy, not SPANN's HBC; balanced posting-list construction is follow-up work.
+std::vector<UInt64> MergeTreeIndexAggregatorVectorSpann::selectEvenlySpacedCentroids() const
 {
     const size_t n = accumulated_vectors.size();
     if (n == 0)
@@ -513,7 +516,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSpann::getGranuleAndReset
     if (accumulated_vectors.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "vector_spann aggregator has no data for granule {}", backQuote(index_name));
 
-    const auto centroid_row_ids = selectCentroidsRandom();
+    const auto centroid_row_ids = selectEvenlySpacedCentroids();
     auto centroid_index = buildCentroidIndex(centroid_row_ids);
     auto offsets_and_postings = assignAndMakePostings(centroid_index);
 

@@ -193,15 +193,17 @@ Current limitations:
 
 ##### How `vector_spann` works (high level) {#vector-spann-how-it-works}
 
-`vector_spann` is implemented using `USearch` for centroid indexing and keeps per-centroid posting lists.
+`vector_spann` is an experimental initial implementation: it validates MergeTree plumbing for a SPANN-style memory/disk layout (centroid HNSW + on-disk posting lists + query-time rerank). It uses `USearch` for centroid indexing and keeps per-centroid posting lists.
 
 - On disk, the index stores centroid metadata and posting-list offsets in the regular skip-index stream, and posting-list payload in a `.pl` stream.
-- During build, ClickHouse selects centroids (`ceil(n * centroid_ratio)`), builds an HNSW index over centroids, then assigns each row vector to its nearest centroid.
+- During build, ClickHouse selects `ceil(n * centroid_ratio)` centroids with evenly spaced row indices (deterministic for replication), builds an HNSW index over those centroids, then assigns each row vector to its nearest centroid.
 - During query, ClickHouse first searches centroids (using `hnsw_candidate_list_size_for_search`), then scans candidate posting lists and reranks by exact distance before returning top-k candidates.
 
 Current implementation notes:
 - Posting lists store full `Float32` vectors to allow reranking without reading the source vector column.
-- The implementation is intentionally experimental and does not yet implement all details from the original SPANN paper.
+- Posting lists for an index granule are **eager-loaded** on deserialize (all lists in that granule), not read selectively per queried centroid.
+- **Not yet implemented** (vs. the SPANN paper): HBC centroid selection, closure expansion, query-aware dynamic pruning, selective posting-list IO.
+- Default `centroid_ratio = 0.16` is inspired by SPANN paper ablation settings; recall and performance are **not** equivalent to full SPANN.
 
 **Estimating storage and memory consumption**
 

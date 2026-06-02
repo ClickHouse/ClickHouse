@@ -92,7 +92,8 @@ struct MergeTreeIndexAggregatorVectorSpann final : public IMergeTreeIndexAggrega
     void update(const Block & block, size_t * pos, size_t limit) override;
 
 private:
-    std::vector<UInt64> selectCentroidsRandom() const;
+    /// Evenly spaced row indices in [0, n); deterministic for replicated builds. HBC is follow-up.
+    std::vector<UInt64> selectEvenlySpacedCentroids() const;
 
     USearchIndexWithSerializationPtr buildCentroidIndex(const std::vector<UInt64> & centroid_row_ids) const;
 
