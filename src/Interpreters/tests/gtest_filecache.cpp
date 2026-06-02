@@ -2145,11 +2145,17 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 
 namespace
 {
-    /// Creator for SplitFileCachePriority inner queues used by the split-cache tests below.
+    /// Creators for SplitFileCachePriority inner queues used by the split-cache tests below.
     std::unique_ptr<IFileCachePriority> makeLRUInner(
         size_t max_size, size_t max_elements, double /* size_ratio */, size_t /* overcommit_step */, String desc)
     {
         return std::make_unique<LRUFileCachePriority>(max_size, max_elements, desc);
+    }
+
+    std::unique_ptr<IFileCachePriority> makeSLRUInner(
+        size_t max_size, size_t max_elements, double size_ratio, size_t /* overcommit_step */, String desc)
+    {
+        return std::make_unique<SLRUFileCachePriority>(max_size, max_elements, size_ratio, desc);
     }
 }
 
@@ -2414,4 +2420,75 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
         EXPECT_NE(it->getEntry()->getState(), IFileCachePriority::Entry::State::Evicting)
             << "A protected entry was left stuck in Evicting after a skipped downgrade finalization";
     }
+}
+
+TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
+{
+    /// Regression for the default split-cache config (SLRU inner priorities). When only the
+    /// System sub-queue has entries, total-space cleanup must not throw: the empty Data SLRU
+    /// contributes no eviction info, and collectCandidatesForEviction must treat its absent
+    /// queues as "nothing to collect" instead of throwing on a missing queue id. The other
+    /// split tests only use LRU inners (which always register a queue id), so they miss this.
+    ServerUUID::setRandomForUnitTests();
+
+    const size_t max_size = 100;
+    const size_t max_elements = 100;
+    SplitFileCachePriority priority(
+        makeSLRUInner, max_size, max_elements, /* slru_size_ratio */ 0.5, /* split_cache_ratio */ 0.5,
+        "test_split_slru_total_cleanup");
+
+    const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
+    auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
+    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_system_segment = [&](size_t offset, size_t size)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
+        }
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, system_origin);
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    /// Entries only in the System sub-queue; the Data sub-queue stays empty.
+    add_system_segment(0, 10);
+    add_system_segment(10, 10);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 20);
+
+    EvictionInfoPtr eviction_info = priority.collectEvictionInfo(
+        /* size */ 20, /* elements */ 2, /* reservee */ nullptr,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), state_guard.lock());
+    ASSERT_TRUE(eviction_info->requiresEviction());
+
+    FileCacheReserveStat stat;
+    IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+    EvictionCandidates evicted;
+    /// Must not throw on the empty Data SLRU's absent queue ids.
+    ASSERT_NO_THROW(priority.collectCandidatesForEviction(
+        *eviction_info, stat, evicted, invalidated_entries, /* reservee */ nullptr,
+        /* continue_from_last_eviction_pos */ false, /* max_candidates_size */ 0,
+        /* is_total_space_cleanup */ true, FileCache::getInternalOrigin(), cache_guard, state_guard));
+
+    ASSERT_GT(evicted.size(), 0u);
 }

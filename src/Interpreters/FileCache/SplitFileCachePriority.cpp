@@ -249,6 +249,9 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
+    if (!eviction_info.requiresEviction())
+        return true;
+
     if (is_total_space_cleanup)
     {
         chassert(!reservee);
