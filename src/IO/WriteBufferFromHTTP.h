@@ -49,7 +49,7 @@ class BuilderWriteBufferFromHTTP
 {
 private:
     Poco::URI uri;
-    HTTPConnectionGroupType connection_group;
+    HTTPConnectionGroupType connection_group{};
     std::string method = Poco::Net::HTTPRequest::HTTP_POST; // POST or PUT only
     bool bypass_proxy = false;
     std::string content_type;
