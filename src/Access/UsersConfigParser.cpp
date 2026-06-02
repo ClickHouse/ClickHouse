@@ -612,7 +612,7 @@ namespace
 
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
-        String role_name,
+        const String & role_name,
         const std::unordered_set<UUID> & role_ids_from_users_config,
         const AccessControl & access_control,
         LoggerPtr log)
@@ -638,7 +638,7 @@ namespace
     }
 
 
-    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, String quota_name, const std::vector<UUID> & user_ids)
+    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids)
     {
         auto quota = std::make_shared<Quota>();
         String quota_config = "quotas." + quota_name;
