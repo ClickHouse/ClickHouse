@@ -14,7 +14,6 @@
 #include <immintrin.h>
 #endif
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -41,7 +40,7 @@ struct L1Distance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
-        state.sum += fabs(x - y);
+        state.sum += std::fabs(x - y);
     }
 
     template <typename ResultType>
@@ -157,7 +156,7 @@ struct L2Distance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return sqrt(state.sum);
+        return std::sqrt(state.sum);
     }
 };
 
@@ -191,8 +190,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        /// Note: std::pow with a runtime exponent prevents auto-vectorization of this kernel.
-        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(std::pow(static_cast<double>(std::fabs(x - y)), params.power));
     }
 
     template <typename ResultType>
@@ -204,7 +202,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(std::pow(static_cast<double>(state.sum), params.inverted_power));
     }
 };
 
@@ -223,13 +221,13 @@ struct LinfDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
-        state.dist = fmax(state.dist, fabs(x - y));
+        state.dist = std::fmax(state.dist, std::fabs(x - y));
     }
 
     template <typename ResultType>
     static void combine(State<ResultType> & state, const State<ResultType> & other_state, const ConstParams &)
     {
-        state.dist = fmax(state.dist, other_state.dist);
+        state.dist = std::fmax(state.dist, other_state.dist);
     }
 
     template <typename ResultType>
@@ -366,7 +364,7 @@ struct CosineDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
-        return 1.0f - state.dot_prod / sqrt(state.x_squared * state.y_squared);
+        return ResultType{1} - state.dot_prod / std::sqrt(state.x_squared * state.y_squared);
     }
 };
 
@@ -997,6 +995,12 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
 }
 
 /// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
+FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
+FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
+FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
+FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
+FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 FunctionPtr createFunctionArrayL1Distance(ContextPtr context_) { return FunctionArrayDistance<L1Distance>::create(context_); }
 FunctionPtr createFunctionArrayL2Distance(ContextPtr context_) { return FunctionArrayDistance<L2Distance>::create(context_); }
 FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_) { return FunctionArrayDistance<L2SquaredDistance>::create(context_); }
