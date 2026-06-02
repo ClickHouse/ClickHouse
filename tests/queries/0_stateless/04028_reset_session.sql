@@ -14,6 +14,9 @@
 -- each reset that precedes a `serverError` query.
 SET send_logs_level = 'fatal';
 
+-- The statement must round-trip through the parser and AST formatter unchanged.
+SELECT formatQuery('RESET SESSION');
+
 -- A noisy initial mutation to confirm we are starting dirty.
 SET max_threads = 999, max_block_size = 12345;
 SET param_x = 'mango', param_y = '7';
