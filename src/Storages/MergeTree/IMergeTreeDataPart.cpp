@@ -692,17 +692,24 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         if (hyperrectangle.left.isNull() || hyperrectangle.right.isNull())
             return {};
 
-        /// The case of DateTime (stored as UInt64)
-        if (hyperrectangle.left.getType() == Field::Types::UInt64)
+        /// The case of DateTime (stored as UInt64).
+        /// Both bounds must be `UInt64`. Merging a pre-`ALTER` part (whose stale slot
+        /// still holds a `DateTime` bound, i.e. `UInt64`) with a post-`ALTER` part (whose
+        /// slot at the same position now holds a reordered column of another type) via
+        /// `MinMaxIndex::merge` can yield a range with mismatched bound types — for example
+        /// `left` is `UInt64` while `right` is `Int64`. Calling `safeGet<UInt64>` on such a
+        /// `right` would throw `BAD_GET`, so require both bounds to match before reading them
+        /// and otherwise fall through to the empty range below.
+        if (hyperrectangle.left.getType() == Field::Types::UInt64
+            && hyperrectangle.right.getType() == Field::Types::UInt64)
         {
-            chassert(hyperrectangle.right.getType() == Field::Types::UInt64);
             return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
-        /// The case of DateTime64
-        if (hyperrectangle.left.getType() == Field::Types::Decimal64)
+        /// The case of DateTime64 (stored as Decimal64). Both bounds must match for the same
+        /// reason as above.
+        if (hyperrectangle.left.getType() == Field::Types::Decimal64
+            && hyperrectangle.right.getType() == Field::Types::Decimal64)
         {
-            chassert(hyperrectangle.right.getType() == Field::Types::Decimal64);
-
             auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
             auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
 
