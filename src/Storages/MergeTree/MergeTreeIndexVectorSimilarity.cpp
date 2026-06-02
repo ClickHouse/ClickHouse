@@ -126,13 +126,27 @@ bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const GranuleRowFilt
         return false;
 
     const size_t part_row = filter.granule_row_base + static_cast<size_t>(key_u64);
-    for (const auto & [row_begin, row_end] : filter.allowed_part_row_ranges)
+    const auto & allowed_part_row_ranges = filter.allowed_part_row_ranges;
+    if (allowed_part_row_ranges.empty())
+        return false;
+
+    if (allowed_part_row_ranges.size() == 1)
     {
-        if (part_row >= row_begin && part_row < row_end)
-            return true;
+        const auto & [row_begin, row_end] = allowed_part_row_ranges.front();
+        return part_row >= row_begin && part_row < row_end;
     }
 
-    return false;
+    const auto interval_it = std::upper_bound(
+        allowed_part_row_ranges.begin(),
+        allowed_part_row_ranges.end(),
+        part_row,
+        [](size_t row, const std::pair<size_t, size_t> & interval) { return row < interval.first; });
+
+    if (interval_it == allowed_part_row_ranges.begin())
+        return false;
+
+    const auto & [row_begin, row_end] = *std::prev(interval_it);
+    return part_row >= row_begin && part_row < row_end;
 }
 
 }
