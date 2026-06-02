@@ -15,6 +15,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
@@ -23,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -137,6 +139,16 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Hypothetical indexes are not supported for tables with the old MergeTree syntax");
+
+    /// Mirror `checkAlterIsPossible`: `ALTER TABLE ... ADD INDEX` is rejected on immutable
+    /// (no-hard-link) disks, so accepting one here would let EXPLAIN WHATIF report a benefit
+    /// for an index the user could never materialize on that table.
+    for (const auto & disk : merge_tree->getDisks())
+        if (!disk->supportsHardLinks())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Hypothetical indexes are not supported on immutable disk '{}'",
+                disk->getName());
 
     /// Mirror real ADD INDEX: the `auto_minmax_index_` prefix is reserved when
     /// implicit minmax indexes are enabled.
