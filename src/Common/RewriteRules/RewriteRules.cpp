@@ -1,11 +1,13 @@
 #include <Common/RewriteRules/RewriteRules.h>
 #include <algorithm>
+#include <unordered_set>
 #include <Core/Settings.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTQueryParameter.h>
 
 namespace DB
 {
@@ -14,7 +16,64 @@ namespace ErrorCodes
 {
     extern const int REWRITE_RULE_DOESNT_EXIST;
     extern const int REWRITE_RULE_ALREADY_EXISTS;
+    extern const int REWRITE_RULE_DUPLICATED_QUERY_PARAMETER;
+    extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    /// Collects the names of all `{name:Type}` placeholders (`ASTQueryParameter`)
+    /// reachable from `ast`, recording duplicates encountered along the way.
+    void collectQueryParameters(const ASTPtr & ast, std::unordered_set<String> & names, std::vector<String> & duplicates)
+    {
+        if (!ast)
+            return;
+        if (const auto * query_parameter = ast->as<ASTQueryParameter>())
+        {
+            if (!names.insert(query_parameter->name).second)
+                duplicates.push_back(query_parameter->name);
+        }
+        for (const auto & child : ast->children)
+            collectQueryParameters(child, names, duplicates);
+    }
+
+    /// Validates a rule's source/result templates at DDL time so that invalid rule
+    /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
+    /// runtime exceptions for every matching query later on.
+    template <typename Query>
+    void validateRuleTemplates(const Query & query)
+    {
+        std::unordered_set<String> source_parameters;
+        std::vector<String> source_duplicates;
+        collectQueryParameters(query.source_query, source_parameters, source_duplicates);
+
+        /// A placeholder appearing more than once in the source template is accepted by
+        /// the parser but later throws `REWRITE_RULE_DUPLICATED_QUERY_PARAMETER` during
+        /// matching, so reject it up front.
+        if (!source_duplicates.empty())
+            throw Exception(
+                ErrorCodes::REWRITE_RULE_DUPLICATED_QUERY_PARAMETER,
+                "Rewrite rule `{}` has a duplicate query parameter `{}` in its source template",
+                query.rule_name, source_duplicates.front());
+
+        if (!query.rewrite())
+            return;
+
+        /// Every placeholder referenced by the result template must be captured by the
+        /// source template, otherwise matching queries throw
+        /// `REWRITE_RULE_UNKNOWN_QUERY_PARAMETER` at execution time.
+        std::unordered_set<String> result_parameters;
+        std::vector<String> result_duplicates;
+        collectQueryParameters(query.resulting_query, result_parameters, result_duplicates);
+        for (const auto & name : result_parameters)
+            if (!source_parameters.contains(name))
+                throw Exception(
+                    ErrorCodes::REWRITE_RULE_UNKNOWN_QUERY_PARAMETER,
+                    "Rewrite rule `{}` references query parameter `{}` in its result template "
+                    "that is not captured by its source template",
+                    query.rule_name, name);
+    }
 }
 
 RewriteRules & RewriteRules::instance()
@@ -140,6 +199,7 @@ void RewriteRules::remove(const std::string & rule_name, std::lock_guard<std::mu
 
 void RewriteRules::createRule(const ASTCreateRewriteRuleQuery & query)
 {
+    validateRuleTemplates(query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
     if (exists(query.rule_name, lock))
@@ -171,6 +231,7 @@ void RewriteRules::removeRule(const ASTDropRewriteRuleQuery & query)
 
 void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
 {
+    validateRuleTemplates(query);
     std::lock_guard lock(mutex);
     loadIfNot(lock);
     if (!exists(query.rule_name, lock))
