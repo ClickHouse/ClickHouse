@@ -41,7 +41,6 @@ SELECT vec FROM test ORDER BY id;
 
 Arrays convert to `QBit` when the array length matches the `QBit` dimension. The array's element type does not need to match the `QBit` element type. Any numeric element type is converted to it automatically. This lets you move an existing column of embeddings straight into a `QBit` column:
 
-
 ```sql
 CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
 INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
