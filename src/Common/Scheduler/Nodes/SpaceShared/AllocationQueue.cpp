@@ -235,6 +235,12 @@ void AllocationQueue::approveIncrease()
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     apply(*increase);
     allocation.allocated += increase->size;
+    // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
+    // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
+    // decrease (instead of underflowing `allocations` in the hierarchy).
+    if (allocation.increase.kind == IncreaseRequest::Kind::Pending
+        || allocation.increase.kind == IncreaseRequest::Kind::Initial)
+        allocation.admitted = true;
 
     // Notify allocation
     increase->allocation.increaseApproved(*increase);
@@ -339,6 +345,20 @@ void AllocationQueue::processActivation()
                     running_allocations.erase(running_allocations.iterator_to(allocation));
                     allocation.fair_key = allocation.allocated;
                     running_allocations.insert(allocation);
+                }
+
+                // Never-admitted allocation (inserted with `initial_size == 0` and either never
+                // grew or had its first `Initial` increase cancelled above). The hierarchy's
+                // `allocations` counter was never incremented for it, so propagating a removing
+                // decrease would underflow `allocations` in this queue and every ancestor.
+                // Remove locally and notify the owner directly.
+                if (!allocation.admitted)
+                {
+                    chassert(allocation.allocated == 0);
+                    running_allocations.erase(running_allocations.iterator_to(allocation));
+                    allocation.decrease.prepare(0, /*removing_allocation=*/ true);
+                    allocation.decreaseApproved(allocation.decrease);
+                    continue;
                 }
 
                 // Prepare decrease for the full current amount (accurate because increase is cancelled above,

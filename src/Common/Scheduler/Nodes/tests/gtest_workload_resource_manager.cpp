@@ -3213,6 +3213,32 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationChangePrecedenceWithActi
     }
 }
 
+// Regression: a `TestAllocation` (or `MemoryReservation`) created with `initial_size == 0`
+// goes directly into `running_allocations` and is never counted in the hierarchy's
+// `allocations` counter (no `apply(IncreaseRequest)` ever runs for it). Removing it must not
+// propagate a `removing_allocation` decrease — that would underflow `allocations` in this
+// queue and every ancestor via `apply(DecreaseRequest)`. With the `chassert(allocations > 0)`
+// guard, the bug aborts the process without the fix.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeNoCounterUnderflow)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    // Repeating exercises the path: each cycle inserts a never-admitted zero-cost allocation
+    // and then removes it. Without the fix the underflow accumulates and the chassert in
+    // `apply(DecreaseRequest)` fires on the first iteration.
+    for (int i = 0; i < 4; ++i)
+    {
+        TestAllocation a(link, "zero", 0);
+        a.waitSync();
+    }
+}
+
 // Regression: `CREATE OR REPLACE RESOURCE` must clear role-name fields that the previous
 // definition owned, and must reject changes to the resource's cost unit.
 TEST(SchedulerWorkloadResourceManager, CreateOrReplaceResourceChangesRoleAndRejectsUnitChange)

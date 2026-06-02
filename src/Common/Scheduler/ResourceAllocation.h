@@ -51,6 +51,7 @@ private:
     friend class AllocationQueue;
 
     ResourceCost allocated = 0; /// Currently allocated.
+    bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

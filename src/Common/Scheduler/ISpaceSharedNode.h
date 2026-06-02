@@ -157,6 +157,7 @@ public:
         ++decreases;
         if (request.removing_allocation)
         {
+            chassert(allocations > 0); // Must have been admitted via `apply(IncreaseRequest)` first
             --allocations;
             ++removes;
         }
