@@ -12,8 +12,8 @@ static int readAndPrint(DB::ReadBuffer & in)
 {
     try
     {
-        Int64 a;
-        Float64 b;
+        Int64 a = {};
+        Float64 b = {};
         String c;
         String d;
 

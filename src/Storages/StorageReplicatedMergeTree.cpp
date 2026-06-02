@@ -653,7 +653,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             /// Allow structure mismatch for secondary queries from Replicated database.
             /// It may happen if the table was altered just after creation.
             /// Metadata will be updated in cloneMetadataIfNeeded(...), metadata_version will be 0 for a while.
-            int32_t metadata_version;
+            int32_t metadata_version = 0;
             bool same_structure = checkTableStructure(zookeeper_path, metadata_snapshot, &metadata_version, need_check_structure, getCreateQueryZooKeeperRetriesInfo());
 
             if (same_structure)
@@ -1269,7 +1269,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         }
     }
 
-    Coordination::Error code;
+    Coordination::Error code{};
 
     do
     {
@@ -2336,7 +2336,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
     {
         /// Do not commit if the part is obsolete, but check it's checksums just in case. It may throw if checksums mismatch
         Coordination::Requests ops;
-        size_t num_check_ops;
+        size_t num_check_ops = 0;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
         return {};
     }
@@ -2351,11 +2351,11 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             throw Exception(ErrorCodes::ABORTED, "Cannot commit part because shutdown called");
 
         Coordination::Requests ops;
-        size_t num_check_ops;
+        size_t num_check_ops = 0;
         getOpsToCheckPartChecksumsAndCommit(zookeeper, part, hardlinked_files, replace_zero_copy_lock, ops, num_check_ops);
 
         Coordination::Responses responses;
-        Coordination::Error e;
+        Coordination::Error e{};
         {
 
             Coordination::SimpleFaultInjection fault(static_cast<double>((*getSettings())[MergeTreeSetting::fault_probability_before_part_commit]),
@@ -6948,7 +6948,7 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
 
-            int32_t mutations_version;
+            int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
             {
                 mutations_version = *maybe_mutations_version_after_logs_pull;
@@ -7088,8 +7088,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(
       * NOTE: If you need to similarly support a `DROP PART` request, you will have to think of some new mechanism for it,
       *     to guarantee this invariant.
       */
-    Int64 right;
-    Int64 mutation_version;
+    Int64 right = 0;
+    Int64 mutation_version = 0;
 
     {
         delimiting_block_lock = allocateBlockNumber(
@@ -10659,7 +10659,7 @@ std::pair<bool, NameSet> getParentLockedBlobs(const ZooKeeperWithFaultInjectionP
             LOG_TRACE(log, "Found mutation parent {} for part {}", part_candidate_info_str, part_info_str);
             /// Get hardlinked files
             String files_not_to_remove_str;
-            Coordination::Error code;
+            Coordination::Error code{};
             zookeeper_ptr->tryGet(fs::path(zero_copy_part_path_prefix) / part_candidate_info_str, files_not_to_remove_str, nullptr, nullptr, &code);
             if (code != Coordination::Error::ZOK)
             {
@@ -11282,7 +11282,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
             /// Two replicas may try to commit an empty part simultaneously, so some lost part may be counted twice in lost_part_count.
             /// Ensure that we are the first replica who commits that part.
-            size_t num_check_ops_unused;
+            size_t num_check_ops_unused = 0;
             bool part_found = getOpsToCheckPartChecksumsAndCommit(std::make_shared<ZooKeeperWithFaultInjection>(zookeeper),
                 new_data_part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true, ops, num_check_ops_unused);
             if (part_found)

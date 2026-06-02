@@ -92,7 +92,7 @@ struct AggregateFunctionVarianceMatrixData
 
     static constexpr StatisticsMatrixFunctionKind kind = _kind;
     PaddedPODArray<DataType> data_matrix;
-    size_t num_args;
+    size_t num_args{};
 };
 
 template <typename Data>

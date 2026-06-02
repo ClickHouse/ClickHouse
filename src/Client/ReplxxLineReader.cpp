@@ -203,7 +203,7 @@ std::string replxx_now_ms_str()
 {
     std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
     time_t t = ms.count() / 1000;
-    tm broken;
+    tm broken{};
     if (!localtime_r(&t, &broken))
         return {};
 

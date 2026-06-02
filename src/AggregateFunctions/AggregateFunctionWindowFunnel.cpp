@@ -123,7 +123,7 @@ struct AggregateFunctionWindowFunnelData
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         if (size > 100'000'000) /// The constant is arbitrary
@@ -132,8 +132,8 @@ struct AggregateFunctionWindowFunnelData
         events_list.clear();
         events_list.reserve(size);
 
-        T timestamp;
-        UInt8 event;
+        T timestamp{};
+        UInt8 event = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -245,7 +245,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         readBinary(sorted, buf);
 
-        size_t events_size;
+        size_t events_size = 0;
         readBinary(events_size, buf);
 
         if (events_size > 100'000'000) /// Arbitrary limit to prevent excessive memory allocation
@@ -254,8 +254,8 @@ struct AggregateFunctionWindowFunnelStrictOnceData
         events_list.clear();
         events_list.reserve(events_size);
 
-        T timestamp;
-        UInt8 event_type;
+        T timestamp{};
+        UInt8 event_type = 0;
         UInt64 unique_id = 0;
 
         for (size_t i = 0; i < events_size; ++i)
@@ -369,12 +369,15 @@ private:
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window
+        /// Stores the timestamp of the first and last i-th level event happen within time window.
+        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
+        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
+        /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
-            UInt64 first_timestamp;
-            UInt64 last_timestamp;
-            std::array<UInt64, MAX_EVENTS> event_path;
+            UInt64 first_timestamp{};
+            UInt64 last_timestamp{};
+            std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)

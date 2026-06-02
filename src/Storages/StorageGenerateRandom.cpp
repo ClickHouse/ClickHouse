@@ -187,7 +187,7 @@ T fuzzyRandomInteger(pcg64 & rng)
             }
         }
 
-        T result;
+        T result{};
         memcpy(&result, words, sizeof(T));
         return result;
     }

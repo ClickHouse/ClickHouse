@@ -313,7 +313,7 @@ bool isSignalBlocked(UInt64 tid, int signal)
         line = line.substr(strlen("SigBlk:"));
         line = line.substr(0, line.rend() - std::find_if_not(line.rbegin(), line.rend(), ::isspace));
 
-        UInt64 sig_blk;
+        UInt64 sig_blk = 0;
         if (parseHexNumber(line, sig_blk))
             return sig_blk & (1ULL << (signal - 1));
     }
