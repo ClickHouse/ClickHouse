@@ -37,9 +37,24 @@ String sanitizeS3ErrorMessage(String message)
             || c == '+' || c == '=' || c == ',' || c == '.' || c == '@';
     };
 
+    auto has_arn_prefix_boundary = [&](size_t arn_pos)
+    {
+        if (arn_pos == 0)
+            return true;
+
+        char previous = message[arn_pos - 1];
+        return !std::isalnum(static_cast<unsigned char>(previous)) && previous != '_' && previous != '-';
+    };
+
     size_t pos = 0;
     while ((pos = message.find(arn_prefix, pos)) != String::npos)
     {
+        if (!has_arn_prefix_boundary(pos))
+        {
+            pos += arn_prefix.size();
+            continue;
+        }
+
         size_t end = pos + arn_prefix.size();
         while (end < message.size() && is_arn_char(message[end]))
             ++end;
