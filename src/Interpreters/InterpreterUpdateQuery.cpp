@@ -2,12 +2,15 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>
@@ -34,8 +37,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -48,9 +49,9 @@ InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr con
 {
 }
 
-static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query, const Settings & settings)
+static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query)
 {
-    auto alter_query = make_intrusive<ASTAlterCommand>();
+    auto alter_query = std::make_shared<ASTAlterCommand>();
 
     alter_query->type = ASTAlterCommand::UPDATE;
     alter_query->set(alter_query->predicate, update_query.predicate);
@@ -59,12 +60,7 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(
-        *alter_query,
-        /* parse_alter_commands = */ false,
-        /* with_pure_metadata_commands = */ false,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+    auto mutation_command = MutationCommand::parse(alter_query.get());
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());
@@ -115,7 +111,7 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     MutationCommands commands;
-    commands.emplace_back(createMutationCommand(update_query, settings));
+    commands.emplace_back(createMutationCommand(update_query));
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 

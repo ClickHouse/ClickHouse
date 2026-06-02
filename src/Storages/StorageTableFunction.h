@@ -3,6 +3,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
+#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -51,8 +52,8 @@ public:
     StoragePtr getNested() const override
     {
         StoragePtr nested_storage = getNestedImpl();
-        chassert(!nested_storage->getStoragePolicy());
-        chassert(!nested_storage->storesDataOnDisk());
+        assert(!nested_storage->getStoragePolicy());
+        assert(!nested_storage->storesDataOnDisk());
         return nested_storage;
     }
 
@@ -96,7 +97,7 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
@@ -108,8 +109,7 @@ public:
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                     from_header->getColumnsWithTypeAndName(),
                     to_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name,
-                    context);
+                    ActionsDAG::MatchColumnsMode::Name);
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentHeader(),
@@ -128,7 +128,7 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto actual_structure = storage->getInMemoryMetadataPtr(context, false)->getSampleBlock();
+        auto actual_structure = storage->getInMemoryMetadataPtr()->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
             throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
