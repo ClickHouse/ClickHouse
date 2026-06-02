@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
+    extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
@@ -198,6 +199,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
+    max_set_size_for_projection_match = from[Setting::query_plan_max_set_size_for_projection_match];
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
