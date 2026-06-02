@@ -286,6 +286,46 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
     -- { serverError ACCESS_DENIED }
 "
 
+# `from_env` credentials must also be rejected when no `role_arn` is present;
+# otherwise user-created S3 disk metadata could inherit server environment keys.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_indirect_keys',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_indirect_keys/',
+        access_key_id = 'from_env ${DB}_AKID',
+        secret_access_key = 'from_env ${DB}_SAK')
+    -- { serverError ACCESS_DENIED }
+"
+
+# Same for `from_zk` credential indirection.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_zk=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_zk_keys',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_zk_keys/',
+        access_key_id = 'from_zk /${DB}/akid',
+        secret_access_key = 'from_zk /${DB}/sak')
+    -- { serverError ACCESS_DENIED }
+"
+
+# `include` could supply credential-bearing S3 fields from server config, so it
+# is not allowed for newly created dynamic S3 disk metadata.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_s3_include',
+        type = object_storage,
+        object_storage_type = s3,
+        include = '${DB}_some_s3_disk',
+        endpoint = 'http://localhost:11111/test/${DB}_s3_include/')
+    -- { serverError ACCESS_DENIED }
+"
+
 # Nested disk(cache, disk = disk(... s3 + env)) must also be rejected
 # (the inner disk function is flattened recursively).
 $CLICKHOUSE_CLIENT -q "

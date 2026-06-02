@@ -65,16 +65,39 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_use_environment_credentials = false;
     bool use_environment_credentials = false;
     bool has_role_arn = false;
+    bool has_include = false;
     /// "Explicit" here means the value is a literal in the SQL — not a
     /// `from_env`/`from_zk` reference. Indirect values must not count as the
     /// user-supplied keys that authorize a `role_arn`, since they could
     /// resolve to credentials configured by the operator.
     bool has_explicit_access_key_id = false;
     bool has_explicit_secret_access_key = false;
+    std::string indirect_s3_credential_key;
 
     auto is_indirect_value = [](const std::string & v)
     {
         return startsWith(v, "from_env") || startsWith(v, "from_zk");
+    };
+
+    auto is_s3_credential_key = [](const std::string & key)
+    {
+        return key == "access_key_id"
+            || key == "secret_access_key"
+            || key == "session_token"
+            || key == "server_side_encryption_customer_key_base64"
+            || key == "server_side_encryption_kms_key_id"
+            || key == "server_side_encryption_kms_encryption_context"
+            || key == "role_arn"
+            || key == "role_session_name"
+            || key == "http_client"
+            || key == "service_account"
+            || key == "metadata_service"
+            || key == "request_token_path"
+            || key == "google_adc_client_id"
+            || key == "google_adc_client_secret"
+            || key == "google_adc_refresh_token"
+            || key == "header"
+            || key == "access_header";
     };
 
     for (const auto & arg : disk_args)
@@ -113,7 +136,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 type_resolution_is_indirect = true;
         }
         else if (key == "include")
+        {
             type_resolution_is_indirect = true;
+            has_include = true;
+        }
         else if (key == "use_environment_credentials")
         {
             has_use_environment_credentials = true;
@@ -125,6 +151,9 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_explicit_access_key_id = true;
         else if (key == "secret_access_key" && !value_str.empty() && !is_indirect_value(value_str))
             has_explicit_secret_access_key = true;
+
+        if (is_s3_credential_key(key) && is_indirect_value(value_str))
+            indirect_s3_credential_key = key;
 
         if (key == "include")
         {
@@ -180,6 +209,17 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode("false"));
         key_element->appendChild(value_element);
     }
+
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && !indirect_s3_credential_key.empty())
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `{}` from `from_env` or `from_zk` in dynamic S3 disk configuration is not allowed",
+            indirect_s3_credential_key);
+
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_include)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `include` in dynamic S3 disk configuration is not allowed");
 
     if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_role_arn
         && (!has_explicit_access_key_id || !has_explicit_secret_access_key))
