@@ -410,7 +410,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
+        size_t argument = 0;
         bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)
@@ -628,7 +628,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
     }
 }
 
-Poco::JSON::Object::Ptr getPartitionField(
+static Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
     Int32 & partition_iter)
@@ -730,7 +730,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {

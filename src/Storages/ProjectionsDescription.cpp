@@ -330,6 +330,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
+        query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
@@ -374,7 +375,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
     mut_context->setQueryKindInitial();
 
-    bool is_aggregate;
+    bool is_aggregate = false;
     {
         /// Use all column names and types but as Ordinary columns for the Analyzer. This avoids
         /// QueryAnalyzer::initializeTableExpressionData eagerly resolving ALIAS column expressions

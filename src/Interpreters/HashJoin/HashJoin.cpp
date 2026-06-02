@@ -246,7 +246,7 @@ HashJoin::HashJoin(
 
         if (strictness == JoinStrictness::Asof)
         {
-            assert(disjuncts_num == 1);
+            chassert(disjuncts_num == 1);
 
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
@@ -256,7 +256,7 @@ HashJoin::HashJoin(
             if (key_columns.size() <= 1)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
 
-            size_t asof_size;
+            size_t asof_size = 0;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
@@ -2121,7 +2121,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
         for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
         {
             typename RangeMap::LookupResult res;
-            bool inserted;
+            bool inserted = false;
             range_map->emplace(source_map_it->getKey() - min_key, res, inserted);
             if (inserted)
                 res->getMapped() = source_map_it->getMapped();
