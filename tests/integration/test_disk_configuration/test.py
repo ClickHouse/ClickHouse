@@ -646,8 +646,11 @@ def test_dynamic_disk_security_settings(start_cluster):
     node.query("DROP TABLE IF EXISTS test_security_from_zk_ok SYNC")
     node.query("DROP TABLE IF EXISTS test_security_include_ok SYNC")
     zk_client = cluster.get_kazoo_client("zoo1")
+    test_security_endpoint_znode = "/test_security_endpoint"
     if zk_client.exists("/test_security_minio_secret"):
         zk_client.delete("/test_security_minio_secret")
+    if zk_client.exists(test_security_endpoint_znode):
+        zk_client.delete(test_security_endpoint_znode)
 
     node.query(
         "CREATE SETTINGS PROFILE IF NOT EXISTS allow_dynamic_disk_access "
@@ -748,11 +751,15 @@ def test_dynamic_disk_security_settings(start_cluster):
         assert "ACCESS_DENIED" in error and "dynamic_disk_allow_from_env" in error, error
 
         # privileged_user (allow_dynamic_disk_access profile): from_env is allowed - CREATE TABLE succeeds
-        zk_client.create(
-            "/test_security_endpoint",
-            b"http://minio1:9001/root/data/",
-            makepath=True,
-        )
+        test_security_endpoint = b"http://minio1:9001/root/data/"
+        if zk_client.exists(test_security_endpoint_znode):
+            zk_client.set(test_security_endpoint_znode, test_security_endpoint)
+        else:
+            zk_client.create(
+                test_security_endpoint_znode,
+                test_security_endpoint,
+                makepath=True,
+            )
 
         node.query(
             f"""
@@ -772,7 +779,7 @@ def test_dynamic_disk_security_settings(start_cluster):
             CREATE TABLE test_security_from_zk_ok (a Int32) ENGINE = MergeTree() ORDER BY tuple()
             SETTINGS disk = disk(
                 type = s3,
-                endpoint = 'from_zk /test_security_endpoint',
+                endpoint = 'from_zk {test_security_endpoint_znode}',
                 access_key_id = 'minio',
                 secret_access_key = '{minio_secret_key}')
             """,
@@ -803,8 +810,8 @@ def test_dynamic_disk_security_settings(start_cluster):
         node.query("DROP USER IF EXISTS restricted_user")
         node.query("DROP USER IF EXISTS privileged_user")
         node.query("DROP SETTINGS PROFILE IF EXISTS allow_dynamic_disk_access")
-        if zk_client.exists("/test_security_endpoint"):
-            zk_client.delete("/test_security_endpoint")
+        if zk_client.exists(test_security_endpoint_znode):
+            zk_client.delete(test_security_endpoint_znode)
 
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
