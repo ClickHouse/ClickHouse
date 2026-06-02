@@ -323,7 +323,7 @@ Pipe executeRemoveOrphanFiles(
     {
         String older_than_str = parsed.getAs<String>("older_than");
         ReadBufferFromString buf(older_than_str);
-        time_t ts;
+        time_t ts = 0;
         readDateTimeText(ts, buf);
 
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

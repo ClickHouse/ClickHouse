@@ -1500,7 +1500,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
         for (uint32_t i = 0; i < nclauses; i++)
         {
             /// Determine the target node for this individual clause, advancing expr to the rhs for the next iteration
-            Expr * clause_target;
+            Expr * clause_target = nullptr;
 
             if (i == nclauses - 1)
             {
@@ -1823,7 +1823,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         {
             /// Establish clause_target for this iteration: do AND/OR split first,
             /// then apply NOT only to the current clause (not the entire remaining chain).
-            Expr * clause_target;
+            Expr * clause_target = nullptr;
             if (i == nclauses - 1)
             {
                 clause_target = expr;

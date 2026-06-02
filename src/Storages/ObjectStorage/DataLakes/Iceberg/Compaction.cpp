@@ -115,7 +115,7 @@ struct Plan
     } partition_encoder;
 };
 
-Plan getPlan(
+static Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
@@ -348,7 +348,7 @@ static void writeDataFiles(
     }
 }
 
-void writeMetadataFiles(
+static void writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
@@ -576,10 +576,7 @@ void writeMetadataFiles(
     }
 }
 
-/// Files to delete after compaction: a base-storage directory listing under `metadata/` and
-/// `data/` (covers historical metadata.json and any orphan files on the base storage), plus
-/// any paths from the compacted snapshots that resolve to a secondary storage.
-std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
+static std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
     ObjectStoragePtr object_storage,
     SecondaryStorages & secondary_storages,
     ContextPtr context,
@@ -610,7 +607,7 @@ std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
     return result;
 }
 
-void clearOldFiles(const std::vector<std::pair<ObjectStoragePtr, String>> & old_files)
+static void clearOldFiles(const std::vector<std::pair<ObjectStoragePtr, String>> & old_files)
 {
     auto log = getLogger("IcebergCompaction");
     for (const auto & [storage, key] : old_files)

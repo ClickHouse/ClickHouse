@@ -25,9 +25,9 @@ struct IcebergObjectSerializableInfo
     /// `s3://bucket/...` or a relative path). Used for the `_path` virtual column and as a stable
     /// task identifier. Not a canonicalised storage key — see `IcebergPathResolver::resolve` for that.
     String data_object_file_metadata_path;
-    Int32 underlying_format_read_schema_id;
-    Int32 schema_id_relevant_to_iterator;
-    Int64 sequence_number;
+    Int32 underlying_format_read_schema_id{};
+    Int32 schema_id_relevant_to_iterator{};
+    Int64 sequence_number{};
     String file_format;
     String manifest_file;
     String partition_id;

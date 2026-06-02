@@ -391,7 +391,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         return nullptr;
     }
 
-    Int64 resolved_snapshot_id;
+    /// Compute inherited/resolved fields
+
+    Int64 resolved_snapshot_id = 0;
     if (parsed_entry->parsed_snapshot_id.has_value())
     {
         resolved_snapshot_id = *parsed_entry->parsed_snapshot_id;
