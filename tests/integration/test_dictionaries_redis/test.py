@@ -275,7 +275,7 @@ def test_redis_simple_reject_multi_key(started_cluster):
 
     node = started_cluster.instances["node"]
     result = node.query_and_get_error(
-        """
+        f"""
         CREATE DICTIONARY test_redis_multi_key_reject
         (
             key1 String,
@@ -283,9 +283,42 @@ def test_redis_simple_reject_multi_key(started_cluster):
             value String
         )
         PRIMARY KEY key1, key2
-        SOURCE(REDIS(host 'localhost' port 6379 storage_type 'simple' db_index 0))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
         LAYOUT(COMPLEX_KEY_HASHED())
         LIFETIME(0)
         """
     )
     assert "requires exactly 1 key" in result
+
+def test_redis_simple_negative_key(started_cluster):
+
+    node = started_cluster.instances["node"]
+
+    import redis as redis_client
+    r = redis_client.Redis(
+        host="localhost",
+        port=cluster.redis_port,
+        password="clickhouse",
+        db=29
+    )
+    r.set("-1", "found_it")
+
+    node.query(
+        f"""
+        CREATE DICTIONARY IF NOT EXISTS test_redis_negative_key
+        (
+            key Int8,
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 29))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """
+    )
+
+    result = node.query("SELECT dictGet('test_redis_negative_key', 'value', toInt8(-1))")
+    assert result.strip() == "found_it"
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_negative_key")
+    r.flushdb()

@@ -170,7 +170,7 @@ namespace DB
             {
                 const auto & type = dict_struct.key->at(0).type;
                 if (isInteger(type))
-                    keys << DB::toString(key_columns[0]->get64(row));
+                    keys << DB::toString(key_columns[0]->getInt(row));
                 else if (isString(type))
                     keys << (*key_columns[0])[row].safeGet<String>();
                 else
