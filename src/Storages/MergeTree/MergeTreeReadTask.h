@@ -170,11 +170,6 @@ public:
     {
         Block block;
         MarkRanges read_mark_ranges;
-        /// Per-granule unmatched marks: marks where all rows were filtered out by PREWHERE.
-        /// Populated only when use_query_condition_cache is enabled.
-        /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
-        /// because it captures individual filtered-out granules even in partially-passing batches.
-        MarkRanges unmatched_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;

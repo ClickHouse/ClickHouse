@@ -114,6 +114,7 @@
 
 #include <memory>
 #include <filesystem>
+#include <cassert>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -428,8 +429,6 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
-        /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
@@ -603,13 +602,7 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
         }
     }
     const auto matches = matchTrees(expression_dag.getOutputs(), sharding_key_dag);
-
-    /// `sharding_key_dag.getOutputs()` contains both the sharding key column and source columns.
-    /// For example, if the sharding key is `intHash64(user_id)`, then `getOutputs() = [intHash64(user_id), user_id]`. The `user_id` column is a source
-    /// column but not a key value, and should be excluded from checks. We need to find the actual sharding key output
-    /// node to check that it depends only on the allowed set of nodes (`irreducible_nodes`).
-    const auto sharding_key_outputs = sharding_key_dag.findInOutputs(Names{sharding_key_column_name});
-    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_outputs, irreducibe_nodes, matches);
+    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_dag, irreducibe_nodes, matches);
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -986,14 +979,7 @@ void StorageDistributed::read(
             column.column = column.column->convertToFullColumnIfConst();
         header = std::make_shared<const Block>(std::move(block));
 
-        /// Convert grouping function specializations (e.g. groupingForGroupingSets -> grouping)
-        /// in a separate clone so the AST sent to shards contains the generic function name
-        /// that can be re-resolved by the shard's analyzer.  The original query tree must keep
-        /// the specialized functions because it is reused later for getSampleBlock / plan building
-        /// (the unresolved FunctionGrouping throws on execution, even with 0 rows).
-        auto query_tree_for_ast = query_tree_distributed->clone();
-        removeGroupingFunctionSpecializations(query_tree_for_ast);
-        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+        modified_query_info.query = queryNodeToDistributedSelectQuery(query_tree_distributed);
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
@@ -1045,10 +1031,9 @@ void StorageDistributed::read(
         shard_filter_generator,
         is_remote_function);
 
-    /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
-    /// (e.g., every shard had a missing table with no remote replicas).
+    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
 }
 
 
@@ -1952,7 +1937,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    chassert(relative_data_path != new_path_to_table_data);
+    assert(relative_data_path != new_path_to_table_data);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);
@@ -1966,7 +1951,7 @@ size_t StorageDistributed::getRandomShardIndex(const Cluster::ShardsInfo & shard
     for (const auto & shard : shards)
         total_weight += shard.weight;
 
-    chassert(total_weight > 0);
+    assert(total_weight > 0);
 
     size_t res;
     {
@@ -2098,6 +2083,9 @@ void registerStorageDistributed(StorageFactory & factory)
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
             storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
         }
+
+        /// Check that sharding_key exists in the table and has numeric type.
+        checkShardingKeyExistsAndIsNumeric(sharding_key_ast, context, args.columns.getAllPhysical());
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
         DistributedSettings distributed_settings = context->getDistributedSettings();

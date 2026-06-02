@@ -21,13 +21,8 @@ public:
     /// Check all quotas, return true if any quota is met or exceeded, false otherwise. Should be called before issuing API call.
     bool checkQuotas();
 
-    /// Count one outbound API call against the request quota. Should be called before each provider request
-    /// (including retries), so a misbehaving endpoint can't bypass `ai_function_max_api_calls_per_query`.
-    void recordAttempt();
-
-    /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
-    /// so this is kept separate from `recordAttempt` and called only after the response is parsed.
-    void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
+    /// Record one API call and its token counts. Should be called after an API call, does not check quotas.
+    void recordResponse(UInt64 in_tokens, UInt64 out_tokens);
 
 
 private:

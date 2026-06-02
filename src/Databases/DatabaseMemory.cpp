@@ -11,7 +11,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
