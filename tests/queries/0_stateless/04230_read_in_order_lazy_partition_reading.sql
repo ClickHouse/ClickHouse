@@ -342,3 +342,35 @@ FROM
      ORDER BY event_time_microseconds DESC LIMIT 1) b;
 
 DROP TABLE t_lazy_composite;
+
+-- ============================================================================
+-- Table 3: PARTITION BY k ORDER BY k with integer k.
+-- partition_id values are "10" and "2", so "10" < "2" lexicographically 
+-- even though 10 > 2 numerically.
+-- ============================================================================
+
+DROP TABLE IF EXISTS t_lazy_int_partition;
+
+CREATE TABLE t_lazy_int_partition (k Int32, val UInt64)
+ENGINE = MergeTree
+PARTITION BY k
+ORDER BY k;
+
+INSERT INTO t_lazy_int_partition VALUES (2, 200), (2, 201), (2, 202);
+INSERT INTO t_lazy_int_partition VALUES (10, 1000), (10, 1001), (10, 1002);
+
+OPTIMIZE TABLE t_lazy_int_partition FINAL;
+
+-- ------------------------------------------------------------------
+-- Test 10: Correctness ASC -- must return k=2 rows first.
+-- ------------------------------------------------------------------
+SELECT 'test 10 correctness integer partition ASC:';
+SELECT k, val FROM t_lazy_int_partition ORDER BY k ASC LIMIT 3;
+
+-- ------------------------------------------------------------------
+-- Test 11: Correctness DESC -- must return k=10 rows first.
+-- ------------------------------------------------------------------
+SELECT 'test 11 correctness integer partition DESC:';
+SELECT k, val FROM t_lazy_int_partition ORDER BY k DESC LIMIT 3;
+
+DROP TABLE t_lazy_int_partition;

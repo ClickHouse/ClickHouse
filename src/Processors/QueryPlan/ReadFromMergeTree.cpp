@@ -856,7 +856,9 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
     if (parts_with_ranges.empty())
         return {};
 
-    std::vector<std::pair<String, RangesInDataParts>> partition_groups;
+    /// Use the actual partition key value (not the partition_id string) as the group key,
+    /// so that sorting below is by numeric/typed value rather than by lexicographic string order.
+    std::vector<std::pair<Row, RangesInDataParts>> partition_groups;
     {
         String current_partition_id;
         for (auto & part_with_ranges : parts_with_ranges)
@@ -864,8 +866,8 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
             String partition_id = part_with_ranges.data_part->info.getPartitionId();
             if (partition_groups.empty() || partition_id != current_partition_id)
             {
-                partition_groups.emplace_back(std::move(partition_id), RangesInDataParts{});
-                current_partition_id = partition_groups.back().first;
+                partition_groups.emplace_back(part_with_ranges.data_part->partition.value, RangesInDataParts{});
+                current_partition_id = std::move(partition_id);
             }
             partition_groups.back().second.emplace_back(std::move(part_with_ranges));
         }
@@ -875,12 +877,16 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
         return readInOrder(std::move(partition_groups.front().second), index_build_context, column_names, pool_settings, read_type, read_limit);
 
     if (read_type == ReadType::InReverseOrder)
-        std::reverse(partition_groups.begin(), partition_groups.end());
+        std::sort(partition_groups.begin(), partition_groups.end(),
+            [](const auto & a, const auto & b) { return a.first > b.first; });
+    else
+        std::sort(partition_groups.begin(), partition_groups.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
 
     Pipes partition_pipes;
     partition_pipes.reserve(partition_groups.size());
 
-    for (auto & [partition_id, partition_parts] : partition_groups)
+    for (auto & [_, partition_parts] : partition_groups)
     {
         auto partition_pipe = readInOrder(
             std::move(partition_parts), index_build_context, column_names, pool_settings, read_type, read_limit);
@@ -967,7 +973,7 @@ Pipe ReadFromMergeTree::read(
         return readFromPool(
             std::move(parts_with_range), index_build_context, std::move(required_columns), std::move(pool_settings));
 
-    auto pipe = readInOrder(parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*limit=*/0);
+    auto pipe = readInOrder(parts_with_range, index_build_context, required_columns, pool_settings, read_type, /*read_limit=*/0);
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.

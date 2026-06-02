@@ -25,3 +25,11 @@ aaa	bbb	2024-01-01 00:02:00	2
 aaa	bbb	2024-01-01 00:03:00	3
 aaa	bbb	2024-01-01 00:04:00	4
 test 9 redundant columns in order by:	1
+test 10 correctness integer partition ASC:
+2	200
+2	201
+2	202
+test 11 correctness integer partition DESC:
+10	1002
+10	1001
+10	1000
