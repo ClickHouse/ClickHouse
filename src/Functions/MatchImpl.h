@@ -133,8 +133,8 @@ struct MatchImpl
         const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+        bool is_trivial = false;
+        bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
@@ -301,8 +301,8 @@ struct MatchImpl
         const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+        bool is_trivial = false;
+        bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
@@ -418,8 +418,8 @@ struct MatchImpl
             return;
 
         String required_substr;
-        bool is_trivial;
-        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+        bool is_trivial = false;
+        bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
@@ -527,8 +527,8 @@ struct MatchImpl
             return;
 
         String required_substr;
-        bool is_trivial;
-        bool required_substring_is_prefix; // for `anchored` execution of the regexp.
+        bool is_trivial = false;
+        bool required_substring_is_prefix = false; // for `anchored` execution of the regexp.
 
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
