@@ -54,7 +54,7 @@ def test_remote_initiator_after_non_remote(started_cluster_iceberg_with_spark, s
             FROM {TABLE_NAME}
             WHERE number=1
         SETTINGS
-            object_storage_cluster='cluster_simple'
+            object_storage_cluster='cluster_23'
         """,
         query_id = query_id)
     assert res == "1\t1\n"
@@ -64,8 +64,8 @@ def test_remote_initiator_after_non_remote(started_cluster_iceberg_with_spark, s
             FROM clusterAllReplicas('cluster_simple', system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id}'
         """)
-    # initial node + 3 subqueries on replicas
-    assert queries == "4\n"
+    # initial node + 2 subqueries on replicas
+    assert queries == "3\n"
 
     query_id = uuid.uuid4().hex
     res = instance.query(f"""
@@ -74,7 +74,7 @@ def test_remote_initiator_after_non_remote(started_cluster_iceberg_with_spark, s
             WHERE number=1
         SETTINGS
             object_storage_remote_initiator=1,
-            object_storage_cluster='cluster_simple'
+            object_storage_cluster='cluster_23'
         """,
         query_id = query_id)
     assert res == "1\t1\n"
@@ -84,8 +84,8 @@ def test_remote_initiator_after_non_remote(started_cluster_iceberg_with_spark, s
             FROM clusterAllReplicas('cluster_simple', system.query_log)
             WHERE type='QueryFinish' AND initial_query_id='{query_id}'
         """)
-    # initial node + remote initiator + 3 subqueries on replicas
-    assert queries == "5\n"
+    # initial node + remote initiator + 2 subqueries on replicas
+    assert queries == "4\n"
 
     query_id = uuid.uuid4().hex
     res = instance.query(f"""
