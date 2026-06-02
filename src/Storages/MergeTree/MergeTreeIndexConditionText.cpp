@@ -667,9 +667,6 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
 
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
-    if (patterns.empty())
-        return;
-
     VectorWithMemoryTracking<std::string_view> needles;
     needles.reserve(patterns.size());
 
