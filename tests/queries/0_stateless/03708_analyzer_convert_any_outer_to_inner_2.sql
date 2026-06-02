@@ -1,6 +1,8 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 1; -- Changes query plan
+SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False, preventing ANY OUTER → INNER conversion being tested
+SET query_plan_convert_any_join_to_semi_or_anti_join = 0; -- CI may inject True, converting ANY strictness before outer→inner path
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=Memory;
 

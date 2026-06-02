@@ -6,7 +6,8 @@ SET enable_analyzer = 1,
     query_plan_join_swap_table = 0,
     enable_parallel_replicas = 0,
     use_skip_indexes_for_top_k = 0,
-    use_top_k_dynamic_filtering = 0;
+    use_top_k_dynamic_filtering = 0,
+    query_plan_optimize_join_order_limit = 10; -- CI may inject 0, disabling join order optimization which skips relation label population (no [N] row counts)
 
 
 SELECT '-------------- Limit < table size -------------';

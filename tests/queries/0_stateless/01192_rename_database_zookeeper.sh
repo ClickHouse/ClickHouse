@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-flaky-check, no-azure-blob-storage
 # no-shared-merge-tree: database ordinary not supported
+# no-azure-blob-storage: this test runs concurrent `INSERT` queries with `sleepEachRow` while
+#   issuing `RENAME DATABASE`, and exceeds the test framework timeout reliably on slow Azure
+#   blob storage. CIDB shows 19 failures / 4482 OKs (0.42%) on
+#   `Stateless tests (arm_asan_ubsan, azure, sequential)`, with 0 failures across 50K+ runs
+#   on every other configuration. Coverage is preserved by other sanitizer/storage configs.
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal

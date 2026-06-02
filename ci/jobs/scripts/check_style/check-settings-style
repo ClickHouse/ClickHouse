@@ -16,56 +16,65 @@ SETTINGS_FILE=$(mktemp)
 trap 'rm ${SETTINGS_FILE}' EXIT
 
 # Please note that ALL FILES MUST BE NAMED {}Settings and that must also be EXACTLY the class name
-ALL_DECLARATION_FILES="
-    $ROOT_PATH/src/Core/FormatFactorySettings.h
-    $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
-    $ROOT_PATH/src/Core/ServerSettings.cpp
-    $ROOT_PATH/src/Core/Settings.cpp
-    $ROOT_PATH/src/Databases/DataLake/DatabaseDataLakeSettings.cpp
-    $ROOT_PATH/src/Databases/DatabaseMetadataDiskSettings.cpp
-    $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
-    $ROOT_PATH/src/IO/S3AuthSettings.cpp
-    $ROOT_PATH/src/IO/S3RequestSettings.cpp
-    $ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp
-    $ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp
-    $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
-    $ROOT_PATH/src/Storages/ExecutableSettings.cpp
-    $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
-    $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
-    $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp
-    $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
-    $ROOT_PATH/src/Storages/MemorySettings.cpp
-    $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
-    $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
-    $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
-    $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
-    $ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h
-    $ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h
-    $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
-    $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
-    $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
-    $ROOT_PATH/src/Storages/SetSettings.cpp
-    $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
-    $ROOT_PATH/src/Storages/YTsaurus/YTsaurusSettings.cpp
-"
+ALL_DECLARATION_FILES=(
+    "$ROOT_PATH/src/Core/FormatFactorySettings.h"
+    "$ROOT_PATH/src/Coordination/CoordinationSettings.cpp"
+    "$ROOT_PATH/src/Core/ServerSettings.cpp"
+    "$ROOT_PATH/src/Core/Settings.cpp"
+    "$ROOT_PATH/src/Databases/DataLake/DatabaseDataLakeSettings.cpp"
+    "$ROOT_PATH/src/Databases/DatabaseMetadataDiskSettings.cpp"
+    "$ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp"
+    "$ROOT_PATH/src/IO/S3AuthSettings.cpp"
+    "$ROOT_PATH/src/IO/S3RequestSettings.cpp"
+    "$ROOT_PATH/src/Interpreters/FileCache/FileCacheSettings.cpp"
+    "$ROOT_PATH/src/Processors/QueryPlan/QueryPlanSerializationSettings.cpp"
+    "$ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp"
+    "$ROOT_PATH/src/Storages/ExecutableSettings.cpp"
+    "$ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp"
+    "$ROOT_PATH/src/Storages/Hive/HiveSettings.cpp"
+    "$ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp"
+    "$ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp"
+    "$ROOT_PATH/src/Storages/MemorySettings.cpp"
+    "$ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp"
+    "$ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp"
+    "$ROOT_PATH/src/Storages/NATS/NATSSettings.cpp"
+    "$ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp"
+    "$ROOT_PATH/src/Storages/ObjectStorage/StorageObjectStorageSettings.h"
+    "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h"
+    "$ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp"
+    "$ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp"
+    "$ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp"
+    "$ROOT_PATH/src/Storages/SetSettings.cpp"
+    "$ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp"
+    "$ROOT_PATH/src/Storages/YTsaurus/YTsaurusSettings.cpp"
+)
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
-# We will use SettingsDeclaration to differentiate between setting declaration and usage
-function add_setting_declaration_file()
-{
-    if ! [ -f "$1" ]; then
-        echo "File '$1' does not exist."
-    fi
-    filename=$(basename -- "$1")
-    filename="${filename%.*}"
-    grep -e "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
-    grep -e "DECLARE_WITH_ALIAS(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 20, length($1) - 20) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
+# Parse all declaration files in a single awk pass instead of per-file grep+awk loops
+awk '
+FNR == 1 {
+    filename = FILENAME
+    gsub(/.*\//, "", filename)
+    gsub(/\.[^.]*$/, "", filename)
 }
-
-for settings_file in ${ALL_DECLARATION_FILES};
-do
-    add_setting_declaration_file "$settings_file"
-done
+/^[[:space:]]*DECLARE_WITH_ALIAS\(/ {
+    # DECLARE_WITH_ALIAS(Type, name, ...)
+    s = $0; sub(/.*DECLARE_WITH_ALIAS\(/, "", s)
+    split(s, parts, ",")
+    type = parts[1]; gsub(/^[ \t]+|[ \t]+$/, "", type)
+    name = parts[2]; gsub(/^[ \t]+|[ \t]+$/, "", name)
+    print name " " filename type " SettingsDeclaration"
+    next
+}
+/^[[:space:]]*DECLARE\(/ {
+    # DECLARE(Type, name, ...)
+    s = $0; sub(/.*DECLARE\(/, "", s)
+    split(s, parts, ",")
+    type = parts[1]; gsub(/^[ \t]+|[ \t]+$/, "", type)
+    name = parts[2]; gsub(/^[ \t]+|[ \t]+$/, "", name)
+    print name " " filename type " SettingsDeclaration"
+}
+' "${ALL_DECLARATION_FILES[@]}" > "${SETTINGS_FILE}" 2>/dev/null
 
 # Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
 # Disabled for some old settings because it requires changing the type of existing settings and that breaks compatibility with
@@ -76,13 +85,14 @@ for setting in $(
     );
 do
     echo "# Found multiple definitions of setting ${setting} with different types: "
-    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
+    grep --line-number " ${setting}," "${ALL_DECLARATION_FILES[@]}" | awk '{print "    > " $0 }'
 done
 
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
 # Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
-find "$ROOT_PATH"/{src,base,programs,utils} \( -name '*.cpp' -o -name '*.h' \) -print0 | \
-    xargs -0 rg "^\s*extern const .*Settings" | tr ':' ' ' | grep -v "NOLINT" | \
+rg "^\s*extern const .*Settings" --glob '*.cpp' --glob '*.h' \
+    "$ROOT_PATH/src" "$ROOT_PATH/base" "$ROOT_PATH/programs" "$ROOT_PATH/utils" | \
+    tr ':' ' ' | grep -v "NOLINT" | \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> "${SETTINGS_FILE}"
 
 # Detect duplicate extern declarations for settings (harmless but better style)
@@ -117,15 +127,13 @@ done
 # codebase, so any modifications to it trigger a large-scale recompilation.
 # Therefore, it is crucial to avoid unnecessary inclusion of Settings.h in
 # headers.
-SETTINGS_H_EXCLUDES=(
-    # Templated code
-    --exclude "$ROOT_PATH/src/Access/resolveSetting.h"
-    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
-
-    # For functions we allow it for regular functions (due to lots of
-    # templates), but forbid it in interface (IFunction) part.
-    --exclude "$ROOT_PATH/src/Functions/*"
-    --include "$ROOT_PATH/src/Functions/IFunction*"
-)
-find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")(Core/Settings.h)|(MergeTreeSettings.h)(>|")' "${SETTINGS_H_EXCLUDES[@]}" | \
+#
+# In most cases, we can include Settings_fwd.h instead, as we usually do not
+# need the full definition of the Settings structure in headers - only declaration.
+rg '#include\s*[<"](Core/Settings\.h|[^">]*MergeTreeSettings\.h)[>"]' \
+    --glob '*.h' "$ROOT_PATH/src" | \
+    grep -v -F \
+        -e 'src/Access/resolveSetting.h' \
+        -e 'src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h' | \
+    awk '!/\/Functions\// || /\/Functions\/IFunction/' | \
     grep . && echo '^ Too broad Settings.h or MergeTreeSettings.h usage. Use forward declaration instead.'
