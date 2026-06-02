@@ -43,16 +43,28 @@ Let `WORKTREE_PATH` be the chosen path (resolved to an absolute path).
 
 **If branch exists locally:**
 ```bash
+# Text-only:
+git -C <MAIN_REPO> worktree add <WORKTREE_PATH> <branch-name>
+
+# Build/test:
 git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> <branch-name>
 ```
 
 **If branch exists on remote only:**
 ```bash
+# Text-only:
+git -C <MAIN_REPO> worktree add <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
+
+# Build/test:
 git -C <MAIN_REPO> worktree add --no-checkout <WORKTREE_PATH> -b <branch-name> origin/<branch-name>
 ```
 
 **If branch does not exist (create new):**
 ```bash
+# Text-only:
+git -C <MAIN_REPO> worktree add -b <branch-name> <WORKTREE_PATH>
+
+# Build/test:
 git -C <MAIN_REPO> worktree add --no-checkout -b <branch-name> <WORKTREE_PATH>
 ```
 
