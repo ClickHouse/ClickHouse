@@ -595,8 +595,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 return;
             }
 
-            Int32 data_type_id;
-            Int32 type_modifier; /// For example, n in varchar(n)
+            Int32 data_type_id = 0;
+            Int32 type_modifier = 0; /// For example, n in varchar(n)
 
             std::set<std::string> all_columns(storage_data.column_names.begin(), storage_data.column_names.end());
             std::set<std::string> received_columns;
