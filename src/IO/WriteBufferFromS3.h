@@ -72,7 +72,7 @@ private:
     void writePart(PartData && data);
     void writeMultipartUpload();
     void createMultipartUpload();
-    bool completeMultipartUpload();
+    void completeMultipartUpload();
     void abortMultipartUpload();
     void tryToAbortMultipartUpload() noexcept;
 
