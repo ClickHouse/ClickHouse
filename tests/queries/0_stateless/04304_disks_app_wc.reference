@@ -1,0 +1,14 @@
+--- full ---
+2 5 24 wc_multiline.txt
+--- bytes ---
+24 wc_multiline.txt
+--- lines ---
+2 wc_multiline.txt
+--- words ---
+5 wc_multiline.txt
+--- lines+words ---
+2 5 wc_multiline.txt
+--- no trailing newline ---
+0 2 7 wc_no_newline.txt
+--- empty ---
+0 0 0 wc_empty.txt

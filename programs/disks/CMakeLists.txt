@@ -17,6 +17,7 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandTouch.cpp
     CommandGetCurrentDiskAndPath.cpp
     CommandDiskUsage.cpp
+    CommandWordCount.cpp
     Utils.cpp)
 
 if (CLICKHOUSE_CLOUD)
