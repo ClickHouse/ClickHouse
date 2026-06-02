@@ -44,7 +44,7 @@ String sanitizeS3ErrorMessage(String message)
         while (end < message.size() && is_arn_char(message[end]))
             ++end;
 
-        message.replace(pos, end - pos, replacement);
+        message.replace(pos, end - pos, replacement.data(), replacement.size());
         pos += replacement.size();
     }
 
