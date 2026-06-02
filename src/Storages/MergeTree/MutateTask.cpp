@@ -2461,6 +2461,16 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
+            /// Drop inherited `<name>.proj` entries for projections scheduled to rebuild
+            /// that produced no part (zero-row rebuild). Otherwise `checksums.txt`
+            /// references a non-existent directory and `loadProjections` marks the
+            /// projection broken.
+            for (const auto * projection : ctx->projections_to_recalc)
+            {
+                if (!ctx->new_data_part->getProjectionParts().contains(projection->name))
+                    ctx->new_data_part->checksums.files.erase(projection->name + ".proj");
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
