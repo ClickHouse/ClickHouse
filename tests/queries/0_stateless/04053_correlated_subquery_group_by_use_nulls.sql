@@ -62,3 +62,35 @@ FROM numbers(3) AS a
 GROUP BY a.number
 WITH ROLLUP
 ORDER BY a.number ASC NULLS FIRST;
+
+-- The SAME correlated outer column referenced multiple times inside one inner
+-- expression. The correlated column is converted to `Nullable` in place during
+-- resolution, so de-duplication in `QueryNode::addCorrelatedColumn` must stay
+-- stable across that rewrite; otherwise the column would be appended twice and
+-- produce duplicate correlated keys in the decorrelated `AggregatingStep`.
+SELECT number, (SELECT number + number + 1) AS val
+FROM numbers(4)
+GROUP BY number
+WITH ROLLUP
+ORDER BY number ASC NULLS FIRST;
+
+SELECT number, (SELECT number % 2 + number * 3) AS val
+FROM numbers(4)
+GROUP BY number
+WITH CUBE
+ORDER BY number ASC NULLS FIRST;
+
+-- Repeated correlated column inside an aggregate function in the inner subquery.
+SELECT number, (SELECT sum(number + number) AS val)
+FROM numbers(3)
+GROUP BY number
+WITH CUBE
+ORDER BY number ASC NULLS LAST;
+
+-- Repeated correlated column inside the inner subquery's own `WHERE`, exercising
+-- the join-predicate / key-extension path of decorrelation.
+SELECT a.number, (SELECT sum(b.number) FROM numbers(5) AS b WHERE b.number < a.number + a.number) AS val
+FROM numbers(4) AS a
+GROUP BY a.number
+WITH ROLLUP
+ORDER BY a.number ASC NULLS FIRST;
