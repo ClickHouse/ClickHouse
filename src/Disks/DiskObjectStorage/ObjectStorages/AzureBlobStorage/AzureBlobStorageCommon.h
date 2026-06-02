@@ -45,6 +45,10 @@ struct RequestSettings
     size_t sdk_retry_initial_backoff_ms = 10;
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
+    /// Whether `use_native_copy` was explicitly set in the endpoint configuration.
+    /// Lets the backup path distinguish an unset endpoint (default to native copy)
+    /// from one that explicitly disabled it.
+    bool use_native_copy_changed = false;
     bool check_objects_after_upload = false;
     bool read_only = false;
     size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;

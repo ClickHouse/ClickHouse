@@ -631,16 +631,21 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
-    /// The backup/restore-level `allow_azure_native_copy` setting (default true) drives native copy,
-    /// mirroring `allow_s3_native_copy` for S3. A per-endpoint server config may still force it off
-    /// (e.g. for an endpoint where server-side copy is undesirable), but config is no longer required
-    /// to turn it on.
-    settings->use_native_copy = allow_native_copy;
+    /// For backups and restores, native copy is on by default, driven by the `allow_azure_native_copy`
+    /// setting (mirroring `allow_s3_native_copy` for S3). An endpoint that explicitly set `use_native_copy`
+    /// in its server config still wins over the default, so an admin can keep it disabled on purpose.
+    /// But an explicit `allow_azure_native_copy = 0` in the statement forces it off regardless.
+    /// Non-backup paths keep the `false` default from `RequestSettings::use_native_copy`.
+    bool use_native_copy = true;
 
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
-    if (endpoint_settings && !endpoint_settings->use_native_copy)
-        settings->use_native_copy = false;
+    if (endpoint_settings && endpoint_settings->use_native_copy_changed)
+        use_native_copy = endpoint_settings->use_native_copy;
 
+    if (!allow_native_copy)
+        use_native_copy = false;
+
+    settings->use_native_copy = use_native_copy;
     return settings;
 }
 
@@ -650,6 +655,7 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
 
     settings->min_bytes_for_seek = config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024);
     settings->use_native_copy = config.getBool(config_prefix + ".use_native_copy", false);
+    settings->use_native_copy_changed = config.has(config_prefix + ".use_native_copy");
     settings->read_only = config.getBool(config_prefix + ".readonly", false);
 
     settings->max_single_part_upload_size = config.getUInt64(config_prefix + ".max_single_part_upload_size", settings_ref[Setting::azure_max_single_part_upload_size]);
