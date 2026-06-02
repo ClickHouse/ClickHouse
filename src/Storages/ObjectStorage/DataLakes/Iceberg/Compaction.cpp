@@ -353,7 +353,6 @@ static void writeMetadataFiles(
 
     for (const auto & history_record : plan.history)
     {
-        /// Compaction rewrites the data snapshots, which are appends. Skip everything else.
         const auto * append = history_record.snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateAppend>();
         if (!append || append->added_files == 0)
         {

@@ -51,7 +51,7 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
         {"snapshot_id",std::make_shared<DataTypeUInt64>(),"Snapshot id which is used to identify a snapshot."},
         {"parent_id",std::make_shared<DataTypeUInt64>(),"Parent id of this snapshot."},
         {"is_current_ancestor",std::make_shared<DataTypeUInt8>(),"Flag that indicates if this snapshot is an ancestor of the current snapshot."},
-        {"operation",std::make_shared<DataTypeString>(),"Snapshot operation (e.g. APPEND, OVERWRITE, DELETE)."},
+        {"operation",std::make_shared<DataTypeString>(),"Snapshot operation (APPEND, OVERWRITE, DELETE, REPLACE and UNEXPECTED)."},
         {"summary",std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),"Snapshot summary fields other than operation, as stored in the Iceberg metadata."}
     };
 }
@@ -90,20 +90,15 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     res_columns[column_index++]->insert(iceberg_history_item.is_current_ancestor);
 
                     const auto & snapshot_summary = iceberg_history_item.snapshot_summary;
+                    auto snapshot_operation = snapshot_summary.getOperation();
+
                     res_columns[column_index++]->insert(fmt::format("{}", snapshot_summary.getOperation()));
 
-                    Map summary_map;
-                    if (snapshot_summary.getOperation() != Iceberg::SnapshotSummaryOperation::UNKNOWN)
-                    {
-                        auto summary_json = snapshot_summary.toJSON();
-                        for (const auto & [key, value] : *summary_json)
-                        {
-                            if (key == Iceberg::f_operation)
-                                continue;
-                            summary_map.push_back(Tuple{key, value.toString()});
-                        }
-                    }
-                    res_columns[column_index++]->insert(summary_map);
+                    Map summary;
+                    if (snapshot_operation != Iceberg::SnapshotSummaryOperation::UNEXPECTED)
+                        summary = snapshot_summary.toMap();
+
+                    res_columns[column_index++]->insert(std::move(summary));
                 }
             }
         }

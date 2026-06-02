@@ -175,11 +175,12 @@ TEST(IcebergSnapshotSummary, RoundTripThroughJSON)
 
     auto obj = original.toJSON();
     auto parsed = SnapshotSummary::fromJSON(*obj);
+    ASSERT_TRUE(parsed.has_value());
 
-    EXPECT_EQ(parsed.getOperation(), Operation::APPEND);
-    EXPECT_EQ(parsed.getTotals().records, original.getTotals().records);
-    EXPECT_EQ(parsed.getTotals().data_files, original.getTotals().data_files);
-    EXPECT_EQ(parsed.getTotals().files_size, original.getTotals().files_size);
+    EXPECT_EQ(parsed->getOperation(), Operation::APPEND);
+    EXPECT_EQ(parsed->getTotals().records, original.getTotals().records);
+    EXPECT_EQ(parsed->getTotals().data_files, original.getTotals().data_files);
+    EXPECT_EQ(parsed->getTotals().files_size, original.getTotals().files_size);
 
     /// The parsed summary can drive the next snapshot's totals.
     SnapshotSummary next(
@@ -188,7 +189,7 @@ TEST(IcebergSnapshotSummary, RoundTripThroughJSON)
             .added_records = 2,
             .added_files_size = 823,
             .num_partitions = 1},
-        parsed.getTotals());
+        parsed->getTotals());
     EXPECT_EQ(next.getTotals().records, 5);
     EXPECT_EQ(next.getTotals().data_files, 3);
 }
@@ -228,7 +229,8 @@ TEST(IcebergSnapshotSummary, DeletePositionDeletesRoundTrip)
     EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_removed_position_deletes), "4");
 
     auto parsed = SnapshotSummary::fromJSON(*obj);
-    const auto * parsed_delete = parsed.getUpdate<DB::Iceberg::SnapshotSummaryUpdateDelete>();
+    ASSERT_TRUE(parsed.has_value());
+    const auto * parsed_delete = parsed->getUpdate<DB::Iceberg::SnapshotSummaryUpdateDelete>();
     ASSERT_NE(parsed_delete, nullptr);
     EXPECT_EQ(parsed_delete->removed_position_delete_files, 1);
     EXPECT_EQ(parsed_delete->removed_position_deletes, 4);
@@ -317,10 +319,11 @@ TEST(IcebergSnapshotSummary, ReplaceRoundTripThroughJSON)
         parent.getTotals());
 
     auto parsed = SnapshotSummary::fromJSON(*replace.toJSON());
-    EXPECT_EQ(parsed.getOperation(), Operation::REPLACE);
-    EXPECT_EQ(parsed.getTotals().records, replace.getTotals().records);
-    EXPECT_EQ(parsed.getTotals().data_files, replace.getTotals().data_files);
-    EXPECT_EQ(parsed.getTotals().files_size, replace.getTotals().files_size);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->getOperation(), Operation::REPLACE);
+    EXPECT_EQ(parsed->getTotals().records, replace.getTotals().records);
+    EXPECT_EQ(parsed->getTotals().data_files, replace.getTotals().data_files);
+    EXPECT_EQ(parsed->getTotals().files_size, replace.getTotals().files_size);
 }
 
 #endif

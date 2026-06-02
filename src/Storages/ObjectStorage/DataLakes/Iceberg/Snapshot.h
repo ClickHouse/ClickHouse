@@ -29,6 +29,7 @@ struct IcebergDataSnapshot
 };
 
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
+
 struct IcebergHistoryRecord
 {
     Int64 snapshot_id{};

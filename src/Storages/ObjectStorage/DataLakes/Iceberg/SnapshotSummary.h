@@ -4,8 +4,12 @@
 
 #if USE_AVRO
 
+#include <expected>
+#include <functional>
 #include <optional>
+#include <unordered_map>
 #include <variant>
+#include <Core/Field.h>
 #include <base/types.h>
 #include <Poco/JSON/Object.h>
 
@@ -74,24 +78,16 @@ struct SnapshotSummaryTotals
     Int64 equality_deletes = 0;
 };
 
-/// Free-form markers the producing engine writes into the summary; carried through verbatim
-/// so `system.iceberg_history` shows who wrote a snapshot. Empty fields are omitted from JSON.
-struct SummarySnapshotExtraInfo
-{
-    String app_id;
-    String iceberg_version;
-    String engine_name;
-    String engine_version;
-};
-
 enum class SnapshotSummaryOperation
 {
-    UNKNOWN,
+    UNEXPECTED,
     APPEND,
     OVERWRITE,
     DELETE,
     REPLACE
 };
+
+using SnapshotSummaryExtraFields = std::unordered_map<String, String>;
 
 /// summary from Iceberg's spec
 /// https://iceberg.apache.org/spec/?h=snapshot#snapshots
@@ -104,7 +100,7 @@ public:
     explicit SnapshotSummary(
         SnapshotSummaryUpdate update_,
         std::optional<SnapshotSummaryTotals> parent_totals = std::nullopt,
-        SummarySnapshotExtraInfo extra_info_ = {});
+        SnapshotSummaryExtraFields extra_fields_ = {});
 
     template <typename UpdateType>
     UpdateType * getUpdate()
@@ -120,15 +116,20 @@ public:
 
     Iceberg::SnapshotSummaryOperation getOperation() const;
     SnapshotSummaryTotals getTotals() const;
-    SummarySnapshotExtraInfo getExtraInfo() const;
+    const SnapshotSummaryExtraFields & getExtraFields() const;
 
     Poco::JSON::Object::Ptr toJSON() const;
-    static SnapshotSummary fromJSON(const Poco::JSON::Object & obj);
+    Map toMap() const;
+
+    using Expected = std::expected<SnapshotSummary, std::string>;
+    static Expected fromJSON(const Poco::JSON::Object & obj, bool with_extra_fields = false);
 
 private:
-    SnapshotSummaryUpdate update;
-    SnapshotSummaryTotals totals;
-    SummarySnapshotExtraInfo extra_info;
+    void forEachField(std::function<void(std::string_view, std::string)> && fn, bool with_extra_fields = true) const;
+
+    SnapshotSummaryUpdate      update;
+    SnapshotSummaryTotals      totals;
+    SnapshotSummaryExtraFields extra_fields;
 };
 
 }
