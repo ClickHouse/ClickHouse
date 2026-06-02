@@ -608,6 +608,11 @@ namespace
         return user;
     }
 
+    void setNameWithUnescapedDot(IAccessEntity & entity, String name)
+    {
+        Poco::replaceInPlace(name, "\\.", ".");
+        entity.setName(name);
+    }
 
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
@@ -619,10 +624,7 @@ namespace
         auto role = std::make_shared<Role>();
         String role_config = "roles." + role_name;
 
-        /// If the role name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct role name.
-        Poco::replaceInPlace(role_name, "\\.", ".");
-        role->setName(role_name);
+        setNameWithUnescapedDot(*role, std::move(role_name));
 
         const auto grants_config = role_config + ".grants";
         if (config.has(grants_config))
@@ -645,10 +647,7 @@ namespace
         auto quota = std::make_shared<Quota>();
         String quota_config = "quotas." + quota_name;
 
-        /// If the quota name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct quota name.
-        Poco::replaceInPlace(quota_name, "\\.", ".");
-        quota->setName(quota_name);
+        setNameWithUnescapedDot(*quota, std::move(quota_name));
         if (config.has(quota_config + ".keyed_by_ip"))
             quota->key_type = QuotaKeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
@@ -764,10 +763,7 @@ namespace
         auto profile = std::make_shared<SettingsProfile>();
         String profile_config = "profiles." + profile_name;
 
-        /// If the profile name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct profile name.
-        Poco::replaceInPlace(profile_name, "\\.", ".");
-        profile->setName(profile_name);
+        setNameWithUnescapedDot(*profile, std::move(profile_name));
 
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(profile_config, keys);
