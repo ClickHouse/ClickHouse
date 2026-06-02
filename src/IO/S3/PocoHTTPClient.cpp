@@ -123,7 +123,11 @@ void addOpenTelemetryTraceContextHeaders(Poco::Net::HTTPRequest & request)
 
     request.set("traceparent", current_trace_context.composeTraceparentHeader());
 
-    if (!current_trace_context.tracestate.empty())
+    /// Client-provided tracestate may be kept for internal span logging even if
+    /// it is not safe as an HTTP header.
+    if (!current_trace_context.tracestate.empty()
+        && current_trace_context.tracestate.find('\r') == String::npos
+        && current_trace_context.tracestate.find('\n') == String::npos)
         request.set("tracestate", current_trace_context.tracestate);
     else
         request.erase("tracestate");

@@ -467,6 +467,38 @@ TEST(IOTestAwsS3Client, OpenTelemetryTraceContextOverridesExistingTraceHeaders)
     }
 }
 
+TEST(IOTestAwsS3Client, SkipsInvalidOpenTelemetryTracestate)
+{
+    TestPocoHTTPServer http;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientOpenTelemetryTraceContext/test.txt");
+    auto client = createTestS3Client(
+        uri,
+        {
+            {"tracestate", "stale=value"},
+        });
+    ASSERT_TRUE(client);
+
+    DB::OpenTelemetry::TracingContext tracing_context;
+    String error;
+    ASSERT_TRUE(tracing_context.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", error)) << error;
+    tracing_context.tracestate = "a\nb cd";
+
+    {
+        DB::OpenTelemetry::TracingContextHolder tracing_context_holder(
+            "IOTestAwsS3Client::SkipsInvalidOpenTelemetryTracestate",
+            tracing_context,
+            std::weak_ptr<DB::OpenTelemetrySpanLog>{});
+
+        const auto expected_traceparent = DB::OpenTelemetry::CurrentContext().composeTraceparentHeader();
+        doReadRequest(client, uri);
+
+        const auto & headers = http.getLastRequestHeader();
+        ASSERT_TRUE(headers.has("traceparent"));
+        EXPECT_EQ(headers.get("traceparent"), expected_traceparent);
+        EXPECT_FALSE(headers.has("tracestate"));
+    }
+}
+
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
 {
     DB::RemoteHostFilter remote_host_filter;

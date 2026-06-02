@@ -126,4 +126,41 @@ TEST(IOTestAzureHTTPClient, OpenTelemetryTraceContextOverridesExistingTraceHeade
     }
 }
 
+TEST(IOTestAzureHTTPClient, SkipsInvalidOpenTelemetryTracestate)
+{
+    TestPocoHTTPServer http;
+
+    DB::RemoteHostFilter remote_host_filter;
+    DB::PocoAzureHTTPClientConfiguration configuration{
+        .remote_host_filter = remote_host_filter,
+        .max_redirects = 0,
+        .for_disk_azure = false,
+        .request_throttler = {},
+        .extra_headers = {
+            {"tracestate", "stale=value"},
+        },
+    };
+    DB::PocoAzureHTTPClient client(configuration);
+
+    DB::OpenTelemetry::TracingContext tracing_context;
+    String error;
+    ASSERT_TRUE(tracing_context.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", error)) << error;
+    tracing_context.tracestate = "a\nb cd";
+
+    {
+        DB::OpenTelemetry::TracingContextHolder tracing_context_holder(
+            "IOTestAzureHTTPClient::SkipsInvalidOpenTelemetryTracestate",
+            tracing_context,
+            std::weak_ptr<DB::OpenTelemetrySpanLog>{});
+
+        const auto expected_traceparent = DB::OpenTelemetry::CurrentContext().composeTraceparentHeader();
+        ASSERT_EQ(sendAzureRequest(client, http.getUrl()), Azure::Core::Http::HttpStatusCode::Ok);
+
+        const auto & headers = http.getLastRequestHeader();
+        ASSERT_TRUE(headers.has("traceparent"));
+        EXPECT_EQ(headers.get("traceparent"), expected_traceparent);
+        EXPECT_FALSE(headers.has("tracestate"));
+    }
+}
+
 #endif
