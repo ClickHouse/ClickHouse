@@ -51,9 +51,9 @@ constexpr double latitude_limit = 85.05112877980659;
 /// Per-row projection from geographic (lon, lat) degrees to tile-local pixel space.
 struct Projection
 {
-    double tile_x_begin;
-    double tile_y_begin;
-    double scale;
+    double tile_x_begin = 0;
+    double tile_y_begin = 0;
+    double scale = 0;
 
     void operator()(BPoint & p) const
     {
@@ -336,7 +336,7 @@ public:
                     builder.addNull();
                     continue;
                 }
-                Projection projection; BBox box; bool clip;
+                Projection projection; BBox box; bool clip = false;
                 row_context(row, projection, box, clip);
                 const size_t off = variant.offsetAt(row);
                 switch (disc)
@@ -359,7 +359,7 @@ public:
                 auto geometries = Converter::convert(full[0].column);
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
-                    Projection projection; BBox box; bool clip;
+                    Projection projection; BBox box; bool clip = false;
                     row_context(row, projection, box, clip);
                     if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<BPoint>>)
                         dispatch(geometries[row], projection, box, clip);

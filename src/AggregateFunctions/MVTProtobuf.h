@@ -69,7 +69,7 @@ inline void writeLengthDelimitedField(std::string & out, UInt32 field_number, st
 inline void writeFloatField(std::string & out, UInt32 field_number, Float32 value)
 {
     writeTag(out, field_number, WireType::Fixed32);
-    UInt32 bits;
+    UInt32 bits = 0;
     memcpy(&bits, &value, sizeof(bits));
     for (size_t i = 0; i < sizeof(bits); ++i)
         out.push_back(static_cast<char>((bits >> (8 * i)) & 0xFF));
@@ -79,7 +79,7 @@ inline void writeFloatField(std::string & out, UInt32 field_number, Float32 valu
 inline void writeDoubleField(std::string & out, UInt32 field_number, Float64 value)
 {
     writeTag(out, field_number, WireType::Fixed64);
-    UInt64 bits;
+    UInt64 bits = 0;
     memcpy(&bits, &value, sizeof(bits));
     for (size_t i = 0; i < sizeof(bits); ++i)
         out.push_back(static_cast<char>((bits >> (8 * i)) & 0xFF));

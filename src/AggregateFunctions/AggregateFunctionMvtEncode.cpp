@@ -241,8 +241,8 @@ private:
         points.reserve(array.size());
         for (const Field & point_field : array)
         {
-            Int32 x;
-            Int32 y;
+            Int32 x = 0;
+            Int32 y = 0;
             readPoint(point_field, x, y, function_name);
             points.emplace_back(x, y);
         }
@@ -327,8 +327,8 @@ private:
         {
             case GeoDisc::Point:
             {
-                Int32 x;
-                Int32 y;
+                Int32 x = 0;
+                Int32 y = 0;
                 readPoint(geometry, x, y, getName());
                 MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
                 MVT::writeVarint(out, MVT::zigzag(x));
@@ -613,6 +613,8 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
 }
 
 }
+
+void registerAggregateFunctionMvtEncode(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctionMvtEncode(AggregateFunctionFactory & factory)
 {
