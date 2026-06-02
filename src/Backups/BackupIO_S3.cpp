@@ -274,6 +274,8 @@ BackupReaderS3::BackupReaderS3(
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
     applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
+    if (!access_key_id_.empty())
+        s3_settings.resetCredentialsForUserControlledRequest();
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -371,6 +373,8 @@ BackupWriterS3::BackupWriterS3(
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
     applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
+    if (!access_key_id_.empty())
+        s3_settings.resetCredentialsForUserControlledRequest();
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
