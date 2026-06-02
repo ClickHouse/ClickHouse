@@ -175,9 +175,12 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     std::list<const ActionsDAG::Node *> prewhere_conditions_list;
     for (const auto & condition : optimize_result->prewhere_conditions)
     {
-        const ActionsDAG::Node * condition_node = condition.node.getDAGNode();
-        if (prewhere_conditions.insert(condition_node).second)
-            prewhere_conditions_list.push_back(condition_node);
+        for (const auto & n : condition.nodes)
+        {
+            const ActionsDAG::Node * condition_node = n.getDAGNode();
+            if (prewhere_conditions.insert(condition_node).second)
+                prewhere_conditions_list.push_back(condition_node);
+        }
     }
 
     return {
@@ -311,69 +314,159 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     return false;
 }
 
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
+static void collectAndConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
-    auto function_node_optional = node.toFunctionNodeOrNull();
-
-    if (function_node_optional.has_value() && function_node_optional->getFunctionName() == "and")
+    auto fn = node.toFunctionNodeOrNull();
+    if (fn.has_value() && fn->getFunctionName() == "and")
     {
-        size_t arguments_size = function_node_optional->getArgumentsSize();
-
-        for (size_t i = 0; i < arguments_size; ++i)
-        {
-            auto argument = function_node_optional->getArgumentAt(i);
-            analyzeImpl(res, argument, where_optimizer_context, pk_positions);
-        }
+        for (size_t i = 0; i < fn->getArgumentsSize(); ++i)
+            collectAndConjuncts(fn->getArgumentAt(i), conjuncts);
     }
     else
+        conjuncts.push_back(node);
+}
+
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context, std::set<Int64> & pk_positions) const
+{
+    /// Flatten the top-level AND chain into individual conjuncts.
+    std::vector<RPNBuilderTreeNode> conjuncts;
+    collectAndConjuncts(node, conjuncts);
+
+    struct ConjunctInfo
     {
-        Condition cond(node);
+        RPNBuilderTreeNode node;
+        NameSet columns;
         bool has_invalid_column = false;
-        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.`
         bool may_use_primary_index = true;
-        collectColumns(node, nullptr, table_columns, cond.table_columns, has_invalid_column, may_use_primary_index);
+        bool viable = false;
+    };
 
-        cond.columns_size = getColumnsSize(cond.table_columns);
+    std::vector<ConjunctInfo> infos;
+    infos.reserve(conjuncts.size());
 
-        cond.viable =
-            !has_invalid_column
-            /// Condition depend on some column. Constant expressions are not moved.
-            && !cond.table_columns.empty()
-            && !cannotBeMoved(node, where_optimizer_context)
+    for (const auto & conjunct : conjuncts)
+    {
+        ConjunctInfo info{conjunct, {}, false, true, false};
+        collectColumns(conjunct, nullptr, table_columns, info.columns, info.has_invalid_column, info.may_use_primary_index);
+
+        /// Is it possible to use primary index for this condition? For conditions like `lower(country) = 'xx'`, may_use_primary_index will be false.
+        info.viable =
+            !info.has_invalid_column
+            /// Condition depends on some column. Constant expressions are not moved.
+            && !info.columns.empty()
+            && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(node))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
-            && columnsSupportPrewhere(cond.table_columns)
+            && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
-            && cond.table_columns.size() < queried_columns.size();
+            && info.columns.size() < queried_columns.size();
 
-        if (cond.viable)
-            cond.good = isConditionGood(node, table_columns);
+        infos.push_back(std::move(info));
+    }
 
-        if (where_optimizer_context.use_statistics)
+    /// Group viable conjuncts by their required column set so same-column conditions
+    /// are treated as a single unit and their combined selectivity can be estimated.
+    /// Non-viable conjuncts stay as individual Conditions.
+    ///
+    /// We use a simple linear search to find groups (WHERE clauses are short).
+    struct Group
+    {
+        NameSet columns;
+        std::vector<size_t> indices;
+    };
+    std::vector<Group> groups;
+
+    auto find_group_idx = [&](const NameSet & cols) -> std::optional<size_t>
+    {
+        for (size_t g = 0; g < groups.size(); ++g)
+            if (groups[g].columns == cols)
+                return g;
+        return std::nullopt;
+    };
+
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (!infos[i].viable)
+            continue;
+        auto g = find_group_idx(infos[i].columns);
+        if (!g.has_value())
+            groups.push_back({infos[i].columns, {i}});
+        else
+            groups[*g].indices.push_back(i);
+    }
+
+    /// Emit Conditions in the original AND-chain order:
+    ///   - non-viable conjuncts are emitted individually at their original position
+    ///   - viable column-set groups are emitted at the position of their first conjunct
+    std::vector<bool> emitted(infos.size(), false);
+
+    for (size_t i = 0; i < infos.size(); ++i)
+    {
+        if (emitted[i])
+            continue;
+
+        const auto & info = infos[i];
+
+        if (!info.viable)
         {
-            cond.good = cond.viable;
-            cond.estimated_row_count = static_cast<Float64>(estimator->estimateRelationProfile(storage_metadata, node).rows);
-            LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getColumnName(), cond.estimated_row_count);
+            /// Non-viable conditions cannot be moved to PREWHERE; just record them as-is.
+            Condition cond({info.node});
+            cond.table_columns = info.columns;
+            cond.columns_size = getColumnsSize(info.columns);
+            cond.viable = false;
+            cond.good = false;
+            emitted[i] = true;
+            res.emplace_back(std::move(cond));
         }
-
-        if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+        else
         {
-            /// Consider all conditions good with this setting enabled.
-            cond.good = cond.viable;
+            /// Emit the whole column-set group at the position of the first conjunct.
+            auto g_idx = find_group_idx(info.columns);
+            const auto & group = groups[*g_idx];
 
-            cond.min_position_in_primary_key = findMinPosition(cond.table_columns, primary_key_names_positions);
-            if (!may_use_primary_index)
+            for (size_t idx : group.indices)
+                emitted[idx] = true;
+
+            std::vector<RPNBuilderTreeNode> group_nodes;
+            NameSet group_columns;
+            bool group_may_use_primary_index = true;
+            bool group_good = false;
+
+            for (size_t idx : group.indices)
             {
-                /// Only set min_position_in_primary_key if it is possible to use primary index for current condition.
-                cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+                group_nodes.push_back(infos[idx].node);
+                group_columns.insert(infos[idx].columns.begin(), infos[idx].columns.end());
+                group_may_use_primary_index = group_may_use_primary_index && infos[idx].may_use_primary_index;
+                if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+                    group_good = group_good || isConditionGood(infos[idx].node, table_columns);
             }
-            /// Find min position in PK of any column that is used in this condition.
-            pk_positions.emplace(cond.min_position_in_primary_key);
-        }
 
-        res.emplace_back(std::move(cond));
+            Condition cond(std::move(group_nodes));
+            cond.table_columns = group_columns;
+            cond.columns_size = getColumnsSize(group_columns);
+            cond.viable = true;
+            cond.good = group_good;
+
+            if (where_optimizer_context.use_statistics)
+            {
+                cond.good = true;
+                cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, cond.nodes).rows;
+                LOG_DEBUG(log, "Condition group ({}) has estimated row count {}", cond.toString(), cond.estimated_row_count);
+            }
+
+            if (where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
+            {
+                cond.good = true;
+                cond.min_position_in_primary_key = findMinPosition(group_columns, primary_key_names_positions);
+                if (!group_may_use_primary_index)
+                    cond.min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
+                pk_positions.emplace(cond.min_position_in_primary_key);
+            }
+
+            res.emplace_back(std::move(cond));
+        }
     }
 }
 
@@ -414,8 +507,16 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     if (conditions.empty())
         return {};
 
-    if (conditions.size() == 1)
-        return conditions.front().node.getASTNode()->clone();
+    std::vector<const IAST *> all_nodes;
+    for (const auto & cond : conditions)
+        for (const auto & n : cond.nodes)
+            all_nodes.push_back(n.getASTNode());
+
+    if (all_nodes.empty())
+        return {};
+
+    if (all_nodes.size() == 1)
+        return all_nodes.front()->clone();
 
     const auto function = make_intrusive<ASTFunction>();
 
@@ -423,8 +524,8 @@ ASTPtr MergeTreeWhereOptimizer::reconstructAST(const Conditions & conditions)
     function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
-    for (const auto & elem : conditions)
-        function->arguments->children.push_back(elem.node.getASTNode()->clone());
+    for (const auto * ast : all_nodes)
+        function->arguments->children.push_back(ast->clone());
 
     return function;
 }
@@ -449,7 +550,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
     {
         moved_conditions_count++;
-        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        LOG_DEBUG(log, "Condition {} moved to PREWHERE", cond_it->toString());
         if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
@@ -462,27 +563,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
-        }
-    };
-
-    /// Move condition and all other conditions depend on the same set of columns.
-    auto move_condition = [&](Conditions::iterator cond_it)
-    {
-        move_to_prewhere_conditions(cond_it);
-        total_size_of_moved_conditions += cond_it->columns_size;
-        total_number_of_moved_columns += cond_it->table_columns.size();
-
-        /// Move all other viable conditions that depend on the same set of columns.
-        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
-        {
-            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
-            {
-                move_to_prewhere_conditions(jt++);
-            }
-            else
-            {
-                ++jt;
-            }
         }
     };
 
@@ -516,7 +596,9 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
                 break;
         }
 
-        move_condition(it);
+        total_size_of_moved_conditions += it->columns_size;
+        total_number_of_moved_columns += it->table_columns.size();
+        move_to_prewhere_conditions(it);
     }
 
     /// Nothing was moved.

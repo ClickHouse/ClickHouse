@@ -60,6 +60,37 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfileImpl(rpn, metadata);
 }
 
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
+    const StorageMetadataPtr & metadata,
+    const std::vector<RPNBuilderTreeNode> & nodes) const
+{
+    if (nodes.empty())
+        return estimateRelationProfile();
+
+    /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
+    /// FUNCTION_AND token after every node past the first (standard postfix AND for
+    /// left-associative evaluation):
+    ///   1 node  → rpn_0
+    ///   2 nodes → rpn_0 | rpn_1 | AND
+    ///   3 nodes → rpn_0 | rpn_1 | AND | rpn_2 | AND  = (r0 ∧ r1) ∧ r2
+    std::vector<RPNElement> combined_rpn;
+    for (size_t i = 0; i < nodes.size(); ++i)
+    {
+        auto rpn = RPNBuilder<RPNElement>(nodes[i], [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+        {
+            return extractAtomFromTree(metadata, node_, out);
+        }).extractRPN();
+        combined_rpn.insert(combined_rpn.end(), rpn.begin(), rpn.end());
+        if (i > 0)
+        {
+            RPNElement and_elem;
+            and_elem.function = RPNElement::FUNCTION_AND;
+            combined_rpn.push_back(and_elem);
+        }
+    }
+    return estimateRelationProfileImpl(combined_rpn, metadata);
+}
+
 static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
 {
     if (!metadata)
