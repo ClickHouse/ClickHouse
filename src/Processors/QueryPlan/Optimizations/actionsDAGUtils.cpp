@@ -4,7 +4,10 @@
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 
 #include <stack>
 
@@ -17,7 +20,11 @@ extern const int LOGICAL_ERROR;
 
 namespace DB
 {
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity)
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity,
+    size_t max_size_for_sets_from_tuple_to_compare)
 {
     using Parents = std::set<const ActionsDAG::Node *>;
     std::unordered_map<const ActionsDAG::Node *, Parents> inner_parents;
@@ -177,9 +184,53 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                                     {
                                         if (frame.mapped_children[i] == nullptr)
                                         {
-                                            all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
-                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
-                                                && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
+                                            const auto * inner_col = children[i]->column.get();
+                                            const auto * outer_col = frame.node->children[i]->column.get();
+                                            if (!inner_col || !isColumnConst(*inner_col)
+                                                || !children[i]->result_type->equals(*frame.node->children[i]->result_type))
+                                            {
+                                                all_children_matched = false;
+                                            }
+                                            else if (const auto * inner_set = typeid_cast<const ColumnSet *>(
+                                                         &assert_cast<const ColumnConst &>(*inner_col).getDataColumn()))
+                                            {
+                                                /// `ColumnSet::operator[]` returns an empty `Field{}` regardless of
+                                                /// set contents, so `getField()` cannot distinguish different
+                                                /// `IN`-clause sets. Compare two `FutureSetFromTuple` sets by content
+                                                /// hash (computed order-independently in its constructor) when both
+                                                /// fit under the size limit. Subquery/storage sets fall through to
+                                                /// non-matching: their content isn't known at planning time, and
+                                                /// matching them structurally here would be unsound.
+                                                all_children_matched = false;
+                                                const auto * outer_set = outer_col ? typeid_cast<const ColumnSet *>(
+                                                    &assert_cast<const ColumnConst &>(*outer_col).getDataColumn()) : nullptr;
+                                                if (outer_set && max_size_for_sets_from_tuple_to_compare > 0)
+                                                {
+                                                    const auto * inner_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        inner_set->getData().get());
+                                                    const auto * outer_tuple = typeid_cast<const FutureSetFromTuple *>(
+                                                        outer_set->getData().get());
+                                                    if (inner_tuple && outer_tuple)
+                                                    {
+                                                        const size_t inner_rows = inner_tuple->get()->getTotalRowCount();
+                                                        const size_t outer_rows = outer_tuple->get()->getTotalRowCount();
+                                                        /// Sizes are deduplicated counts; different sizes ⇒ different
+                                                        /// contents, so skip hashing in that case.
+                                                        if (inner_rows == outer_rows
+                                                            && inner_rows <= max_size_for_sets_from_tuple_to_compare)
+                                                        {
+                                                            all_children_matched =
+                                                                inner_tuple->getContentHash() == outer_tuple->getContentHash();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            else
+                                            {
+                                                all_children_matched =
+                                                    assert_cast<const ColumnConst &>(*inner_col).getField()
+                                                    == assert_cast<const ColumnConst &>(*outer_col).getField();
+                                            }
                                         }
                                         else
                                             all_children_matched = frame.mapped_children[i] == children[i];
@@ -317,7 +368,7 @@ static PossiblyMonotonicChain buildPossiblyMonitinicChain(const ActionsDAG::Node
 }
 
 /// Check whether all the function in chain are monotonic
-bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
+static bool isMonotonicChain(const ActionsDAG::Node * node, PossiblyMonotonicChain & chain)
 {
     auto it = chain.non_const_arg_pos.begin();
     while (node != chain.input_node)
@@ -544,7 +595,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            assert(node->children.size() == 1);
+            chassert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -592,7 +643,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                assert(node->children.size() == 1);
+                chassert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:

@@ -606,7 +606,7 @@ private:
                 auto fd = Session::socket().impl()->sockfd();
                 if (fd < 0)
                     return;
-                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init)
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                 if (fstat(fd, &st) == 0)
                     group->updateSocketInode(this, st.st_ino);
             }
