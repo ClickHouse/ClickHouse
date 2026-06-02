@@ -48,6 +48,7 @@ BlockIO InterpreterDropResourceQuery::execute()
     return {};
 }
 
+void registerInterpreterDropResourceQuery(InterpreterFactory & factory);
 void registerInterpreterDropResourceQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
