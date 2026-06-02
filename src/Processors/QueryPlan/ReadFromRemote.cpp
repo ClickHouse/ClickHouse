@@ -231,7 +231,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
+static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
