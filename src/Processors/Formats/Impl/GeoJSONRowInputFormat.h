@@ -33,10 +33,13 @@ protected:
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readGeometry(IColumn & col);
+    void validateTopLevelTypeMember(ReadBuffer & buf);
 
     const FormatSettings format_settings;
     bool first_row = true;
     bool done = false;
+    /// Whether the required top-level `type` member was seen and validated as `FeatureCollection`.
+    bool top_level_type_validated = false;
 
     std::optional<size_t> id_col_idx;
     std::optional<size_t> geometry_col_idx;

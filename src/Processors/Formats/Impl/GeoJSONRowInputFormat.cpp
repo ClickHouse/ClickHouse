@@ -79,6 +79,34 @@ Array readGeoJSONPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(
 /// Reads [[[[lon,lat],...],...]] into Array of Array of Array of Tuple (MultiPolygon coordinates).
 Array readGeoJSONMultiPolygonCoordinates(ReadBuffer & buf) { return readGeoJSONArray(buf, readGeoJSONPolygonCoordinates); }
 
+/// Enforce the GeoJSON shape invariant for a `LineString` (and each line of a `MultiLineString`):
+/// it must contain at least two positions. Otherwise an invalid (degenerate) line would be stored
+/// as a `Geometry`, leaving geospatial functions to operate on malformed data.
+void validateLineStringCoordinates(const Array & line)
+{
+    if (line.size() < 2)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: a LineString must have at least two positions, but got {}",
+            line.size());
+}
+
+/// Enforce the GeoJSON shape invariant for a `Polygon` ring (and each ring of a `MultiPolygon`):
+/// a linear ring must have at least four positions and be closed (its first and last positions are
+/// equal). Otherwise an unclosed or degenerate ring would be stored as a `Geometry`.
+void validateRingCoordinates(const Array & ring)
+{
+    if (ring.size() < 4)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: a Polygon ring must have at least four positions, but got {}",
+            ring.size());
+    if (ring.front() != ring.back())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: a Polygon ring must be closed (its first and last positions must be equal)");
+}
+
 /// Strictly skip a JSON value, requiring commas between object members and array elements.
 /// Unlike `skipJSONField`, which tolerates missing separators, this rejects malformed JSON
 /// even inside ignored fields (e.g. a skipped `bbox` object `{"a":1 "b":2}`).
@@ -146,25 +174,6 @@ void forEachFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & jso
     }
 }
 
-/// Scan a JSON object for a specific field, skipping all others.
-/// Returns true and leaves the read position at the start of the field value if found,
-/// or returns false after consuming the closing `}` if not found.
-bool findFieldInJSONObject(ReadBuffer & buf, const FormatSettings::JSON & json_settings, const String & desired_key)
-{
-    bool first = true;
-    while (!JSONUtils::checkAndSkipObjectEnd(buf))
-    {
-        if (!first)
-            JSONUtils::skipComma(buf);
-        first = false;
-        String key = JSONUtils::readFieldName(buf, json_settings);
-        if (key == desired_key)
-            return true;
-        skipJSONValueStrict(buf, json_settings);
-    }
-    return false;
-}
-
 } /// anonymous namespace
 
 
@@ -229,11 +238,45 @@ void GeoJSONRowInputFormat::resetParser()
     done = false;
 }
 
+void GeoJSONRowInputFormat::validateTopLevelTypeMember(ReadBuffer & buf)
+{
+    String type;
+    readJSONString(type, buf, format_settings.json);
+    if (type != "FeatureCollection")
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: the top-level 'type' member must be 'FeatureCollection', but got '{}'", type);
+    top_level_type_validated = true;
+}
+
 void GeoJSONRowInputFormat::readPrefix()
 {
     auto & buf = getReadBuffer();
     JSONUtils::skipObjectStart(buf);
-    if (!findFieldInJSONObject(buf, format_settings.json, "features"))
+
+    /// Scan the top-level object up to the `features` array. The `type` member must be
+    /// `FeatureCollection`; it is validated here if it precedes `features`, otherwise `readSuffix`
+    /// validates it among the remaining members. Any other member is strictly skipped.
+    bool found_features = false;
+    bool first = true;
+    while (!JSONUtils::checkAndSkipObjectEnd(buf))
+    {
+        if (!first)
+            JSONUtils::skipComma(buf);
+        first = false;
+        String key = JSONUtils::readFieldName(buf, format_settings.json);
+        if (key == "type")
+            validateTopLevelTypeMember(buf);
+        else if (key == "features")
+        {
+            found_features = true;
+            break;
+        }
+        else
+            skipJSONValueStrict(buf, format_settings.json);
+    }
+
+    if (!found_features)
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: 'features' array not found in FeatureCollection");
     JSONUtils::skipArrayStart(buf);
 }
@@ -244,13 +287,22 @@ void GeoJSONRowInputFormat::readSuffix()
     /// We are positioned right after the `features` array. Strictly skip any remaining members
     /// of the top-level FeatureCollection object (validating commas between members and rejecting
     /// malformed JSON even under ignored fields, e.g. a trailing `bbox` `{"a":1 "b":2}`) up to and
-    /// including the closing `}`.
+    /// including the closing `}`. The `type` member is validated here if it follows `features`.
     while (!JSONUtils::checkAndSkipObjectEnd(buf))
     {
         JSONUtils::skipComma(buf);
-        JSONUtils::readFieldName(buf, format_settings.json);
-        skipJSONValueStrict(buf, format_settings.json);
+        String key = JSONUtils::readFieldName(buf, format_settings.json);
+        if (key == "type")
+            validateTopLevelTypeMember(buf);
+        else
+            skipJSONValueStrict(buf, format_settings.json);
     }
+
+    /// The top-level `type` member is required by the GeoJSON specification.
+    if (!top_level_type_validated)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "GeoJSON: the top-level 'type' member 'FeatureCollection' is missing");
 
     /// Reject trailing data after the top-level FeatureCollection object instead of ignoring it.
     /// We tolerate a single statement terminator so that the document can be supplied as inline
@@ -290,6 +342,7 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 
     first_row = false;
 
+    bool has_type = false;
     bool has_id = false;
     bool has_geometry = false;
     bool has_properties = false;
@@ -297,6 +350,17 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     JSONUtils::skipObjectStart(buf);
     forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
     {
+        if (key == "type")
+        {
+            String type;
+            readJSONString(type, buf, format_settings.json);
+            if (type != "Feature")
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "GeoJSON: each member of 'features' must have type 'Feature', but got '{}'", type);
+            has_type = true;
+            return true;
+        }
         if (key == "id" && id_col_idx.has_value())
         {
             if (has_id)
@@ -325,6 +389,12 @@ bool GeoJSONRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         }
         return false;
     });
+
+    /// Every member of `features` must be a `Feature` object: reject one whose required `type`
+    /// member is missing instead of ingesting a non-GeoJSON element.
+    if (!has_type)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "GeoJSON: a feature is missing the required 'type' member 'Feature'");
 
     /// `id` is optional in a GeoJSON feature, but `geometry` and `properties` are required members
     /// (`geometry` may be an explicit JSON `null`). Default only the optional `id`; reject a feature
@@ -408,14 +478,35 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
     ReadBufferFromString coord_buf(raw_coordinates);
     Field coordinates_field;
 
+    /// Parse the coordinates and enforce the GeoJSON shape invariants for the geometry type before
+    /// inserting, so that degenerate lines and unclosed/too-short rings are rejected as malformed
+    /// input instead of being stored as valid `Geometry` values.
     if (geo_type == "Point")
         coordinates_field = readGeoJSONPoint(coord_buf);
     else if (geo_type == "LineString" || geo_type == "Ring")
+    {
         coordinates_field = readGeoJSONLinearRing(coord_buf);
-    else if (geo_type == "Polygon" || geo_type == "MultiLineString")
+        validateLineStringCoordinates(coordinates_field.safeGet<Array>());
+    }
+    else if (geo_type == "MultiLineString")
+    {
         coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
+        for (const auto & line : coordinates_field.safeGet<Array>())
+            validateLineStringCoordinates(line.safeGet<Array>());
+    }
+    else if (geo_type == "Polygon")
+    {
+        coordinates_field = readGeoJSONPolygonCoordinates(coord_buf);
+        for (const auto & ring : coordinates_field.safeGet<Array>())
+            validateRingCoordinates(ring.safeGet<Array>());
+    }
     else if (geo_type == "MultiPolygon")
+    {
         coordinates_field = readGeoJSONMultiPolygonCoordinates(coord_buf);
+        for (const auto & polygon : coordinates_field.safeGet<Array>())
+            for (const auto & ring : polygon.safeGet<Array>())
+                validateRingCoordinates(ring.safeGet<Array>());
+    }
 
     sub_col.insert(coordinates_field);
     variant_col.getLocalDiscriminators().push_back(local_discr);

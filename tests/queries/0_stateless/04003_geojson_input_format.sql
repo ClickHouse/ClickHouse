@@ -231,3 +231,69 @@ FROM format('GeoJSON', '{
     ]
 }');
 
+-- The top-level 'type' must be 'FeatureCollection': a wrong value is rejected.
+SELECT count()
+FROM format('GeoJSON', '{"type":"Feature","features":[]}'); -- { serverError INCORRECT_DATA }
+
+-- The top-level 'type' member is required: a document without it is rejected.
+SELECT count()
+FROM format('GeoJSON', '{"features":[]}'); -- { serverError INCORRECT_DATA }
+
+-- The top-level 'type' is also validated when it follows the 'features' array.
+SELECT count()
+FROM format('GeoJSON', '{"features":[],"type":"Feature"}'); -- { serverError INCORRECT_DATA }
+
+-- Every member of 'features' must be a 'Feature': a wrong feature type is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "NotAFeature", "geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A feature is required to have a 'type' member: one without it is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"geometry": null, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A LineString must have at least two positions: a one-point line is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[0,0]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A Polygon ring must be closed: an unclosed ring is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[0,0],[1,0],[1,1],[0,1]]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A Polygon ring must have at least four positions: a too-short ring is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[0,0],[1,1],[0,0]]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A MultiPolygon with an unclosed ring is rejected.
+SELECT count()
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": [[[[0,0],[1,0],[1,1],[0,1]]]]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
