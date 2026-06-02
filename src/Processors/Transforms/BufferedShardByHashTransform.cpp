@@ -58,8 +58,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     bool has_queued_chunks = false; /// any active shard has chunks waiting in its queue
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now
     bool has_pushable_empty_port = false; /// an active shard whose queue is empty AND downstream is asking
-    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure soft cap
-    bool any_queue_at_hard_cap = false; /// at least one shard's queue hit the unconditional hard cap
+    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
@@ -70,8 +69,6 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         const auto & queue = output_queues[shard];
         if (queue.size() >= MAX_QUEUE_LENGTH)
             any_queue_at_capacity = true;
-        if (queue.size() >= MAX_QUEUE_HARD_LIMIT)
-            any_queue_at_hard_cap = true;
         if (queue.empty())
         {
             if (queued_output_it->canPush())
@@ -107,21 +104,13 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         /// either input arrives or downstream demand appears.
     }
 
-    /// Hard cap on per-shard buffering. Bounds worst-case memory under pathological skew
-    /// (e.g. all rows hashing to one shard while a sibling port is asking): without this,
-    /// the soft-cap bypass below would buffer the whole input on the single receiving shard
-    /// until upstream finishes. We refuse to keep growing once any queue hits the hard
-    /// limit, even when an empty port is asking. If this fires and no queued chunk is
-    /// pushable, the pipeline waits; once upstream eventually finishes, the first pass
-    /// above eager-finishes the empty ports and the queued data drains.
-    if (any_queue_at_hard_cap)
-        return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
-
     /// Back-pressure on the soft cap, but only when there is no `canPush` empty port.
     /// When such a port exists, the deadlock with sequential consumers takes priority
-    /// over the soft memory bound: we let queues briefly overshoot to feed the asking
-    /// path, up to `MAX_QUEUE_HARD_LIMIT` (enforced above). Once input finishes the
-    /// first pass will finalize the empty ports.
+    /// over the soft memory bound: we let queues overshoot to feed the asking path.
+    /// Under pathological skew (all rows hashing to one shard while a sibling port is
+    /// asking) this can buffer most of the input on the receiving shard; memory is then
+    /// bounded by `max_memory_usage`, not by the soft cap (see comment in the header).
+    /// Once input finishes, the first pass will finalize the empty ports.
     if (any_queue_at_capacity && !has_pushable_empty_port)
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 

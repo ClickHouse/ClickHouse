@@ -47,15 +47,12 @@ private:
     /// until the slow consumer drains it. The soft cap can be temporarily bypassed when
     /// a sibling output port has an empty queue and downstream demand on it - otherwise
     /// a sequential downstream consumer (e.g. `ConcatProcessor`) would deadlock waiting
-    /// for data on the empty path while we back-pressure here.
+    /// for data on the empty path while we back-pressure here. Under pathological hash
+    /// skew (all rows hashing to one shard while a sibling port is asking), the bypass
+    /// keeps growing that shard's queue until upstream is exhausted; memory is then
+    /// bounded by `max_memory_usage`, not by this cap. A proper bound would require
+    /// spilling overflow chunks; that is a separate follow-up.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
-
-    /// Hard cap. Bounds worst-case memory under pathological skew: when all rows hash
-    /// to a single shard while a sibling port is asking for data, the soft-cap bypass
-    /// would otherwise buffer the whole input on that one shard. This is unconditional -
-    /// even an asking empty port does not bypass it. Worst-case per-shard buffering is
-    /// `MAX_QUEUE_HARD_LIMIT` chunks; worst-case total is `MAX_QUEUE_HARD_LIMIT * num_shards`.
-    static constexpr size_t MAX_QUEUE_HARD_LIMIT = 2 * MAX_QUEUE_LENGTH;
 
     size_t num_shards;
     ColumnNumbers key_columns;
