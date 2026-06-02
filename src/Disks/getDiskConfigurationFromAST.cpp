@@ -57,11 +57,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool is_s3_configuration = false;
     bool has_type = false;
     bool type_is_object_storage = false;
+    bool has_object_storage_type = false;
+    bool object_storage_type_is_s3 = false;
     /// True if the resolved disk type cannot be determined statically here
     /// because it comes from `from_env`/`from_zk` substitution on the `type`
     /// key. We conservatively treat the disk as potentially S3 so credential
     /// hardening below cannot be bypassed by indirection.
     bool type_resolution_is_indirect = false;
+    bool object_storage_type_resolution_is_indirect = false;
     bool has_use_environment_credentials = false;
     bool use_environment_credentials = false;
     bool has_role_arn = false;
@@ -135,12 +138,22 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 has_type = true;
                 if (value_str == "object_storage")
                     type_is_object_storage = true;
+
+                if (is_indirect_value(value_str))
+                    type_resolution_is_indirect = true;
+            }
+            else
+            {
+                has_object_storage_type = true;
+                if (value_str == "s3" || value_str.starts_with("s3_"))
+                    object_storage_type_is_s3 = true;
+
+                if (is_indirect_value(value_str))
+                    object_storage_type_resolution_is_indirect = true;
             }
 
             if (value_str == "s3" || value_str.starts_with("s3_"))
                 is_s3_configuration = true;
-            else if (is_indirect_value(value_str))
-                type_resolution_is_indirect = true;
         }
         else if (key == "include")
         {
@@ -202,9 +215,15 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// fetched from an env variable / ZooKeeper. `include` is only treated as
     /// potentially S3 when it can supply a missing/indirect type or augment an
     /// S3/object_storage disk.
+    const bool object_storage_type_can_be_s3
+        = !has_object_storage_type || object_storage_type_resolution_is_indirect || object_storage_type_is_s3;
     const bool include_can_supply_s3_configuration = has_include
-        && (!has_type || type_resolution_is_indirect || is_s3_configuration || type_is_object_storage);
-    const bool apply_s3_credential_checks = is_s3_configuration || type_resolution_is_indirect || include_can_supply_s3_configuration;
+        && (!has_type || type_resolution_is_indirect || is_s3_configuration
+            || (type_is_object_storage && object_storage_type_can_be_s3));
+    const bool apply_s3_credential_checks = is_s3_configuration
+        || type_resolution_is_indirect
+        || object_storage_type_resolution_is_indirect
+        || include_can_supply_s3_configuration;
 
     if (!is_loading_from_existing_metadata && apply_s3_credential_checks && use_environment_credentials)
         throw Exception(

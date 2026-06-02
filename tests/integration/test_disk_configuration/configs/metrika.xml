@@ -5,4 +5,7 @@
   <disk_encrypted_keys>
     <key_hex>00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff</key_hex>
   </disk_encrypted_keys>
+  <local_object_storage_defaults>
+    <metadata_type>plain_rewritable</metadata_type>
+  </local_object_storage_defaults>
 </clickhouse>

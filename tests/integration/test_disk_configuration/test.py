@@ -648,6 +648,7 @@ def test_dynamic_disk_security_settings(start_cluster):
     node.query("DROP TABLE IF EXISTS test_security_from_env_ok SYNC")
     node.query("DROP TABLE IF EXISTS test_security_from_zk_ok SYNC")
     node.query("DROP TABLE IF EXISTS test_security_include_ok SYNC")
+    node.query("DROP TABLE IF EXISTS test_security_local_include_ok SYNC")
     zk_client = cluster.get_kazoo_client("zoo1")
     test_security_endpoint_znode = "/test_security_endpoint"
     if zk_client.exists("/test_security_minio_secret"):
@@ -806,10 +807,25 @@ def test_dynamic_disk_security_settings(start_cluster):
             """,
             user="privileged_user",
         )
+
+        # Non-S3 object storage is outside S3 credential hardening, so literal
+        # `object_storage_type = local` may still use include.
+        node.query(
+            """
+            CREATE TABLE test_security_local_include_ok (a Int32) ENGINE = MergeTree() ORDER BY tuple()
+            SETTINGS disk = disk(
+                type = object_storage,
+                object_storage_type = local,
+                include = 'local_object_storage_defaults',
+                path = 'local_object_storage_node5/')
+            """,
+            user="privileged_user",
+        )
     finally:
         node.query("DROP TABLE IF EXISTS test_security_from_env_ok SYNC")
         node.query("DROP TABLE IF EXISTS test_security_from_zk_ok SYNC")
         node.query("DROP TABLE IF EXISTS test_security_include_ok SYNC")
+        node.query("DROP TABLE IF EXISTS test_security_local_include_ok SYNC")
         node.query("DROP USER IF EXISTS restricted_user")
         node.query("DROP USER IF EXISTS privileged_user")
         node.query("DROP SETTINGS PROFILE IF EXISTS allow_dynamic_disk_access")
