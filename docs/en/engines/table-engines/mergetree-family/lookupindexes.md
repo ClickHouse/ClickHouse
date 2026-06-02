@@ -2,12 +2,13 @@
 description: 'Table-wide lookup indexes for `MergeTree` tables.'
 keywords: ['lookup index', 'table_set', 'table_join', 'MergeTree', 'index']
 sidebar_label: 'Lookup Indexes'
+sidebar_position: 100
 slug: /engines/table-engines/mergetree-family/lookupindexes
 title: 'Lookup Indexes'
 doc_type: 'guide'
 ---
 
-# Lookup indexes
+# Lookup indexes {#lookup-indexes}
 
 `MergeTree` tables support table-wide lookup indexes declared with `LOOKUP INDEX`.
 They are designed for fast key-value style lookups on the right-hand side of a query.
