@@ -252,6 +252,8 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 
 }
 
+void registerAggregateFunctionCount(AggregateFunctionFactory &);
+
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
