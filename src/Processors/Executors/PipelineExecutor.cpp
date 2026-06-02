@@ -526,6 +526,11 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                 if (query_context->getCPUSlotPreemption())
                 {
                     auto quantum_ns = std::max<UInt64>(10, query_context->getCPUSlotQuantum());
+                    // Mirror the ConcurrencyControl branch: under lazy allocation, request only
+                    // `master_threads` from the workload scheduler at startup and let the
+                    // PipelineExecutor upscaling block grow the ceiling via `setMax` as the
+                    // pipeline actually pushes parallelizable work.
+                    SlotCount initial_max = lazy_allocation ? master_threads : num_threads;
                     return std::make_shared<CPULeaseAllocation>(num_threads, master_thread_link, worker_thread_link,
                         CPULeaseSettings
                         {
@@ -536,7 +541,8 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
-                        });
+                        },
+                        initial_max);
                 }
                 else
                 {

@@ -166,7 +166,8 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         std::unique_lock lock(mutex);
 
         /// Measure the parallelism of the push: how many threads could run the new tasks
-        /// concurrently. Used by the caller to size ConcurrencyControl's setMax.
+        /// concurrently. Used by `PipelineExecutor` to size the slot-allocation ceiling via
+        /// `ISlotAllocation::setMax` on the pipeline's `cpu_slots` handle.
         const size_t pushed = queue.size() + async_queue.size();
 
 #if defined(OS_LINUX)
@@ -193,8 +194,10 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
         /// Wake up at least one thread that will wake up other threads if required
         tryWakeUpAnyOtherThreadWithTasks(context, lock);
 
-        /// spawn_count = pushed tasks that idle threads can't cover, clamped to the pipeline's
-        /// remaining headroom (num_threads - total_slots). Callers feed this into setMax.
+        /// Return the number of additional pipeline threads the caller should target: pushed
+        /// tasks that idle threads can't cover, clamped to remaining pipeline-width headroom
+        /// (`num_threads - total_slots`). `PipelineExecutor` adds this delta to the
+        /// `cpu_slots->setMax(...)` target so the slot allocator grows in step with demand.
         const size_t coverable = std::min(pushed, idle_before);
         const size_t uncovered = pushed - coverable;
         const size_t headroom = (num_threads_now > total_slots_now) ? (num_threads_now - total_slots_now) : 0;

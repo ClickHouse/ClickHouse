@@ -97,7 +97,9 @@ public:
     void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
-    /// PipelineExecutor to size setMax for the initial parallelism.
+    /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via
+    /// `cpu_slots->setMax(...)` so the initial parallelism is admitted to the scheduler
+    /// without waiting for a later `pushTasks` round to expand it.
     size_t fill(Queue & queue, Queue & async_queue);
 
     /// Release CPU slots

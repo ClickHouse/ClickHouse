@@ -192,7 +192,7 @@ void CPULeaseAllocation::RequestChain::scheduled()
         cancel_cv.notify_one();
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
     , log(getLogger("CPULeaseAllocation"))
@@ -202,6 +202,13 @@ CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink mast
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
 {
+    // initial_max_slots_ == 0 is the eager default: request all max_threads up front.
+    // A lazy caller passes a smaller value (typically 1 for the master thread) and grows
+    // the ceiling later via setMax.
+    current_max_slots = (initial_max_slots_ == 0 || initial_max_slots_ > max_threads)
+        ? max_threads
+        : initial_max_slots_;
+
     // Capture query-level counters (ThreadGroup) that outlive all worker threads.
     // Cannot use CurrentThread::getProfileEvents() in schedule() — it returns the calling
     // thread's counters, which may be destroyed before the timer is flushed (UAF).
@@ -437,8 +444,31 @@ void CPULeaseAllocation::grantImpl(std::unique_lock<std::mutex> & lock)
         else
             break; // No preempted threads, we are done
     }
+}
 
-    // TODO(serxa): we should release granted but not acquired slots after some timeout, to avoid unnecessary overprovisioning, but this requires modification of the PipelineExecutor as well
+void CPULeaseAllocation::setMax(SlotCount new_max)
+{
+    std::unique_lock lock{mutex};
+
+    // Clamp to the hard cap that all internal vectors (`requests` chain, `threads` bitsets)
+    // were sized for in the constructor. Growing beyond `max_threads` is not supported.
+    new_max = std::min(new_max, max_threads);
+    if (new_max == current_max_slots)
+        return;
+
+    const bool growing = new_max > current_max_slots;
+    current_max_slots = new_max;
+
+    // Only growth needs an immediate kick: it may need to enqueue a new resource request
+    // for the additional capacity. The grant chain (driven by grantImpl after each scheduler
+    // grant) then naturally fills up to `current_max_slots` one request at a time.
+    // Shrinking does not reclaim already-granted slots — it simply caps future grants
+    // because the next `schedule()` will see `allocated >= current_max_slots` and bail out.
+    if (growing && !shutdown && allocated < current_max_slots && !requests.hasEnqueued())
+    {
+        if (!schedule(lock))
+            grantImpl(lock); // Non-competing path: grant immediately and chain.
+    }
 }
 
 bool CPULeaseAllocation::renew(Lease & lease)
@@ -597,7 +627,7 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
 
 bool CPULeaseAllocation::schedule(std::unique_lock<std::mutex> &)
 {
-    if (allocated == max_threads || shutdown)
+    if (allocated >= current_max_slots || shutdown)
         return true;
 
     ResourceCost cost = settings.quantum_ns + std::max<ResourceCost>(0, consumed_ns - requested_ns);
