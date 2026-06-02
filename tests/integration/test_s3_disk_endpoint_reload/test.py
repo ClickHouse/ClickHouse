@@ -34,6 +34,8 @@ S3_ENDPOINT_RELOAD_CONFIG = f"""        <endpoint_reload>
 S3_DISK_RELOAD_CREDENTIALS_CONFIG = """                <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
 """
+S3_DISK_RELOAD_DISABLE_ENV_CONFIG = """                <use_environment_credentials>false</use_environment_credentials>
+"""
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -61,11 +63,18 @@ def set_s3_reload_config(endpoint_enabled, disk_credentials_enabled):
         )
 
     contents = contents.replace(S3_DISK_RELOAD_CREDENTIALS_CONFIG, "")
+    contents = contents.replace(S3_DISK_RELOAD_DISABLE_ENV_CONFIG, "")
     if disk_credentials_enabled:
         disk_endpoint_config = f"                <endpoint>{S3_ENDPOINT}</endpoint>\n"
         contents = contents.replace(
             disk_endpoint_config,
             disk_endpoint_config + S3_DISK_RELOAD_CREDENTIALS_CONFIG,
+        )
+    else:
+        disk_endpoint_config = f"                <endpoint>{S3_ENDPOINT}</endpoint>\n"
+        contents = contents.replace(
+            disk_endpoint_config,
+            disk_endpoint_config + S3_DISK_RELOAD_DISABLE_ENV_CONFIG,
         )
 
     with open(config_path, "w", encoding="utf-8") as config:
