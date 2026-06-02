@@ -154,8 +154,8 @@ MULTITARGET_FUNCTION_X86_V4(
                 partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], data[i + s], params);
 
         ResultType result = 0;
-        for (size_t s = 0; s < unroll_count; ++s)
-            result = Kernel::template combine<ResultType>(result, partial_results[s], params);
+        for (auto & partial_result : partial_results)
+            result = Kernel::template combine<ResultType>(result, partial_result, params);
 
         for (; i < count; ++i)
             result = Kernel::template accumulate<ResultType>(result, data[i], params);
