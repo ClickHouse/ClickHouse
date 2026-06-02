@@ -230,7 +230,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
     }
     else
     {
-        size_t num_bytes;
+        size_t num_bytes = 0;
         readVarUInt(num_bytes, istr);
 
         /// If the posting list is completely in the buffer, avoid copying.
@@ -404,7 +404,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     analyzePostings(postings_serialization, *postings_stream, state);
 
     const auto & settings = condition_text.getContext()->getSettingsRef();
-    analyzer->analyzeCardinalitiesAndBypassHints(settings[Setting::text_index_hint_max_selectivity], state.part.rows_count);
+    analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
 
     /// Capture the codec after the analysis — for Pre-WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
@@ -1086,7 +1086,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, istr);
 
     if (version > static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
@@ -1097,7 +1097,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
 
     if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
     {
-        UInt64 codec_type;
+        UInt64 codec_type = 0;
         readVarUInt(codec_type, istr);
 
         if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
@@ -1106,7 +1106,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
     }
 
-    size_t num_sparse_index_tokens;
+    size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
     auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
@@ -1156,8 +1156,8 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
 
         for (size_t j = 0; j < num_postings_blocks; ++j)
         {
-            UInt64 offset_in_file;
-            RowsRange rows_range;
+            UInt64 offset_in_file = 0;
+            RowsRange rows_range{};
 
             readVarUInt(offset_in_file, istr);
             readVarUInt(rows_range.begin, istr);
@@ -1181,8 +1181,8 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 {
     using enum PostingsSerialization::Flags;
 
-    UInt64 header;
-    UInt64 cardinality;
+    UInt64 header = 0;
+    UInt64 cardinality = 0;
 
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
@@ -1211,7 +1211,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 
 std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffer & istr)
 {
-    UInt64 tokens_format;
+    UInt64 tokens_format = 0;
     readVarUInt(tokens_format, istr);
 
     size_t num_tokens = 0;
@@ -1439,7 +1439,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            bool inserted;
+            bool inserted = false;
             TokenToPostingsBuilderMap::LookupResult it;
 
             ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};

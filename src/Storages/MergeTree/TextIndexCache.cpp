@@ -30,23 +30,24 @@ void TokensCardinalitiesCache::update(const TokenToPostingsInfosMap & token_info
 
 void TokensCardinalitiesCache::sortTokens(std::vector<String> & tokens) const
 {
-    CardinalitiesMap current_cardinalities;
+    std::vector<std::pair<double, String>> token_ratios;
+    token_ratios.reserve(tokens.size());
 
     {
         std::lock_guard lock(mutex);
-        current_cardinalities = cardinalities;
+
+        for (auto & token : tokens)
+        {
+            const auto & cardinality_agg = cardinalities.at(token);
+            double ratio = cardinality_agg.checked_rows > 0 ? static_cast<double>(cardinality_agg.cardinality) / static_cast<double>(cardinality_agg.checked_rows) : 1.0;
+            token_ratios.emplace_back(ratio, std::move(token));
+        }
     }
 
-    std::ranges::sort(tokens, [&current_cardinalities](const auto & lhs_token, const auto & rhs_token)
-    {
-        const auto & lhs_cardinality = current_cardinalities.at(lhs_token);
-        const auto & rhs_cardinality = current_cardinalities.at(rhs_token);
+    std::ranges::sort(token_ratios);
 
-        double lhs_ratio = lhs_cardinality.checked_rows > 0 ? static_cast<double>(lhs_cardinality.cardinality) / static_cast<double>(lhs_cardinality.checked_rows) : 1.0;
-        double rhs_ratio = rhs_cardinality.checked_rows > 0 ? static_cast<double>(rhs_cardinality.cardinality) / static_cast<double>(rhs_cardinality.checked_rows) : 1.0;
-
-        return std::tie(lhs_ratio, lhs_token) < std::tie(rhs_ratio, rhs_token);
-    });
+    for (size_t i = 0; i < tokens.size(); ++i)
+        tokens[i] = std::move(token_ratios[i].second);
 }
 
 }

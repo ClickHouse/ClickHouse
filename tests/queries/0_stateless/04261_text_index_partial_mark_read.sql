@@ -31,17 +31,11 @@ INSERT INTO t_text_index_partial_mark
 SELECT number, concat('row_', toString(number), if(number % 37 = 0, ' needle', ''))
 FROM numbers(400000);
 
--- Result must match a brute-force scan that doesn't use the index.
-SELECT count() FROM t_text_index_partial_mark WHERE hasToken(body, 'needle')
-SETTINGS
-    enable_full_text_index = 1,
-    use_skip_indexes = 1,
-    query_plan_direct_read_from_text_index = 1,
-    use_skip_indexes_on_data_read = 1,
-    max_threads = 1,
-    max_block_size = 100;
+SET query_plan_direct_read_from_text_index = 1;
+SET use_skip_indexes_on_data_read = 1;
 
-SELECT count() FROM t_text_index_partial_mark WHERE hasToken(body, 'needle')
-SETTINGS use_skip_indexes = 0;
+-- Result must match a brute-force scan that doesn't use the index.
+SELECT count() FROM t_text_index_partial_mark WHERE hasToken(body, 'needle') SETTINGS use_skip_indexes = 1, max_threads = 1, max_block_size = 100;
+SELECT count() FROM t_text_index_partial_mark WHERE hasToken(body, 'needle') SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_text_index_partial_mark;
