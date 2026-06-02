@@ -5,6 +5,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 #include <Interpreters/MaterializedCTE.h>
@@ -368,42 +369,6 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
         if (const auto * child_join_node = current->as<CrossJoinNode>())
         {
             stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
-        }
-    }
-    return false;
-}
-
-/// Variant of `isFromJoinTree` that also descends into `ArrayJoinNode` children. Used to
-/// check whether a column's source table participates in an ARRAY JOIN's input subtree,
-/// which may itself be (or contain) another ARRAY JOIN when ARRAY JOINs are chained.
-static bool isInArrayJoinSourceTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
-{
-    if (node_source == tree_node)
-        return true;
-
-    std::stack<const IQueryTreeNode *> stack;
-    stack.push(tree_node);
-
-    while (!stack.empty())
-    {
-        const auto * current = stack.top();
-        stack.pop();
-
-        if (node_source == current)
-            return true;
-
-        if (const auto * child_join_node = current->as<JoinNode>())
-        {
-            stack.push(child_join_node->getLeftTableExpression().get());
-            stack.push(child_join_node->getRightTableExpression().get());
-        }
-        else if (const auto * child_cross_join_node = current->as<CrossJoinNode>())
-        {
-            stack.push_range(child_cross_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
-        }
-        else if (const auto * child_array_join_node = current->as<ArrayJoinNode>())
-        {
-            stack.push(child_array_join_node->getTableExpression().get());
         }
     }
     return false;
@@ -4645,23 +4610,13 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         /// retry by expanding the identifier as a Nested prefix over the per-field columns
         /// of that same source table. This restores the legacy analyzer's behavior for
         /// `ARRAY JOIN <nested_prefix>` when an `ALIAS` column occupies the same name.
-        ///
-        /// The retry is gated on the resolved node being a `ColumnNode` whose source is
-        /// contained in the ARRAY JOIN's input join tree — without this gate, a `WITH`
-        /// alias, a projection alias, or any other expression `resolveExpressionNode` may
-        /// pick up would silently be rewritten into a row-multiplying `nested(...)` over
-        /// the table's prefix columns, turning a `TYPE_MISMATCH` into wrong results. The
-        /// source-table lookup uses the resolved column's source (not the ARRAY JOIN's
-        /// immediate child), so the retry also fires when the ARRAY JOIN wraps a join
-        /// tree, e.g. `FROM s JOIN t ON ... ARRAY JOIN s.loc`.
         if (auto * resolved_column_node = array_join_expression->as<ColumnNode>())
         {
             auto current_result_type = resolved_column_node->getResultType();
             if (current_result_type && !isArray(current_result_type) && !isMap(current_result_type))
             {
                 auto column_source = resolved_column_node->getColumnSourceOrNull();
-                const auto & array_join_input = array_join_node_typed.getTableExpression();
-                if (column_source && isInArrayJoinSourceTree(column_source.get(), array_join_input.get()))
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::TABLE)
                 {
                     auto data_it = scope.table_expression_node_to_data.find(column_source);
                     if (data_it != scope.table_expression_node_to_data.end())
