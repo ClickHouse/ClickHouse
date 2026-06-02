@@ -579,7 +579,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             if (!info.has_value())
                 break;
 
-            SLRUIterator * iterator;
+            SLRUIterator * iterator = nullptr;
             try
             {
                 iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
