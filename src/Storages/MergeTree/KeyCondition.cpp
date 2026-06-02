@@ -44,7 +44,6 @@
 #include <IO/Operators.h>
 
 #include <algorithm>
-#include <cassert>
 #include <stack>
 
 #include <boost/geometry.hpp>
@@ -719,7 +718,7 @@ static bool isLogicalOperator(const String & func_name)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
-ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
+static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversion = false)
 {
     const ASTFunction * func = node->as<ASTFunction>();
 
@@ -1043,7 +1042,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 else if (name == "or")
                     function_builder = FunctionFactory::instance().get("and", context);
 
-                assert(function_builder);
+                chassert(function_builder);
 
                 /// We match columns by name, so it is important to fill name correctly.
                 /// So, use empty string to make it automatically.
@@ -1396,7 +1395,7 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 /// signatures, and none of the functions produce `NULL` output.
 ///
 /// After functions chain execution, fills result column and its type.
-bool applyFunctionChainToColumn(
+static bool applyFunctionChainToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_data_type,
     const std::vector<FunctionBasePtr> & functions,
@@ -1452,6 +1451,11 @@ bool applyFunctionChainToColumn(
     else
     {
         result_column = castColumnAccurateOrNull({result_column, result_type, ""}, in_argument_type);
+        /// `castColumnAccurateOrNull` is implemented on top of `FunctionCast` whose wrappers can
+        /// return `ColumnConst` for a 1-row input — same hazard as the post-`func->execute` case
+        /// below. Unwrap defensively so the `assert_cast<const ColumnNullable &>` always sees a
+        /// plain `ColumnNullable`.
+        result_column = result_column->convertToFullColumnIfConst();
         const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
         const auto & null_map_data = result_column_nullable.getNullMapData();
         for (char8_t i : null_map_data)
@@ -1485,7 +1489,7 @@ bool applyFunctionChainToColumn(
         auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
         if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            Int64 value;
+            Int64 value = 0;
             if (isDateTime64(arg_type_inner))
                 value = (*result_column)[0].safeGet<DateTime64>().getValue();
             else
@@ -1538,6 +1542,14 @@ bool applyFunctionChainToColumn(
         }
         result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
+        /// `func->execute` may return `ColumnConst(ColumnNullable(...))` when the function collapses
+        /// a 1-row input to a single constant value — e.g. `floor(NULL, x)` always yields NULL.
+        /// `ColumnConst::isNullable` reports the wrapped column's nullability, so the
+        /// `isNullable()` check below would succeed while `assert_cast<const ColumnNullable &>`
+        /// fails on the outer `ColumnConst`. Strip the outer `Const` here to keep the column
+        /// shape in sync with `result_type` and with the post-strip invariant established at the
+        /// top of this function.
+        result_column = result_column->convertToFullColumnIfConst();
         result_type = removeLowCardinality(func_result_type);
 
         // Transforming nullable columns to the nested ones, in case no nulls found.
@@ -1784,7 +1796,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 /// - DAG `p -> CAST(p, 'UInt8')`:
 ///   input:  `['123']`  type `String`
 ///   output: `[123]`  type `UInt8`
-bool applyDeterministicDagToColumn(
+static bool applyDeterministicDagToColumn(
     const ColumnPtr & in_column,
     const DataTypePtr & in_type,
     const String & input_name,
@@ -2151,7 +2163,7 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
-bool tryPrepareSetColumnsForIndex(
+static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
@@ -2989,7 +3001,7 @@ struct KeyCondition::RPNElement::Polygon
 
     /// Bounding box of the ring, precomputed once when the RPN element is built
     /// Useful for quick rejection to avoid costly `intersects` checks
-    BoxT bbox;
+    BoxT bbox{};
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -3376,7 +3388,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
             /// Looking for func(key, const) or func(const, key).
-            size_t const_arg_pos;
+            size_t const_arg_pos = 0;
             if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
@@ -3863,18 +3875,18 @@ KeyCondition::Description KeyCondition::getDescription() const
                 break;
             }
             case RPNElement::FUNCTION_NOT:
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -3886,12 +3898,12 @@ KeyCondition::Description KeyCondition::getDescription() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg1 = std::move(rpn_stack.back());
 
                 rpn_stack.pop_back();
 
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
                 auto arg2 = std::move(rpn_stack.back());
 
                 Frame frame;
@@ -4156,6 +4168,59 @@ BoolMask KeyCondition::checkInRange(
     });
 }
 
+/// Check if a type conversion function preserves the Field value when it's monotonic on the given range.
+/// For example, CAST between UInt8/16/32/64 types all store as UInt64 in Field, so when the CAST is
+/// monotonic (value fits in the target type), the Field value doesn't change.
+/// Similarly for Int8/16/32/64 (all stored as Int64).
+/// In such cases we can skip the expensive function application (which creates columns and executes
+/// the function via the full column execution machinery) and just keep the original Field value.
+///
+/// IMPORTANT: This must only return true for pure type conversion functions (_CAST, toUInt*, toInt*),
+/// NOT for arithmetic or other functions that happen to have compatible integer types on input/output.
+static bool functionIsIntegerCastPreservingFieldRepresentation(
+    const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    /// Only type conversion functions preserve Field values across integer type boundaries.
+    /// Arithmetic functions like plus/minus change the value even with same-family types.
+    const auto & name = func->getName();
+    bool is_cast = (name == "_CAST" || name == "CAST"
+        || name == "toUInt8" || name == "toUInt16" || name == "toUInt32" || name == "toUInt64"
+        || name == "toInt8" || name == "toInt16" || name == "toInt32" || name == "toInt64");
+
+    if (!is_cast)
+        return false;
+
+    /// Nullable types don't have a fixed size in memory; this optimization only applies to plain integer types.
+    if (from_type->isNullable() || to_type->isNullable())
+        return false;
+
+    auto from_id = from_type->getTypeId();
+    auto to_id = to_type->getTypeId();
+
+    auto is_unsigned_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::UInt8 || id == TypeIndex::UInt16 || id == TypeIndex::UInt32 || id == TypeIndex::UInt64;
+    };
+
+    auto is_signed_int = [](TypeIndex id)
+    {
+        return id == TypeIndex::Int8 || id == TypeIndex::Int16 || id == TypeIndex::Int32 || id == TypeIndex::Int64;
+    };
+
+    /// Check that both types are in the same integer family before calling
+    /// getSizeOfValueInMemory, which throws for variable-length types like String.
+    bool same_family = (is_unsigned_int(from_id) && is_unsigned_int(to_id))
+        || (is_signed_int(from_id) && is_signed_int(to_id));
+
+    if (!same_family)
+        return false;
+
+    /// We can only skip the function application when the target type is at least as wide
+    /// as the source type (widening or same-size cast). For narrowing casts (e.g. UInt32 -> UInt16),
+    /// truncation changes the actual value even though both use UInt64 in the Field representation.
+    return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
+}
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
@@ -4175,24 +4240,45 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             return {};
         }
 
-        /// If we apply function to open interval, we can get empty intervals in result.
-        /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-        /// To avoid this we make range left and right included.
-        /// Any function that treats NULL specially is not monotonic.
-        /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
-        if (!key_range.left.isNull())
+        auto result_type = func->getResultType();
+
+        /// For functions like CAST between integer types that share the same Field representation
+        /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
+        /// on the given range, the Field values are guaranteed to be unchanged.
+        /// We can skip the expensive function application that creates columns and executes the function.
+        /// The monotonicity check already verified that the values fit in the target type.
+        bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
+
+        if (!skip_apply)
         {
-            key_range.left = applyFunction(func, current_type, key_range.left);
-            key_range.left_included = true;
+            /// If we apply function to open interval, we can get empty intervals in result.
+            /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+            /// To avoid this we make range left and right included.
+            /// Any function that treats NULL specially is not monotonic.
+            /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+            if (!key_range.left.isNull())
+            {
+                key_range.left = applyFunction(func, current_type, key_range.left);
+                key_range.left_included = true;
+            }
+
+            if (!key_range.right.isNull())
+            {
+                key_range.right = applyFunction(func, current_type, key_range.right);
+                key_range.right_included = true;
+            }
+        }
+        else
+        {
+            /// Even though we skip the function application, we still need to make bounds included
+            /// (the function could map open bounds to the same point).
+            if (!key_range.left.isNull())
+                key_range.left_included = true;
+            if (!key_range.right.isNull())
+                key_range.right_included = true;
         }
 
-        if (!key_range.right.isNull())
-        {
-            key_range.right = applyFunction(func, current_type, key_range.right);
-            key_range.right_included = true;
-        }
-
-        current_type = func->getResultType();
+        current_type = result_type;
 
         if (!monotonicity.is_positive)
             key_range.invert();
@@ -4599,18 +4685,20 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Hyperrectangle size is {}, but requested element at position {} ({})",
-                                hyperrectangle.size(), key_column, element.toString());
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
 
-            Range key_range = hyperrectangle[key_column];
+            /// Avoid copying Range when there is no monotonic function chain (the common case).
+            const Range * key_range_ptr = &hyperrectangle[key_column];
+            std::optional<Range> key_range_storage;
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
+                key_range_storage = hyperrectangle[key_column];
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    key_range,
+                    *key_range_storage,
                     element.monotonic_functions_chain,
                     data_types[key_column],
                     single_point
@@ -4621,8 +4709,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                key_range = *new_range;
+                key_range_storage = *new_range;
+                key_range_ptr = &*key_range_storage;
             }
+
+            const Range & key_range = *key_range_ptr;
 
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
@@ -4696,6 +4787,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
               */
 
             size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             Range key_range = hyperrectangle[key_column];
 
             /// The only possible result type of a space filling curve is UInt64.
@@ -4731,7 +4828,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                             current_intersection = current_intersection & BoolMask(intersects, !contains);
                         }
 
-                        mask = mask | current_intersection;
+                        mask = BoolMask::combine(mask, current_intersection);
                     };
 
                     switch (curve_type(key_column))
@@ -4798,6 +4895,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
             };
 
+            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             const auto & range_x = hyperrectangle[element.key_columns[0]];
             const auto & range_y = hyperrectangle[element.key_columns[1]];
 
@@ -4842,7 +4945,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
-            const Range * key_range = &hyperrectangle[element.getKeyColumn()];
+            size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const Range * key_range = &hyperrectangle[key_column];
 
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);
@@ -4922,13 +5032,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -4937,7 +5047,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else if (element.function == RPNElement::FUNCTION_OR)
         {
-            assert(!rpn_stack.empty());
+            chassert(!rpn_stack.empty());
 
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
@@ -5252,7 +5362,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
                 break;
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5262,7 +5372,7 @@ bool KeyCondition::unknownOrAlwaysTrue(bool unknown_any) const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5317,7 +5427,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_AND:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();
@@ -5333,7 +5443,7 @@ bool KeyCondition::alwaysFalse() const
             }
             case RPNElement::FUNCTION_OR:
             {
-                assert(!rpn_stack.empty());
+                chassert(!rpn_stack.empty());
 
                 auto arg1 = rpn_stack.back();
                 rpn_stack.pop_back();

@@ -229,7 +229,7 @@ public:
 
     uint64_t getSeed() const { return seed; }
 private:
-    uint64_t seed;
+    uint64_t seed = 0;
 
     std::uniform_int_distribution<size_t> request_picker;
     RequestGetter request_getter;

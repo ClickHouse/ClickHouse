@@ -1,3 +1,4 @@
+#include <thread>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -31,17 +32,18 @@
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/VirtualColumnUtils.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
-#include <Common/randomSeed.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Pipe.h>
+#include <Common/checkStackSize.h>
+#include <Common/typeid_cast.h>
+#include <Common/randomSeed.h>
+#include <Core/UUID.h>
 
 #include <Backups/BackupEntriesCollector.h>
 
@@ -79,6 +81,13 @@ namespace ActionLocks
 {
     extern const StorageActionBlockType ViewRefresh;
     extern const StorageActionBlockType ViewRefreshPause;
+}
+
+String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
+{
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 /// Remove columns from target_header that does not exist in src_header
@@ -175,12 +184,12 @@ StorageMaterializedView::StorageMaterializedView(
     if (point_to_itself_by_uuid || point_to_itself_by_name)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
 
+    auto db_engine = DatabaseCatalog::instance().getDatabase(table_id_.database_name)->getEngineName();
+    bool is_replicated_db = db_engine == "Replicated";
+
     if (query.refresh_strategy)
     {
         fixed_uuid = query.refresh_strategy->append;
-
-        auto db = DatabaseCatalog::instance().getDatabase(getStorageID().database_name);
-        bool is_replicated_db = db->getEngineName() == "Replicated";
 
         /// Decide whether to enable coordination.
         if (is_replicated_db)
@@ -200,7 +209,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        if (mode < LoadingStrictnessLevel::ATTACH && !fixed_uuid)
+        if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !fixed_uuid)
         {
             /// Sanity-check the table engine.
             String inner_engine;
@@ -479,6 +488,14 @@ void StorageMaterializedView::drop()
     if (getInMemoryMetadataPtr(getContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 
+    bool is_shared_catalog = false;
+
+    if (refresher)
+        refresher->drop(getContext(), is_shared_catalog);
+
+    if (is_shared_catalog)
+        return;
+
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
     /// Running synchronous DROP from that task leads to deadlock.
@@ -489,9 +506,6 @@ void StorageMaterializedView::drop()
     /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
     /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
     dropInnerTableIfAny(/* sync */ false, getContext());
-
-    if (refresher)
-        refresher->drop(getContext());
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
@@ -801,7 +815,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     {
         auto new_target_table_name = generateInnerTableName(new_table_id);
 
-        assert(inner_table_id.database_name == old_table_id.database_name);
+        chassert(inner_table_id.database_name == old_table_id.database_name);
 
         auto rename = make_intrusive<ASTRenameQuery>();
         rename->addElement(inner_table_id.database_name, inner_table_id.table_name, new_table_id.database_name, new_target_table_name);
@@ -813,7 +827,7 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
     IStorage::renameInMemory(new_table_id);
     if (from_atomic_to_atomic_database && has_inner_table)
     {
-        assert(inner_table_id.database_name == old_table_id.database_name);
+        chassert(inner_table_id.database_name == old_table_id.database_name);
         updateTargetTableId(new_table_id.database_name, std::nullopt);
     }
 
@@ -992,13 +1006,6 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.table_name = *std::move(table_name);
 }
 
-String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
-{
-    if (view_id.hasUUID())
-        return ".inner_id." + toString(view_id.uuid);
-    return ".inner." + view_id.getTableName();
-}
-
 std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
 {
     auto table = tryGetTargetTable();
@@ -1018,6 +1025,7 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     return supported_columns;
 }
 
+void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory)
 {
     factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)

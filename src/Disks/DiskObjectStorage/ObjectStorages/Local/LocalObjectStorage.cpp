@@ -62,8 +62,8 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 {
     auto modified_settings{read_settings};
     /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_method = LocalFSReadMethod::pread;
-    modified_settings.direct_io_threshold = 0; /// Disable.
+    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
 
@@ -226,12 +226,14 @@ private:
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    bool /* use_external_buffer */,
+    bool /* restrict_seek */) const
 {
     LOG_TEST(log, "Read object: {}", object.remote_path);
     auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 
-    if (read_settings.enable_blob_storage_log_for_read_operations)
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
     {
         auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
         if (blob_storage_log)
@@ -408,13 +410,10 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    for (const auto & entry : fs::directory_iterator(path))
+    for (const auto & entry : fs::recursive_directory_iterator(path))
     {
         if (entry.is_directory())
-        {
-            listObjects(entry.path(), children, 0);
             continue;
-        }
 
         children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
