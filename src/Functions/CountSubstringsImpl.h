@@ -143,7 +143,7 @@ struct CountSubstringsImpl
                 const UInt8 * end = reinterpret_cast<const UInt8 *>(&haystack_data[haystack_offsets[i]]);
                 const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]), reinterpret_cast<const char *>(end), start));
 
-                const UInt8 * pos;
+                const UInt8 * pos = nullptr;
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
                 while ((pos = searcher.search(beg, end)) < end)
                 {
@@ -197,7 +197,7 @@ struct CountSubstringsImpl
                     const UInt8 * end = reinterpret_cast<const UInt8 *>(haystack.data() + haystack.size());
                     const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start));
 
-                    const UInt8 * pos;
+                    const UInt8 * pos = nullptr;
                     while ((pos = searcher.search(beg, end)) < end)
                     {
                         ++res[i];

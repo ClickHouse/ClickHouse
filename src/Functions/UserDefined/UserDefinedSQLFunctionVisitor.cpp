@@ -146,7 +146,10 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
+        /// `source_columns` must be a named local: `QueryNormalizer::Data` stores `source_columns_set`
+        /// by reference, so a `{}` temporary would dangle once this statement ends.
+        NameSet source_columns;
+        QueryNormalizer::Data normalizer_data(aliases, source_columns, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 
