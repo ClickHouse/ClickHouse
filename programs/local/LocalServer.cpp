@@ -659,71 +659,92 @@ void LocalServer::startServers(const ServerType & server_type)
             });
     };
 
-    for (const auto & listen_host : listen_hosts)
+    /// Start listeners as an all-or-nothing operation. If any later bind fails, or the final
+    /// per-protocol verification rejects a partial start, roll back every listener this call
+    /// started so a reported failure never leaves a half-open set of listeners behind (in
+    /// particular, a TCP port still accepting connections after the command was rejected). Only
+    /// the listeners appended by this call are rolled back; listeners from earlier successful
+    /// `SYSTEM START LISTEN` calls are left untouched.
+    const size_t servers_started_before = servers.size();
+    try
     {
-        if (server_type.shouldStart(ServerType::Type::TCP))
+        for (const auto & listen_host : listen_hosts)
         {
-            const char * port_name = "tcp_port";
-            if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            if (server_type.shouldStart(ServerType::Type::TCP))
             {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
-                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
-                socket.setSendTimeout(settings[Setting::send_timeout]);
+                const char * port_name = "tcp_port";
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                    socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::send_timeout]);
 
-                Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
-                params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+                    Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
+                    params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
 
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "native protocol (tcp): " + address.toString(),
-                    std::make_unique<TCPServer>(
-                        new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
-                            ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
-                        *server_pool,
-                        socket,
-                        params));
-            }, &logger()))
-                global_context->registerServerPort(port_name, servers.back().portNumber());
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "native protocol (tcp): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
+                                ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                            *server_pool,
+                            socket,
+                            params));
+                }, &logger()))
+                    global_context->registerServerPort(port_name, servers.back().portNumber());
+            }
+
+            if (server_type.shouldStart(ServerType::Type::HTTP))
+            {
+                const char * port_name = "http_port";
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::make_shared<HTTPContext>(global_context),
+                            createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
+                            *server_pool,
+                            socket,
+                            http_params,
+                            /* connection_filter= */ nullptr,
+                            ProfileEvents::InterfaceHTTPReceiveBytes,
+                            ProfileEvents::InterfaceHTTPSendBytes));
+                }, &logger()))
+                    global_context->registerServerPort(port_name, servers.back().portNumber());
+            }
         }
 
-        if (server_type.shouldStart(ServerType::Type::HTTP))
-        {
-            const char * port_name = "http_port";
-            if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
-                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
-                socket.setSendTimeout(settings[Setting::http_send_timeout]);
-
-                return ProtocolServerAdapter(
-                    listen_host,
-                    port_name,
-                    "http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::make_shared<HTTPContext>(global_context),
-                        createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
-                        *server_pool,
-                        socket,
-                        http_params,
-                        /* connection_filter= */ nullptr,
-                        ProfileEvents::InterfaceHTTPReceiveBytes,
-                        ProfileEvents::InterfaceHTTPSendBytes));
-            }, &logger()))
-                global_context->registerServerPort(port_name, servers.back().portNumber());
-        }
+        /// Verify each requested protocol independently so grouped types (`QUERIES ALL` / `QUERIES DEFAULT`)
+        /// don't silently accept a partial start when one protocol fails on every `listen_host`.
+        if (server_type.shouldStart(ServerType::Type::TCP) && !has_active_listener("tcp_port"))
+            throw Exception(ErrorCodes::NETWORK_ERROR,
+                "Failed to start TCP listener — check listen_host and tcp_port configuration");
+        if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
+            throw Exception(ErrorCodes::NETWORK_ERROR,
+                "Failed to start HTTP listener — check listen_host and http_port configuration");
     }
-
-    /// Verify each requested protocol independently so grouped types (`QUERIES ALL` / `QUERIES DEFAULT`)
-    /// don't silently accept a partial start when one protocol fails on every `listen_host`.
-    if (server_type.shouldStart(ServerType::Type::TCP) && !has_active_listener("tcp_port"))
-        throw Exception(ErrorCodes::NETWORK_ERROR,
-            "Failed to start TCP listener — check listen_host and tcp_port configuration");
-    if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
-        throw Exception(ErrorCodes::NETWORK_ERROR,
-            "Failed to start HTTP listener — check listen_host and http_port configuration");
+    catch (...)
+    {
+        /// Stop and drop every listener appended by this call so no port stays open after we report failure.
+        /// The caller (`SYSTEM START LISTEN` handler) already holds `servers_lock` for the whole
+        /// `startServers` call, so we must not re-acquire it here (the mutex is not recursive).
+        for (size_t i = servers_started_before; i < servers.size(); ++i)
+            if (!servers[i].isStopping())
+                servers[i].stop();
+        servers.erase(servers.begin() + servers_started_before, servers.end());
+        throw;
+    }
 }
 
 
