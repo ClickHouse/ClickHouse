@@ -26,6 +26,7 @@ SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET automatic_parallel_replicas_mode = 0;
 
 -- Empty left with default join-order algo (the original repro from issue #89166).
 SELECT '--- empty left, default algo ---';
