@@ -1673,6 +1673,7 @@ keeper_settings = {
         "nuraft_max_uncommitted_log_entries": threshold_generator(
             0.2, 0.2, 0, 1000000
         ),
+        "nuraft_use_bg_thread_for_snapshot_io": true_false_lambda,
         "nuraft_streaming_mode": true_false_lambda,
         "parallel_read_chunk_size": threshold_generator(0.2, 0.2, 1, 1024),
         "parallel_read_min_batch": threshold_generator(0.2, 0.2, 0, 4096),

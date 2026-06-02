@@ -32,6 +32,7 @@ def started_cluster():
 
 def test_streaming_mode(started_cluster):
     conf = keeper_utils.send_4lw_cmd(cluster, node1, "conf")
+    assert "nuraft_use_bg_thread_for_snapshot_io=true" in conf
     assert "nuraft_streaming_mode=true" in conf, f"Streaming mode not found in conf output:\n{conf}"
     assert "nuraft_max_log_gap_in_stream=16" in conf
     assert "nuraft_max_bytes_in_flight_in_stream=4194304" in conf
