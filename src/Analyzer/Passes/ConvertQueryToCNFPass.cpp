@@ -169,6 +169,12 @@ bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const 
 
 void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
+    /// Do not cross into subqueries: replacing a correlated column with its constant equivalent
+    /// would corrupt the subquery's correlated_columns_list, which the planner expects to hold
+    /// ColumnNodes (see isSubquery).
+    if (isSubquery(term))
+        return;
+
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
     {
