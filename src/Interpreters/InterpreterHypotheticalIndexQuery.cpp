@@ -74,6 +74,15 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             "Hypothetical indexes are only supported for MergeTree family tables, got {}",
             table->getName());
 
+    /// The store keys entries by UUID; without one (Ordinary databases) a stored
+    /// index would never match later lookups, so reject it up front.
+    if (table_id.uuid == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Hypothetical indexes require a table with a UUID (Atomic database); {}.{} has none",
+            table_id.getDatabaseName(),
+            table_id.getTableName());
+
     auto & store = context->getHypotheticalIndexStore();
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
@@ -106,6 +115,20 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Hypothetical indexes are not supported for tables with the old MergeTree syntax");
+
+    /// Mirror real ADD INDEX: the `auto_minmax_index_` prefix is reserved when
+    /// implicit minmax indexes are enabled.
+    const bool using_auto_minmax_index =
+           metadata->add_minmax_index_for_numeric_columns
+        || metadata->add_minmax_index_for_string_columns
+        || metadata->add_minmax_index_for_temporal_columns
+        || metadata->add_minmax_index_for_block_number_column
+        || metadata->add_minmax_index_for_block_offset_column;
+    if (using_auto_minmax_index && index_desc.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot add hypothetical index {} because it uses a reserved index name",
+            index_desc.name);
 
     for (const auto & existing : metadata->getSecondaryIndices())
     {

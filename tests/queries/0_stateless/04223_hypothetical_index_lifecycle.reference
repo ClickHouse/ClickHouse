@@ -32,6 +32,8 @@ With idx_b (minmax, hypothetical):
 --- EXPLAIN WHATIF with function-expression index ---
 With idx_l (set, hypothetical):
   status:       applicable
+--- CREATE rejects reserved auto_minmax_index_ name ---
+reserved index name
 --- CREATE rejects unknown index type ---
 INCORRECT_QUERY
 --- type_full distinguishes parametrized index types ---

@@ -140,6 +140,16 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^With |^\s+status:'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_func"
 
+# Reserved auto_minmax_index_ prefix is rejected when implicit minmax is enabled.
+echo "--- CREATE rejects reserved auto_minmax_index_ name ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_auto;
+    CREATE TABLE t_hypo_auto (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS add_minmax_index_for_numeric_columns = 1;
+    CREATE HYPOTHETICAL INDEX auto_minmax_index_x ON t_hypo_auto (b) TYPE minmax GRANULARITY 1;
+" 2>&1 | grep -m1 -o 'reserved index name'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_auto"
+
 echo "--- CREATE rejects unknown index type ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_bad;

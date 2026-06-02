@@ -37,6 +37,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsString ignore_data_skipping_indices;
+    extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
 }
 
 namespace ErrorCodes
@@ -231,6 +233,13 @@ bool tryEstimateEmpirical(
 
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
+        return false;
+
+    /// The empirical counter treats each surviving granule independently. With
+    /// non-zero seek-gap settings the real read coalesces nearby ranges, so the
+    /// estimate would diverge — fall back to statistical/applicability instead.
+    if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
+        || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
         return false;
 
     UInt64 total_data_granules = 0;
