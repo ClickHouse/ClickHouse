@@ -2765,7 +2765,6 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
     return id && !id->name_parts.empty() && !id->isParam();
 };
 
-static const std::unordered_set<String> truth_predicates = {"isTruePredicate", "isFalsePredicate", "isUnknownPredicate"};
 
 ASTPtr QueryFuzzer::generatePredicate()
 {
@@ -2852,9 +2851,18 @@ ASTPtr QueryFuzzer::generatePredicate()
                 }
                 else if (nprob == 4)
                 {
-                    auto it = truth_predicates.begin();
-                    std::advance(it, fuzz_rand() % truth_predicates.size());
-                    next_condition = makeASTFunction(*it, expression_1);
+                    switch (fuzz_rand() % 3)
+                    {
+                        case 0: /// expr IS TRUE → isNotDistinctFrom(expr, true)
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, std::make_shared<ASTLiteral>(true));
+                            break;
+                        case 1: /// expr IS FALSE → isNotDistinctFrom(expr, false)
+                            next_condition = makeASTFunction("isNotDistinctFrom", expression_1, std::make_shared<ASTLiteral>(false));
+                            break;
+                        case 2: /// expr IS UNKNOWN → isNull(expr)
+                            next_condition = makeASTFunction("isNull", expression_1);
+                            break;
+                    }
                 }
                 /// Fall back to a column comparison if no subquery was available (case 1) or for nprob >= 5
                 if (!next_condition)
@@ -3296,8 +3304,6 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"globalIn", "globalNotIn", "in", "notIn"},
         /// Null predicate and conversion functions
         {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
-        /// Truth-value predicates
-        truth_predicates,
         /// Value selection / clamping / null-coalescing
         {"clamp", "coalesce", "firstNonDefault", "greatest", "ifNull", "least", "nullIf"},
         /// Comparison operators

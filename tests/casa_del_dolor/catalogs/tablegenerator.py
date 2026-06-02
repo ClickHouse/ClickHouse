@@ -128,14 +128,14 @@ class LakeTableGenerator:
             )
             return ""
         elif next_operation <= 550:
-            # Drop a column
-            flat_cols = list(table.flat_columns().keys())
-            if len(flat_cols) > 1:
-                col = random.choice(flat_cols)
+            # Drop a top-level column only; nested drops would require
+            # updating the parent StructType in the in-memory model.
+            cols = list(table.columns.keys())
+            if len(cols) > 1:
+                col = random.choice(cols)
                 stmt = f"ALTER TABLE {tpath} DROP COLUMN {col};"
                 spark.sql(stmt)
-                top_level = col.split(".")[0].strip("`")
-                table.columns.pop(top_level, None)
+                table.columns.pop(col, None)
                 return ""
         elif next_operation <= 625:
             # Rename a column

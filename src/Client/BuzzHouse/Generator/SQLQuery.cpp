@@ -1685,8 +1685,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto nullFuncs
-                    = {"isNull", "isNullable", "isNotNull", "isZeroOrNull", "isTruePredicate", "isFalsePredicate", "isUnknownPredicate"};
+                static const auto nullFuncs = {"isNull", "isNullable", "isNotNull", "isZeroOrNull"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
                 isexpr = sfc->add_args()->mutable_expr();
