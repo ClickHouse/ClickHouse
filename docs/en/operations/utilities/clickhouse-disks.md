@@ -45,7 +45,7 @@ In these documentation file all mandatory positional arguments are referred as `
 * `current_disk_with_path (current, current_disk, current_path)`
   Print current state in format:
     `Disk: "current_disk" Path: "current path on current disk"`
-* `du [--human-readable] <path>`
+* `du [--human-readable] [<path>]`
   Print the total size in bytes for the file or directory at `path` on a current disk. For a directory the size of all files it contains is summed up recursively. If `path` is not specified, the current directory is used. With `--human-readable` (`-h`) the size is printed in a human-readable format (e.g. `1.23 GiB`).
 * `help [<command>]`
   Print help message about command `command`. If `command` is not specified print information about all commands.
