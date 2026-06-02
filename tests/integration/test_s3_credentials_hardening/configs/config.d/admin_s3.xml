@@ -18,5 +18,9 @@
             <secret_access_key>TRUSTED_FAKE_SECRET</secret_access_key>
             <header>X-Admin-Secret: TRUSTED_HEADER</header>
         </trusted_endpoint>
+        <backup_public_endpoint>
+            <endpoint>http://minio1:9001/root/backup_public/</endpoint>
+            <header>X-Revoked-Endpoint-Header: TRUSTED_HEADER</header>
+        </backup_public_endpoint>
     </s3>
 </clickhouse>

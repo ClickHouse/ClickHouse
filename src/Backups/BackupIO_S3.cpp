@@ -219,6 +219,8 @@ private:
         if (auto endpoint_settings = context->getStorageS3Settings().getSettings(
                 s3_uri.uri.toString(), context->getUserName(), ignore_user))
         {
+            if (!ignore_user)
+                s3_settings.resetCredentialsForUserControlledRequest();
             s3_settings.updateIfChanged(*endpoint_settings);
             return;
         }

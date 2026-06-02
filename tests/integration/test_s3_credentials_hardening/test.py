@@ -14,12 +14,14 @@ server credentials or environment credentials.
 """
 
 import os
+import uuid
 
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
+from helpers.s3_tools import prepare_s3_bucket
 
 
 cluster = ClickHouseCluster(__file__)
@@ -39,6 +41,7 @@ node = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
+        prepare_s3_bucket(cluster)
         script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
         start_mock_servers(cluster, script_dir, [("credential_echo.py", "resolver", "18080")])
         yield cluster
@@ -104,6 +107,12 @@ def _expect_access_denied(query):
     assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
 
 
+def _remove_minio_prefix(prefix):
+    for obj in cluster.minio_client.list_objects(cluster.minio_bucket, prefix, recursive=True):
+        if obj.object_name is not None:
+            cluster.minio_client.remove_object(cluster.minio_bucket, obj.object_name)
+
+
 def test_s3_table_function_role_arn_does_not_inherit_admin_keys():
     # No user-supplied keys; admin <s3> config has both. Must be rejected.
     _expect_access_denied(
@@ -150,6 +159,20 @@ def test_named_collection_omission_does_not_inherit_server_credentials():
         assert result.strip() == "0"
     finally:
         node.query("DROP NAMED COLLECTION IF EXISTS nc_omission")
+
+
+def test_backup_endpoint_partial_config_does_not_inherit_admin_keys():
+    table_name = "backup_partial_endpoint_credentials"
+    backup_prefix = f"backup_public/{uuid.uuid4().hex}/"
+    backup_url = f"http://minio1:9001/root/{backup_prefix}backup"
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"CREATE TABLE {table_name} (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query(f"INSERT INTO {table_name} VALUES (1)")
+    try:
+        node.query(f"BACKUP TABLE {table_name} TO S3('{backup_url}')")
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        _remove_minio_prefix(backup_prefix)
 
 
 def test_s3_storage_refresh_does_not_inherit_server_headers():
