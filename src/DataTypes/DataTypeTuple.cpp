@@ -497,6 +497,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create);
+    factory.registerAlias("ROW", "Tuple", DataTypeFactory::Case::Insensitive);
 }
 
 }
