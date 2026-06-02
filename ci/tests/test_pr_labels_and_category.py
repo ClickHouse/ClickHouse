@@ -30,7 +30,7 @@ def test_get_category_with_label_fallback_reports_multiple_category_labels():
     assert category == ""
 
 
-def test_infer_category_from_labels_prefers_single_known_label():
+def test_infer_category_from_labels_with_single_known_label():
     category, label, error = infer_category_from_labels(["foo", "pr-ci"])
     assert error == ""
     assert label == "pr-ci"
