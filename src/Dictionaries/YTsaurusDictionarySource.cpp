@@ -62,6 +62,7 @@ static VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunk
     return result;
 }
 
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory);
 void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
