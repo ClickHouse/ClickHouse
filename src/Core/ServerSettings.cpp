@@ -37,7 +37,6 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <cstdlib>
 #include <filesystem>
 #include <unordered_set>
@@ -2136,7 +2135,14 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 auto * elem = static_cast<Poco::XML::Element *>(node);
                 if (elem->hasAttribute("incl"))
                 {
+                    /// `incl="X"` is resolved by `ConfigProcessor` via `getNodeByPath`, so `X`
+                    /// may be a path (e.g. `my_payload.value` or `my_payload[1].field`), while
+                    /// only the first path component is the top-level tag that leaks into the
+                    /// merged config. Normalize the same way as the `config://` branch above.
                     String value = elem->getAttribute("incl");
+                    auto sep_pos = value.find_first_of(".[");
+                    if (sep_pos != String::npos)
+                        value.resize(sep_pos);
                     if (!value.empty())
                         referenced_keys.insert(value);
                 }
@@ -2195,25 +2201,15 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             }
         };
 
-        auto scan_dir = [&](const fs::path & dir)
-        {
-            if (!fs::exists(dir) || !fs::is_directory(dir))
-                return;
-            for (const auto & entry : fs::directory_iterator(dir))
-            {
-                if (!entry.is_regular_file())
-                    continue;
-                String ext = entry.path().extension().string();
-                boost::algorithm::to_lower(ext);
-                if (ext == ".xml" || ext == ".yaml" || ext == ".yml")
-                    scan_file(entry.path());
-            }
-        };
-
+        /// Scan the main config and every fragment `ConfigProcessor` actually merges into it.
+        /// Mirror `ConfigProcessor::getConfigMergeFiles` (it merges `<config-name>.d` and legacy
+        /// `conf.d`, accepting `.xml`, `.conf`, `.yaml`, and `.yml`) instead of hard-coding
+        /// `config.d` with an `.xml`/`.yaml` filter — otherwise a substitution source kept in a
+        /// `.conf` file or a `conf.d` directory would be missed and the merged config rejected.
         fs::path config_dir = fs::path(config_path).remove_filename();
         scan_file(config_path);
-        scan_dir(config_dir / "config.d");
-        scan_dir(config_dir / "users.d");
+        for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
+            scan_file(merge_file);
 
         /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
         /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
@@ -2234,12 +2230,15 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             if (users_path.is_relative() && fs::exists(config_dir / users_path))
                 users_path = config_dir / users_path;
         }
+        /// Scan only the *active* users config and the fragments merged into it. Deriving the
+        /// merge set from the resolved `users_path` (rather than blindly scanning
+        /// `config_dir/users.d`) avoids pulling exemptions from an inactive `users.d` tree when
+        /// `users_config` points elsewhere, which would let a real unknown key slip through.
         if (users_path != fs::path(config_path))
         {
             scan_file(users_path);
-            fs::path users_parent = users_path.parent_path();
-            if (users_parent != config_dir)
-                scan_dir(users_parent / "users.d");
+            for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
+                scan_file(merge_file);
         }
 
         for (const auto & include_from_path : include_from_paths)
