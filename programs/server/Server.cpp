@@ -640,7 +640,17 @@ void Server::createServer(
     CreateServerFunc && func) const
 {
     if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
-        global_context->registerServerPort(port_name, servers.back().portNumber());
+    {
+        /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
+        /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
+        /// values (e.g. the default `::1` + `127.0.0.1`) each host binds a distinct ephemeral port and
+        /// registering the actual port would let the last host overwrite the others, leaving
+        /// `getServerPort` pointing at a port that is not listening on the host a client uses. When the
+        /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
+        /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
+        /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
+        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
+    }
 }
 
 
