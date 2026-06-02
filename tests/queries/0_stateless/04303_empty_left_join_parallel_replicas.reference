@@ -1,0 +1,7 @@
+--- empty left, default algo ---
+--- empty left, dpsize algo ---
+--- empty left, new logical join step off ---
+--- non-empty left, correctness ---
+2	R2
+3	R3
+7	R7
