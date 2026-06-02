@@ -105,7 +105,8 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     # These functions genuinely need live context at execution time
     # (dictionary loading, join access, ZooKeeper, ML prediction,
-    # complex type resolution for DateTime/Interval/Tuple arithmetic)
+    # complex type resolution for DateTime/Interval/Tuple arithmetic,
+    # AI provider calls)
     # and cannot use WithContext (weak_ptr) because the context may expire
     # in deferred execution paths (default expressions, async inserts).
     -e /FunctionsExternalDictionaries.h
@@ -120,6 +121,8 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /formatRow.cpp
     -e /structureToFormatSchema.cpp
     -e /UserDefined/
+    -e /FunctionBaseAI.h
+    -e /aiEmbed.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -243,12 +246,6 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
-    -e amazon_model.bin
-    -e nbagames_sample.json
-    -e 02731.arrow
-    -e aes-gcm-avx512.s
-    # TODO: these should be removed and the test should build the JAR from source at runtime
-    -e paimon-rest-catalog/chunk_
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then
