@@ -104,7 +104,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
 
     auto register_as_first = [&]() TSA_REQUIRES(mutex)
     {
-        chassert(allowed_count_ > 0);
+        assert(allowed_count_ > 0);
         accepted = true;
         series_records[name_hash] = std::make_tuple(now, 1, 1);
     };

@@ -401,7 +401,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(query_context, false),
+        table->getInMemoryMetadataPtr(),
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
@@ -479,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            ConcatReadBuffer::Buffers buffers;
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 

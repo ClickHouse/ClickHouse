@@ -11,7 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
@@ -27,6 +27,7 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Microseconds;
     extern const Event WriteBufferFromS3RequestsErrors;
+    extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
@@ -105,7 +106,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t buf_size_,
     const S3::S3RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
-    std::optional<ObjectAttributes> object_metadata_,
+    std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
