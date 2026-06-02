@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -1376,17 +1377,19 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
+            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, drop_as_detached});
     }
     else
     {
         tables_marked_dropped.push_back(
-            {table_id,
-             table,
-             db_disk,
-             dropped_metadata_path,
-             drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
+            TableMarkedAsDropped{
+                table_id,
+                table,
+                db_disk,
+                dropped_metadata_path,
+                drop_time
+                    + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
+                drop_as_detached});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1434,6 +1437,8 @@ void DatabaseCatalog::undropTable(StorageID table_id)
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
+        if (dropped_table.drop_as_detached)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot undrop table {} that was dropped as DETACHED", table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 

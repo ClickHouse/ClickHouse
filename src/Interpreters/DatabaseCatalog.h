@@ -263,6 +263,7 @@ public:
         DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
+        bool drop_as_detached = false;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 

@@ -503,3 +503,18 @@ def test_if_exists_behaviour(start_cluster):
     )
 
     replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_drop_detached_with_undrop(start_cluster):
+    table_name = "test_drop_detached_with_undrop"
+
+    create_table(replica1, table_name)
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name}"
+    )
+
+    error = replica1.query_and_get_error(f"UNDROP TABLE {table_name}", timeout=10)
+    assert "dropped as DETACHED" in error
+
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
