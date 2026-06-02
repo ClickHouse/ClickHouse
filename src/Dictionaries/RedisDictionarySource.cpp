@@ -96,6 +96,15 @@ namespace DB
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                             "Redis source with storage type 'simple' requires exactly 1 key, got {}",
                             dict_struct.key->size());
+
+            const auto & key = dict_struct.key->at(0);
+            const WhichDataType which(key.type);
+            if (!which.isNativeInt() && !which.isNativeUInt() && !which.isNativeFloat() && !which.isDate() &&
+                !which.isDateTime() && !which.isUUID() && !isString(key.type))
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Redis source only supports integers, float32, float64, string, date, datetime and uuid, but key '{}' of type {} given",
+                                key.name,
+                                key.type->getName());
         }
     }
 

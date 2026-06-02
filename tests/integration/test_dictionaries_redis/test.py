@@ -271,25 +271,6 @@ def test_redis_simple_complex_key_cache(started_cluster, id):
         for query, answer in queries_with_answers:
             assert node.query(query) == str(answer) + "\n"
 
-def test_redis_simple_reject_multi_key(started_cluster):
-
-    node = started_cluster.instances["node"]
-    result = node.query_and_get_error(
-        f"""
-        CREATE DICTIONARY test_redis_multi_key_reject
-        (
-            key1 String,
-            key2 String,
-            value String
-        )
-        PRIMARY KEY key1, key2
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
-        LAYOUT(COMPLEX_KEY_HASHED())
-        LIFETIME(0)
-        """
-    )
-    assert "requires exactly 1 key" in result
-
 def test_redis_simple_negative_key(started_cluster):
 
     node = started_cluster.instances["node"]
@@ -312,7 +293,7 @@ def test_redis_simple_negative_key(started_cluster):
             value String
         )
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 29))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 29))
         LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
         LIFETIME(0)
         """
@@ -331,7 +312,7 @@ def test_redis_simple_negative_key(started_cluster):
             value String
         )
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 29))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 29))
         LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
         LIFETIME(0)
         """
@@ -366,7 +347,7 @@ def test_redis_hash_map_negative_key(started_cluster):
             value String
         )
         PRIMARY KEY key1, key2
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'hash_map' db_index 30))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'hash_map' db_index 30))
         LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
         LIFETIME(0)
         """
@@ -400,7 +381,7 @@ def test_redis_complex_key_hashed_date(started_cluster):
             value String
         )
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 31))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 31))
         LAYOUT(COMPLEX_KEY_HASHED())
         LIFETIME(0)
         """
@@ -433,7 +414,7 @@ def test_redis_simple_complex_key_date_key(started_cluster):
             value String
         )
         PRIMARY KEY key
-        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 31))
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 password 'clickhouse' storage_type 'simple' db_index 31))
         LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
         LIFETIME(0)
         """
@@ -444,3 +425,67 @@ def test_redis_simple_complex_key_date_key(started_cluster):
 
     node.query("DROP DICTIONARY IF EXISTS test_redis_date_cache_key")
     r.flushdb()
+
+def assert_dictionary_rejected(node, name, ddl, expected):
+    
+    node.query(f"DROP DICTIONARY IF EXISTS {name}")
+    _, error = node.query_and_get_answer_with_error(ddl)
+    if not error:
+        _, error = node.query_and_get_answer_with_error(f"SYSTEM RELOAD DICTIONARY {name}")
+    assert expected in error, f"unexpected error: {error}"
+    node.query(f"DROP DICTIONARY IF EXISTS {name}")
+
+
+def test_redis_simple_reject_invalid_key(started_cluster):
+
+    node = started_cluster.instances["node"]
+
+    assert_dictionary_rejected(
+        node,
+        "test_redis_multi_key_reject",
+        f"""
+        CREATE DICTIONARY test_redis_multi_key_reject
+        (
+            key1 String,
+            key2 String,
+            value String
+        )
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """,
+        "requires exactly 1 key",
+    )
+    assert_dictionary_rejected(
+        node,
+        "test_redis_key_reject",
+        f"""
+        CREATE DICTIONARY test_redis_key_reject
+        (
+            key Decimal32(2),
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """,
+        "Redis source only supports integers",
+    )
+    assert_dictionary_rejected(
+        node,
+        "test_redis_wide_int_reject",
+        f"""
+        CREATE DICTIONARY test_redis_wide_int_reject
+        (
+            key UInt128,
+            value String
+        )
+        PRIMARY KEY key
+        SOURCE(REDIS(host '{cluster.redis_host}' port 6379 storage_type 'simple' db_index 0))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100))
+        LIFETIME(0)
+        """,
+        "Redis source only supports integers",
+    )
