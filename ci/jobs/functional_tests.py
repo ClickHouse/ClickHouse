@@ -85,6 +85,7 @@ def run_tests(
     rerun_count=1,
     random_order=False,
     global_time_limit=0,
+    build_type=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -96,7 +97,12 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    # During bugfix validation the same job runs several build types, so the
+    # memory limit must follow the binary under test (`build_type`) rather than
+    # the job name. Otherwise an `amd_asan_ubsan` run gets the 5 GiB default and
+    # a master-side memory-limit failure would be inverted as a reproduced bug.
+    limit_source = build_type if build_type is not None else Info().job_name
+    memory_limit = 10 * 2**30 if "asan_ubsan" in limit_source else 5 * 2**30
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
@@ -669,6 +675,7 @@ def main():
                 random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
+                build_type=BUGFIX_BUILD_TYPES[0] if is_bugfix_validation else None,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
@@ -695,13 +702,18 @@ def main():
                     # Stop the server before overwriting the binary: on Linux,
                     # `cp` over a running ELF fails with `Text file busy`,
                     # and `strict=True` ensures a failed switch is not ignored.
-                    # `CH.terminate` does not guarantee that every descendant
+                    # Use `stop_server` rather than `terminate` so the auxiliary
+                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # in the outer setup keep running for the next build type;
+                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # spuriously "reproduce" a bug under later build types.
+                    # `stop_server` does not guarantee that every descendant
                     # process (transient `clickhouse-client` invocations, stray
                     # workers) has released the binary by the time we replace
                     # it, so unlink the destination first: any process still
                     # holding the old inode keeps executing from it, while
                     # `cp` creates a fresh inode for the new binary.
-                    CH.terminate()
+                    CH.stop_server()
                     Shell.run(
                         f"rm -f {ch_path}/clickhouse && "
                         f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
@@ -725,6 +737,7 @@ def main():
                         extra_args=runner_options,
                         random_order=True,
                         rerun_count=1,
+                        build_type=bugfix_bt,
                     )
                     bt_result = ft_res_processor_bt.run(
                         runner_exit_code=bt_runner_exit_code

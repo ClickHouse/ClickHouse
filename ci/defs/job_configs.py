@@ -550,6 +550,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/functional_tests.py",
+                "./ci/jobs/scripts/bugfix_validation.py",
                 "./tests/queries",
                 "./tests/clickhouse-test",
                 "./tests/config",
@@ -737,6 +738,12 @@ class JobConfigs:
         .set_command(
             "python3 ./ci/jobs/integration_test_job.py --options BugfixValidation"
         )
+    )
+    # The shared bugfix-validation helper is only used by this job, so add it to
+    # this job's digest (not the common integration config) to avoid leaving the
+    # job cached with stale behavior after the helper changes.
+    bugfix_validation_it_job.digest_config.include_paths.append(
+        "./ci/jobs/scripts/bugfix_validation.py"
     )
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"

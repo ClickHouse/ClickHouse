@@ -823,7 +823,21 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.save_system_metadata_files_from_remote_database_disk()
 
-        print("Terminate ClickHouse processes")
+        self.stop_server(force=force)
+
+        return self
+
+    def stop_server(self, force=False):
+        """Gracefully stop only the ClickHouse server processes.
+
+        Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
+        MinIO and its webhooks) running. It is used between bugfix-validation
+        iterations so the server binary can be swapped and restarted without
+        tearing down the rest of the test environment: otherwise a changed test
+        relying on Kafka or MinIO webhooks would pass under the first build type
+        and spuriously "reproduce" a bug under the next one.
+        """
+        print("Stop ClickHouse processes")
 
         Shell.check(f"ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
