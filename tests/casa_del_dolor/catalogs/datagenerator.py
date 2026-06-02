@@ -609,9 +609,9 @@ class LakeDataGenerator:
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                self.run_query(
-                    spark, next_table_generator.generate_extra_statement(spark, table)
-                )
+                stmt = next_table_generator.generate_extra_statement(spark, table)
+                if stmt:
+                    self.run_query(spark, stmt)
             else:
                 # Alter statements
                 next_table_generator = LakeTableGenerator.get_next_generator(

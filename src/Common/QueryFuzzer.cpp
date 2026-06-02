@@ -2857,7 +2857,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                         case 1: /// expr IS FALSE → isNotDistinctFrom(expr, false)
                             next_condition = makeASTFunction("isNotDistinctFrom", expression_1, make_intrusive<ASTLiteral>(false));
                             break;
-                        case 2: /// expr IS UNKNOWN → isNull(expr)
+                        default: /// expr IS UNKNOWN → isNull(expr)
                             next_condition = makeASTFunction("isNull", expression_1);
                             break;
                     }
@@ -3385,13 +3385,10 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "parseDateTime64InJodaSyntax",
          "parseDateTime64InJodaSyntaxOrNull",
          "parseDateTime64InJodaSyntaxOrZero"},
-        /// Date ↔ day-count conversions
-        {"fromDaysSinceYearZero",
-         "fromModifiedJulianDay",
-         "fromModifiedJulianDayOrNull",
-         "toDaysSinceYearZero",
-         "toModifiedJulianDay",
-         "toModifiedJulianDayOrNull"},
+        /// Day-count → Date (integer arg)
+        {"fromDaysSinceYearZero", "fromModifiedJulianDay", "fromModifiedJulianDayOrNull"},
+        /// String → day-count (String/FixedString arg)
+        {"toModifiedJulianDay", "toModifiedJulianDayOrNull"},
         /// Unix-time → DateTime
         {"fromUnixTime", "fromUnixTimeInJodaSyntax"},
         /// Date arithmetic: add/subtract intervals (date/datetime, number → datetime)
