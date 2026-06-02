@@ -5,8 +5,9 @@ sidebar_label: 'input'
 sidebar_position: 95
 slug: /sql-reference/table-functions/input
 title: 'input'
-doc_type: 'reference'
 ---
+
+# input Table Function
 
 `input(structure)` - table function that allows effectively converting and inserting data sent to the
 server with a given structure to a table with another structure.
