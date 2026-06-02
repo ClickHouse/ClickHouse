@@ -234,8 +234,8 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
         while (!marks_reader->eof())
         {
-            MarkInCompressedFile mark;
-            size_t granularity;
+            MarkInCompressedFile mark{};
+            size_t granularity = 0;
 
             readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_reader);
             readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_reader);

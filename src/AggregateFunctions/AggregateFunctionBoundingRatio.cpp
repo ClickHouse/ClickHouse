@@ -34,8 +34,8 @@ struct AggregateFunctionBoundingRatioData
     };
 
     bool empty = true;
-    Point left;
-    Point right;
+    Point left{};
+    Point right{};
 
     void add(Float64 x, Float64 y)
     {

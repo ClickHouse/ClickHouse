@@ -409,7 +409,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
+        size_t argument = 0;
         bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)

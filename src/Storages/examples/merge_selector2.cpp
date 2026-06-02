@@ -37,8 +37,8 @@ int mainEntryExampleMergeSelector2(int, char **)
 
     while (!in.eof())
     {
-        size_t size;
-        time_t age;
+        size_t size = {};
+        time_t age = {};
         std::string name;
 
         in >> name >> "\t" >> size >> "\t" >> age >> "\n";

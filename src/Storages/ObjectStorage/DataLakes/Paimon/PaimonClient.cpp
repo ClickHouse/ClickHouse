@@ -83,7 +83,7 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
         log_offsets->reserve(inner_map_json->size());
         for (const auto & inner_key : inner_map_json->getNames())
         {
-            Int32 key;
+            Int32 key = 0;
             auto [_, ec] = std::from_chars(inner_key.data(), inner_key.data() + inner_key.size(), key);
             if (ec != std::errc())
             {
@@ -135,7 +135,7 @@ std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
     {
         String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
         String version_string = file_name.substr(file_name.find(PAIMON_SCHEMA_PREFIX) + strlen(PAIMON_SCHEMA_PREFIX));
-        size_t current_version;
+        size_t current_version = 0;
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {
@@ -247,7 +247,7 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     {
         String file_name(relative_file_path.begin() + relative_file_path.find_last_of('/') + 1, relative_file_path.end());
         String version_string = file_name.substr(file_name.find(PAIMON_SNAPSHOT_PREFIX) + strlen(PAIMON_SNAPSHOT_PREFIX));
-        Int64 current_version;
+        Int64 current_version = 0;
         auto [_, ec] = std::from_chars(version_string.data(), version_string.data() + version_string.size(), current_version);
         if (ec != std::errc())
         {

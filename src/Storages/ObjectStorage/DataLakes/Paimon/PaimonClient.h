@@ -43,13 +43,13 @@ using namespace Paimon;
 struct PaimonSnapshot
 {
     Int64 id{-1};
-    Int64 schema_id;
+    Int64 schema_id{};
     String base_manifest_list;
     String delta_manifest_list;
     String commit_user;
-    Int64 commit_identifier;
+    Int64 commit_identifier{};
     String commit_kind;
-    Int64 time_millis;
+    Int64 time_millis{};
 
     /// nullable
     std::optional<Int32> version;

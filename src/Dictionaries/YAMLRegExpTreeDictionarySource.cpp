@@ -149,8 +149,8 @@ const std::string kValues = "values";
 
 struct MatchNode
 {
-    UInt64 id;
-    UInt64 parent_id;
+    UInt64 id{};
+    UInt64 parent_id{};
     String reg_exp;
     VectorWithMemoryTracking<Field> keys;
     VectorWithMemoryTracking<Field> values;

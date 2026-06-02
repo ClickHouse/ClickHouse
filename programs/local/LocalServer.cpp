@@ -681,7 +681,7 @@ void LocalServer::connect()
     );
 
     /// This is needed for table function input(...).
-    ReadBuffer * in;
+    ReadBuffer * in = nullptr;
     auto table_file = getClientConfiguration().getString("table-file", "-");
     if (table_file == "-" || table_file == "stdin")
     {
@@ -709,7 +709,7 @@ try
 
     /// Try to increase limit on number of open files.
     {
-        rlimit rlim;
+        rlimit rlim{};
         if (getrlimit(RLIMIT_NOFILE, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 

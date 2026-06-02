@@ -284,7 +284,7 @@ void BaseDaemon::initialize(Application & self)
     /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
     if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
     {
-        struct rlimit rlim;
+        struct rlimit rlim{};
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -353,7 +353,7 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd;
+            int fd = 0;
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
@@ -728,7 +728,7 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
-        int exit_code;
+        int exit_code = 0;
 
         if (WIFSIGNALED(status))
         {
@@ -791,7 +791,7 @@ void systemdNotify(const std::string_view & command)
 
     const size_t len = strlen(path);
 
-    struct sockaddr_un addr;
+    struct sockaddr_un addr{};
 
     addr.sun_family = AF_UNIX;
 

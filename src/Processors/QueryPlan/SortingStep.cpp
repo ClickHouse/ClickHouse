@@ -710,7 +710,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size;
+    UInt64 partition_desc_size = 0;
     readVarUInt(partition_desc_size, ctx.in);
 
     if (partition_desc_size)
