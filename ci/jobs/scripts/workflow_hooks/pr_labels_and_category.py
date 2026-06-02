@@ -223,6 +223,43 @@ def get_category(pr_body: str) -> Tuple[str, str]:
     return error, matched
 
 
+def infer_category_from_labels(pr_labels) -> Tuple[Optional[str], Optional[str], str]:
+    category_labels = [label for label in pr_labels if label in LABEL_CATEGORIES]
+    if not category_labels:
+        return None, None, ""
+
+    unique_labels = sorted(set(category_labels))
+    if len(unique_labels) > 1:
+        return (
+            None,
+            None,
+            f"More than one category label found for fallback: {', '.join(unique_labels)}",
+        )
+
+    label = unique_labels[0]
+    return LABEL_CATEGORIES[label][0], label, ""
+
+
+def get_category_with_label_fallback(pr_body: str, pr_labels) -> Tuple[str, str]:
+    error, category = get_category(pr_body)
+    if (
+        (not category or error)
+        and error.startswith("Change category is missing or invalid")
+    ):
+        inferred_category, inferred_label, infer_error = infer_category_from_labels(
+            pr_labels
+        )
+        if inferred_category:
+            print(
+                "WARNING: Changelog category is missing/invalid in PR body, "
+                f"falling back to category label [{inferred_label}]"
+            )
+            return "", inferred_category
+        if infer_error:
+            return infer_error, ""
+    return error, category
+
+
 def check_labels(category, info):
     pr_labels_to_add = []
     pr_labels_to_remove = []
@@ -289,7 +326,7 @@ if __name__ == "__main__":
         )
         category = LABEL_CATEGORIES["pr-not-for-changelog"][0]
     else:
-        error, category = get_category(info.pr_body)
+        error, category = get_category_with_label_fallback(info.pr_body, info.pr_labels)
         if not category or error:
             print(f"ERROR: {error}")
             sys.exit(1)
