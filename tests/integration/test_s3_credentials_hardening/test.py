@@ -163,6 +163,7 @@ def test_s3_storage_refresh_drops_revoked_endpoint_credentials():
     node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint")
     node.query("DROP TABLE IF EXISTS s3_refresh_initial_endpoint")
     node.query("DROP TABLE IF EXISTS s3_refresh_user_credentials")
+    node.query("DROP TABLE IF EXISTS s3_refresh_user_headers")
     _set_reload_trusted_endpoint(False)
     node.query("SYSTEM RELOAD CONFIG")
     node.query(
@@ -217,10 +218,26 @@ def test_s3_storage_refresh_drops_revoked_endpoint_credentials():
         _set_reload_trusted_endpoint(False)
         node.query("SYSTEM RELOAD CONFIG")
         assert node.query("SELECT * FROM s3_refresh_user_credentials").strip() == "0"
+
+        _set_reload_trusted_endpoint(True)
+        node.query("SYSTEM RELOAD CONFIG")
+        node.query(
+            f"""
+            CREATE TABLE s3_refresh_user_headers (leaked UInt8)
+            ENGINE = S3('{RELOAD_TRUSTED_ENDPOINT}', 'CSV',
+                        headers('X-User-Header' = 'user'))
+            """
+        )
+        assert node.query("SELECT * FROM s3_refresh_user_headers").strip() == "2"
+
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT * FROM s3_refresh_user_headers").strip() == "6"
     finally:
         node.query("DROP TABLE IF EXISTS s3_refresh_revoked_endpoint")
         node.query("DROP TABLE IF EXISTS s3_refresh_initial_endpoint")
         node.query("DROP TABLE IF EXISTS s3_refresh_user_credentials")
+        node.query("DROP TABLE IF EXISTS s3_refresh_user_headers")
         _set_reload_trusted_endpoint(False)
         node.query("SYSTEM RELOAD CONFIG")
 

@@ -233,7 +233,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*key_generator=*/nullptr,
         "StorageS3",
         false,
-        client_refresher);
+        client_refresher,
+        headers_from_ast);
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -842,7 +843,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         }
     }
-    has_user_supplied_credentials = has_user_supplied_auth_credentials || !headers_from_ast.empty();
+    has_user_supplied_credentials = has_user_supplied_auth_credentials;
 
     if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
         storage_class_name.has_value())

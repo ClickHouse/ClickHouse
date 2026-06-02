@@ -6,6 +6,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <memory>
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
 #include <Common/MultiVersion.h>
@@ -40,7 +41,8 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        HTTPHeaderEntries user_headers_ = {})
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
@@ -50,6 +52,7 @@ private:
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
+        , user_headers(std::move(user_headers_))
     {
     }
 
@@ -172,6 +175,7 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
+    HTTPHeaderEntries user_headers;
 };
 
 }

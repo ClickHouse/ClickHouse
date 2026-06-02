@@ -169,7 +169,7 @@ public:
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
 
-    HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
+    HTTPHeaderEntries headers_from_ast;
     /// If credential-bearing settings came from SQL/catalog metadata, keep them
     /// static across config reloads. Endpoint-scoped credentials are trusted
     /// config and must remain refreshable/revocable.

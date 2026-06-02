@@ -722,6 +722,12 @@ void S3ObjectStorage::applyNewSettings(
             modified_settings->copyCredentialsFrom(*current_settings);
     }
 
+    if (options.allow_client_change && !user_headers.empty())
+        modified_settings->auth_settings.headers.insert(
+            modified_settings->auth_settings.headers.end(),
+            user_headers.begin(),
+            user_headers.end());
+
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 

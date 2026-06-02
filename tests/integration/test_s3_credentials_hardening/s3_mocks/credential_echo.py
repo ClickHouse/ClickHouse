@@ -19,6 +19,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             return b"4\n"
         if "TRUSTED_HEADER" in admin_header:
             return b"5\n"
+        user_header = self.headers.get("X-User-Header", "")
+        if "user" in user_header:
+            return b"6\n"
         return b"0\n"
 
     def do_HEAD(self):
