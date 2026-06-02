@@ -1693,10 +1693,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (!data_type_function)
                 continue;
 
+            /// `std::all_of` returns true on an empty range, so a zero-argument lambda
+            /// placeholder (`DataTypeFunction([], nullptr)` from `() -> ...`) is also
+            /// classified as unresolved when its return type is null.
             const auto & lambda_arg_types = data_type_function->getArgumentTypes();
-            if (lambda_arg_types.empty())
-                continue;
-
             const bool all_args_null = std::all_of(
                 lambda_arg_types.begin(), lambda_arg_types.end(),
                 [](const DataTypePtr & t) { return t == nullptr; });

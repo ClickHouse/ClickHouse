@@ -20,6 +20,11 @@ SELECT arrayFold(arrayFirst,  range(number), ((acc, x) -> if(x % 2, arraySlice(x
 -- The same shape with a lambda CTE bound via WITH
 WITH (a -> a + 1) AS f SELECT arrayFold(arrayExists, [[1, 2, 3]], f); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Zero-argument lambda used as initial accumulator: its `DataTypeFunction` has an
+-- empty argument list and a null return type, which must also be detected as an
+-- unresolved placeholder.
+SELECT arrayFold(arrayExists, range(number), (() -> 1)) FROM system.numbers LIMIT 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- Sanity: legitimate arrayFold and higher-order calls still work
 SELECT arrayFold((acc, x) -> acc + x, [1, 2, 3], 0::UInt64);
 SELECT arrayExists(x -> x > 1, [1, 2, 3]);
