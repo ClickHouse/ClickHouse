@@ -425,6 +425,7 @@ struct QueryPipelineSettings
             {"graph", graph},
             {"compact", compact},
             {"distributed", query_pipeline_options.distributed},
+            {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -896,6 +897,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
+void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

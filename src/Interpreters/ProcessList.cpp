@@ -504,7 +504,7 @@ QueryStatus::~QueryStatus()
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        assert(!e->executor);
+        chassert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -596,7 +596,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    assert(!executors.contains(e));
+    chassert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
@@ -606,7 +606,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        assert(executors.contains(e));
+        chassert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
