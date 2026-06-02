@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <Core/Names.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -14,6 +15,7 @@
 
 #include <ranges>
 #include <stack>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -21,6 +23,24 @@ namespace DB::QueryPlanOptimizations
 {
 namespace
 {
+
+/// Bail if the parent DAG has duplicate names among its inputs or outputs: our
+/// rewrite adds inputs and resolves columns by name, which is ambiguous when
+/// names collide.
+bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions)
+{
+    std::unordered_set<std::string_view> seen;
+    for (const auto * input : actions.getInputs())
+        if (!seen.insert(input->result_name).second)
+            return true;
+
+    seen.clear();
+    for (const auto * output : actions.getOutputs())
+        if (!seen.insert(output->result_name).second)
+            return true;
+
+    return false;
+}
 
 bool isSupportedArgumentType(const String & function_name, const DataTypePtr & type)
 {
@@ -204,39 +224,71 @@ mapCandidatesToChildInputs(
     return result;
 }
 
+/// One volume-reducing function to recompute below the child step. Captured
+/// from a candidate FUNCTION node *before* the parent rewrite, because
+/// `removeUnusedActions` may delete the candidate node and invalidate the
+/// pointer.
+struct PushedFunction
+{
+    FunctionBasePtr function_base;
+    String result_name;
+    String arg_child_input_name;
+};
+
 /// Build the new pushed-down DAG. Inputs are the child step's full input
-/// header (all columns pass through); outputs are the same passthrough
-/// columns plus one new FUNCTION node per candidate, named exactly like the
-/// candidate so the child step's column-passthrough machinery surfaces them
-/// at the parent's expected INPUT name.
+/// header (so the recomputed functions can read their argument); outputs are
+/// the passthrough columns (minus `columns_to_drop`) plus one new FUNCTION
+/// node per pushed function, named exactly like the original candidate so the
+/// child step's column-passthrough machinery surfaces them at the parent's
+/// expected INPUT name.
+///
+/// `columns_to_drop` lets the caller stop passing through a wide source column
+/// that is no longer needed above the child step. This is what makes the
+/// optimization pay off for pure-passthrough children (`Sort` / `Limit`),
+/// which carry every input column through and cannot be pruned afterwards by
+/// `removeUnusedColumns`.
 ActionsDAG buildPushedDag(
-    const std::unordered_set<const ActionsDAG::Node *> & candidates,
-    const std::unordered_map<const ActionsDAG::Node *, String> & candidate_to_child_input,
-    const Block & child_input_header)
+    const std::vector<PushedFunction> & pushed_functions,
+    const Block & child_input_header,
+    const NameSet & columns_to_drop)
 {
     ActionsDAG dag;
     std::unordered_map<String, const ActionsDAG::Node *> input_by_name;
     ActionsDAG::NodeRawConstPtrs outputs;
-    outputs.reserve(child_input_header.columns() + candidates.size());
+    outputs.reserve(child_input_header.columns() + pushed_functions.size());
 
     for (const auto & column : child_input_header)
     {
         const auto & input = dag.addInput(column);
         input_by_name.emplace(column.name, &input);
-        outputs.push_back(&input);
+        if (!columns_to_drop.contains(column.name))
+            outputs.push_back(&input);
     }
 
-    for (const auto * candidate : candidates)
+    for (const auto & pushed_function : pushed_functions)
     {
-        const auto & input_name = candidate_to_child_input.at(candidate);
-        auto it = input_by_name.find(input_name);
+        auto it = input_by_name.find(pushed_function.arg_child_input_name);
         chassert(it != input_by_name.end());
-        const auto & fn_node = dag.addFunction(candidate->function_base, {it->second}, candidate->result_name);
+        const auto & fn_node = dag.addFunction(pushed_function.function_base, {it->second}, pushed_function.result_name);
         outputs.push_back(&fn_node);
     }
 
     dag.getOutputs() = std::move(outputs);
     return dag;
+}
+
+/// Columns the child step itself must keep reading regardless of what the
+/// parent needs. For a `SortingStep` these are the sort-key columns. A
+/// `LimitStep` needs no column (`WITH TIES`, which would, is excluded by
+/// `isSupportedChild`). Other child types are not pruned at construction time
+/// (their `removeUnusedColumns` handles it), so they report an empty set.
+NameSet childRequiredPassthroughColumns(const QueryPlanStepPtr & child)
+{
+    NameSet names;
+    if (const auto * sorting = typeid_cast<const SortingStep *>(child.get()))
+        for (const auto & column : sorting->getSortDescription())
+            names.insert(column.column_name);
+    return names;
 }
 
 /// Rewrite the parent's ActionsDAG so that each candidate FUNCTION is
@@ -270,7 +322,13 @@ bool rewriteParentToConsumePushed(
     if (!remaining.empty())
         return false;
 
-    parent_actions.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
+    /// Remove inputs that became dead after replacing the candidate FUNCTIONs
+    /// (e.g. the original wide `s` input once `lengthUTF8(s)` is an INPUT).
+    /// This keeps the parent's surviving INPUT set in sync with the narrowed
+    /// child output header that the pushed step may now produce. A wide source
+    /// column that is still referenced elsewhere (e.g. `SELECT s, length(s)`)
+    /// stays, because it is reachable from another output.
+    parent_actions.removeUnusedActions(/*allow_remove_inputs=*/true, /*allow_constant_folding=*/false);
     return true;
 }
 
@@ -288,13 +346,18 @@ bool rewriteParentToConsumePushed(
 ///
 /// Implementation: walk the child step's ALIAS chain to map the candidate's
 /// parent-side input name (`__table1.s`) back to the child's own input name
-/// (`s`); build a new pushed ExpressionStep below the child whose outputs
-/// are (i) every column in the child's input header, plus (ii) one
-/// recomputed candidate FUNCTION per candidate, named identically to the
-/// parent's original FUNCTION node. The child's passthrough machinery
-/// surfaces the new column up to the parent, where the candidate FUNCTION
-/// node is rewritten to a same-named INPUT — eliminating the duplicate
-/// computation.
+/// (`s`); build a new pushed ExpressionStep below the child whose outputs are
+/// (i) the child's input columns, plus (ii) one recomputed candidate FUNCTION
+/// per candidate, named identically to the parent's original FUNCTION node.
+/// The child's passthrough machinery surfaces the new column up to the parent,
+/// where the candidate FUNCTION node is rewritten to a same-named INPUT —
+/// eliminating the duplicate computation.
+///
+/// For pure-passthrough children (`Sort` / `Limit`) the pushed step also stops
+/// passing through the wide source column once it is no longer needed above the
+/// child, so the wide `String` / `Array` / `Map` value never enters the step.
+/// `removeUnusedColumns` cannot achieve this on its own because it does not
+/// propagate column pruning through a passthrough step to its child.
 size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -339,13 +402,48 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     if (!candidate_to_child_input)
         return 0;
 
-    /// Build the pushed DAG (passthrough + new FUNCTION nodes).
-    auto pushed = buildPushedDag(candidates, *candidate_to_child_input, child_input_header);
+    /// Capture everything we need to recompute each candidate below the child
+    /// *before* the rewrite, because `removeUnusedActions` may delete the
+    /// candidate nodes and invalidate the pointers.
+    std::vector<PushedFunction> pushed_functions;
+    pushed_functions.reserve(candidates.size());
+    for (const auto * candidate : candidates)
+        pushed_functions.push_back({candidate->function_base, candidate->result_name, candidate_to_child_input->at(candidate)});
 
     /// Rewrite parent in-place: replace candidate FUNCTION nodes in outputs
-    /// with same-named INPUTs and prune dead actions.
+    /// with same-named INPUTs and prune dead actions (including the now-dead
+    /// wide source inputs).
     if (!rewriteParentToConsumePushed(parent_actions, candidates))
         return 0;
+
+    /// Decide which wide source columns to stop passing through. We only do
+    /// this for pure-passthrough children (`Sort` / `Limit`): they carry every
+    /// column through and `removeUnusedColumns` cannot prune them afterwards,
+    /// so a wide argument column would otherwise stay inside the step. A column
+    /// is safe to drop iff the child step does not need it and the rewritten
+    /// parent no longer references it (its INPUT survived `removeUnusedActions`
+    /// only if it is still used, e.g. `SELECT s, length(s)`).
+    NameSet columns_to_drop;
+    const bool child_is_passthrough
+        = typeid_cast<const SortingStep *>(child_node->step.get()) || typeid_cast<const LimitStep *>(child_node->step.get());
+    if (child_is_passthrough)
+    {
+        const NameSet child_required = childRequiredPassthroughColumns(child_node->step);
+
+        NameSet parent_still_needs;
+        for (const auto * input : parent_actions.getInputs())
+            parent_still_needs.insert(input->result_name);
+
+        for (const auto & pushed_function : pushed_functions)
+        {
+            const auto & arg = pushed_function.arg_child_input_name;
+            if (!child_required.contains(arg) && !parent_still_needs.contains(arg))
+                columns_to_drop.insert(arg);
+        }
+    }
+
+    /// Build the pushed DAG (passthrough minus dropped columns + new FUNCTION nodes).
+    auto pushed = buildPushedDag(pushed_functions, child_input_header, columns_to_drop);
 
     /// Splice the new pushed step into the plan tree.
     auto & pushed_node = nodes.emplace_back();

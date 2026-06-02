@@ -10,6 +10,10 @@ plan: group by — barrier respected
 0
 plan: nested expression (length(s)+1) — not pushed
 0
+header: wide column pruned from sort/limit when enabled
+1
+plan: default lift-up not regressed when push-down disabled
+1
 eq: filter
 eq: sort+limit
 eq: group by

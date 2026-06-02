@@ -62,6 +62,12 @@ struct Optimization
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
+
+        /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
+        /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
+        /// functions back above a `SortingStep` that `tryPushDownVolumeReducingFunction`
+        /// pushed below it.
+        bool push_down_volume_reducing_functions = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

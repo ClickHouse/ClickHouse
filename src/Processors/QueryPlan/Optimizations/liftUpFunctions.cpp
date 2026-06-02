@@ -108,7 +108,10 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     if (unneeded_for_sorting.trivial())
         return 0;
 
-    if (hasVolumeReducingFunctionRoot(unneeded_for_sorting))
+    /// Only when `tryPushDownVolumeReducingFunction` is enabled do we keep volume-reducing
+    /// functions below the sort; otherwise lifting them is the default behavior and must be
+    /// preserved, so that an opt-in feature does not regress the default plan.
+    if (settings.push_down_volume_reducing_functions && hasVolumeReducingFunctionRoot(unneeded_for_sorting))
         return 0;
 
     if (!areNodesConvertableToBlock(needed_for_sorting.getOutputs()) || !areNodesConvertableToBlock(unneeded_for_sorting.getInputs()))

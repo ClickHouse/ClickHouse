@@ -1,0 +1,40 @@
+<test>
+    <settings>
+        <!-- Enable the opt-in optimization under test. The pushed-down
+             `length` / `empty` result replaces the wide source column in the
+             intermediate plan, so `Filter` / `Sort` / `Limit` / `Expression`
+             steps move a fixed-size scalar instead of the wide value. -->
+        <query_plan_push_down_volume_reducing_functions>1</query_plan_push_down_volume_reducing_functions>
+    </settings>
+
+    <create_query>
+        CREATE TABLE wide_volume_reducing
+        (
+            id UInt64,
+            s String,
+            arr Array(UInt64)
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- Wide String / Array columns so the saved data volume is significant. -->
+    <fill_query>
+        INSERT INTO wide_volume_reducing
+        SELECT number, repeat('x', 256), range(number % 64)
+        FROM numbers(20000000)
+    </fill_query>
+
+    <!-- Sort: the wide `s` / `arr` column is dropped from the `SortingStep`. -->
+    <query>SELECT length(s) FROM wide_volume_reducing ORDER BY id LIMIT 1000 FORMAT Null</query>
+    <query>SELECT length(arr) FROM wide_volume_reducing ORDER BY id LIMIT 1000 FORMAT Null</query>
+    <query>SELECT empty(s) FROM wide_volume_reducing ORDER BY id LIMIT 100000 FORMAT Null</query>
+
+    <!-- Limit: the function is not computed for rows discarded by the limit. -->
+    <query>SELECT lengthUTF8(s) FROM wide_volume_reducing LIMIT 1000 FORMAT Null</query>
+
+    <!-- Filter: column pruning drops the wide column from the `FilterStep`. -->
+    <query>SELECT length(s) FROM wide_volume_reducing WHERE id % 2 = 0 FORMAT Null</query>
+    <query>SELECT notEmpty(arr) FROM wide_volume_reducing WHERE id % 2 = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS wide_volume_reducing</drop_query>
+</test>

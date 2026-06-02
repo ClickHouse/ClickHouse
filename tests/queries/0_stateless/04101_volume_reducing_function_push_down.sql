@@ -61,6 +61,43 @@ FROM (EXPLAIN description = 1
     SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0);
 
 -- ----------------------------------------------------------------------------
+-- Header-shape assertion: for a pure-passthrough child (`Sort` / `Limit`) the
+-- wide source column must be dropped from the step, not merely carried through.
+-- We count `EXPLAIN header = 1` lines mentioning the wide `s String` column:
+-- with the optimization ON it survives only below the pushed step (its input
+-- and the source), with it OFF it also flows through `Sorting` and `Limit`.
+-- So the ON plan must mention `s String` strictly fewer times than the OFF plan.
+-- ----------------------------------------------------------------------------
+
+SELECT 'header: wide column pruned from sort/limit when enabled';
+SELECT
+    (SELECT countIf(explain LIKE '%s String%')
+     FROM (EXPLAIN header = 1
+        SELECT length(s) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
+        SETTINGS query_plan_push_down_volume_reducing_functions = 1, query_plan_merge_expressions = 0))
+    <
+    (SELECT countIf(explain LIKE '%s String%')
+     FROM (EXPLAIN header = 1
+        SELECT length(s) FROM volume_reducing_function_push_down ORDER BY id DESC LIMIT 2
+        SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_merge_expressions = 0));
+
+-- ----------------------------------------------------------------------------
+-- Default-behavior regression: when the optimization is disabled, the existing
+-- `tryExecuteFunctionsAfterSorting` (`query_plan_execute_functions_after_sorting`,
+-- on by default) must still lift non-sort expressions above the `Sorting` step,
+-- even when a volume-reducing output is present. Guarding the lift on the new
+-- setting must not change the default plan.
+-- ----------------------------------------------------------------------------
+
+SELECT 'plan: default lift-up not regressed when push-down disabled';
+SELECT countIf(explain LIKE '%[lifted up part]%') > 0
+FROM (EXPLAIN description = 1
+    SELECT length(s), upper(s) FROM volume_reducing_function_push_down ORDER BY id
+    SETTINGS query_plan_push_down_volume_reducing_functions = 0,
+             query_plan_execute_functions_after_sorting = 1,
+             query_plan_merge_expressions = 0);
+
+-- ----------------------------------------------------------------------------
 -- Equivalence regressions: ON vs OFF must produce identical result sets in
 -- every shape we accept for pushdown.
 -- ----------------------------------------------------------------------------
