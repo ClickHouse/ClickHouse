@@ -517,39 +517,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
-std::unordered_map<String, CHSetting> icebergSessionSettings = {
-    {"iceberg_compaction_data_cleanup",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10800)); },
-         {},
-         false)},
-    {"iceberg_compaction_delay_bias",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10800)); },
-         {},
-         false)},
-    {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
-    {"iceberg_expire_default_min_snapshots_to_keep",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
-    {"iceberg_metadata_compression_method",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
-    {"iceberg_metadata_log_level",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings choices
-                 = {"'none'",
-                    "'metadata'",
-                    "'manifest_list_metadata'",
-                    "'manifest_list_entry'",
-                    "'manifest_file_metadata'",
-                    "'manifest_file_entry'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)}};
-
 std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
     {"aggregate_function_input_format",
@@ -892,6 +859,37 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"http_skip_not_found_url_for_globs", trueOrFalseSettingNoOracle},
     {"http_wait_end_of_query", trueOrFalseSettingNoOracle},
     {"http_write_exception_in_output_format", trueOrFalseSettingNoOracle},
+    {"iceberg_compaction_data_cleanup",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10800)); },
+         {},
+         false)},
+    {"iceberg_compaction_delay_bias",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 10800)); },
+         {},
+         false)},
+    {"iceberg_delete_data_on_drop", trueOrFalseSettingNoOracle},
+    {"iceberg_expire_default_min_snapshots_to_keep",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
+    {"iceberg_metadata_compression_method",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
+    {"iceberg_metadata_log_level",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices
+                 = {"'none'",
+                    "'metadata'",
+                    "'manifest_list_metadata'",
+                    "'manifest_list_entry'",
+                    "'manifest_file_metadata'",
+                    "'manifest_file_entry'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"iceberg_snapshot_id",
      CHSetting([](RandomGenerator &, FuzzConfig & fc) { return fc.getRandomIcebergHistoryValue("\"snapshot_id\""); }, {}, false)},
     {"iceberg_timestamp_ms", CHSetting([](RandomGenerator & rg, FuzzConfig & fc) { return getNextIcebergTimestamp(rg, fc); }, {}, false)},
@@ -1704,10 +1702,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.emplace(std::move(setting));
     }
-    for (const auto & setting : icebergSessionSettings)
-    {
-        serverSettings.insert(setting);
-    }
     if (fc.allow_transactions)
     {
         serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
@@ -2327,7 +2321,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         performanceSettings.erase(entry);
         queryOracleSettings.erase(entry);
         formatSettings.erase(entry);
-        icebergSessionSettings.erase(entry);
     }
     if (serverSettings.empty() || performanceSettings.empty() || queryOracleSettings.empty() || formatSettings.empty())
     {

@@ -1297,7 +1297,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     }
     auto icebergTableSettings = dataLakeSettings;
     icebergTableSettings.insert(icebergTableOnlySettings.begin(), icebergTableOnlySettings.end());
-    icebergTableSettings.insert(icebergSessionSettings.begin(), icebergSessionSettings.end());
 
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},

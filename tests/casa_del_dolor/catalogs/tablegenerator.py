@@ -101,7 +101,12 @@ class LakeTableGenerator:
         new_columns = {}
         for field in schema.fields:
             generated = (
-                field.name in table.columns and table.columns[field.name].generated
+                "delta.generationExpression" in field.metadata
+                or "delta.identity.start" in field.metadata
+                or (
+                    field.name in table.columns
+                    and table.columns[field.name].generated
+                )
             )
             new_columns[field.name] = SparkColumn(
                 field.name, field.dataType, field.nullable, generated
