@@ -255,17 +255,21 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     if (is_total_space_cleanup)
     {
         chassert(!reservee);
+        FileCacheReserveStat data_stat;
         bool success = getPriority(SegmentType::Data).collectCandidatesForEviction(
-            eviction_info, stat, res, invalidated_entries, /* reservee */nullptr,
+            eviction_info, data_stat, res, invalidated_entries, /* reservee */nullptr,
             continue_from_last_eviction_pos, max_candidates_size,
             is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
         /// Collect candidates even if success == false, we will process them anyway.
+        FileCacheReserveStat system_stat;
         success &= getPriority(SegmentType::System).collectCandidatesForEviction(
-            eviction_info, stat, res, invalidated_entries, /* reservee */nullptr,
+            eviction_info, system_stat, res, invalidated_entries, /* reservee */nullptr,
             continue_from_last_eviction_pos, max_candidates_size,
             is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
+        stat += data_stat;
+        stat += system_stat;
         return success;
     }
 

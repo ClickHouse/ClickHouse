@@ -36,6 +36,8 @@ public:
     size_t getProtectedElementsCount(const CacheStateGuard::Lock & lock) const { return protected_queue.getElementsCount(lock); }
     size_t getProbationarySize(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSize(lock); }
     size_t getProbationaryElementsCount(const CacheStateGuard::Lock & lock) const { return probationary_queue.getElementsCount(lock); }
+    size_t getProtectedSizeLimit(const CacheStateGuard::Lock & lock) const { return protected_queue.getSizeLimit(lock); }
+    size_t getProbationarySizeLimit(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSizeLimit(lock); }
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
     void check(const CacheStateGuard::Lock &) const override;
