@@ -206,6 +206,35 @@ SELECT id FROM walk_having ORDER BY id;
 
 DROP TABLE edges_having;
 
+-- `JOIN ... USING` is an equi-join just like `JOIN ... ON`, so the optimization
+-- must push the filter into the index for it too. The recursive working table
+-- and the real table share the join column name `from_id`, so the CTE selects
+-- `to_id` aliased back to `from_id` to keep the `USING` column name aligned.
+WITH RECURSIVE traverse_using AS
+(
+    SELECT to_id AS from_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS from_id
+    FROM edges AS e
+    INNER JOIN traverse_using AS t USING (from_id)
+)
+SELECT from_id FROM traverse_using ORDER BY from_id;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    read_rows < 10000 AS read_rows_ok
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE traverse_using%USING (from_id)%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;

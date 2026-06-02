@@ -153,6 +153,61 @@ void extractEquiJoinKeys(
     result.push_back({&containing_query_node, cte_column->getColumnName(), cte_column->getColumnType(), real_column});
 }
 
+/// Extract equi-join key pairs from a `USING` join expression.
+///
+/// A resolved `USING` expression is a `ListNode` of per-column `ColumnNode`s;
+/// each carries an inner `ListNode` holding the actual `ColumnNode` from every
+/// joined relation that contributes the column. `USING (c)` is thus equivalent
+/// to `left.c = right.c = ...`, so we classify each inner column as CTE-side or
+/// real-table-side and, for every real column, push a filter keyed by a CTE
+/// column's name and type — mirroring the `ON`-expression handling.
+void extractEquiJoinKeysFromUsing(
+    const QueryTreeNodePtr & expression,
+    const std::vector<TableNode *> & recursive_table_nodes,
+    QueryNode & containing_query_node,
+    std::vector<CTEJoinKey> & result)
+{
+    const auto * using_list = expression->as<ListNode>();
+    if (!using_list)
+        return;
+
+    for (const auto & using_column : using_list->getNodes())
+    {
+        const auto * using_column_node = using_column->as<ColumnNode>();
+        if (!using_column_node || !using_column_node->hasExpression())
+            continue;
+
+        const auto * inner_columns_list = using_column_node->getExpression()->as<ListNode>();
+        if (!inner_columns_list)
+            continue;
+
+        ColumnNode * cte_column = nullptr;
+        std::vector<ColumnNode *> real_columns;
+
+        for (const auto & inner_column : inner_columns_list->getNodes())
+        {
+            auto * column = inner_column->as<ColumnNode>();
+            if (!column)
+                continue;
+
+            auto source = column->getColumnSourceOrNull();
+            if (!source)
+                continue;
+
+            if (isCTETableNode(source.get(), recursive_table_nodes))
+                cte_column = column;
+            else if (source->as<TableNode>())
+                real_columns.push_back(column);
+        }
+
+        if (!cte_column)
+            continue;
+
+        for (auto * real_column : real_columns)
+            result.push_back({&containing_query_node, cte_column->getColumnName(), cte_column->getColumnType(), real_column});
+    }
+}
+
 /// Walk the join tree of a single `QueryNode` to collect equi-join keys.
 ///
 /// The collected predicate is later injected into the `QueryNode`'s `WHERE`,
@@ -190,10 +245,12 @@ void collectCTEJoinKeysInQuery(
 
         if (kind == JoinKind::Inner
             && join_node->hasJoinExpression()
-            && join_node->isOnJoinExpression()
             && !entry.in_nullable_position)
         {
-            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
+            if (join_node->isOnJoinExpression())
+                extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
+            else if (join_node->isUsingJoinExpression())
+                extractEquiJoinKeysFromUsing(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
         }
 
         const bool left_nullable = entry.in_nullable_position || kind == JoinKind::Right || kind == JoinKind::Full;
