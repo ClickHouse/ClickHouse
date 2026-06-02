@@ -661,7 +661,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Settings**
 
-- `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory for an exact skip-ratio measurement. `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
+- `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
 
 **Output**
 
@@ -685,7 +685,7 @@ Estimation:
 ```
 
 - `source` — how the estimate was produced.
-    - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. Exact.
+    - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. This is an upper bound — see the limitations in [`CREATE HYPOTHETICAL INDEX`](/sql-reference/statements/hypothetical-index#limitations).
     - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
     - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index.
