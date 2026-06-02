@@ -49,22 +49,23 @@ public:
 
     Float64 value(int key) const { return lowerBound(key) * (1 + relative_accuracy); }
 
-    /// Keys a real value could produce, intersected with the range the store can safely hold
-    /// Returns an empty range (so every key is rejected) when the two don't overlap
-    /// (like corrupted huge offset puts all real keys outside the safe window)
+    /// The [min, max] bin keys that are valid to deserialize: the keys key() yields for the smallest
+    /// and largest representable values, capped to what the store can index without overflowing
+    /// Returns an empty range (every key rejected) when nothing is valid (a corrupted offset
+    /// pushes every producible key outside the cap)
     std::pair<Int64, Int64> validKeyRange() const
     {
         static constexpr Int64 key_bound = Int64(1) << 30;
         const Float64 bound = static_cast<Float64>(key_bound);
-        const Float64 lo = logGamma(min_possible) + offset;
-        const Float64 hi = logGamma(max_possible) + offset;
+        const Float64 min_value_key = logGamma(min_possible) + offset;
+        const Float64 max_value_key = logGamma(max_possible) + offset;
 
-        ///  Empty value interval, no overlap with [-bound, bound], or NaN, nothing is valid
-        if (!(lo <= hi) || !(hi >= -bound) || !(lo <= bound))
+        /// Empty value interval, no overlap with [-bound, bound], or NaN: nothing is valid.
+        if (!(min_value_key <= max_value_key) || !(max_value_key >= -bound) || !(min_value_key <= bound))
             return {1, 0};
 
-        return {lo <= -bound ? -key_bound : static_cast<Int64>(lo),
-                hi >= bound ? key_bound : static_cast<Int64>(hi)};
+        return {min_value_key <= -bound ? -key_bound : static_cast<Int64>(min_value_key),
+                max_value_key >= bound ? key_bound : static_cast<Int64>(max_value_key)};
     }
 
     Float64 logGamma(Float64 value) const { return std::log(value) * multiplier; }

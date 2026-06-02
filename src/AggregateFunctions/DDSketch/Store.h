@@ -198,7 +198,9 @@ public:
                     check_key(key);
                     add(static_cast<int>(key), bin_count);
                 }
-                advance(key, index_delta);
+                /// Skip on the last bin
+                if (i + 1 < num_bins)
+                    advance(key, index_delta);
             }
         }
         else if (encoding_mode == enc.BinEncodingIndexDeltasAndCounts)
