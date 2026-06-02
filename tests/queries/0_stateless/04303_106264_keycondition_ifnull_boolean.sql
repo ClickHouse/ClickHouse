@@ -28,11 +28,29 @@ SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND k = 0;
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 0);
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0);
 
--- Inversion guardrail with a nullable key: NOT ifNull(k = 0, 0) keeps NULL rows,
--- whereas NOT (k = 0) drops them. Assert the rewrite does not change results.
+-- transform_null_in makes GLOBAL IN / GLOBAL NOT IN emit globalNullIn / globalNotNullIn, which
+-- KeyCondition indexes like the other IN variants. The wrapped form must build the key range too
+-- (printed as "k in 1-element set").
+SELECT countIf(explain ILIKE '%k in 1-element set%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0));
+SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0);
+
+-- Inversion guardrail with an INDEXED nullable key (granularity 1 so each row is its own granule).
+-- The non-inverted wrapper must build a `k` range; the inverted `NOT ifNull(...)` must not, because
+-- under NOT the wrapper is not equivalent to the bare comparison on NULL rows. A regressed
+-- need_inversion guard would prune the NULL granule and drop a row that should pass.
 DROP TABLE IF EXISTS t_ifnull_nullable;
-CREATE TABLE t_ifnull_nullable (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_ifnull_nullable (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY k
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
 INSERT INTO t_ifnull_nullable VALUES (0)(1)(NULL);
+
+-- Non-inverted builds the range (1); inverted does not (0).
+SELECT countIf(explain ILIKE '%k in [0, 0]%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 0));
+SELECT countIf(explain ILIKE '%k in [0, 0]%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0));
+
+-- Results unchanged: ifNull keeps k = 0 (1 row); NOT keeps k = 1 and k = NULL (2 rows).
 SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 0);
 SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0);
 

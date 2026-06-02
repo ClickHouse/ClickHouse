@@ -938,7 +938,8 @@ static bool isBooleanProducingFunction(const String & name)
 {
     static const std::unordered_set<std::string_view> names = {
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn",
+        "in", "notIn", "globalIn", "globalNotIn",
+        "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
         "like", "notLike", "ilike", "notILike", "match",
         "isNull", "isNotNull", "empty", "notEmpty",
         "and", "or", "not",
