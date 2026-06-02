@@ -21,3 +21,5 @@ Description: vector_spann GRANULARITY 100000000
 10. merge per-granule candidates across full part
 0
 0
+11. centroid search count at least LIMIT
+3	3

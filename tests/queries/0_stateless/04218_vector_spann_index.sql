@@ -299,3 +299,30 @@ SELECT count() FROM (
 );
 
 DROP TABLE tab_spann_merge_limit;
+
+SELECT '11. centroid search count at least LIMIT';
+DROP TABLE IF EXISTS tab_spann_centroid_k;
+
+CREATE TABLE tab_spann_centroid_k
+(
+    id Int32,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2, 'bf16', 32, 128, 1.0)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_spann_centroid_k VALUES
+    (0, [0.0, 0.0]), (1, [0.0, 0.01]), (2, [0.0, 0.02]),
+    (3, [0.0, 0.03]), (4, [0.0, 0.04]), (5, [0.0, 0.05]);
+
+SELECT count(*), uniqExact(id) FROM (
+    WITH [0.0, 0.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_centroid_k
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1, hnsw_candidate_list_size_for_search = 1
+);
+
+DROP TABLE tab_spann_centroid_k;

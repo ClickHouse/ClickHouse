@@ -112,7 +112,7 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
             nv += v * v;
         }
         Float64 denom = std::sqrt(std::max(nq * nv, static_cast<Float64>(vector_spann_cosine_norm_epsilon)));
-        return static_cast<Float32>(1.0 - dot / denom);
+        return static_cast<Float32>(Float64(1) - dot / denom);
     }
     if (metric_kind == unum::usearch::metric_kind_t::ip_k)
     {
@@ -120,7 +120,7 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
         for (size_t i = 0; i < dimensions; ++i)
             dot += static_cast<Float64>(query[i]) * static_cast<Float64>(vec[i]);
         /// Keep `_distance` semantics aligned with vector_similarity/USearch for `ip_k`.
-        return static_cast<Float32>(1.0 - dot);
+        return static_cast<Float32>(Float64(1) - dot);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported metric kind for vector_spann index search");
 }
@@ -624,8 +624,8 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
 
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
-        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
+        || index_fetch_multiplier <= 0.0f || static_cast<double>(index_fetch_multiplier) > MAX_INDEX_FETCH_MULTIPLIER
+        || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
 }
 
@@ -658,7 +658,7 @@ std::optional<size_t> MergeTreeIndexConditionVectorSpann::getApproximateNearestN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
     return limit;
 }
 
@@ -698,8 +698,11 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
         ErrorCodes::INCORRECT_QUERY,
         "reference vector in the SELECT query after conversion to Float32");
 
+    const size_t limit = getApproximateNearestNeighborsLimit().value();
+    const size_t centroid_search_count = std::min(centroid_index->size(), std::max(max_posting_lists, limit));
+
     auto search_centroids = centroid_index->search(
-        query_float.data(), max_posting_lists, unum::usearch::index_dense_t::any_thread(), false, expansion_search);
+        query_float.data(), centroid_search_count, unum::usearch::index_dense_t::any_thread(), false, expansion_search);
     if (!search_centroids)
         throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann centroid search failed: {}", search_centroids.error.release());
 
@@ -732,8 +735,6 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
             candidates.push_back(c);
         }
     }
-
-    const size_t limit = getApproximateNearestNeighborsLimit().value();
 
     auto compare = [](const Candidate & a, const Candidate & b) { return a.distance < b.distance; };
     if (candidates.size() <= limit)

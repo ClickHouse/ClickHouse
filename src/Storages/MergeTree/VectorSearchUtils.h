@@ -129,7 +129,7 @@ inline void truncateNearestNeighbours(NearestNeighbours & neighbours, size_t lim
     struct Entry
     {
         UInt64 row = 0;
-        float distance = 0;
+        Float32 distance = 0;
     };
 
     std::vector<Entry> entries;

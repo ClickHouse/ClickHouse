@@ -544,7 +544,7 @@ std::optional<size_t> MergeTreeIndexConditionVectorSimilarity::getApproximateNea
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
-        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
     return limit;
 }
 
