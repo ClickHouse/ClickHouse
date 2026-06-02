@@ -5,7 +5,8 @@
 -- Here we check:
 -- 1) `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids.
 -- 2) vector path really runs (`USearchSearchCount > 0`).
--- 3) Date-range PK filters + extra non-PK filters still work as expected.
+-- 3) multi skip-index granules and disjoint PK ranges in one granule (Cases D/E).
+-- 4) Date-range PK filters + extra non-PK filters still work as expected.
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -79,6 +80,62 @@ FROM
     LIMIT 3
     SETTINGS use_skip_indexes = 0
 );
+
+-- Case D: PK spans two skip-index granules.
+SELECT 'pk_multi_granule_matches_without_skip_indexes';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT
+    (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial
+            WHERE (id <= 2) OR (id >= 7)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial
+            WHERE (id <= 2) OR (id >= 7)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
+
+-- Case E: disjoint PK ranges in one skip-index granule.
+SELECT 'pk_disjoint_pk_same_granule_matches_without_skip_indexes';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT
+    (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial
+            WHERE (id <= 1) OR (id >= 4 AND id <= 5)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT arraySort(groupArray(id))
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial
+            WHERE (id <= 1) OR (id >= 4 AND id <= 5)
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
 
 SELECT 'empty_pk_filter';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec

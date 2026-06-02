@@ -4,6 +4,10 @@ vector_index_path_used
 1
 expected_top3_ids_for_reference_vec
 [6,7,8]
+pk_multi_granule_matches_without_skip_indexes
+1
+pk_disjoint_pk_same_granule_matches_without_skip_indexes
+1
 empty_pk_filter
 0
 full_table_top3_sorted_ids
