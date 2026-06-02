@@ -2075,11 +2075,17 @@ bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage 
 template <typename Storage>
 std::pair<KeeperResponsesForSessions, Int64> processWatches(
     const Coordination::ZooKeeperRemoveRequest & zk_request,
-    KeeperStorageBase::DeltaRange /*deltas*/,
+    KeeperStorageBase::DeltaRange deltas,
     Storage & storage,
     int64_t /*session_id*/)
 {
-    return processWatchesImpl(zk_request.getPath(), storage, Coordination::Event::DELETED);
+    for (const auto & delta : deltas)
+    {
+        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+            return processWatchesImpl(zk_request.getPath(), storage, Coordination::Event::DELETED);
+    }
+
+    return {};
 }
 
 template <typename Storage>

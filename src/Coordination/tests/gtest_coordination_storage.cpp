@@ -2086,6 +2086,138 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
     EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
 }
 
+/// A no-op TryRemove from the TTL GC (the node was recreated and is no longer TTL-eligible)
+/// must not fire a spurious DELETED watch: the node still exists, so watchers must not be told
+/// it was deleted.
+TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 0;
+
+    /// Create a TTL node.
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
+    ASSERT_EQ(storage.processRequest(create_request, session_id, zxid)[0].response->error, Error::ZOK);
+
+    /// TTL GC collects the expired node.
+    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1, 1000000);
+    ASSERT_EQ(expired.size(), 1u);
+    const int32_t collected_version = expired[0].second;
+
+    /// Client deletes and recreates it as a regular (non-TTL) node before the GC's TryRemove commits.
+    auto delete_request = std::make_shared<ZooKeeperRemoveRequest>();
+    delete_request->path = "/ttl_node";
+    delete_request->version = -1;
+    storage.preprocessRequest(delete_request, session_id, create_time + ttl_ms + 2, ++zxid);
+    ASSERT_EQ(storage.processRequest(delete_request, session_id, zxid)[0].response->error, Error::ZOK);
+
+    auto recreate_request = std::make_shared<ZooKeeperCreateRequest>();
+    recreate_request->path = "/ttl_node";
+    recreate_request->data = "fresh";
+    storage.preprocessRequest(recreate_request, session_id, create_time + ttl_ms + 3, ++zxid);
+    ASSERT_EQ(storage.processRequest(recreate_request, session_id, zxid)[0].response->error, Error::ZOK);
+
+    /// Register a watch on the fresh node.
+    auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+    exists_request->path = "/ttl_node";
+    exists_request->has_watch = true;
+    storage.preprocessRequest(exists_request, session_id, 0, ++zxid);
+    ASSERT_EQ(storage.processRequest(exists_request, session_id, zxid)[0].response->error, Error::ZOK);
+    ASSERT_EQ(storage.watches.size(), 1u);
+
+    /// The stale TryRemove commits and must be a no-op. It returns ZOK, but since nothing was
+    /// removed it must not produce a DELETED watch response, and the watch must stay registered.
+    auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = "/ttl_node";
+    remove_request->version = collected_version;
+    remove_request->try_remove = true;
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 4, ++zxid);
+    auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+
+    ASSERT_EQ(remove_responses.size(), 1u);
+    ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+    EXPECT_EQ(dynamic_cast<Coordination::ZooKeeperWatchResponse *>(remove_responses[0].response.get()), nullptr);
+    EXPECT_EQ(storage.watches.size(), 1u);
+    EXPECT_NE(storage.container.find("/ttl_node"), storage.container.end());
+}
+
+/// A genuine TTL GC removal must still fire the DELETED watch — the no-op suppression above must
+/// not over-suppress watches on real removals.
+TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 0;
+
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
+    ASSERT_EQ(storage.processRequest(create_request, session_id, zxid)[0].response->error, Error::ZOK);
+
+    auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+    exists_request->path = "/ttl_node";
+    exists_request->has_watch = true;
+    storage.preprocessRequest(exists_request, session_id, 0, ++zxid);
+    ASSERT_EQ(storage.processRequest(exists_request, session_id, zxid)[0].response->error, Error::ZOK);
+    ASSERT_EQ(storage.watches.size(), 1u);
+
+    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1, 1000000);
+    ASSERT_EQ(expired.size(), 1u);
+    const int32_t collected_version = expired[0].second;
+
+    auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = "/ttl_node";
+    remove_request->version = collected_version;
+    remove_request->try_remove = true;
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, create_time + ttl_ms + 2, ++zxid);
+    auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+
+    bool fired_delete_watch = false;
+    bool got_ok_remove = false;
+    for (const auto & response_for_session : remove_responses)
+    {
+        if (auto * watch_response = dynamic_cast<Coordination::ZooKeeperWatchResponse *>(response_for_session.response.get()))
+        {
+            if (watch_response->path == "/ttl_node"
+                && static_cast<Coordination::Event>(watch_response->type) == Coordination::Event::DELETED)
+                fired_delete_watch = true;
+        }
+        else if (response_for_session.response->error == Error::ZOK)
+        {
+            got_ok_remove = true;
+        }
+    }
+
+    EXPECT_TRUE(got_ok_remove);
+    EXPECT_TRUE(fired_delete_watch);
+    EXPECT_EQ(storage.watches.size(), 0u);
+    EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
+}
+
 /// B4: invalid TTL values must be rejected with ZBADARGUMENTS.
 TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
 {
