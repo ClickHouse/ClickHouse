@@ -11,6 +11,7 @@
 #include <IO/WriteBufferFromVector.h>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -42,7 +43,7 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
         using T = UInt8;
 
         size_t n = std::stol(argv[1]);
-        assert(n > 0);
+        chassert(n > 0);
 
         DB::VectorWithMemoryTracking<T> data(n);
         DB::VectorWithMemoryTracking<T> data2(n);
