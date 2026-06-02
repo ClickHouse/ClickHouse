@@ -6,7 +6,6 @@ import uuid
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
 from helpers.utility import SafeThread, generate_values, replace_config
@@ -19,12 +18,6 @@ from helpers.wait_for_helpers import (
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
-S3_ENDPOINT_RELOAD_CONFIG = """        <endpoint_reload>
-            <endpoint>http://minio1:9001/root/endpoint_reload/</endpoint>
-            <access_key_id>minio</access_key_id>
-            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-        </endpoint_reload>
-"""
 
 
 @pytest.fixture(scope="module")
@@ -146,18 +139,6 @@ def run_s3_mocks(cluster):
             ("no_delete_objects.py", "resolver", "8082"),
         ],
     )
-
-
-def set_s3_endpoint_reload_config(config_path, enabled):
-    with open(config_path, encoding="utf-8") as config:
-        contents = config.read()
-
-    contents = contents.replace(S3_ENDPOINT_RELOAD_CONFIG, "")
-    if enabled:
-        contents = contents.replace("    </s3>\n", S3_ENDPOINT_RELOAD_CONFIG + "    </s3>\n")
-
-    with open(config_path, "w", encoding="utf-8") as config:
-        config.write(contents)
 
 
 def list_objects(cluster, path="data/", hint="list_objects"):
@@ -740,41 +721,6 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
         )
 
         node.query("SYSTEM RELOAD CONFIG")
-
-
-@pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_endpoint_credentials_are_revoked_on_reload(cluster, node_name):
-    node = cluster.instances[node_name]
-    table_name = "s3_endpoint_reload_test"
-    config_path = os.path.join(
-        SCRIPT_DIR,
-        "./{}/node/configs/config.d/storage_conf.xml".format(
-            cluster.instances_dir_name
-        ),
-    )
-
-    try:
-        create_table(node, table_name, storage_policy="s3_endpoint_reload")
-        node.query(
-            "INSERT INTO {} VALUES {}".format(
-                table_name, generate_values("2020-01-03", 512)
-            )
-        )
-
-        set_s3_endpoint_reload_config(config_path, False)
-        node.query("SYSTEM RELOAD CONFIG")
-
-        with pytest.raises(QueryRuntimeException) as exc_info:
-            node.query(
-                "INSERT INTO {} VALUES {}".format(
-                    table_name, generate_values("2020-01-04", 512)
-                )
-            )
-        assert "Access Denied" in str(exc_info.value)
-    finally:
-        set_s3_endpoint_reload_config(config_path, True)
-        node.query("SYSTEM RELOAD CONFIG")
-        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])

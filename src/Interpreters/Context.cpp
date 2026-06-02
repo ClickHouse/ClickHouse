@@ -6440,6 +6440,12 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     {
+        std::lock_guard lock(shared->mutex);
+        if (shared->storage_s3_settings)
+            shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
+    }
+
+    {
         std::lock_guard lock(shared->storage_policies_mutex);
         Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
@@ -6465,12 +6471,6 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
             LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
             DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
         }
-    }
-
-    {
-        std::lock_guard lock(shared->mutex);
-        if (shared->storage_s3_settings)
-            shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
     }
 
     {
