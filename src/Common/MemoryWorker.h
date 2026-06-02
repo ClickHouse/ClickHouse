@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -36,6 +37,36 @@ struct ICgroupsReader
 
     virtual std::string dumpAllStats() = 0;
 };
+
+#if defined(OS_LINUX)
+/// Pure decision helper for the dynamic hard-limit headroom computation, factored out of
+/// `MemoryWorker::readAvailableForDynamicLimit` so the cgroup decision matrix is unit-testable.
+namespace MemoryWorkerHelpers
+{
+    enum class CgroupLevelKind : uint8_t
+    {
+        /// No finite limit at this level: the cgroup v2 `"max"` token, an unparseable or
+        /// zero value, or the cgroup v1 "no limit" sentinel (a value `>= host RAM`). Such a
+        /// level imposes no cap and does not contribute to the headroom minimum.
+        Unbounded,
+        /// A real finite limit; `available` is meaningful (`max(0, limit - used)`).
+        Finite,
+    };
+
+    struct CgroupLevelAvailability
+    {
+        CgroupLevelKind kind;
+        uint64_t available = 0;
+    };
+
+    /// Decide a single cgroup level's contribution from the raw first token of its
+    /// `memory.max` (cgroup v2) / `memory.limit_in_bytes` (cgroup v1) file and the level's
+    /// current usage. `host_memory_bytes` filters the cgroup v1 "no limit" sentinel
+    /// (`PAGE_COUNTER_MAX`, ~2^63): any value `>= host_memory_bytes` is treated as unbounded.
+    /// A `host_memory_bytes` of `0` disables that filter.
+    CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token, uint64_t used, uint64_t host_memory_bytes);
+}
+#endif
 
 struct MemoryWorkerConfig
 {
@@ -149,8 +180,16 @@ private:
     /// We then take the minimum of `available_i` across the hierarchy.
     /// On cgroup v1 there is a single `memory.limit_in_bytes` for the leaf cgroup,
     /// and leaf usage comes from `cgroups_reader` (`current_buf` is left empty).
+    /// `max_path`/`current_path` are retained so a level whose files exist but could not be
+    /// opened at construction (or whose descriptor later became unusable) is *reopened* on a
+    /// subsequent tick instead of being permanently dropped. Dropping a level silently would
+    /// let `readAvailableForDynamicLimit` compute the headroom minimum from an incomplete set
+    /// of ancestors and overestimate it when the dropped ancestor was the tighter one.
+    /// `current_path` is empty on cgroup v1 (leaf usage comes from `cgroups_reader`).
     struct CgroupMemoryLevel
     {
+        std::string max_path;
+        std::string current_path;
         std::unique_ptr<ReadBufferFromFile> max_buf;
         std::unique_ptr<ReadBufferFromFile> current_buf;
     };

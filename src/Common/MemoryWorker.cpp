@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
@@ -242,6 +243,38 @@ std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsRead
     chassert(version == CgroupsVersion::V1);
     return std::make_shared<CgroupsV1Reader>(cgroup_path);
 }
+
+namespace MemoryWorkerHelpers
+{
+
+CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token, uint64_t used, uint64_t host_memory_bytes)
+{
+    /// `memory.max` value `"max"` means "no limit at this level". Handle it explicitly
+    /// so the common path doesn't depend on parse-failure semantics.
+    if (max_token == "max")
+        return {CgroupLevelKind::Unbounded, 0};
+
+    uint64_t limit_bytes = 0;
+    ReadBufferFromMemory token_buf(max_token.data(), max_token.size());
+    /// Treat an unparseable value or a literal `0` as "no usable finite limit here":
+    /// a `0` limit would otherwise mean "no allocation allowed", which is never what a
+    /// real cgroup imposes on a running ClickHouse.
+    if (!tryReadIntText(limit_bytes, token_buf) || limit_bytes == 0)
+        return {CgroupLevelKind::Unbounded, 0};
+
+    /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value (`PAGE_COUNTER_MAX`,
+    /// around `2^63`) to mean "no limit". On a host without cgroup memory limits this looks
+    /// like a finite limit far above any real RAM amount and would otherwise pin the dynamic
+    /// limit to the startup ceiling. Anything `>= host_memory_bytes` is effectively unbounded,
+    /// so treat it the same as the v2 `"max"` token.
+    if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
+        return {CgroupLevelKind::Unbounded, 0};
+
+    uint64_t available = (limit_bytes > used) ? (limit_bytes - used) : 0;
+    return {CgroupLevelKind::Finite, available};
+}
+
+}
 #endif
 
 namespace
@@ -329,17 +362,25 @@ MemoryWorker::MemoryWorker(
                     fs::path current_path = current / "memory.current";
                     if (fs::exists(max_path) && fs::exists(current_path))
                     {
+                        CgroupMemoryLevel level;
+                        level.max_path = max_path.string();
+                        level.current_path = current_path.string();
                         try
                         {
-                            CgroupMemoryLevel level;
-                            level.max_buf = std::make_unique<ReadBufferFromFile>(max_path.string());
-                            level.current_buf = std::make_unique<ReadBufferFromFile>(current_path.string());
-                            cgroup_memory_levels.push_back(std::move(level));
+                            level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                            level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
                         }
                         catch (...)
                         {
+                            /// Keep the level (with its paths) but leave the buffers null:
+                            /// `readAvailableForDynamicLimit` retries the open on each tick and
+                            /// fails the tick closed until it succeeds, instead of silently
+                            /// dropping this (possibly tighter) ancestor and overestimating headroom.
+                            level.max_buf.reset();
+                            level.current_buf.reset();
                             tryLogCurrentException(log, fmt::format("Cannot open cgroup memory files at '{}'", current.string()));
                         }
+                        cgroup_memory_levels.push_back(std::move(level));
                     }
                     current = current.parent_path();
                 }
@@ -349,18 +390,22 @@ MemoryWorker::MemoryWorker(
                 fs::path memory_max_path = fs::path(cgroup_path) / "memory.limit_in_bytes";
                 if (fs::exists(memory_max_path))
                 {
+                    CgroupMemoryLevel level;
+                    level.max_path = memory_max_path.string();
+                    /// v1 has no per-level `memory.current` analogue we use here;
+                    /// leaf usage comes from `cgroups_reader` in `readAvailableForDynamicLimit`,
+                    /// so `current_path` is left empty.
                     try
                     {
-                        CgroupMemoryLevel level;
-                        level.max_buf = std::make_unique<ReadBufferFromFile>(memory_max_path.string());
-                        /// v1 has no per-level `memory.current` analogue we use here;
-                        /// leaf usage comes from `cgroups_reader` in `readAvailableForDynamicLimit`.
-                        cgroup_memory_levels.push_back(std::move(level));
+                        level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
                     }
                     catch (...)
                     {
+                        /// Keep the level for a later reopen attempt; see the v2 branch above.
+                        level.max_buf.reset();
                         tryLogCurrentException(log, "Cannot open cgroup memory limit file");
                     }
+                    cgroup_memory_levels.push_back(std::move(level));
                 }
             }
 
@@ -479,6 +524,11 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     /// hold the mutex (and waits), or the bumped generation (and skips).
     std::lock_guard lock(dynamic_hard_limit_apply_mutex);
 
+    /// Whether this is the first time the settings are configured. Until then,
+    /// `external_hard_limit` is `-1` and the worker suppresses the dynamic adjustment,
+    /// so there is no previously-shrunk dynamic value to preserve.
+    const bool first_configuration = external_hard_limit.load(std::memory_order_relaxed) < 0;
+
     /// Order matters: write the ratio first. The worker thread reads `external_hard_limit`
     /// first, and only proceeds with the adjustment when it is >= 0. By the time the
     /// adjustment is enabled (ceiling becomes >= 0), the new ratio is already visible.
@@ -490,12 +540,31 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     /// worker's acquire load when re-checking.
     settings_generation.fetch_add(1, std::memory_order_release);
 
-    /// Install the configured ceiling as the current hard limit while we still
-    /// hold the mutex. Doing this here (instead of in the caller, before
-    /// `setDynamicHardLimitSettings`) closes the race window where the worker
-    /// could overwrite an out-of-band `setHardLimit` with a stale value before
-    /// it observed the new generation.
-    total_memory_tracker.setHardLimit(ceiling);
+    /// Decide which hard limit to install now, while we still hold the mutex. Doing this
+    /// here (instead of in the caller) closes the race window where the worker could
+    /// overwrite an out-of-band `setHardLimit` with a stale value before observing the
+    /// new generation.
+    Int64 limit_to_apply = ceiling;
+    if (ratio > 0.0 && !first_configuration)
+    {
+        /// Dynamic adjustment is enabled and the worker may have already shrunk the hard
+        /// limit below `ceiling` under memory pressure. An unrelated config reload (e.g.
+        /// `SYSTEM RELOAD CONFIG` with unchanged memory settings) must not raise the limit
+        /// back to the static `ceiling`: that would briefly re-admit the very allocations
+        /// the dynamic limiter had already blocked, until the next worker tick. Only lower
+        /// the limit here (when the new `ceiling` is below the current value); never raise
+        /// it. The next worker tick recomputes from live headroom and may raise it back
+        /// toward `ceiling` when memory is actually available.
+        ///
+        /// `0` means "unlimited" for both the current hard limit and the ceiling, so treat
+        /// it as `+inf` when taking the minimum; the result `0` again means "unlimited".
+        const Int64 current = total_memory_tracker.getHardLimit();
+        auto as_cap = [](Int64 v) { return v <= 0 ? std::numeric_limits<Int64>::max() : v; };
+        const Int64 capped = std::min(as_cap(current), as_cap(ceiling));
+        limit_to_apply = (capped == std::numeric_limits<Int64>::max()) ? 0 : capped;
+    }
+
+    total_memory_tracker.setHardLimit(limit_to_apply);
 }
 
 std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
@@ -524,50 +593,50 @@ std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
         {
             try
             {
-                level.max_buf->rewind();
-                /// `memory.max` value `"max"` means "no limit at this level". Handle it
-                /// explicitly so the common path doesn't depend on parse-failure semantics.
+                /// Lazily (re)open files that were never opened or failed to open at
+                /// construction, and reopen any descriptor that became unusable after a
+                /// previous read failure. A persistent open failure keeps throwing here and
+                /// fails the whole tick closed below, instead of permanently dropping a
+                /// (possibly tighter) ancestor and overestimating headroom.
+                if (!level.max_buf)
+                    level.max_buf = std::make_unique<ReadBufferFromFile>(level.max_path);
+                else
+                    level.max_buf->rewind();
+
                 String first_token;
                 readStringUntilWhitespace(first_token, *level.max_buf);
-                if (first_token == "max")
-                    continue;
-
-                uint64_t limit_bytes = 0;
-                ReadBufferFromString token_buf(first_token);
-                if (!tryReadIntText(limit_bytes, token_buf) || limit_bytes == 0)
-                    continue;
-
-                /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value
-                /// (`PAGE_COUNTER_MAX`, around `2^63`) to mean "no limit". On a host
-                /// without cgroup memory limits this looks like a finite limit far
-                /// above any real RAM amount and would otherwise pin the dynamic
-                /// limit to the startup ceiling. Anything `>= host_memory_bytes` is
-                /// effectively unbounded, so treat it the same as the v2 `"max"` token.
-                if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
-                    continue;
 
                 uint64_t used = 0;
-                if (level.current_buf)
+                if (!level.current_path.empty())
                 {
                     /// v2: read `memory.current` for the same level, so sibling
                     /// consumption inside an ancestor counts against that ancestor's budget.
-                    level.current_buf->rewind();
+                    if (!level.current_buf)
+                        level.current_buf = std::make_unique<ReadBufferFromFile>(level.current_path);
+                    else
+                        level.current_buf->rewind();
                     readIntText(used, *level.current_buf);
                 }
                 else
                 {
-                    /// v1: the only opened level is the leaf cgroup; use the same usage
-                    /// source as `cgroups_reader`. v1 does not traverse the hierarchy.
+                    /// v1: the only level is the leaf cgroup; use the same usage source as
+                    /// `cgroups_reader`. v1 does not traverse the hierarchy.
                     used = cgroups_reader->readMemoryUsage();
                 }
 
-                uint64_t available = (limit_bytes > used) ? (limit_bytes - used) : 0;
-                min_available = std::min(min_available, available);
-                any_finite = true;
+                auto decision = MemoryWorkerHelpers::decideCgroupLevelAvailability(first_token, used, host_memory_bytes);
+                if (decision.kind == MemoryWorkerHelpers::CgroupLevelKind::Finite)
+                {
+                    min_available = std::min(min_available, decision.available);
+                    any_finite = true;
+                }
             }
             catch (...)
             {
                 any_read_failure = true;
+                /// Drop the (possibly corrupt) descriptors so the next tick reopens cleanly.
+                level.max_buf.reset();
+                level.current_buf.reset();
                 if (!std::exchange(cgroup_memory_max_warnings_printed, true))
                     tryLogCurrentException(log, "Cannot read cgroup memory limit/current");
             }
