@@ -247,6 +247,16 @@ ProcessList::EntryPtr ProcessList::insert(
 
             ProfileEvents::increment(ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
 
+            /// Final alive-check after the slot has been granted but before we commit to using it.
+            /// The periodic loop above only checks liveness while still waiting (`!my_turn()`). If the
+            /// releaser transferred the slot to us between two periodic checks, a client that disconnected
+            /// in the meantime would otherwise be admitted and execute its query. Re-check here so that a
+            /// disconnected waiter is cancelled before consuming the slot; the `SCOPE_EXIT` above releases
+            /// the already-granted slot when we throw.
+            if (is_alive && !is_alive())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                "Query admission cancelled: client disconnected while waiting in queue");
+
             /// Slot was transferred to us by the releaser (no counter change).
             got_admission_slot = true;
         }
