@@ -33,6 +33,9 @@ With idx_b (minmax, hypothetical):
   status:       applicable
 --- force_data_skipping_indices: not-useful index throws like a real read ---
 INDEX_NOT_USED
+--- read limit (break mode) does not report partial empirical as ok ---
+  source:           applicability_only
+  empirical_status: unsupported
 --- EXPLAIN WHATIF with function-expression index ---
 With idx_l (set, hypothetical):
   status:       applicable

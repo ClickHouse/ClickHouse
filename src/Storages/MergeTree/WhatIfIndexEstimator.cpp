@@ -402,9 +402,11 @@ bool tryEstimateEmpirical(
 
             total_rows_read += block.rows();
             total_bytes_read += block.bytes();
+            /// `throw` mode raises here; `break` mode returns false (the scan would be
+            /// partial, so don't report it as a complete empirical estimate — fall back).
             if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
                                    ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
-                break;
+                return false;
 
             /// Evaluate the index expression so the aggregator sees what a real
             /// MATERIALIZE INDEX would see (e.g. lower(s) instead of raw s)

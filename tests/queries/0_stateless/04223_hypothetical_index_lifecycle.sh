@@ -146,6 +146,19 @@ $CLICKHOUSE_CLIENT -n -q "
 " 2>&1 | grep -m1 -o 'INDEX_NOT_USED'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_force"
 
+# read_overflow_mode = 'break' must not report a partial scan as a complete empirical estimate.
+echo "--- read limit (break mode) does not report partial empirical as ok ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_break;
+    CREATE TABLE t_hypo_break (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_break SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_break (b) TYPE minmax GRANULARITY 1;
+    SET max_rows_to_read = 50, read_overflow_mode = 'break';
+    EXPLAIN WHATIF SELECT * FROM t_hypo_break WHERE b = 42;
+" 2>&1 | grep -E '^\s+source:|^\s+empirical_status:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_break"
+
 echo "--- EXPLAIN WHATIF with function-expression index ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_func;
