@@ -14,7 +14,6 @@ from pathlib import Path
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
-from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
