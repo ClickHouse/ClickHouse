@@ -155,13 +155,6 @@ protected:
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
 
-    /// Echo the query before execution, honoring the echo, echo-formatted and highlight settings.
-    void echoQuery(std::string_view full_query, const ASTPtr & parsed_query);
-
-    /// Resolve echo, echo-formatted, echo-query-id and highlight settings from the configuration,
-    /// using interactive-mode-aware defaults. Must be called after is_interactive is determined.
-    void setupEchoAndHighlightSettings();
-
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -336,10 +329,7 @@ protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
 
-    bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
-    bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
-    bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
-    bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
+    bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 

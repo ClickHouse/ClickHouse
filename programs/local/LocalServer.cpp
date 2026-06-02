@@ -839,12 +839,11 @@ void LocalServer::processConfig()
     delayed_interactive = getClientConfiguration().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (!is_interactive || delayed_interactive)
     {
+        echo_queries = getClientConfiguration().hasOption("echo") || getClientConfiguration().hasOption("verbose");
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
 
         query_id = getClientConfiguration().getString("query_id", "");
     }
-
-    setupEchoAndHighlightSettings();
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};
