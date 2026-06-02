@@ -357,8 +357,7 @@ String data_b =
             "a\t1\t7baad\n"
             "c\t3\t8bccc\n";
 
-void registerS3ObjectStorage(ObjectStorageFactory & factory);
-void registerLocalObjectStorage(ObjectStorageFactory & factory);
+void registerObjectStorages();
 
 } // namespace DB
 
@@ -435,9 +434,7 @@ public:
         context_holder.context->setConfig(config.configuration);
 
         tryRegisterFunctions();
-        auto & factory = ObjectStorageFactory::instance();
-        registerS3ObjectStorage(factory);
-        registerLocalObjectStorage(factory);
+        registerObjectStorages();
         registerPlanSteps();
 
         GlobalThreadPool::instance();
