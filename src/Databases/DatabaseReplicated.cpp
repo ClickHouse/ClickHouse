@@ -1945,6 +1945,11 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         /// error as every other drop/recreate guard in this function.
         auto responses = zookeeper->tryGetChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
 
+        /// Handle every non-`ZOK` per-path error explicitly. `ZNONODE` is the drop/recreate
+        /// race and maps to the operation-level error; any other Keeper error (e.g. a
+        /// connection loss on one path) must propagate rather than be silently ignored,
+        /// otherwise `responses[0].names` could be empty and we would accept an
+        /// incomplete/empty metadata snapshot as if the database had no tables.
         for (size_t i = 0; i < paths.size(); ++i)
         {
             if (responses[i].error == Coordination::Error::ZNONODE)
@@ -1955,6 +1960,8 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
                     "(node {} missing during snapshot read)",
                     paths[i]);
             }
+            if (responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
         }
 
         for (size_t i = 0; i < responses[0].names.size(); ++i)
@@ -2048,6 +2055,10 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
                 "(metadata node missing during list at retry iteration {})",
                 iteration);
         }
+        /// Any other non-`ZOK` error (e.g. connection loss) must propagate instead of
+        /// leaving `escaped_table_names` empty and silently producing an empty snapshot.
+        if (get_children_err != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(get_children_err, metadata_path);
         if (filter_by_table_name)
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
@@ -2110,7 +2121,7 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
                 iteration);
         }
         if (current_max_log_ptr.error != Coordination::Error::ZOK)
-            Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
+            throw Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
 
         UInt32 new_max_log_ptr = parse<UInt32>(current_max_log_ptr.data);
         if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
