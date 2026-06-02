@@ -1843,99 +1843,6 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
 
-TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
-{
-    ServerUUID::setRandomForUnitTests();
-
-    const auto cache_path = caches_dir / "test_queue_metrics";
-    fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
-    const auto key = DB::FileCacheKey::fromPath("metrics_key");
-    const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
-
-    CacheStateGuard state_guard;
-    CachePriorityGuard cache_guard;
-
-    const auto elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements);
-    const auto invalidated_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements);
-
-    /// Only the Main queue contributes to the global gauges; the Query queue must not.
-    auto run_cycle = [&](IFileCachePriority::QueueType queue_type)
-    {
-        const int delta = queue_type == IFileCachePriority::QueueType::Main ? 1 : 0;
-        LRUFileCachePriority priority(queue_type, 100, 10);
-
-        IFileCachePriority::IteratorPtr it;
-        {
-            auto write_lock = cache_guard.writeLock();
-            auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, 0, 10, write_lock, &state_lock);
-        }
-        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
-
-        it->invalidate();
-        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before + delta);
-
-        it->remove(cache_guard.writeLock());
-        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before);
-        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before);
-    };
-
-    run_cycle(IFileCachePriority::QueueType::Main);
-    run_cycle(IFileCachePriority::QueueType::Query);
-}
-
-TEST_F(FileCacheTest, SLRUDowngradeMetric)
-{
-    ServerUUID::setRandomForUnitTests();
-
-    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
-    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
-
-    const auto cache_path = caches_dir / "test_slru_downgrade";
-    fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
-    const auto key = DB::FileCacheKey::fromPath("downgrade_key");
-    const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
-
-    CacheStateGuard state_guard;
-    CachePriorityGuard cache_guard;
-
-    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
-    {
-        IFileCachePriority::IteratorPtr it;
-        {
-            auto write_lock = cache_guard.writeLock();
-            auto state_lock = state_guard.lock();
-            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
-        }
-        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
-        fs::create_directories(fs::path(path).parent_path());
-        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
-        DB::writeString(std::string(size, '0'), wb);
-        wb.finalize();
-        auto file_segment = std::make_shared<FileSegment>(
-            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
-        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
-        return it;
-    };
-
-    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
-    auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
-
-    auto & events = CurrentThread::getProfileEvents();
-    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
-    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
-
-    /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
-    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
-
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
-}
-
 TEST_F(FileCacheTest, LoadMetadataParallelism)
 {
     /// Test that loading cache metadata with different numbers of threads produces
@@ -2248,4 +2155,97 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_NO_THROW(cache->applySettingsIfPossible(second_new_settings, second_actual));
         ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
+}
+
+TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    const auto cache_path = caches_dir / "test_queue_metrics";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("metrics_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    const auto elements_before = CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements);
+    const auto invalidated_before = CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements);
+
+    /// Only the Main queue contributes to the global gauges; the Query queue must not.
+    auto run_cycle = [&](IFileCachePriority::QueueType queue_type)
+    {
+        const int delta = queue_type == IFileCachePriority::QueueType::Main ? 1 : 0;
+        LRUFileCachePriority priority(queue_type, 100, 10);
+
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.add(key_metadata, 0, 10, write_lock, &state_lock);
+        }
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before + delta);
+
+        it->invalidate();
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before + delta);
+
+        it->remove(cache_guard.writeLock());
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCachePriorityQueueElements), elements_before);
+        ASSERT_EQ(CurrentMetrics::get(CurrentMetrics::FilesystemCacheInvalidatedElements), invalidated_before);
+    };
+
+    run_cycle(IFileCachePriority::QueueType::Main);
+    run_cycle(IFileCachePriority::QueueType::Query);
+}
+
+TEST_F(FileCacheTest, SLRUDowngradeMetric)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// protected = 10 bytes / 1 element, probationary = 20 bytes / 2 elements.
+    SLRUFileCachePriority priority(IFileCachePriority::QueueType::Main, 30, 3, 1.0 / 3, "test_downgrade");
+
+    const auto cache_path = caches_dir / "test_slru_downgrade";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    const auto key = DB::FileCacheKey::fromPath("downgrade_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    auto add_segment = [&](size_t offset, size_t size, IFileCachePriority::QueueEntryType qtype)
+    {
+        IFileCachePriority::IteratorPtr it;
+        {
+            auto write_lock = cache_guard.writeLock();
+            auto state_lock = state_guard.lock();
+            it = priority.addForRestore(key_metadata, offset, size, qtype, write_lock, &state_lock);
+        }
+        const auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
+        fs::create_directories(fs::path(path).parent_path());
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(std::string(size, '0'), wb);
+        wb.finalize();
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    add_segment(0, 10, IFileCachePriority::QueueEntryType::SLRU_Protected);   /// fills protected
+    auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
+
+    auto & events = CurrentThread::getProfileEvents();
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
+
+    /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
+    ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
+
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
 }
