@@ -488,13 +488,18 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         LRUIterator prev_nested_iterator;
         /// New iterator to entry in probationary queue.
         LRUIterator new_nested_iterator;
+        bool rollbacked = false;
 
         void rollbackState()
         {
+            if (rollbacked)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "State is already rollbacked");
+
             /// Invalidate the new probationary `PreActive` entry, and
             /// reset the old protected entry's `Evicting` flag back to `Active`.
             new_nested_iterator.invalidate();
             prev_nested_iterator.getEntry()->resetFlag(Entry::State::Evicting);
+            rollbacked = true;
         }
     };
     /// RAII wrapper to protect against the case when afterEvictState callback
