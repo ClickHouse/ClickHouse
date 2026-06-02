@@ -1826,7 +1826,7 @@ void addReadFromQueryResultCacheStep(
 
 }
 
-PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
+static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     const SelectQueryOptions & select_query_options,
     GlobalPlannerContextPtr global_planner_context)
 {
