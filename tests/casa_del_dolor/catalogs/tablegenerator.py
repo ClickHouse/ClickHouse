@@ -698,7 +698,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 ["copy-on-write", "merge-on-read"]
             ),
             "write.metadata.compression-codec": lambda: random.choice(
-                ["gzip", "zstd", "none"]
+                ["gzip", "none"]
             ),
             "write.spark.fanout.enabled": true_false_lambda,
             "write.wap.enabled": true_false_lambda,

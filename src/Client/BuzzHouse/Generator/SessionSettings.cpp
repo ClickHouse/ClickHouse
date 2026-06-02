@@ -1249,7 +1249,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 22)); }, {}, false)},
     {"output_format_compression_zstd_window_log",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 31)); }, {}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomBool() ? 0 : rg.thresholdGenerator<uint64_t>(0.3, 0.2, 10, 31)); }, {}, false)},
     {"output_format_csv_serialize_tuple_into_separate_columns", trueOrFalseSettingNoOracle},
     {"output_format_decimal_trailing_zeros", trueOrFalseSettingNoOracle},
     {"output_format_enable_streaming", trueOrFalseSettingNoOracle},
