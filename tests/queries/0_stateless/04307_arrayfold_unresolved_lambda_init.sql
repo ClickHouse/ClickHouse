@@ -6,6 +6,11 @@
 -- via `getLambdaArgumentTypes`, then the inner function (e.g. `arrayExists`) accessed
 -- the placeholder's null `return_type` without guarding.
 
+-- The fix lives in `QueryAnalyzer::resolveFunction`, which exists only on the new
+-- analyzer path; the old analyzer does not perform the bare-function-to-lambda
+-- rewrite for `arrayFold(arrayExists, ...)` and reports an unrelated error.
+SET enable_analyzer = 1;
+
 -- arrayFold first arg = function reference (wrapped as synthetic lambda)
 -- arrayFold third arg = a lambda used as initial accumulator -> rejected
 SELECT arrayFold(arrayExists, range(number), ((acc, x) -> if(x % 2, arraySlice(x, acc), arrayPushBack(acc, x)))) FROM system.numbers LIMIT 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
