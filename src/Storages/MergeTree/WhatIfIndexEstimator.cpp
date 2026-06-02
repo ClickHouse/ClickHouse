@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
@@ -526,6 +527,11 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         result.not_applicable_reason = "Failed to create index: " + getCurrentExceptionMessage(false);
         return result;
     }
+
+    /// The descriptor was authorized at CREATE, but the empirical/statistical scan reads
+    /// these columns now — re-check column-level SELECT against the current grants so a
+    /// grant revoked since CREATE denies the estimate, exactly as a real read would.
+    context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
 
     /// Text indexes need a tokenized block layout the empirical pipeline doesn't build. That's a TODO
     if (index_desc.type == "text")

@@ -79,3 +79,5 @@ With idx_a (minmax, hypothetical):
 ACCESS_DENIED
 --- column-level SELECT user can create and drop a hypothetical index ---
 create+drop ok
+--- EXPLAIN WHATIF re-checks column-level SELECT after a grant is revoked ---
+ACCESS_DENIED

@@ -316,3 +316,28 @@ $CLICKHOUSE_CLIENT --user "${user2}" -n -q "
 " 2>&1 | grep -m1 -oE 'create\+drop ok|ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user2}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv2"
+
+# EXPLAIN WHATIF re-checks column-level SELECT at evaluation time, not only at CREATE:
+# a grant revoked after CREATE must deny the estimate that would read that column.
+echo "--- EXPLAIN WHATIF re-checks column-level SELECT after a grant is revoked ---"
+user3="u3_04223_${CLICKHOUSE_DATABASE}"
+sess="sess_04223_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_priv3;
+    CREATE TABLE t_hypo_priv3 (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_priv3 SELECT number, number, number FROM numbers(1000);
+    DROP USER IF EXISTS ${user3};
+    CREATE USER ${user3} NOT IDENTIFIED;
+    GRANT SELECT(a, b, c) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv3 TO ${user3};
+"
+# An HTTP session keeps the session-local store alive across requests; create the index on
+# (b, c) while SELECT(c) is granted, revoke it, then evaluate from the same session.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user3}&session_id=${sess}&session_timeout=60" \
+    --data-binary "CREATE HYPOTHETICAL INDEX idx_bc ON ${CLICKHOUSE_DATABASE}.t_hypo_priv3 (b, c) TYPE minmax GRANULARITY 1"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT(c) ON ${CLICKHOUSE_DATABASE}.t_hypo_priv3 FROM ${user3}"
+# A query referencing only b still plans, but evaluating idx_bc reads c, so it is denied.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user3}&session_id=${sess}&session_timeout=60" \
+    --data-binary "EXPLAIN WHATIF SELECT b FROM ${CLICKHOUSE_DATABASE}.t_hypo_priv3 WHERE b = 42" 2>&1 | grep -m1 -o 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user3}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv3"
