@@ -308,7 +308,7 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
-    auto create_remote_read_buffer = [&]()
+    auto create_remote_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
     {
         auto impl = info.implementation_buffer_creator();
         if (impl->supportsRightBoundedReads())
