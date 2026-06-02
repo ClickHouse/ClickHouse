@@ -12,3 +12,11 @@ ORDER BY name;
 SELECT length(related) > 0
 FROM system.disk_types
 WHERE name = 'local';
+
+-- Every registered disk type (including optional ones compiled into this build,
+-- such as `s3`, `hdfs`, or `azure_blob_storage`) must expose a non-empty
+-- description and syntax. This assertion is independent of build options.
+SELECT name
+FROM system.disk_types
+WHERE length(description) = 0 OR length(syntax) = 0
+ORDER BY name;
