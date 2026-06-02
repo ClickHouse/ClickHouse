@@ -354,7 +354,7 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
 
-    fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
+    fillBlobsFromURLCommon(connection_url, ".com", ".blob.fabric.microsoft.com");
 
     connection_params.endpoint.container_already_exists = true;
 
