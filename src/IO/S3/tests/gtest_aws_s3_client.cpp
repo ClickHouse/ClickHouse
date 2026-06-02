@@ -14,6 +14,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
@@ -124,6 +125,50 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
     write_buffer.write('\0'); // doesn't matter what we write here, just needs to be something
     write_buffer.finalize();
+}
+
+static std::shared_ptr<DB::S3::Client> createTestS3Client(const DB::S3::URI & uri, DB::HTTPHeaderEntries headers = {})
+{
+    static DB::RemoteHostFilter remote_host_filter;
+    unsigned int s3_max_redirects = 100;
+    unsigned int s3_retry_attempts = 0;
+    bool s3_slow_all_threads_after_network_error = true;
+    bool s3_slow_all_threads_after_retryable_error = true;
+    String access_key_id = "ACCESS_KEY_ID";
+    String secret_access_key = "SECRET_ACCESS_KEY";
+    String region = "us-east-1";
+    bool enable_s3_requests_logging = false;
+
+    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        region,
+        remote_host_filter,
+        s3_max_redirects,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
+        s3_slow_all_threads_after_network_error,
+        s3_slow_all_threads_after_retryable_error,
+        enable_s3_requests_logging,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
+        uri.uri.getScheme());
+
+    client_configuration.endpointOverride = uri.endpoint;
+
+    DB::S3::ClientSettings client_settings{
+        .use_virtual_addressing = uri.is_virtual_hosted_style,
+        .disable_checksum = false,
+        .gcs_issue_compose_request = false,
+    };
+
+    return DB::S3::ClientFactory::instance().create(
+        client_configuration,
+        client_settings,
+        access_key_id,
+        secret_access_key,
+        /* server_side_encryption_customer_key_base64 = */ "",
+        {},
+        headers,
+        DB::S3::CredentialsConfiguration{});
 }
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
@@ -344,6 +389,82 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         "x-amz-date;"
         "x-amz-sdk-checksum-algorithm, ...\n",
         /*is_s3express_bucket=*/true);
+}
+
+TEST(IOTestAwsS3Client, PropagatesOpenTelemetryTraceContext)
+{
+    TestPocoHTTPServer http;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientOpenTelemetryTraceContext/test.txt");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    DB::OpenTelemetry::TracingContext tracing_context;
+    String error;
+    ASSERT_TRUE(tracing_context.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", error)) << error;
+    tracing_context.tracestate = "congo=t61rcWkgMzE";
+
+    {
+        DB::OpenTelemetry::TracingContextHolder tracing_context_holder(
+            "IOTestAwsS3Client::PropagatesOpenTelemetryTraceContext",
+            tracing_context,
+            std::weak_ptr<DB::OpenTelemetrySpanLog>{});
+
+        const auto expected_traceparent = DB::OpenTelemetry::CurrentContext().composeTraceparentHeader();
+        doReadRequest(client, uri);
+
+        const auto & headers = http.getLastRequestHeader();
+        ASSERT_TRUE(headers.has("traceparent"));
+        EXPECT_EQ(headers.get("traceparent"), expected_traceparent);
+        ASSERT_TRUE(headers.has("tracestate"));
+        EXPECT_EQ(headers.get("tracestate"), tracing_context.tracestate);
+    }
+}
+
+TEST(IOTestAwsS3Client, DoesNotPropagateOpenTelemetryTraceContextWithoutCurrentContext)
+{
+    TestPocoHTTPServer http;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientOpenTelemetryTraceContext/test.txt");
+    auto client = createTestS3Client(uri);
+    ASSERT_TRUE(client);
+
+    ASSERT_FALSE(DB::OpenTelemetry::CurrentContext().isTraceEnabled());
+    doReadRequest(client, uri);
+
+    const auto & headers = http.getLastRequestHeader();
+    EXPECT_FALSE(headers.has("traceparent"));
+    EXPECT_FALSE(headers.has("tracestate"));
+}
+
+TEST(IOTestAwsS3Client, OpenTelemetryTraceContextOverridesExistingTraceHeaders)
+{
+    TestPocoHTTPServer http;
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientOpenTelemetryTraceContext/test.txt");
+    auto client = createTestS3Client(
+        uri,
+        {
+            {"traceparent", "00-00000000000000000000000000000001-0000000000000001-01"},
+            {"tracestate", "stale=value"},
+        });
+    ASSERT_TRUE(client);
+
+    DB::OpenTelemetry::TracingContext tracing_context;
+    String error;
+    ASSERT_TRUE(tracing_context.parseTraceparentHeader("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", error)) << error;
+
+    {
+        DB::OpenTelemetry::TracingContextHolder tracing_context_holder(
+            "IOTestAwsS3Client::OpenTelemetryTraceContextOverridesExistingTraceHeaders",
+            tracing_context,
+            std::weak_ptr<DB::OpenTelemetrySpanLog>{});
+
+        const auto expected_traceparent = DB::OpenTelemetry::CurrentContext().composeTraceparentHeader();
+        doReadRequest(client, uri);
+
+        const auto & headers = http.getLastRequestHeader();
+        ASSERT_TRUE(headers.has("traceparent"));
+        EXPECT_EQ(headers.get("traceparent"), expected_traceparent);
+        EXPECT_FALSE(headers.has("tracestate"));
+    }
 }
 
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)

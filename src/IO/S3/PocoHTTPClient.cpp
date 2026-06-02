@@ -1,6 +1,7 @@
 #include <Poco/Timespan.h>
 #include <Poco/Net/NetException.h>
 #include <Common/NetException.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/config_version.h>
 #include "config.h"
 
@@ -109,6 +110,25 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
     if (!response.has("x-amz-bucket-region"))
         return false;
     return !response.get("x-amz-bucket-region").empty();
+}
+
+namespace
+{
+
+void addOpenTelemetryTraceContextHeaders(Poco::Net::HTTPRequest & request)
+{
+    const auto & current_trace_context = OpenTelemetry::CurrentContext();
+    if (!current_trace_context.isTraceEnabled())
+        return;
+
+    request.set("traceparent", current_trace_context.composeTraceparentHeader());
+
+    if (!current_trace_context.tracestate.empty())
+        request.set("tracestate", current_trace_context.tracestate);
+    else
+        request.erase("tracestate");
+}
+
 }
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
@@ -609,6 +629,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
                 }
             }
+            addOpenTelemetryTraceContextHeaders(poco_request);
 
             Poco::Net::HTTPResponse poco_response;
             poco_response.setFieldLimit(static_cast<int>(http_max_fields));

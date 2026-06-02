@@ -6,6 +6,7 @@
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Throttler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -129,6 +130,20 @@ private:
         return static_cast<size_t>(stream.gcount());
     }
 };
+
+void addOpenTelemetryTraceContextHeaders(Poco::Net::HTTPRequest & request)
+{
+    const auto & current_trace_context = OpenTelemetry::CurrentContext();
+    if (!current_trace_context.isTraceEnabled())
+        return;
+
+    request.set("traceparent", current_trace_context.composeTraceparentHeader());
+
+    if (!current_trace_context.tracestate.empty())
+        request.set("tracestate", current_trace_context.tracestate);
+    else
+        request.erase("tracestate");
+}
 
 }
 
@@ -347,6 +362,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             if (!header.value.empty())  // Skip empty headers
                 poco_request.set(header.name, header.value);
         }
+        addOpenTelemetryTraceContextHeaders(poco_request);
 
         if (method == "GET" || method == "HEAD")
             request_throttler.throttleHTTPGet();
