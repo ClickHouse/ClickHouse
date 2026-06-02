@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 replica1 = cluster.add_instance(
     "replica1",
     with_zookeeper=True,
+    stay_alive=True,
     main_configs=["configs/remote_servers.xml"],
     macros={"replica": "replica1"},
 )
@@ -513,6 +514,7 @@ def test_drop_detached_with_undrop(start_cluster):
     replica1.query(
         f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name}"
     )
+    replica1.restart_clickhouse(kill=True)
 
     error = replica1.query_and_get_error(f"UNDROP TABLE {table_name}", timeout=10)
     assert "dropped as DETACHED" in error

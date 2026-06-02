@@ -1217,7 +1217,13 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
-    std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
+    struct DroppedMetadataInfo
+    {
+        StorageID storage_id;
+        DiskPtr db_disk;
+        bool drop_as_detached = false;
+    };
+    std::map<String, DroppedMetadataInfo> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
     auto db_map = getDatabases(GetDatabasesOptions{.with_remote_databases = true});
@@ -1271,7 +1277,24 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
-            dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
+            /// `DROP DETACHED TABLE` uses a UUID-only marker near dropped metadata. The old detached flag can also be left near the
+            /// original metadata path if server restarted after moving metadata but before creating the new marker.
+            bool has_old_detached_flag = false;
+            if (auto database = tryGetDatabase(dropped_id.getDatabaseName()))
+            {
+                try
+                {
+                    auto metadata_path = getPathForMetadata(dropped_id);
+                    has_old_detached_flag = db_disk->existsFileOrDirectory(DatabaseOnDisk::getDetachedPermanentlyFlagPath(metadata_path));
+                }
+                // NOLINTNEXTLINE(bugprone-empty-catch)
+                catch (...)
+                {
+                    // Database may not exist anymore, ignore
+                }
+            }
+            bool drop_as_detached = db_disk->existsFileOrDirectory(getPathForDetachedDropFlag(dropped_id)) || has_old_detached_flag;
+            dropped_metadata.emplace(std::move(full_path), DroppedMetadataInfo{std::move(dropped_id), db_disk, drop_as_detached});
         }
     }
 
@@ -1284,9 +1307,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     for (const auto & elem : dropped_metadata)
     {
         auto full_path = elem.first;
-        auto storage_id = elem.second.first;
-        auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        auto storage_id = elem.second.storage_id;
+        auto db_disk = elem.second.db_disk;
+        auto drop_as_detached = elem.second.drop_as_detached;
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk, drop_as_detached]()
+                                   { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, drop_as_detached); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1299,6 +1324,11 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
                escapeForFileName(table_id.getDatabaseName()),
                escapeForFileName(table_id.getTableName()),
                toString(table_id.uuid));
+}
+
+String DatabaseCatalog::getPathForDetachedDropFlag(const StorageID & table_id) const
+{
+    return fs::path("metadata_dropped") / fmt::format("{}.detached", toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1689,6 +1719,17 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
+    db_disk->removeFileIfExists(getPathForDetachedDropFlag(table.table_id));
+    try
+    {
+        auto metadata_path = getPathForMetadata(table.table_id);
+        db_disk->removeFileIfExists(DatabaseOnDisk::getDetachedPermanentlyFlagPath(metadata_path));
+    }
+    // NOLINTNEXTLINE(bugprone-empty-catch)
+    catch (...)
+    {
+        // Database may not exist anymore, ignore
+    }
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

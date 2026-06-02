@@ -6,5 +6,5 @@
 namespace DB
 {
 
-size_t computeMaxTableNameLength(const String & database_name, ContextPtr context, bool allow_experimental_drop_detached_table);
+size_t computeMaxTableNameLength(const String & database_name, ContextPtr context);
 }

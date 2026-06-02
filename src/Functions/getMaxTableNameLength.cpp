@@ -2,7 +2,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -21,21 +20,13 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-namespace Setting
-{
-extern const SettingsBool allow_experimental_drop_detached_table;
-}
-
 class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_); }
 
-    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr context_)
-        : allow_experimental_drop_detached_table(context_->getSettingsRef()[Setting::allow_experimental_drop_detached_table])
-    {
-    }
+    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr) { }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -70,13 +61,11 @@ public:
         if (database_name.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect name for a database. It shouldn't be empty");
 
-        allowed_max_length
-            = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance(), allow_experimental_drop_detached_table);
+        allowed_max_length = computeMaxTableNameLength(database_name, Context::getGlobalContextInstance());
         return DataTypeUInt64().createColumnConst(input_rows_count, allowed_max_length);
     }
 
 private:
-    const bool allow_experimental_drop_detached_table;
     const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column) const
     {
         if (const auto * col = checkAndGetColumnConst<ColumnString>(column))
