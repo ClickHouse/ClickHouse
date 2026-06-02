@@ -113,31 +113,29 @@ enum class TextIndexPostingsCacheKind : UInt8
 };
 
 /// A single cell of TextIndexPostingsCache. It holds exactly one of:
-///   - PostingList:           a decoded Roaring bitmap of one posting-list block (eager / materialize path);
-///   - PaddedPODArray<UInt32>: a flattened sorted array of analyzer-folded postings (lazy "prebuilt" cursor);
-///   - PostingListSegment:    a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
-/// All payloads are stored by value: the cache already hands out a shared_ptr to the cell, so consumers
-/// that must outlive a cache eviction keep the data alive with an aliasing shared_ptr into the cell (see
-/// `MergeTreeIndexGranuleText::readPostingsBlock` and the lazy cursors) rather than a second, nested
-/// shared_ptr — avoiding the extra heap allocation and level of indirection.
+///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block (eager / materialize path);
+///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (lazy "prebuilt" cursor);
+///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
+/// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
+/// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
 struct TextIndexPostingsCacheCell
 {
-    explicit TextIndexPostingsCacheCell(PostingList postings)
+    explicit TextIndexPostingsCacheCell(PostingListPtr postings)
         : value(std::move(postings))
     {
     }
 
-    explicit TextIndexPostingsCacheCell(PaddedPODArray<UInt32> flat)
+    explicit TextIndexPostingsCacheCell(FlatPostingsPtr flat)
         : value(std::move(flat))
     {
     }
 
-    explicit TextIndexPostingsCacheCell(PostingListSegment segment)
+    explicit TextIndexPostingsCacheCell(PostingListSegmentPtr segment)
         : value(std::move(segment))
     {
     }
 
-    std::variant<PostingList, PaddedPODArray<UInt32>, PostingListSegment> value;
+    std::variant<PostingListPtr, FlatPostingsPtr, PostingListSegmentPtr> value;
 };
 
 /// Estimate of the memory usage (bytes) of a posting cache cell
@@ -149,12 +147,15 @@ struct TextIndexPostingsWeightFunction
         {
             using T = std::decay_t<decltype(payload)>;
 
-            if constexpr (std::is_same_v<T, PostingList>)
-                return payload.getSizeInBytes();
-            else if constexpr (std::is_same_v<T, PaddedPODArray<UInt32>>)
-                return payload.allocated_bytes();
-            else if constexpr (std::is_same_v<T, PostingListSegment>)
-                return payload.bytesAllocated();
+            if (!payload)
+                return 0;
+
+            if constexpr (std::is_same_v<T, PostingListPtr>)
+                return payload->getSizeInBytes();
+            else if constexpr (std::is_same_v<T, FlatPostingsPtr>)
+                return payload->allocated_bytes();
+            else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
+                return payload->bytesAllocated();
             else
                 static_assert(false, "Unhandled variant type");
         }, cell.value);

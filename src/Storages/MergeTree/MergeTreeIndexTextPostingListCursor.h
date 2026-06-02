@@ -47,11 +47,11 @@ class PostingListCursor
 {
 public:
     /// Compressed posting list: state lives in `.pst` and is decoded lazily.
-    /// Decoded segments are memoized in `postings_cache_` (keyed by `index_id_` and the segment's byte
-    /// offset) and shared across all per-task cursors and queries, avoiding redundant per-task segment
-    /// reads/parsing under parallel reads. The cache is always available — the text-index condition
-    /// creates a per-query one when the global cache is disabled.
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache & postings_cache_, const String & index_id_ = {});
+    /// When `postings_cache_` is set, decoded segments are memoized in it (keyed by `index_id_` and the
+    /// segment's byte offset) and shared across all per-task cursors and queries, avoiding redundant
+    /// per-task segment reads/parsing under parallel reads. Pass `nullptr` to decode each segment
+    /// directly for this cursor without caching.
+    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_ = nullptr, const String & index_id_ = {});
 
     /// Fully-materialized posting list backed by a pre-flattened, shared, immutable sorted array.
     /// Used both for the analyzer-folded postings of eagerly-read tokens and for any postings the
@@ -128,8 +128,9 @@ private:
     const TokenPostingsInfo * info = nullptr;
 
     /// Bounded cache used to memoize decoded segments across per-task cursors (and queries, when the
-    /// global cache is enabled). Set for compressed cursors via the stream constructor; stays null for
-    /// shared-array cursors, which never read segments (`prepareSegment` returns early for `is_embedded`).
+    /// global cache is enabled). Optional: when null, a compressed cursor decodes each segment directly
+    /// instead of going through the cache. Always null for shared-array cursors, which never read
+    /// segments (`prepareSegment` returns early for `is_embedded`).
     TextIndexPostingsCache * postings_cache = nullptr;
     /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
     String index_id;
@@ -159,25 +160,16 @@ private:
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
-    /// Per-segment packed block layout (recomputed in `prepareSegment`).
-    size_t block_count = 0;              /// Total packed blocks, including the tail block.
+    /// Packed-block iteration state within the current segment. The segment's own layout — block
+    /// count, tail size, per-block index and payload — is read directly from `current_segment`.
     size_t current_block = 0;            /// Index of the packed block being iterated.
-    size_t tail_size = 0;                /// Element count of the tail block (< BLOCK_SIZE), 0 if aligned.
-    UInt32 segment_doc_count = 0;        /// Total doc count in the current segment.
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
-    UInt32 segment_first_row_id = 0;     /// First row_id of the current segment (for delta base).
 
-    /// Decoded data of the current segment. Owned by the shared `TextIndexPostingsCache` (or by the
-    /// cursor itself when no cache is available); held here to keep it alive while the views below
-    /// point at it. Surviving cache eviction is intentional — an in-flight cursor stays valid.
-    PostingListSegmentPtr current_segment_data;
-
-    /// Non-owning views into `current_segment_data`, refreshed in `prepareSegment`.
-    ///   block_last_row_ids / block_offsets — packed block index, enabling O(log N) advance.
-    ///   payload_buffer — bulk-loaded segment payload; `decodeBlock` works from memory.
-    std::span<const UInt32> block_last_row_ids;
-    std::span<const UInt64> block_offsets;
-    std::span<const uint8_t> payload_buffer;
+    /// Decoded data of the current segment, read directly wherever the segment layout is needed.
+    /// Owned by the shared `TextIndexPostingsCache` (or by the cursor itself when no cache is
+    /// available); held here to keep it alive for the cursor's lifetime. Surviving cache eviction
+    /// is intentional — an in-flight cursor stays valid.
+    PostingListSegmentPtr current_segment;
 
     /// Segment iteration state.
     size_t current_segment_idx = 0;

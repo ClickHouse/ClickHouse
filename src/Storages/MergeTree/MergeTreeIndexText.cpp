@@ -669,13 +669,14 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
         auto postings = postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
-        return std::make_shared<TextIndexPostingsCacheCell>(std::move(*postings));
+        return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
     auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx]);
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
-    /// Alias the cell so the returned pointer keeps the cache cell alive but exposes the inner bitmap.
-    return PostingListPtr(cell, &std::get<PostingList>(cell->value));
+    /// The bitmap is itself shared_ptr-held, so return it directly — it stays alive independently
+    /// of the cache cell once the cell is evicted.
+    return std::get<PostingListPtr>(cell->value);
 }
 
 void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state)

@@ -1,12 +1,8 @@
 #pragma once
-
 #include <base/types.h>
-
 #include <Common/PODArray.h>
-
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 namespace DB
 {
@@ -23,18 +19,16 @@ namespace DB
 struct PostingListSegment
 {
     /// Bulk-loaded compressed payload of the segment: bytes [header_end, index_section_start).
-    std::vector<uint8_t> payload_buffer;
+    PaddedPODArray<uint8_t> payload_buffer;
 
     /// Per-packed-block index (parallel arrays), enabling O(log N) advance within the segment:
-    ///   block_last_row_ids[j] — last row_id of packed block j
-    ///   block_offsets[j]      — byte offset of packed block j within `payload_buffer`
-    std::vector<UInt32> block_last_row_ids;
-    std::vector<UInt64> block_offsets;
+    PaddedPODArray<UInt32> block_last_row_ids; // last row_id of packed block j
+    PaddedPODArray<UInt64> block_offsets; // byte offset of packed block j within payload_buffer
 
     /// Total doc count in this segment.
-    UInt32 segment_doc_count = 0;
+    UInt32 doc_count = 0;
     /// First row_id of the segment (delta base for the first block).
-    UInt32 segment_first_row_id = 0;
+    UInt32 first_row_id = 0;
     /// Total packed blocks, including the (possibly shorter) tail block.
     size_t block_count = 0;
     /// Element count of the tail block (< BLOCK_SIZE), 0 if the segment is block-aligned.
@@ -42,18 +36,15 @@ struct PostingListSegment
 
     size_t bytesAllocated() const
     {
-        return payload_buffer.capacity() * sizeof(uint8_t)
-            + block_last_row_ids.capacity() * sizeof(UInt32)
-            + block_offsets.capacity() * sizeof(UInt64);
+        return sizeof(*this)
+            + payload_buffer.allocated_bytes()
+            + block_last_row_ids.allocated_bytes()
+            + block_offsets.allocated_bytes();
     }
 };
 
 using PostingListSegmentPtr = std::shared_ptr<const PostingListSegment>;
-
-/// A flattened, sorted array of posting list row ids. Used to back the lazy "prebuilt" cursor over
-/// the analyzer-folded postings of eagerly-read tokens (built once via `toUint32Array`, then shared).
-/// `PaddedPODArray` (not `std::vector`) so the cursor's vectorized linear scans may over-read past the
-/// last element into the trailing SIMD padding without a separate bounds guard.
+/// A flattened, sorted array of posting list row ids.
 using FlatPostingsPtr = std::shared_ptr<const PaddedPODArray<UInt32>>;
 
 }

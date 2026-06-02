@@ -284,7 +284,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     if (!data.cache)
         data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info, *data.cache);
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
 }
 
 } // anonymous namespace
@@ -477,7 +477,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, *data.cache);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);

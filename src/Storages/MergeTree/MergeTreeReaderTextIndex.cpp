@@ -309,7 +309,7 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    auto & postings_cache = *condition_text.postingsCache();
+    auto * postings_cache = condition_text.postingsCache().get();
     const auto & index_id = granule->getIndexIdForCaches();
 
     auto stream_it = large_postings_streams.find(token);
@@ -718,14 +718,14 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
 
             auto cell = condition_text.postingsCache()->getOrSet(key, [&]
             {
-                PaddedPODArray<UInt32> flat(query_builder.postings->cardinality());
-                query_builder.postings->toUint32Array(flat.data());
-                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
+                auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
+                query_builder.postings->toUint32Array(flat->data());
+                return std::make_shared<TextIndexPostingsCacheCell>(FlatPostingsPtr(std::move(flat)));
             });
 
-            /// Alias the cell so the cursor keeps it alive but views the inner flattened array directly,
-            /// without a second heap allocation or level of indirection.
-            auto flat_postings = FlatPostingsPtr(cell, &std::get<PaddedPODArray<UInt32>>(cell->value));
+            /// The flattened array is itself shared_ptr-held, so copy it out directly — it stays alive
+            /// independently of the cache cell once the cell is evicted.
+            auto flat_postings = std::get<FlatPostingsPtr>(cell->value);
 
             /// The flattened array is sorted and self-describing (cardinality, range, density all
             /// derive from it), so the cursor needs no separate `TokenPostingsInfo`.
