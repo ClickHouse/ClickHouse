@@ -13,6 +13,7 @@ endpoint to verify that credential-less user SQL does not inherit top-level
 server credentials or environment credentials.
 """
 
+import json
 import os
 import uuid
 
@@ -42,6 +43,7 @@ def started_cluster():
     try:
         cluster.start()
         prepare_s3_bucket(cluster)
+        _allow_public_delete_from_minio_bucket()
         script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
         start_mock_servers(cluster, script_dir, [("credential_echo.py", "resolver", "18080")])
         yield cluster
@@ -111,6 +113,20 @@ def _remove_minio_prefix(prefix):
     for obj in cluster.minio_client.list_objects(cluster.minio_bucket, prefix, recursive=True):
         if obj.object_name is not None:
             cluster.minio_client.remove_object(cluster.minio_bucket, obj.object_name)
+
+
+def _allow_public_delete_from_minio_bucket():
+    policy = json.loads(cluster.minio_client.get_bucket_policy(cluster.minio_bucket))
+    policy["Statement"].append(
+        {
+            "Sid": "",
+            "Effect": "Allow",
+            "Principal": {"AWS": "*"},
+            "Action": "s3:DeleteObject",
+            "Resource": "arn:aws:s3:::root/*",
+        }
+    )
+    cluster.minio_client.set_bucket_policy(cluster.minio_bucket, json.dumps(policy))
 
 
 def test_s3_table_function_role_arn_does_not_inherit_admin_keys():
