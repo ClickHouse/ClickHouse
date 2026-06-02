@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
@@ -159,23 +160,6 @@ private:
             function_name);
     }
 
-    static UInt64 readVarint(const char *& pos, const char * end)
-    {
-        UInt64 result = 0;
-        int shift = 0;
-        while (true)
-        {
-            if (pos >= end || shift >= 64)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated varint");
-            const unsigned char byte = static_cast<unsigned char>(*pos++);
-            result |= static_cast<UInt64>(byte & 0x7F) << shift;
-            if (!(byte & 0x80))
-                break;
-            shift += 7;
-        }
-        return result;
-    }
-
     /// Render one property value as the body of an MVT `Value` message into `out`.
     void renderValue(const MvtProperty & property, const IColumn & column, size_t row, String & out) const
     {
@@ -194,7 +178,7 @@ private:
                 MVT::writeDoubleField(out, 3, column.getFloat64(row));
                 return;
             case MvtValueKind::Sint:
-                MVT::writeVarintField(out, 6, MVT::zigzag(column.getInt(row)));
+                MVT::writeVarintField(out, 6, encodeZigZag(column.getInt(row)));
                 return;
             case MvtValueKind::UInt:
                 MVT::writeVarintField(out, 5, column.getUInt(row));
@@ -255,15 +239,15 @@ private:
         if (points.size() < 2)
             return;
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-        MVT::writeVarint(out, MVT::zigzag(points[0].first - cursor_x));
-        MVT::writeVarint(out, MVT::zigzag(points[0].second - cursor_y));
+        MVT::writeVarint(out, encodeZigZag(points[0].first - cursor_x));
+        MVT::writeVarint(out, encodeZigZag(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
         MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
-            MVT::writeVarint(out, MVT::zigzag(points[i].first - cursor_x));
-            MVT::writeVarint(out, MVT::zigzag(points[i].second - cursor_y));
+            MVT::writeVarint(out, encodeZigZag(points[i].first - cursor_x));
+            MVT::writeVarint(out, encodeZigZag(points[i].second - cursor_y));
             cursor_x = points[i].first;
             cursor_y = points[i].second;
         }
@@ -295,15 +279,15 @@ private:
             std::reverse(points.begin(), points.end());
 
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-        MVT::writeVarint(out, MVT::zigzag(points[0].first - cursor_x));
-        MVT::writeVarint(out, MVT::zigzag(points[0].second - cursor_y));
+        MVT::writeVarint(out, encodeZigZag(points[0].first - cursor_x));
+        MVT::writeVarint(out, encodeZigZag(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
         MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
-            MVT::writeVarint(out, MVT::zigzag(points[i].first - cursor_x));
-            MVT::writeVarint(out, MVT::zigzag(points[i].second - cursor_y));
+            MVT::writeVarint(out, encodeZigZag(points[i].first - cursor_x));
+            MVT::writeVarint(out, encodeZigZag(points[i].second - cursor_y));
             cursor_x = points[i].first;
             cursor_y = points[i].second;
         }
@@ -331,8 +315,8 @@ private:
                 Int32 y = 0;
                 readPoint(geometry, x, y, getName());
                 MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-                MVT::writeVarint(out, MVT::zigzag(x));
-                MVT::writeVarint(out, MVT::zigzag(y));
+                MVT::writeVarint(out, encodeZigZag(x));
+                MVT::writeVarint(out, encodeZigZag(y));
                 return MvtGeomType::Point;
             }
             case GeoDisc::LineString:
@@ -515,7 +499,8 @@ public:
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated feature");
             const UInt8 geometry_type = static_cast<UInt8>(*pos++);
 
-            const UInt64 geometry_length = readVarint(pos, end);
+            UInt64 geometry_length = 0;
+            pos = readVarUInt(geometry_length, pos, end - pos);
             if (geometry_length > static_cast<UInt64>(end - pos))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted mvtEncode aggregate state: truncated geometry");
             std::string_view geometry(pos, geometry_length);
@@ -530,7 +515,8 @@ public:
                 if (!present)
                     continue;
 
-                const UInt64 length = readVarint(pos, end);
+                UInt64 length = 0;
+                pos = readVarUInt(length, pos, end - pos);
                 /// Compare sizes rather than pointers: `length` is read from the (possibly corrupted) state and could
                 /// be huge, so `pos + length` would overflow the pointer and the check could be bypassed.
                 if (length > static_cast<UInt64>(end - pos))

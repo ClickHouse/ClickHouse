@@ -1,10 +1,11 @@
 #pragma once
 
-#include <cstring>
 #include <string>
 #include <string_view>
 
 #include <base/types.h>
+#include <base/unaligned.h>
+#include <IO/VarInt.h>
 
 
 /// Minimal writers for the protobuf wire format used by the Mapbox Vector Tile (MVT) specification:
@@ -27,21 +28,13 @@ enum class WireType : UInt32
     Fixed32 = 5,
 };
 
-/// Append an unsigned integer as a protobuf base-128 varint.
+/// Append an unsigned integer as a protobuf base-128 varint, which is the same encoding as ClickHouse's `VarUInt`
+/// (signed zigzag values use `encodeZigZag` from `IO/VarInt.h`).
 inline void writeVarint(std::string & out, UInt64 value)
 {
-    while (value >= 0x80)
-    {
-        out.push_back(static_cast<char>((value & 0x7F) | 0x80));
-        value >>= 7;
-    }
-    out.push_back(static_cast<char>(value));
-}
-
-/// Zigzag-encode a signed integer so that small-magnitude negative values stay small after varint encoding.
-inline UInt64 zigzag(Int64 value)
-{
-    return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63);
+    char buf[10]; /// a 64-bit varint is at most 10 bytes
+    char * end = writeVarUInt(value, buf);
+    out.append(buf, end - buf);
 }
 
 /// Field key: (field_number << 3) | wire_type.
@@ -69,20 +62,18 @@ inline void writeLengthDelimitedField(std::string & out, UInt32 field_number, st
 inline void writeFloatField(std::string & out, UInt32 field_number, Float32 value)
 {
     writeTag(out, field_number, WireType::Fixed32);
-    UInt32 bits = 0;
-    memcpy(&bits, &value, sizeof(bits));
-    for (size_t i = 0; i < sizeof(bits); ++i)
-        out.push_back(static_cast<char>((bits >> (8 * i)) & 0xFF));
+    char buf[sizeof(value)];
+    unalignedStoreLittleEndian<Float32>(buf, value);
+    out.append(buf, sizeof(buf));
 }
 
 /// 64-bit fixed field (wire type 1) carrying a little-endian double.
 inline void writeDoubleField(std::string & out, UInt32 field_number, Float64 value)
 {
     writeTag(out, field_number, WireType::Fixed64);
-    UInt64 bits = 0;
-    memcpy(&bits, &value, sizeof(bits));
-    for (size_t i = 0; i < sizeof(bits); ++i)
-        out.push_back(static_cast<char>((bits >> (8 * i)) & 0xFF));
+    char buf[sizeof(value)];
+    unalignedStoreLittleEndian<Float64>(buf, value);
+    out.append(buf, sizeof(buf));
 }
 
 }
