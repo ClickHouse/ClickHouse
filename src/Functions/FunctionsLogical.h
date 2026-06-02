@@ -227,6 +227,18 @@ public:
         return "(A1 : NativeNumber, ...) -> selectIf(anyBool(A1, ...), Bool, UInt8)";
     }
 
+    /// The declarative signature is documentation-only: its repeated group `(A1 : ..., ...)` matches
+    /// a single argument (the ellipsis can repeat zero times), but `and`/`or`/`xor` require at least
+    /// two operands. Keep the legacy `getReturnTypeImpl(DataTypes)` authoritative so the arity check
+    /// (`TOO_FEW_ARGUMENTS_FOR_FUNCTION`) and the result type are preserved.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

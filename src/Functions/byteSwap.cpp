@@ -38,7 +38,10 @@ struct ByteSwapImpl
 {
     using ResultType = T;
     static constexpr const bool allow_string_or_fixed_string = false;
-    static constexpr auto signature = "(A : Integer) -> A";
+    /// Documentation-only: the legacy `getReturnTypeImpl(DataTypes)` stays authoritative so that
+    /// floating-point arguments reach execution and throw `NOT_IMPLEMENTED` as before, instead of
+    /// being rejected at analysis time.
+    static constexpr auto signature_documentation = "(A : Integer) -> A";
     static T apply(T x) { return byteSwap<T>(x); }
 
 #if USE_EMBEDDED_COMPILER

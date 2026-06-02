@@ -42,7 +42,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(StringOrFixedString, ...) -> String";
+        return "(StringOrFixedString, [Any], ...) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

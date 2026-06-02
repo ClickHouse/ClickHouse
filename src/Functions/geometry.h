@@ -215,6 +215,17 @@ public:
         return "(Any) -> Float64";
     }
 
+    /// The `(Any)` signature is documentation-only: the DSL cannot express "must be a Geometry
+    /// (or a custom Variant) type", so keep the legacy `getReturnTypeImpl(DataTypes)` authoritative
+    /// to reject non-geometry arguments at analysis time instead of failing later in execution.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments[0]->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(arguments[0]))

@@ -121,8 +121,8 @@ namespace
                 if (auto resolver = factory.tryGet(name, context))
                 {
                     signature = resolver->getSignatureString();
-                    res_columns[15]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
-                    res_columns[16]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
                     inserted_function_flags = true;
                 }
             }
@@ -138,12 +138,12 @@ namespace
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
             }
         }
-        res_columns[14]->insert(signature);
         if (!inserted_function_flags)
         {
+            res_columns[14]->insertDefault();
             res_columns[15]->insertDefault();
-            res_columns[16]->insertDefault();
         }
+        res_columns[16]->insert(signature);
     }
 
 }
@@ -177,11 +177,11 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
         {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
-        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."},
         {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
         {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
-            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."},
+        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
     };
 }
 
@@ -287,9 +287,9 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[11]->insertDefault(); // examples
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
-        res_columns[14]->insertDefault(); // signature
-        res_columns[15]->insertDefault(); // is_deterministic
-        res_columns[16]->insert(UInt8{0}); // higher_order
+        res_columns[14]->insertDefault(); // is_deterministic
+        res_columns[15]->insert(UInt8{0}); // higher_order
+        res_columns[16]->insertDefault(); // signature
     }
 }
 

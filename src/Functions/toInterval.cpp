@@ -87,7 +87,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(Number, const unit String) -> IntervalType(unit)";
+        return "(Number | String, const unit String) -> IntervalType(unit)";
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override

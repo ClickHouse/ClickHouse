@@ -40,7 +40,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(UInt8) -> Array(String)";
+        return "(Bool) -> Array(String)";
     }
 
     bool isDeterministic() const override { return false; }

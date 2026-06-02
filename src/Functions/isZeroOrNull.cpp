@@ -43,7 +43,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(MaybeNullable(Number | Nothing)) -> UInt8";
+        return "(MaybeNullable(Number | IsNothing)) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

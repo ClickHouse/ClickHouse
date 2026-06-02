@@ -54,7 +54,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String) -> UInt8";
+        return "(StringOrFixedString) -> UInt8";
     }
 
     bool useDefaultImplementationForConstants() const override
