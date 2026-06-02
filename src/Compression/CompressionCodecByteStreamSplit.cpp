@@ -881,4 +881,9 @@ void registerCodecByteStreamSplit(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("ByteStreamSplit", method_code, codec_builder);
 }
 
+CompressionCodecPtr getCompressionCodecByteStreamSplit(UInt8 element_bytes_size)
+{
+    return std::make_shared<CompressionCodecByteStreamSplit>(static_cast<Int32>(element_bytes_size));
+}
+
 }
