@@ -1511,6 +1511,37 @@ void StatementGenerator::generateEngineDetails(
 
             sv->set_property("mode");
             sv->set_value(fmt::format("'{}ordered'", rg.nextBool() ? "un" : ""));
+
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// cleanup_interval_min_ms must be <= cleanup_interval_max_ms
+                const uint32_t min_ms = static_cast<uint32_t>(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16384));
+                const uint32_t max_ms = min_ms + static_cast<uint32_t>(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 16384));
+                SetValue * sv_min = svs->add_other_values();
+                sv_min->set_property("cleanup_interval_min_ms");
+                sv_min->set_value(std::to_string(min_ms));
+                SetValue * sv_max = svs->add_other_values();
+                sv_max->set_property("cleanup_interval_max_ms");
+                sv_max->set_value(std::to_string(max_ms));
+            }
+        }
+        if (b.isDistributedEngine() && rg.nextSmallNumber() < 3)
+        {
+            /// bytes_to_throw_insert must be > bytes_to_delay_insert when both
+            /// are nonzero, so generate them as a coordinated pair.
+            SettingValues * svs = te->mutable_setting_values();
+            const uint64_t delay_bytes = rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024));
+            SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+            sv->set_property("bytes_to_delay_insert");
+            sv->set_value(std::to_string(delay_bytes));
+            if (delay_bytes > 0 && rg.nextBool())
+            {
+                const uint64_t throw_bytes
+                    = delay_bytes + 1 + rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024));
+                SetValue * sv2 = svs->add_other_values();
+                sv2->set_property("bytes_to_throw_insert");
+                sv2->set_value(std::to_string(throw_bytes));
+            }
         }
         const bool smt_disk = (b.isShared() && fc.set_smt_disk);
         SettingValues * svs = te->has_setting_values() ? te->mutable_setting_values() : nullptr;

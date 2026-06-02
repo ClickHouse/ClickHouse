@@ -2268,11 +2268,6 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_json_infer_array_of_dynamic_from_array_of_different_types", trueOrFalseSettingNoOracle},
          {"input_format_json_map_as_array_of_tuples", trueOrFalseSettingNoOracle},
          {"input_format_json_max_depth", CHSetting(rowsRange, {}, false)},
-         {"input_format_max_block_wait_ms",
-          CHSetting(
-              [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 5000)); },
-              {},
-              false)},
          {"input_format_max_rows_to_read_for_schema_inference", CHSetting(rowsRange, {}, false)},
          {"input_format_max_bytes_to_read_for_schema_inference", CHSetting(bytesRange, {}, false)},
          {"input_format_msgpack_number_of_columns",

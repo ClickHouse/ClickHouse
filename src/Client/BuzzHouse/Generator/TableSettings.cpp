@@ -877,12 +877,10 @@ static std::unordered_map<String, CHSetting> fileTableSettings
 static std::unordered_map<String, CHSetting> distributedTableSettings
     = {{"background_insert_batch", trueOrFalseSetting},
        {"background_insert_split_batch_on_failure", trueOrFalseSetting},
-       {"bytes_to_delay_insert", bytesRangeSetting},
-       {"bytes_to_throw_insert", bytesRangeSetting},
        {"flush_on_detach", trueOrFalseSetting},
        {"fsync_after_insert", trueOrFalseSetting},
        {"fsync_directories", trueOrFalseSetting},
-       {"max_delay_to_insert", highRangeSetting},
+       {"max_delay_to_insert", highRangeNonZeroSetting},
        {"skip_unavailable_shards", trueOrFalseSetting}};
 
 static std::unordered_map<String, CHSetting> memoryTableSettings
@@ -1216,8 +1214,6 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
                 {"0", "1", "2", "8", "10", "100", "1000"},
                 false)},
-           {"cleanup_interval_max_ms", highRangeSetting},
-           {"cleanup_interval_min_ms", highRangeSetting},
            {"commit_on_select", trueOrFalseSettingNoOracle},
            {"deduplication_v2", trueOrFalseSettingNoOracle},
            {"enable_hash_ring_filtering", trueOrFalseSetting},
