@@ -49,6 +49,57 @@ struct L1Distance
         state.sum += other_state.sum;
     }
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
+
+        /// `abs(x - y)` = clear the sign bit (the mask -0.0 has only the sign bit set), then sum.
+        /// Four independent accumulators break the `add` dependency chain so the kernel is throughput-
+        /// rather than latency-bound: a single accumulator regresses on CPUs with deeper FP-add latency.
+        if constexpr (is_float32)
+        {
+            const __m512 sign = _mm512_set1_ps(-0.0f);
+            __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
+            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
+            {
+                a0 = _mm512_add_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x),         _mm512_loadu_ps(data_y + i_y))));
+                a1 = _mm512_add_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + n),     _mm512_loadu_ps(data_y + i_y + n))));
+                a2 = _mm512_add_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 2 * n), _mm512_loadu_ps(data_y + i_y + 2 * n))));
+                a3 = _mm512_add_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 3 * n), _mm512_loadu_ps(data_y + i_y + 3 * n))));
+            }
+            __m512 sums = _mm512_add_ps(_mm512_add_ps(a0, a1), _mm512_add_ps(a2, a3));
+            for (; i_x + n < i_max; i_x += n, i_y += n)
+                sums = _mm512_add_ps(sums, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x), _mm512_loadu_ps(data_y + i_y))));
+            state.sum = _mm512_reduce_add_ps(sums);
+        }
+        else
+        {
+            const __m512d sign = _mm512_set1_pd(-0.0);
+            __m512d a0 = _mm512_setzero_pd(), a1 = _mm512_setzero_pd(), a2 = _mm512_setzero_pd(), a3 = _mm512_setzero_pd();
+            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
+            {
+                a0 = _mm512_add_pd(a0, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x),         _mm512_loadu_pd(data_y + i_y))));
+                a1 = _mm512_add_pd(a1, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + n),     _mm512_loadu_pd(data_y + i_y + n))));
+                a2 = _mm512_add_pd(a2, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 2 * n), _mm512_loadu_pd(data_y + i_y + 2 * n))));
+                a3 = _mm512_add_pd(a3, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 3 * n), _mm512_loadu_pd(data_y + i_y + 3 * n))));
+            }
+            __m512d sums = _mm512_add_pd(_mm512_add_pd(a0, a1), _mm512_add_pd(a2, a3));
+            for (; i_x + n < i_max; i_x += n, i_y += n)
+                sums = _mm512_add_pd(sums, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x), _mm512_loadu_pd(data_y + i_y))));
+            state.sum = _mm512_reduce_add_pd(sums);
+        }
+    }
+#endif
+
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
@@ -229,6 +280,56 @@ struct LinfDistance
     {
         state.dist = std::fmax(state.dist, other_state.dist);
     }
+
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
+
+        /// `max(|x - y|)`. Four independent max-accumulators break the dependency chain (latency-bound
+        /// with one). `|x - y|` clears the sign bit; running maxima start at 0 (distances are non-negative).
+        if constexpr (is_float32)
+        {
+            const __m512 sign = _mm512_set1_ps(-0.0f);
+            __m512 a0 = _mm512_setzero_ps(), a1 = _mm512_setzero_ps(), a2 = _mm512_setzero_ps(), a3 = _mm512_setzero_ps();
+            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
+            {
+                a0 = _mm512_max_ps(a0, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x),         _mm512_loadu_ps(data_y + i_y))));
+                a1 = _mm512_max_ps(a1, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + n),     _mm512_loadu_ps(data_y + i_y + n))));
+                a2 = _mm512_max_ps(a2, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 2 * n), _mm512_loadu_ps(data_y + i_y + 2 * n))));
+                a3 = _mm512_max_ps(a3, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x + 3 * n), _mm512_loadu_ps(data_y + i_y + 3 * n))));
+            }
+            __m512 m = _mm512_max_ps(_mm512_max_ps(a0, a1), _mm512_max_ps(a2, a3));
+            for (; i_x + n < i_max; i_x += n, i_y += n)
+                m = _mm512_max_ps(m, _mm512_andnot_ps(sign, _mm512_sub_ps(_mm512_loadu_ps(data_x + i_x), _mm512_loadu_ps(data_y + i_y))));
+            state.dist = std::fmax(state.dist, _mm512_reduce_max_ps(m));
+        }
+        else
+        {
+            const __m512d sign = _mm512_set1_pd(-0.0);
+            __m512d a0 = _mm512_setzero_pd(), a1 = _mm512_setzero_pd(), a2 = _mm512_setzero_pd(), a3 = _mm512_setzero_pd();
+            for (; i_x + 4 * n < i_max; i_x += 4 * n, i_y += 4 * n)
+            {
+                a0 = _mm512_max_pd(a0, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x),         _mm512_loadu_pd(data_y + i_y))));
+                a1 = _mm512_max_pd(a1, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + n),     _mm512_loadu_pd(data_y + i_y + n))));
+                a2 = _mm512_max_pd(a2, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 2 * n), _mm512_loadu_pd(data_y + i_y + 2 * n))));
+                a3 = _mm512_max_pd(a3, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x + 3 * n), _mm512_loadu_pd(data_y + i_y + 3 * n))));
+            }
+            __m512d m = _mm512_max_pd(_mm512_max_pd(a0, a1), _mm512_max_pd(a2, a3));
+            for (; i_x + n < i_max; i_x += n, i_y += n)
+                m = _mm512_max_pd(m, _mm512_andnot_pd(sign, _mm512_sub_pd(_mm512_loadu_pd(data_x + i_x), _mm512_loadu_pd(data_y + i_y))));
+            state.dist = std::fmax(state.dist, _mm512_reduce_max_pd(m));
+        }
+    }
+#endif
 
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
@@ -607,7 +708,8 @@ private:
             /// - the most powerful SIMD instruction set (AVX-512).
             bool processed_with_simd = false;
 #if USE_MULTITARGET_CODE
-            if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
+            if constexpr (std::is_same_v<Kernel, L1Distance> || std::is_same_v<Kernel, LinfDistance>
+                       || std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
             {
                 if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
                            || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
@@ -620,10 +722,15 @@ private:
                 }
                 else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
                 {
-                    if (isArchSupported(TargetArch::x86_64_sapphirerapids))
+                    /// Only `L2`/`Cosine` provide a hand-tuned BFloat16 kernel; `L1`/`Linf` BFloat16 fall back
+                    /// to the generic path (a tuned BFloat16 kernel for them is left as a follow-up).
+                    if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
                     {
-                        Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                        processed_with_simd = true;
+                        if (isArchSupported(TargetArch::x86_64_sapphirerapids))
+                        {
+                            Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
+                            processed_with_simd = true;
+                        }
                     }
                 }
             }
