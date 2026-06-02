@@ -215,6 +215,7 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
 {
     if (!size && !elements)
     {
+        /// Create empty target EvictionInfo for each subqueue.
         auto info = probationary_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock);
         info->add(protected_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock));
         return info;

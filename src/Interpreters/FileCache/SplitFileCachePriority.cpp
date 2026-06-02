@@ -272,7 +272,6 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
-    /// Nothing to evict anywhere -> nothing to collect.
     if (!eviction_info.requiresEviction())
         return true;
 
