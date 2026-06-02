@@ -173,7 +173,7 @@ public:
     /// If credential-bearing settings came from SQL/catalog metadata, keep them
     /// static across config reloads. Endpoint-scoped credentials are trusted
     /// config and must remain refreshable/revocable.
-    bool has_user_or_catalog_credentials = true;
+    bool has_user_or_catalog_credentials = false;
 
     String biglake_adc_client_id;
     String biglake_adc_client_secret;
