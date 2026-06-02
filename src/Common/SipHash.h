@@ -107,11 +107,7 @@ public:
 
     ALWAYS_INLINE void update(const char * data, UInt64 size)
     {
-        /// An empty `std::string_view` (e.g. returned by `magic_enum::enum_name` for an
-        /// out-of-range enum value) has `data() == nullptr` and `size() == 0`. The
-        /// pointer-arithmetic below (e.g. `data + 8` in the unrolled loop) is undefined
-        /// behavior on a null pointer with a non-zero offset, even when the loop body
-        /// is never entered. Short-circuit here to keep the hash state untouched.
+        /// Avoid UB from `data + 8` arithmetic below when `data == nullptr`.
         if (size == 0)
             return;
 
