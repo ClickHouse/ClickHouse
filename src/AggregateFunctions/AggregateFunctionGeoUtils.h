@@ -176,6 +176,27 @@ inline void checkPolygonalStateBudget(size_t current_total, size_t adding, const
             MAX_POINTS_IN_POLYGONAL_STATE);
 }
 
+/// Recompute the total point count of a polygonal state from its normalized chunks and
+/// re-enforce the budget. `boost::geometry::correct` (run during deserialization and the
+/// add path) can append closing points that were not charged when the count was first
+/// accumulated, so the trusted in-memory count must be derived from the geometry itself.
+inline size_t recountPolygonalPointsAndCheck(
+    const std::vector<CartesianMultiPolygon> & chunks, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const char * function_name)
+{
+    size_t total = 0;
+    for (const auto & chunk : chunks)
+        total += countMultiPolygonPoints(chunk);
+    if (total > MAX_POINTS_IN_POLYGONAL_STATE)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: total points {} exceed the limit {} after normalization",
+            function_name,
+            total,
+            MAX_POINTS_IN_POLYGONAL_STATE);
+    return total;
+}
+
 inline void checkConvexHullStateBudget(size_t current_total, size_t adding, const char * function_name)
 {
     if (adding > MAX_POINTS_IN_CONVEX_HULL_STATE - current_total)
@@ -389,7 +410,17 @@ inline CartesianMultiPolygon fieldToMultiPolygon(const Field & field, GeometryCo
         case GeometryColumnType::Polygon: {
             auto poly = getPolygonFromField<CartesianPoint>(field);
             if (poly.outer().empty())
+            {
+                /// An empty outer ring is treated as an empty geometry, but only when the whole
+                /// polygon is empty. A polygon with an empty outer and non-empty inner rings is
+                /// malformed and must not bypass finite-coordinate / validity checks.
+                if (!poly.inners().empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Argument of aggregate function {} has a polygon with an empty outer ring but non-empty inner rings",
+                        function_name);
                 break;
+            }
             validateFinitePolygon(poly, function_name);
             boost::geometry::correct(poly);
             result.push_back(std::move(poly));
@@ -397,6 +428,12 @@ inline CartesianMultiPolygon fieldToMultiPolygon(const Field & field, GeometryCo
         }
         case GeometryColumnType::MultiPolygon: {
             result = getMultiPolygonFromField<CartesianPoint>(field);
+            for (const auto & poly : result)
+                if (poly.outer().empty() && !poly.inners().empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Argument of aggregate function {} has a polygon with an empty outer ring but non-empty inner rings",
+                        function_name);
             std::erase_if(result, [](const CartesianPolygon & p) { return p.outer().empty(); });
             for (auto & poly : result)
             {

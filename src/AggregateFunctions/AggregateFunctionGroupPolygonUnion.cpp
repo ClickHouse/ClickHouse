@@ -66,10 +66,20 @@ struct GroupPolygonUnionData
 
     void merge(const GroupPolygonUnionData & other, const char * function_name)
     {
-        checkPolygonalStateBudget(total_points, other.total_points, function_name);
-        total_points += other.total_points;
         chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
-        maybeReduce(function_name);
+        total_points += other.total_points;
+
+        /// The combined point count may exceed the budget only because identical or
+        /// overlapping polygons coming from two partial states have not been unioned yet.
+        /// Reduce first, then enforce the budget on the canonical (reduced) state, so a
+        /// valid result is not rejected merely because of the merge-tree shape.
+        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+        {
+            reduceChunksPairwiseUnion(chunks);
+            recountPoints(function_name);
+        }
+        else
+            maybeReduce(function_name);
     }
 
     void maybeReduce(const char * function_name)
@@ -98,11 +108,15 @@ struct GroupPolygonUnionData
         total_points = recomputed;
     }
 
-    CartesianMultiPolygon getResult()
+    CartesianMultiPolygon getResult(const char * function_name)
     {
         if (chunks.empty())
             return {};
         reduceChunksPairwiseUnion(chunks);
+        /// `insertResultInto` may be followed by further `add`/`merge`/`insertResultInto`
+        /// calls (for example in `runningAccumulate` or window execution), so keep
+        /// `total_points` consistent with the reduced `chunks` instead of leaving a stale count.
+        recountPoints(function_name);
         return chunks.empty() ? CartesianMultiPolygon{} : chunks[0];
     }
 };
@@ -198,12 +212,16 @@ public:
             chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), budget);
             validateDeserializedMultiPolygon(chunks[i], getName().c_str());
         }
-        data.total_points = budget.points;
+        /// `validateDeserializedMultiPolygon` runs `boost::geometry::correct`, which can append
+        /// closing points that were not charged against `budget.points`. Recount from the
+        /// normalized geometry and re-enforce the cap so an accepted state never exceeds the
+        /// limit that this same reader applies to serialized bytes.
+        data.total_points = recountPolygonalPointsAndCheck(chunks, getName().c_str());
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto result = AggregateFunctionGroupPolygonUnion::data(place).getResult();
+        auto result = AggregateFunctionGroupPolygonUnion::data(place).getResult(getName().c_str());
         insertMultiPolygonIntoColumn(result, to);
     }
 };
@@ -250,10 +268,13 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonUnion(
 
 }
 
+void registerAggregateFunctionGroupPolygonUnion(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupPolygonUnion(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Computes the union of all polygonal geometries in the group.
+
+Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
 
 For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
 

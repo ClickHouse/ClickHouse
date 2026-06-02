@@ -40,9 +40,26 @@ struct GroupConvexHullData
 
     void merge(const GroupConvexHullData & other, const char * function_name)
     {
-        checkConvexHullStateBudget(points.size(), other.points.size(), function_name);
         points.insert(points.end(), other.points.begin(), other.points.end());
-        maybeCompress();
+
+        /// Compress (recompute the hull) before enforcing the budget. Two partial states can
+        /// each be below the cap yet share the same large hull, so the combined point count
+        /// can exceed the cap only because the hulls have not been merged yet. Computing the
+        /// canonical hull first keeps a valid result from being rejected based on the
+        /// merge-tree shape; if the merged hull genuinely exceeds the cap, reject it.
+        if (points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
+        {
+            compress();
+            if (points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} state has too many points after compression: {} (limit {})",
+                    function_name,
+                    points.size(),
+                    MAX_POINTS_IN_CONVEX_HULL_STATE);
+        }
+        else
+            maybeCompress();
     }
 
     void compress()
@@ -314,10 +331,13 @@ AggregateFunctionPtr createAggregateFunctionGroupConvexHull(
 
 }
 
+void registerAggregateFunctionGroupConvexHull(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConvexHull(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
 Computes the convex hull of all geometries in the group.
+
+Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
 
 For `Point` arguments, each point is added directly.
 For `Ring`, `LineString`, and `MultiLineString`, all points are used.
