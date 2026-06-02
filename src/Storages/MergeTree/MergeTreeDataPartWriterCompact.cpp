@@ -5,6 +5,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -17,6 +18,12 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char compact_part_writer_fail_in_add_streams[];
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -88,11 +95,18 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        auto & stream = streams_by_codec[codec_id];
-        if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
+        /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
+        auto it = streams_by_codec.find(codec_id);
+        if (it == streams_by_codec.end())
+        {
+            fiu_do_on(FailPoints::compact_part_writer_fail_in_add_streams,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Compact part writer addStreams");
+            });
+            it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
+        }
 
-        compressed_streams.emplace(stream_name, stream);
+        compressed_streams.emplace(stream_name, it->second);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;

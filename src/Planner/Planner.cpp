@@ -97,6 +97,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -122,6 +123,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
@@ -1690,31 +1692,6 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     auto fake_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
 
-    /// Each call to collectSourceColumns will register column identifiers in the shared GlobalPlannerContext.
-    /// When multiple UNION branches share the same GlobalPlannerContext and each applies additional_result_filter,
-    /// the bare column names (e.g. "a") would collide. Give the fake table expression a unique alias
-    /// so that identifiers become unique (e.g. "_additional_result_filter_0.a").
-    /// Loop until we find an alias that does not collide with any existing identifiers,
-    /// so that even a user alias like "_additional_result_filter_0" cannot cause a conflict.
-    auto & global_context = planner_context->getGlobalPlannerContext();
-    std::string unique_alias;
-    while (true)
-    {
-        unique_alias = "_additional_result_filter_" + std::to_string(global_context->nextUniqueId());
-        bool has_collision = false;
-        for (const auto & column : query_node.getProjectionColumns())
-        {
-            if (global_context->hasColumnIdentifier(unique_alias + "." + column.name))
-            {
-                has_collision = true;
-                break;
-            }
-        }
-        if (!has_collision)
-            break;
-    }
-    fake_table_expression->setAlias(unique_alias);
-
     auto filter_info = buildFilterInfo(additional_result_filter_ast, fake_table_expression, planner_context, std::move(fake_name_set));
     if (!query_plan.isInitialized())
         return;
@@ -1988,6 +1965,26 @@ void Planner::buildPlanForQueryNode()
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
+    }
+
+    /// `additional_table_filters` keys are resolved against the initiator's session current database,
+    /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
+    /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
+    /// patch the match (which differs case by case), disable the combination on the analyzer path.
+    /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
+    /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
+    /// the combination works there and the check is skipped.
+    if (query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::serialize_query_plan]
+        && !settings[Setting::additional_table_filters].value.empty())
+    {
+        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query with additional_table_filters");
     }
 
     collectTableExpressionData(query_tree, planner_context);

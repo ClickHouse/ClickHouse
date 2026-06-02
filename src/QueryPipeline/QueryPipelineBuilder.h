@@ -92,9 +92,6 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
-    /// Will read from this stream after all data was read from other streams.
-    void addDelayedStream(ProcessorPtr source);
-
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
 

@@ -4419,6 +4419,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 Type::START_REPLICATED_VIEW,
                 Type::STOP_VIEW,
                 Type::STOP_REPLICATED_VIEW,
+                Type::PAUSE_VIEW,
                 Type::CANCEL_VIEW,
                 Type::WAIT_VIEW,
             };

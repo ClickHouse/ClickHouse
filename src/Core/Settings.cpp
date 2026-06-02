@@ -1570,6 +1570,27 @@ and you want FINAL to select the winning row before filtering. When disabled, PR
 Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
 be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
 )", 0) \
+    DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
+When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
+partition-key columns are not part of the sorting key. This is the correctness-safe behavior
+introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
+in different partitions, and partition pruning would silently exclude such rows from the
+deduplication input.
+
+When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
+behavior. This can be substantially faster for queries with `WHERE` predicates on the
+partition column, but is only correct when rows with the same primary key cannot exist
+in different partitions — e.g. event-log tables whose partition column is set at insert
+time and never changes.
+
+This setting only affects partitioned tables whose partition-key columns are not contained
+in the sorting key; for other tables partition pruning is always applied.
+
+Possible values:
+
+- 0 — Apply partition pruning before `FINAL` (pre-26.3 behavior, faster but unsafe in the general case).
+- 1 — Defer partition pruning to after `FINAL` (default, correctness-safe).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
@@ -2622,9 +2643,6 @@ The maximum size of the set in the right-hand side of the IN operator to use tab
 )", 0) \
     DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
 If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
-)", 0) \
-    DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
-Rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into the disjunction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are handled: the argument list is normalized like `coalesce` itself (`NULL` literals dropped, arguments after the first non-`Nullable` one dropped), and a trailing non-`NULL` constant, if any, is emitted as the final branch. The rewrite is strictly additive for index pruning; runtime filtering still uses the original predicate.
 )", 0) \
     DECLARE(Bool, joined_subquery_requires_alias, true, R"(
 Force joined subqueries and table functions to have aliases for correct name qualification.
@@ -6985,9 +7003,6 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
-    DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
-Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
-)", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 )", 0) \
@@ -7071,9 +7086,9 @@ Query Iceberg table using the snapshot that was current at a specific timestamp.
     DECLARE(Int64, iceberg_snapshot_id, 0, R"(
 Query Iceberg table using the specific snapshot id.
 )", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
+    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
+Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+)", 0, show_data_lake_catalogs_in_system_tables) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7225,11 +7240,6 @@ Parts virtually divided into segments to be distributed between replicas for par
 )", 0) \
     DECLARE(Bool, parallel_replicas_local_plan, true, R"(
 Build local plan for local replica
-)", 0) \
-    DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
-When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
-When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
-This allows queries with `max_parallel_replicas = 1` to be directed to another host, which can improve cache locality when many short queries are distributed across a cluster.
 )", 0) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
@@ -7625,6 +7635,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \

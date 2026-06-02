@@ -17,6 +17,7 @@ INSERT INTO t_right_neg VALUES (-2, 'r-2'), (0, 'r0'), (2, 'r2');
 
 SET join_algorithm = 'hash';
 SET enable_join_fixed_hash_table_conversion = 1;
+SET max_bytes_before_external_join = 0;
 
 -- Verify conversion for Int32
 SELECT '-- trigger check Int32';
