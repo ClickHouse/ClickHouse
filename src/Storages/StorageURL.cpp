@@ -490,7 +490,9 @@ Chunk StorageURLSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -504,7 +506,8 @@ Chunk StorageURLSource::generate()
                         ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
                         : std::nullopt,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
