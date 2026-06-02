@@ -71,12 +71,59 @@ def generate_cluster_def(port):
     return path
 
 
+def generate_cluster_def_no_native_copy(port):
+    # Legacy-form Azure disk that disables native copy, on a dedicated node.
+    path = os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "./_gen/no_native_copy.xml",
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(f"""<clickhouse>
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk_no_native_copy>
+                <type>azure_blob_storage</type>
+                <!-- Same connection string as the backup destination, so endpoint settings match. -->
+                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:{port}/devstoreaccount1;</connection_string>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <use_native_copy>false</use_native_copy>
+            </blob_storage_disk_no_native_copy>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <blob_storage_policy_no_native_copy>
+                <volumes>
+                    <main>
+                        <disk>blob_storage_disk_no_native_copy</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </blob_storage_policy_no_native_copy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+""")
+    return path
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         port = cluster.azurite_port
         path = generate_cluster_def(port)
+        cluster.add_instance(
+            "node_no_native_copy",
+            main_configs=[generate_cluster_def_no_native_copy(port)],
+            with_azurite=True,
+        )
         cluster.add_instance(
             "node",
             main_configs=[path],
@@ -434,10 +481,8 @@ def test_backup_restore_on_merge_tree(cluster):
 
 
 def test_backup_restore_native_copy_default(cluster):
-    # The `blob_storage_disk` in this test does NOT configure `use_native_copy`, so this
-    # verifies that Azure native copy is used by default (driven by `allow_azure_native_copy`,
-    # which defaults to true), without requiring a per-endpoint server config to enable it -
-    # matching the behavior of `allow_s3_native_copy` for S3.
+    # Native copy is used by default (allow_azure_native_copy defaults to true), and
+    # allow_azure_native_copy = 0 turns it off - no per-endpoint server config required.
     node = cluster.instances["node"]
     azure_query(
         node,
@@ -484,6 +529,37 @@ def test_backup_restore_native_copy_default(cluster):
     azure_query(node, f"DROP TABLE test_native_copy")
     azure_query(node, f"DROP TABLE test_native_copy_restored")
     azure_query(node, f"DROP TABLE test_native_copy_restored_no_native")
+
+
+def test_backup_restore_native_copy_disabled_by_disk_config(cluster):
+    # A disk's explicit use_native_copy = false wins over the default-on behavior.
+    node = cluster.instances["node_no_native_copy"]
+    azure_query(
+        node,
+        """
+        DROP TABLE IF EXISTS test_no_native_copy;
+        CREATE TABLE test_no_native_copy(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy_no_native_copy'
+        """,
+    )
+    azure_query(node, f"INSERT INTO test_no_native_copy VALUES (1, 'a')")
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(node, f"BACKUP TABLE test_no_native_copy TO {backup_destination}")
+    azure_query(node, f"DROP TABLE IF EXISTS test_no_native_copy_restored")
+
+    before = get_profile_event_count(node, "AzureCopyObject")
+    azure_query(
+        node,
+        f"RESTORE TABLE test_no_native_copy AS test_no_native_copy_restored FROM {backup_destination};",
+    )
+    after = get_profile_event_count(node, "AzureCopyObject")
+    assert (
+        after == before
+    ), "RESTORE must honor the disk's use_native_copy=false opt-out despite the default"
+    assert azure_query(node, f"SELECT * from test_no_native_copy_restored") == "1\ta\n"
+
+    azure_query(node, f"DROP TABLE test_no_native_copy")
+    azure_query(node, f"DROP TABLE test_no_native_copy_restored")
 
 
 def test_backup_restore_correct_block_ids(cluster):

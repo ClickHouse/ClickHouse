@@ -631,11 +631,8 @@ std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context,
 {
     auto settings = getRequestSettings(context->getSettingsRef());
 
-    /// For backups and restores, native copy is on by default, driven by the `allow_azure_native_copy`
-    /// setting (mirroring `allow_s3_native_copy` for S3). An endpoint that explicitly set `use_native_copy`
-    /// in its server config still wins over the default, so an admin can keep it disabled on purpose.
-    /// But an explicit `allow_azure_native_copy = 0` in the statement forces it off regardless.
-    /// Non-backup paths keep the `false` default from `RequestSettings::use_native_copy`.
+    /// Native copy is on by default for backups (like `allow_s3_native_copy`), but a matching
+    /// endpoint config may explicitly disable it, and `allow_azure_native_copy = 0` always wins.
     bool use_native_copy = true;
 
     auto endpoint_settings = context->getStorageAzureSettings().getSettings(endpoint);
@@ -700,15 +697,16 @@ void AzureSettingsByEndpoint::loadFromConfig(
 
     for (const String & key : config_keys)
     {
+        /// Accept both the modern `<object_storage_type>azure</object_storage_type>` and the legacy
+        /// `<type>azure_blob_storage</type>` declaration forms.
+        String disk_type;
         if (config.has(config_prefix + "." + key + ".object_storage_type"))
-        {
-            const auto &object_storage_type = config.getString(config_prefix + "." + key + ".object_storage_type");
-            if (object_storage_type != "azure" && object_storage_type != "azure_blob_storage")
-            {
-                /// Then its not an azure config
-                continue;
-            }
+            disk_type = config.getString(config_prefix + "." + key + ".object_storage_type");
+        else if (config.has(config_prefix + "." + key + ".type"))
+            disk_type = config.getString(config_prefix + "." + key + ".type");
 
+        if (disk_type == "azure" || disk_type == "azure_blob_storage")
+        {
             const auto key_path = config_prefix + "." + key;
             String endpoint_path = key_path + ".connection_string";
 
@@ -723,7 +721,7 @@ void AzureSettingsByEndpoint::loadFromConfig(
                     if (!config.has(endpoint_path))
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "URL not provided for azure blob storage disk {}",
-                                        object_storage_type);
+                                        disk_type);
                     }
                 }
             }
