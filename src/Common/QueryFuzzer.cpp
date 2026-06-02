@@ -2293,8 +2293,8 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"mergeTreeAnalyzeIndexes", "mergeTreeIndex", "mergeTreeProjection", "mergeTreeTextIndex"},
         /// External relational databases (host, port, db, table, user, password)
         {"mysql", "postgresql"},
-        /// External databases with connection-style args
-        {"hive", "mongodb", "redis", "sqlite", "ytsaurus"},
+        /// External document stores (connection-style args)
+        {"mongodb", "redis"},
         /// Remote ClickHouse clusters
         {"remote", "remoteSecure"},
         /// Named cluster table functions
@@ -2303,8 +2303,6 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         {"jdbc", "odbc"},
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
-        /// Prometheus query variants
-        {"prometheusQuery", "prometheusQueryRange"},
         /// TimeSeries table functions (db, table → time-series views)
         {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
