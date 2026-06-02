@@ -11,6 +11,7 @@ namespace DB
 {
 
 IASTHash PartAggregationCache::calculateQueryHash(
+    const Block & header,
     const Names & keys,
     const AggregateDescriptions & aggregates,
     const ActionsDAG * filter_dag)
@@ -23,13 +24,27 @@ IASTHash PartAggregationCache::calculateQueryHash(
     /// by `AggregatingStep` column order, so the hash must distinguish these cases.
     hash.update(keys.size());
     for (const auto & key : keys)
+    {
         hash.update(key);
+
+        /// Include the key's data type. Existing parts keep the same `{table_id, part_name}`
+        /// across metadata-only `ALTER` (e.g. `MODIFY COLUMN`), so without the type a state
+        /// cached for the previous type could be reused after the column type changed.
+        if (const auto * column = header.findByName(key))
+            hash.update(column->type->getName());
+    }
 
     hash.update(aggregates.size());
     for (const auto & agg : aggregates)
     {
         hash.update(agg.column_name);
         hash.update(agg.function->getName());
+
+        /// Include the aggregate state type, which encodes the argument types and parameters.
+        /// `AggregateFunction(sum, UInt32)` and `AggregateFunction(sum, UInt64)` must not alias,
+        /// otherwise incompatible states could be merged after a metadata-only `ALTER`.
+        hash.update(agg.function->getStateType()->getName());
+
         for (const auto & arg : agg.argument_names)
             hash.update(arg);
         for (const auto & param : agg.parameters)
@@ -63,9 +78,15 @@ size_t PartAggregationCache::KeyHasher::operator()(const Key & key) const
     return hash.get64();
 }
 
+/// Minimum bytes charged per cache entry. The populator intentionally stores empty per-part
+/// blocks for fully filtered parts, whose `allocatedBytes` is 0. Charging a floor ensures such
+/// entries still consume the cache budget, so a selective query over many parts cannot grow the
+/// cache without bound, and accounts for the per-entry bookkeeping (keys, list and map nodes).
+static constexpr size_t MIN_ENTRY_SIZE_IN_BYTES = 256;
+
 size_t PartAggregationCache::Entry::sizeInBytes() const
 {
-    return block.allocatedBytes();
+    return std::max<size_t>(block.allocatedBytes(), MIN_ENTRY_SIZE_IN_BYTES);
 }
 
 PartAggregationCache::PartAggregationCache(size_t max_size_in_bytes_)
@@ -92,6 +113,12 @@ void PartAggregationCache::set(const Key & key, Block block)
     size_t entry_bytes = new_entry->sizeInBytes();
 
     std::lock_guard lock(mutex);
+
+    /// `max_size_in_bytes == 0` means the cache is disabled. Reject all inserts; otherwise empty
+    /// entries (which would otherwise round up to a tiny charged size that still exceeds 0) could
+    /// accumulate without ever being evicted.
+    if (max_size_in_bytes == 0)
+        return;
 
     if (entry_bytes > max_size_in_bytes)
         return;

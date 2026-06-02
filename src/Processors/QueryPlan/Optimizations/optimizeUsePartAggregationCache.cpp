@@ -77,8 +77,16 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
 
 void optimizeUsePartAggregationCache(
     QueryPlan::Node & node,
-    QueryPlan::Nodes & nodes)
+    QueryPlan::Nodes & nodes,
+    bool is_explain)
 {
+    /// `EXPLAIN` is intended to perform only static planning. This optimization can call
+    /// `populatePartAggregationCache`, which reads part data and mutates the global cache while
+    /// building the plan, so running it under `EXPLAIN` would scan table data and change the
+    /// behavior of subsequent queries. Skip it entirely in that case.
+    if (is_explain)
+        return;
+
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating)
         return;
@@ -130,11 +138,32 @@ void optimizeUsePartAggregationCache(
     if (reading->getRowLevelFilter())
         return;
 
+    /// `canUseProjectionForReadingStep` rejects data mutations and patch parts, but not lightweight
+    /// deletes or pending `ALTER` (data/metadata) mutations. The cache key is only `{table_id,
+    /// part_name}`, and neither the lightweight delete mask version nor pending `ALTER` conversions
+    /// are represented in it or applied by the populator (which builds an empty `AlterConversions`).
+    /// An entry cached before such a mutation would be reused with a stale mask/schema. Reject these
+    /// cases (fail-closed).
+    auto mutations_snapshot = reading->getMutationsSnapshot();
+    if (mutations_snapshot
+        && (mutations_snapshot->hasLightweightDeletedMask()
+            || mutations_snapshot->hasAlterMutations()
+            || mutations_snapshot->hasMetadataMutations()))
+        return;
+
     const auto & parts = reading->getParts();
     if (parts.empty())
         return;
 
     const auto & params = aggregating->getParams();
+
+    /// `group_by_overflow_mode` limits (`max_rows_to_group_by`) and `overflow_row` apply per
+    /// aggregation invocation. The populator aggregates each part independently, so the limit would
+    /// be applied once per part and then the per-part states merged, producing more keys than the
+    /// query limit (or different overflow rows) than the normal single-pass aggregation. Skip the
+    /// optimization in that case (fail-closed).
+    if (params.max_rows_to_group_by != 0 || params.overflow_row)
+        return;
 
     auto intermediate_actions = collectIntermediateActions(*node.children.front());
 
@@ -161,8 +190,13 @@ void optimizeUsePartAggregationCache(
         if (action.actions->getActionsDAG().hasNonDeterministic())
             return;
 
+    /// The aggregator's input header carries the actual key and aggregate-argument column types.
+    /// It is hashed into the cache key so that metadata-only `ALTER` (e.g. `MODIFY COLUMN`), which
+    /// keeps the same `{table_id, part_name}`, cannot reuse a cached state built for the old type.
+    const auto & aggregator_input_header = *aggregating->getInputHeaders().front();
+
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(
-        params.keys, params.aggregates, filter_dag_for_hash);
+        aggregator_input_header, params.keys, params.aggregates, filter_dag_for_hash);
 
     /// Include the full intermediate ExpressionStep/FilterStep action DAGs in the hash.
     /// Hashing only output names is not enough: two filters can share output column
@@ -214,11 +248,9 @@ void optimizeUsePartAggregationCache(
     /// Populate cache for uncached parts (both cold and partially warm cache).
     if (enable_writes && !uncached_parts.empty())
     {
-        const auto & aggregator_header = *aggregating->getInputHeaders().front();
-
         populatePartAggregationCache(
             cache, query_hash, table_id, uncached_parts, params,
-            aggregator_header,
+            aggregator_input_header,
             reading->getMergeTreeData(),
             reading->getStorageSnapshot(),
             context,
@@ -246,7 +278,6 @@ void optimizeUsePartAggregationCache(
     /// `PartAggregationCachePopulator.cpp`). Using `reading->getOutputHeader()` would
     /// diverge when intermediate `ExpressionStep`s compute GROUP BY keys not present
     /// on the read step (e.g. `toYear(date) AS y`).
-    const auto & aggregator_input_header = *aggregating->getInputHeaders().front();
     auto intermediate_header = std::make_shared<Block>(
         Aggregator::Params::getHeader(
             aggregator_input_header, params.only_merge, params.keys, params.aggregates, /* final = */ false));

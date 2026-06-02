@@ -336,7 +336,7 @@ void optimizeTreeSecondPass(
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
 
                 /// Part aggregation cache optimization: reuse cached per-part aggregation states.
-                optimizeUsePartAggregationCache(*frame.node, nodes);
+                optimizeUsePartAggregationCache(*frame.node, nodes, optimization_settings.is_explain);
             }
 
             /// Traverse all children first.

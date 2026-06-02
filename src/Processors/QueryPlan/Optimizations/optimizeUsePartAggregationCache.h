@@ -13,6 +13,7 @@ namespace DB::QueryPlanOptimizations
 /// per-part aggregation before the main query pipeline.
 void optimizeUsePartAggregationCache(
     QueryPlan::Node & node,
-    QueryPlan::Nodes & nodes);
+    QueryPlan::Nodes & nodes,
+    bool is_explain);
 
 }

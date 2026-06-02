@@ -53,6 +53,7 @@ public:
     using EntryPtr = std::shared_ptr<const Entry>;
 
     static IASTHash calculateQueryHash(
+        const Block & header,
         const Names & keys,
         const AggregateDescriptions & aggregates,
         const ActionsDAG * filter_dag);
