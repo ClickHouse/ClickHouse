@@ -138,14 +138,13 @@ void IDataType::forEachSubcolumn(
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
 
-                /// Skip the outer `Nullable` null-map static subcolumn (named `null`)
-                /// only when the IMMEDIATE inner type is a direct dynamic carrier
-                /// (`JSON` / `Dynamic`) that owns the colliding name as a dynamic key.
-                /// Do NOT skip for delegating types like `Array` or `Map` where the
-                /// dynamic resolution would only succeed via delegation: the user-visible
-                /// `Nullable(Array(JSON)).null` must still return the outer null-map.
-                /// The outer null-map remains reachable via `isNull(x)` / `x IS NULL`.
+                /// Skip the outer `Nullable` null-map subcolumn (literal name `null`)
+                /// when the inner type is `JSON` / `Dynamic` and owns the same name
+                /// as a dynamic key. `name == "null"` keeps typed-path null-maps
+                /// (e.g. `c.null`) enumerating normally; the direct-carrier check
+                /// keeps `Nullable(Array(JSON)).null` returning the outer null-map.
                 if (subpath[i].type == ISerialization::Substream::NullMap
+                    && name == "null"
                     && data.type
                     && data.type->isNullable())
                 {

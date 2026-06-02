@@ -10,3 +10,14 @@ isNull:	3	1	1
 plain_json_null:	xx	Dynamic
 nullable_int_null:	\N	1	UInt8
 nullable_int_null:	42	0	UInt8
+typed_path_c:	1	42	Nullable(UInt32)
+typed_path_c:	2	\N	Nullable(UInt32)
+typed_path_c:	3	\N	Nullable(UInt32)
+typed_path_c_null:	1	0	Nullable(UInt8)
+typed_path_c_null:	2	1	Nullable(UInt8)
+typed_path_c_null:	3	\N	Nullable(UInt8)
+describe_typed:
+id	UInt32						0
+data	Nullable(JSON(c Nullable(UInt32)))						0
+data.c	Nullable(UInt32)						1
+data.c.null	Nullable(UInt8)						1

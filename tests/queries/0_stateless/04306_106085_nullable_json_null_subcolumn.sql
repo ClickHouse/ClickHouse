@@ -50,6 +50,31 @@ SELECT 'nullable_int_null:', data, data.null, toTypeName(data.null) FROM t_10608
 CREATE TABLE t_106085_reject_array (data Nullable(Array(JSON))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 CREATE TABLE t_106085_reject_map (data Nullable(Map(String, JSON))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- The `forEachSubcolumn` skip applies only when the substream name is literally
+-- `"null"` (the outer Nullable null-map). A typed-path null-map inside `JSON`
+-- is named `"<path>.null"` and must still enumerate as a regular subcolumn,
+-- otherwise lookup (`tryGetSubcolumnType` -> `getSubcolumnData`) and enumeration
+-- (`forEachSubcolumn` -> `DESCRIBE TABLE ... describe_include_subcolumns = 1`,
+-- `system.columns`) diverge for the same name.
+DROP TABLE IF EXISTS t_106085_typed;
+CREATE TABLE t_106085_typed (id UInt32, data Nullable(JSON(c Nullable(UInt32)))) ENGINE = Memory;
+INSERT INTO t_106085_typed VALUES (1, '{"c": 42}'), (2, '{"c": null}'), (3, NULL);
+
+-- Lookup: `data.c` is the typed `Nullable(UInt32)` path; `data.c.null` is its
+-- inner UInt8 null-map (1 when the typed path value is null OR when the outer
+-- Nullable row is null, 0 when the typed path holds a value).
+SELECT 'typed_path_c:', id, data.c, toTypeName(data.c) FROM t_106085_typed ORDER BY id;
+SELECT 'typed_path_c_null:', id, data.c.null, toTypeName(data.c.null) FROM t_106085_typed ORDER BY id;
+
+-- Enumeration: the typed-path null-map must show up in `DESCRIBE TABLE ...
+-- describe_include_subcolumns = 1` next to the typed path itself. Without the
+-- `name == "null"` predicate the enumeration would also skip `c.null` (dynamic
+-- JSON path can resolve it), so it would be absent from the description while
+-- the lookup still finds it.
+SELECT 'describe_typed:';
+DESCRIBE TABLE t_106085_typed SETTINGS describe_include_subcolumns = 1 FORMAT TSVRaw;
+
 DROP TABLE t_106085;
 DROP TABLE t_106085_plain;
 DROP TABLE t_106085_int;
+DROP TABLE t_106085_typed;
