@@ -27,9 +27,11 @@ Reads a [GeoJSON](https://geojson.org/) `FeatureCollection` document and produce
 
 The `Geometry` type is a `Variant` that can hold `Point`, `LineString`, `Polygon`, `MultiPolygon`, `MultiLineString`, or `Ring`. The `geometry` column is `NULL` only when the feature's geometry is an explicit JSON `null`. A valid GeoJSON geometry type that cannot be mapped to a supported variant (e.g. `GeometryCollection` or `MultiPoint`) throws by default; this can be changed to insert `NULL` instead — see [Handling unsupported geometry types](#unsupported-geometry) below.
 
-Extra keys in the `FeatureCollection` object (such as `name` or `crs`) and extra keys inside each `Feature` object (such as `type` or `bbox`) are ignored.
+The document's structure is validated: the top-level `type` must be `FeatureCollection` and every element of `features` must have `type` `Feature`. Coordinates must satisfy the GeoJSON shape invariants — a `LineString` (and each line of a `MultiLineString`) must have at least two positions, and a `Polygon` ring (and each ring of a `MultiPolygon`) must be closed and have at least four positions. Malformed documents are rejected rather than silently loaded.
 
-Key ordering within geometry objects is flexible: `coordinates` may appear before or after `type`.
+Other keys in the `FeatureCollection` object (such as `name` or `crs`) and other keys inside each `Feature` object (such as `bbox`) are ignored.
+
+Key ordering is flexible: the top-level `type` may appear before or after the `features` array, and within a geometry object `coordinates` may appear before or after `type`.
 
 Schema inference returns the fixed schema above, so `DESCRIBE` and `SELECT ... FROM format(...)` work without a table definition.
 
