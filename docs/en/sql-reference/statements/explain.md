@@ -685,9 +685,9 @@ Estimation:
 ```
 
 - `source` — how the estimate was produced.
-    - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. This is an upper bound — see the limitations in [`CREATE HYPOTHETICAL INDEX`](/sql-reference/statements/hypothetical-index#limitations).
-    - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
-    - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
+  - `empirical`: built the index in memory over the baseline-pruned granules and counted the granules the index would skip. This is an upper bound — see the limitations in [`CREATE HYPOTHETICAL INDEX`](/sql-reference/statements/hypothetical-index#limitations).
+  - `statistical`: derived from column statistics. Used when empirical is disabled (`empirical = 0`) or empirical couldn't produce a result, and column statistics are defined on the relevant columns.
+  - `applicability_only`: the index is applicable to the predicate but neither empirical nor statistical estimation produced a result (e.g. `empirical = 0` and no column statistics defined). Reports `skip_ratio: 0.0%` as a conservative bound.
 - `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Shows what fraction of the table survived PK, partition, and existing-index pruning, i.e. the input to the hypothetical index.
 
 The setting is written inline between `WHATIF` and the `SELECT` — there is no `SETTINGS` keyword (this matches how other `EXPLAIN` variants accept their options).

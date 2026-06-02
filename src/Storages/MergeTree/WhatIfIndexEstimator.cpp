@@ -282,9 +282,6 @@ bool tryEstimateEmpirical(
             false);
 
         QueryPipeline pipeline(std::move(pipe));
-        /// Enforce the query's resource limits (max_execution_time, max_*_to_read, throttling).
-        pipeline.setProcessListElement(context->getProcessListElement());
-        pipeline.setProgressCallback(context->getProgressCallback());
         PullingPipelineExecutor executor(pipeline);
 
         auto aggregator = index_helper->createIndexAggregator();
