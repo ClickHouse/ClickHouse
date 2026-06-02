@@ -1120,8 +1120,8 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
 
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
-    uint8_t magic;
-    uint32_t schema_id;
+    uint8_t magic = 0;
+    uint32_t schema_id = 0;
 
     try
     {
@@ -1377,6 +1377,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
     }
 }
 
+void registerInputFormatAvro(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory)
 {
     factory.registerInputFormat("Avro", [](
@@ -1402,6 +1403,7 @@ void registerInputFormatAvro(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
+void registerAvroSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -1423,6 +1425,8 @@ void registerAvroSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatAvro(FormatFactory &);
+void registerAvroSchemaReader(FormatFactory &);
 void registerInputFormatAvro(FormatFactory &)
 {
 }

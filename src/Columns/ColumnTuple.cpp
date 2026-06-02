@@ -600,7 +600,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res;
+        int res = 0;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -641,7 +641,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res;
+            int res = 0;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else

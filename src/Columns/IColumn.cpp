@@ -694,7 +694,7 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
-        char * memory;
+        char * memory = nullptr;
         if (is_null[n])
         {
             memory = arena.allocContinue(1, begin);
