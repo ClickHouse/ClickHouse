@@ -29,7 +29,14 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
-    bool hasSecretParts() const override { return false; }
+    /// `source_query` and `resulting_query` can contain arbitrary nested queries
+    /// (e.g. table functions or settings holding secrets) and are not part of
+    /// `children`, so inspect them explicitly to keep AST secret masking working.
+    bool hasSecretParts() const override
+    {
+        return (source_query && source_query->hasSecretParts())
+            || (resulting_query && resulting_query->hasSecretParts());
+    }
 
     bool rewrite() const { if (resulting_query) { return true; } return false; }
     bool reject()  const { return is_reject; }
