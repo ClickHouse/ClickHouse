@@ -421,12 +421,30 @@ void RewriteRulesStorage::create(const RewriteRuleObjectPtr & create_query)
 
 void RewriteRulesStorage::remove(const std::string & rule_name)
 {
-    impl_storage->remove(getFileName(rule_name));
+    const auto file_name = getFileName(rule_name);
+    impl_storage->remove(file_name);
+    LOG_INFO(
+        getLogger("RewriteRulesStorage"),
+        "Removed rewrite rule `{}` ({} `{}`) from {} storage",
+        rule_name,
+        isReplicated() ? "znode" : "file",
+        file_name,
+        isReplicated() ? "ZooKeeper/Keeper" : "local");
 }
 
 bool RewriteRulesStorage::removeIfExists(const std::string & rule_name)
 {
-    return impl_storage->removeIfExists(getFileName(rule_name));
+    const auto file_name = getFileName(rule_name);
+    const bool removed = impl_storage->removeIfExists(file_name);
+    if (removed)
+        LOG_INFO(
+            getLogger("RewriteRulesStorage"),
+            "Removed rewrite rule `{}` ({} `{}`) from {} storage",
+            rule_name,
+            isReplicated() ? "znode" : "file",
+            file_name,
+            isReplicated() ? "ZooKeeper/Keeper" : "local");
+    return removed;
 }
 
 void RewriteRulesStorage::update(const RewriteRuleObjectPtr & update_query)
