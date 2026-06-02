@@ -752,7 +752,7 @@ namespace
 
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
-        String profile_name,
+        const String & profile_name,
         const std::unordered_set<UUID> & allowed_parent_profile_ids,
         const AccessControl & access_control)
     {
