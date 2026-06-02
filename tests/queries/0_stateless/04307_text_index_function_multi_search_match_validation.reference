@@ -1,0 +1,12 @@
+-- multiSearchAny with more than 255 needles raises an exception, with and without the index
+-- 255 needles is accepted by the index
+0
+-- valid multiSearchAny uses the index and returns the matching rows
+2
+-- multiMatchAny with allow_hyperscan = 0 raises an exception, with and without the index
+-- multiMatchAny with a regexp longer than max_hyperscan_regexp_length raises an exception, with and without the index
+-- multiMatchAny with an expensive regexp raises an exception when reject_expensive_hyperscan_regexps = 1, with and without the index
+-- the same expensive regexp is accepted when reject_expensive_hyperscan_regexps = 0
+0
+-- valid multiMatchAny uses the index and returns the matching rows
+1

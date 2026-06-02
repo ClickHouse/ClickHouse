@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/MultiSearchImpl.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
@@ -43,6 +45,10 @@ namespace Setting
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsBool use_text_index_like_evaluation_by_dictionary_scan;
     extern const SettingsUInt64 text_index_like_min_pattern_length;
+    extern const SettingsBool allow_hyperscan;
+    extern const SettingsUInt64 max_hyperscan_regexp_length;
+    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
@@ -1004,6 +1010,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         const auto & needles = value_field.safeGet<Array>();
 
+        /// Reject the same input the real `multiSearchAny` implementation rejects (more than 255 needles), so the
+        /// index does not silently prune all granules where the function would raise an exception instead.
+        checkMultiSearchNeedlesLimit(function_name, needles.size());
+
         /// multiSearchAny(haystack, []) is always false.
         if (needles.empty())
         {
@@ -1040,6 +1050,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & patterns = value_field.safeGet<Array>();
+
+        /// Validate the patterns exactly as `multiMatchAny` execution would, so the index
+        /// does not silently prune granules where the function would raise an exception instead.
+        {
+            VectorWithMemoryTracking<std::string_view> needles;
+            needles.reserve(patterns.size());
+
+            for (const auto & pattern : patterns)
+            {
+                if (pattern.getType() == Field::Types::String)
+                    needles.emplace_back(pattern.safeGet<String>());
+            }
+
+            checkHyperscanFunctionArguments(
+                needles,
+                settings[Setting::allow_hyperscan],
+                settings[Setting::max_hyperscan_regexp_length],
+                settings[Setting::max_hyperscan_regexp_total_length],
+                settings[Setting::reject_expensive_hyperscan_regexps]);
+        }
 
         /// multiMatchAny(haystack, []) is always false.
         if (patterns.empty())
