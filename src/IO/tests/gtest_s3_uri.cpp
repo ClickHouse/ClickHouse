@@ -395,6 +395,9 @@ TEST(S3CommonTest, SanitizeAwsArnsInErrorMessages)
     /// Empty input.
     ASSERT_EQ("", sanitizeS3ErrorMessage(""));
 
+    /// `arn:` inside another word is not an AWS ARN token.
+    ASSERT_EQ("warning: warn: keep unchanged", sanitizeS3ErrorMessage("warning: warn: keep unchanged"));
+
     /// Single ARN in the middle of a message.
     ASSERT_EQ(
         "User: [REDACTED_AWS_ARN] is not authorized",
