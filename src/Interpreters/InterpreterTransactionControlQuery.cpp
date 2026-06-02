@@ -65,7 +65,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
     TransactionsWaitCSNMode mode = query_context->getSettingsRef()[Setting::wait_changes_become_visible_after_commit_mode];
-    CSN csn;
+    CSN csn = 0;
     try
     {
         csn = TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ mode != TransactionsWaitCSNMode::WAIT_UNKNOWN);

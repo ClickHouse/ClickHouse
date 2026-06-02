@@ -355,11 +355,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order;
-    MarkRange range;
-    size_t part_index;
-    EventType event;
-    bool selected; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order{};
+    MarkRange range{};
+    size_t part_index{};
+    EventType event{};
+    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex

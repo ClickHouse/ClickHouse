@@ -238,7 +238,7 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
 
         for (auto word : std::views::split(String(value.getString()), delim))
         {
-            uint32_t result;
+            uint32_t result = {};
             const std::string_view sv(word.begin(), word.end());
             const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 

@@ -843,7 +843,7 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid, std::function<
 
     /// Server is shutting down. Do one final cleanup pass — the table may have
     /// become free just before or during shutdown.
-    bool still_tracked;
+    bool still_tracked = false;
     {
         DetachedTables not_in_use;
         {
