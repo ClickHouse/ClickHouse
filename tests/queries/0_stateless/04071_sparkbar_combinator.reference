@@ -31,5 +31,7 @@ countSparkbar with DateTime64 cross-epoch:
 █████
 countSparkbar with DateTime64 scale mismatch (col=6, params=3):
 █████
+countSparkbar with DateTime64 downscale rounding (col=0, params=3):
+████
 quantileSparkbar with range:
 ▆▆▇▇█

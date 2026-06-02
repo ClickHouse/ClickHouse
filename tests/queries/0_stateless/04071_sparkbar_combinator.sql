@@ -72,6 +72,16 @@ SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('20
     toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL (number) DAY
 ) FROM numbers(5);
 
+-- DateTime64 downscale rounding (col=0, params=3): fractional bounds must be rounded
+-- directionally so the inclusive [begin_x, end_x] contract holds. begin_x = 00:00:00.500
+-- rounds up to 00:00:01 and end_x = 00:00:04.500 rounds down to 00:00:04, so a row at
+-- 00:00:00 (below begin_x) and a row at 00:00:05 (above end_x) are both excluded, leaving
+-- the 4 in-range seconds 01..04, one per bucket.
+SELECT 'countSparkbar with DateTime64 downscale rounding (col=0, params=3):';
+SELECT countSparkbar(4, toDateTime64('2024-01-01 00:00:00.500', 3), toDateTime64('2024-01-01 00:00:04.500', 3))(
+    toDateTime64('2024-01-01 00:00:00', 0) + INTERVAL (number) SECOND
+) FROM numbers(6);
+
 -- Parametric nested aggregate: leading params are forwarded to the nested function,
 -- the last 3 are consumed by the combinator (width, begin_x, end_x).
 SELECT 'quantileSparkbar with range:';

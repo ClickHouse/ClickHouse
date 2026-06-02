@@ -105,7 +105,12 @@ public:
             /// the keys read in add() are in the same unit.
             const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*arguments[0]).getScale();
 
-            const auto extract = [col_scale](const Field & f) -> Int64
+            /// `round_up == true` is used for `begin_x` and `round_up == false` for `end_x`.
+            /// When the parameter has a finer scale than the column (`param_scale > col_scale`),
+            /// the rescaled value may fall between two column ticks. To keep the inclusive
+            /// `[begin_x, end_x]` contract we round `begin_x` up (toward +inf) and `end_x` down
+            /// (toward -inf), so the rescaled range never admits keys outside the requested one.
+            const auto extract = [col_scale](const Field & f, bool round_up) -> Int64
             {
                 const auto & dec = f.safeGet<DecimalField<DateTime64>>();
                 const Int64 ticks = static_cast<Int64>(dec.getValue());
@@ -123,10 +128,20 @@ public:
                             param_scale, col_scale);
                     return result;
                 }
-                return ticks / static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
+
+                /// `param_scale > col_scale`: integer division truncates toward zero, which
+                /// would silently shift inclusive bounds. Round directionally instead.
+                const Int64 divisor = static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
+                const Int64 quotient = ticks / divisor;
+                const Int64 remainder = ticks % divisor;
+                if (remainder == 0)
+                    return quotient;
+                if (round_up)
+                    return remainder > 0 ? quotient + 1 : quotient;
+                return remainder < 0 ? quotient - 1 : quotient;
             };
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
-                nested_function, width, extract(params[n - 2]), extract(params[n - 1]), arguments, params);
+                nested_function, width, extract(params[n - 2], /*round_up=*/true), extract(params[n - 1], /*round_up=*/false), arguments, params);
         }
 
         if (which.isDate32())
