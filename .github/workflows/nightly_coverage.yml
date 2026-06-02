@@ -14,6 +14,9 @@ env:
   CHECKOUT_REF: ""
 
 
+permissions:
+  contents: read
+
 jobs:
 
   config_workflow:
