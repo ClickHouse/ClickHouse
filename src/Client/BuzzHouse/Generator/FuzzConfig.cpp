@@ -1257,9 +1257,8 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
                 " UNION ALL "
-                "(SELECT count() x, 14 y FROM \"system\".\"replicas\""
-                " WHERE queue_oldest_time != toDateTime('1970-01-01 00:00:00')"
-                " AND queue_oldest_time < now() - toIntervalSecond(60))"
+                "(SELECT count() x, 14 y FROM \"system\".\"replication_queue\""
+                " WHERE \"last_exception\" != '' AND \"num_tries\" > 5)"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -1281,7 +1280,7 @@ void FuzzConfig::validateClickHouseHealth()
                "CORRUPTED_DATA(s) in text_log",
                "CHECKSUM_DOESNT_MATCH error(s) in text_log",
                "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
-               "stuck replication queue entrie(s)"};
+               "stuck replication queue task(s) (>5 retries)"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -1296,7 +1295,7 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "database", "table", "queue_oldest_time" FROM "system"."replicas" WHERE queue_oldest_time != toDateTime('1970-01-01 00:00:00') AND queue_oldest_time < now() - toIntervalSecond(60) LIMIT 3)"};
+            R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 100 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
