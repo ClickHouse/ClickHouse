@@ -367,3 +367,28 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${user3}&session_id=${sess}&sessi
     --data-binary "EXPLAIN WHATIF SELECT b FROM ${CLICKHOUSE_DATABASE}.t_hypo_priv3 WHERE b = 42" 2>&1 | grep -m1 -o 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user3}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_priv3"
+
+# Empirical EXPLAIN WHATIF reads table data, so it must consume and respect the read quota.
+echo "--- empirical EXPLAIN WHATIF consumes and respects READ_ROWS quota ---"
+userq="uq_04223_${CLICKHOUSE_DATABASE}"
+quotaq="q_04223_${CLICKHOUSE_DATABASE}"
+sessq="sessq_04223_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_quota;
+    CREATE TABLE t_hypo_quota (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_quota SELECT number, number FROM numbers(50000);
+    DROP USER IF EXISTS ${userq};
+    CREATE USER ${userq} NOT IDENTIFIED;
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_hypo_quota TO ${userq};
+    DROP QUOTA IF EXISTS ${quotaq};
+    CREATE QUOTA ${quotaq} FOR INTERVAL 1 hour MAX read_rows = 10000 TO ${userq};
+"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${userq}&session_id=${sessq}&session_timeout=60" \
+    --data-binary "CREATE HYPOTHETICAL INDEX idx_b ON ${CLICKHOUSE_DATABASE}.t_hypo_quota (b) TYPE minmax GRANULARITY 1"
+# The scan reads 50000 rows, over the 10000-row quota, so the estimate is denied.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${userq}&session_id=${sessq}&session_timeout=60" \
+    --data-binary "EXPLAIN WHATIF SELECT * FROM ${CLICKHOUSE_DATABASE}.t_hypo_quota WHERE b = 42" 2>&1 | grep -m1 -o 'QUOTA_EXCEEDED'
+$CLICKHOUSE_CLIENT -q "DROP QUOTA IF EXISTS ${quotaq}"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${userq}"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_quota"

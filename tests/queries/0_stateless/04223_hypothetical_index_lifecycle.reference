@@ -88,3 +88,5 @@ ACCESS_DENIED
 create+drop ok
 --- EXPLAIN WHATIF re-checks column-level SELECT after a grant is revoked ---
 ACCESS_DENIED
+--- empirical EXPLAIN WHATIF consumes and respects READ_ROWS quota ---
+QUOTA_EXCEEDED

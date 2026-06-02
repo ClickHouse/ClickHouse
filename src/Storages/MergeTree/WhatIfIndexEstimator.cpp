@@ -11,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -360,10 +361,26 @@ bool tryEstimateEmpirical(
             false,
             false);
 
+        /// Enforce the real read's execution-speed limits on this internal scan (size limits
+        /// are checked explicitly below, break-safe; max_execution_time by the process-list element).
+        if (auto query_limits = read_step->getQueryInfo().storage_limits)
+        {
+            auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
+            for (auto & entry : *speed_limits)
+            {
+                entry.local_limits.size_limits = {};
+                entry.leaf_limits = {};
+                entry.local_limits.speed_limits.max_execution_time = {};
+            }
+            for (const auto & processor : pipe.getProcessors())
+                processor->setStorageLimits(speed_limits);
+        }
+
         QueryPipeline pipeline(std::move(pipe));
-        /// Account the scan against the query so max_execution_time / max_*_to_read apply.
+        /// Account the scan against the query so quota, speed, and time limits apply.
         pipeline.setProcessListElement(context->getProcessListElement());
         pipeline.setProgressCallback(context->getProgressCallback());
+        pipeline.setQuota(context->getQuota());
         PullingPipelineExecutor executor(pipeline);
 
         auto aggregator = index_helper->createIndexAggregator();
