@@ -10,7 +10,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -68,7 +67,8 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     context->checkAccess(AccessType::SELECT, table_id);
 
-    if (!dynamic_cast<const MergeTreeData *>(table.get()))
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Hypothetical indexes are only supported for MergeTree family tables, got {}",
@@ -96,17 +96,12 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// matching ALTER TABLE ... ADD INDEX semantics
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
 
-    /// Run storage-level ADD_INDEX checks (old-syntax MergeTree rejection)
-    /// so we never store a hypothetical that a real ALTER could not materialize
-    {
-        AlterCommand alter_cmd;
-        alter_cmd.type = AlterCommand::ADD_INDEX;
-        alter_cmd.index_name = index_desc.name;
-        alter_cmd.index_decl = query.index_decl->clone();
-        AlterCommands alter_commands;
-        alter_commands.emplace_back(std::move(alter_cmd));
-        table->checkAlterIsPossible(alter_commands, context);
-    }
+    /// Reject old-syntax MergeTree tables, mirroring `MergeTreeData::checkAlterIsPossible`
+    /// for `ADD_INDEX` — a real `ALTER TABLE ... ADD INDEX` is not allowed there either
+    if (!merge_tree->is_custom_partitioned)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Hypothetical indexes are not supported for tables with the old MergeTree syntax");
 
     /// Reject index types whose real `ALTER TABLE ... ADD INDEX` validation needs
     /// table-level constraints that the hypothetical store cannot replicate
