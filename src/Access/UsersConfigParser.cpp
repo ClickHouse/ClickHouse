@@ -398,6 +398,11 @@ namespace
         }
     }
 
+    String unescapeDots(const String & name)
+    {
+        return Poco::replace(name, "\\.", ".");
+    }
+
     UserPtr parseUser(
         const Poco::Util::AbstractConfiguration & config,
         String user_name,
@@ -411,10 +416,7 @@ namespace
         auto user = std::make_shared<User>();
         String user_config = "users." + user_name;
 
-        /// If the user name contains a dot, it is escaped with a backslash when parsed from the config file.
-        /// We need to remove the backslash to get the correct user name.
-        Poco::replaceInPlace(user_name, "\\.", ".");
-        user->setName(user_name);
+        user->setName(unescapeDots(user_name));
 
         const auto auth_methods_config = user_config + ".auth_methods";
         bool has_auth_methods = config.has(auth_methods_config);
@@ -608,12 +610,6 @@ namespace
         return user;
     }
 
-    void setNameWithUnescapedDot(IAccessEntity & entity, String name)
-    {
-        Poco::replaceInPlace(name, "\\.", ".");
-        entity.setName(name);
-    }
-
     RolePtr parseRole(
         const Poco::Util::AbstractConfiguration & config,
         String role_name,
@@ -624,7 +620,7 @@ namespace
         auto role = std::make_shared<Role>();
         String role_config = "roles." + role_name;
 
-        setNameWithUnescapedDot(*role, std::move(role_name));
+        role->setName(unescapeDots(role_name));
 
         const auto grants_config = role_config + ".grants";
         if (config.has(grants_config))
@@ -647,7 +643,7 @@ namespace
         auto quota = std::make_shared<Quota>();
         String quota_config = "quotas." + quota_name;
 
-        setNameWithUnescapedDot(*quota, std::move(quota_name));
+        quota->setName(unescapeDots(quota_name));
         if (config.has(quota_config + ".keyed_by_ip"))
             quota->key_type = QuotaKeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
@@ -763,7 +759,7 @@ namespace
         auto profile = std::make_shared<SettingsProfile>();
         String profile_config = "profiles." + profile_name;
 
-        setNameWithUnescapedDot(*profile, std::move(profile_name));
+        profile->setName(unescapeDots(profile_name));
 
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(profile_config, keys);
@@ -888,11 +884,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::Ab
     {
         if (config.has("users." + user_name + ".quota"))
         {
-            /// The user name comes from a config key, so any dot in the name is escaped with a backslash.
-            /// The user entity is stored under the un-escaped name, so we must generate its ID from the un-escaped name too.
-            String unescaped_user_name = user_name;
-            Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
-            quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, unescaped_user_name));
+            quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, unescapeDots(user_name)));
         }
     }
 
@@ -908,9 +900,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseQuotas(const Poco::Util::Ab
         {
             /// `quota_name` is a config key with dots escaped, but `quota_to_user_ids` is keyed by the un-escaped name
             /// written as the text value of the `<quota>` element under a user.
-            String unescaped_quota_name = quota_name;
-            Poco::replaceInPlace(unescaped_quota_name, "\\.", ".");
-            auto it = quota_to_user_ids.find(unescaped_quota_name);
+            auto it = quota_to_user_ids.find(unescapeDots(quota_name));
             const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
             quotas.push_back(parseQuota(config, quota_name, quota_users));
         }
@@ -997,8 +987,7 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseRowPolicies(const Poco::Uti
 
             /// The user name comes from a config key, so any dot in the name is escaped with a backslash.
             /// The user entity is stored under the un-escaped name, so we must use the un-escaped name here as well.
-            String unescaped_user_name = user_name;
-            Poco::replaceInPlace(unescaped_user_name, "\\.", ".");
+            String unescaped_user_name = unescapeDots(user_name);
 
             auto policy = std::make_shared<RowPolicy>();
             policy->setFullName(unescaped_user_name, database, table_name);
@@ -1048,9 +1037,7 @@ std::unordered_set<UUID> UsersConfigParser::getAllowedIDs(
     for (const auto & key : keys)
     {
         /// Config keys have dots escaped with a backslash, but entity UUIDs are generated from the un-escaped name.
-        String unescaped_key = key;
-        Poco::replaceInPlace(unescaped_key, "\\.", ".");
-        ids.emplace(generateID(type, unescaped_key));
+        ids.emplace(generateID(type, unescapeDots(key)));
     }
     return ids;
 }
