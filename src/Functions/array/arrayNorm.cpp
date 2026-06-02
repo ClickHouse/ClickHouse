@@ -151,7 +151,8 @@ MULTITARGET_FUNCTION_X86_V4(
         const ColumnArray::Offset * __restrict offsets,
         ResultType * __restrict result_data,
         size_t input_rows_count,
-        const typename Kernel::ConstParams & params) {
+        const typename Kernel::ConstParams & params)
+    {
         constexpr size_t unroll_count = 16;
         ColumnArray::Offset prev = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
