@@ -121,17 +121,40 @@ bool SplitFileCachePriority::modifySizeLimits(
     if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
-    max_data_segment_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
-    max_data_segment_size = getRatio(max_size_, (1 - system_segment_size_ratio));
+    const size_t new_data_size = getRatio(max_size_, (1 - system_segment_size_ratio));
+    const size_t new_data_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
+    const size_t new_system_size = getRatio(max_size_, system_segment_size_ratio);
+    const size_t new_system_elements = getRatio(max_elements_, system_segment_size_ratio);
 
-    max_system_segment_elements = getRatio(max_elements_, system_segment_size_ratio);
-    max_system_segment_size = getRatio(max_size_, system_segment_size_ratio);
+    /// Remember data limits to roll back if the system update throws, so we never leave the
+    /// split priority partially resized. The rollback cannot throw (data already fit these).
+    const size_t prev_data_size = getPriority(SegmentType::Data).getSizeLimit(lock);
+    const size_t prev_data_elements = getPriority(SegmentType::Data).getElementsLimit(lock);
 
     getPriority(SegmentType::Data).modifySizeLimits(
-        max_data_segment_size, max_data_segment_elements, size_ratio_, lock);
+        new_data_size, new_data_elements, size_ratio_, lock);
 
-    getPriority(SegmentType::System).modifySizeLimits(
-        max_system_segment_size, max_system_segment_elements, size_ratio_, lock);
+    try
+    {
+        getPriority(SegmentType::System).modifySizeLimits(
+            new_system_size, new_system_elements, size_ratio_, lock);
+    }
+    catch (...)
+    {
+        getPriority(SegmentType::Data).modifySizeLimits(
+            prev_data_size, prev_data_elements, size_ratio_, lock);
+        throw;
+    }
+
+    max_data_segment_size = new_data_size;
+    max_data_segment_elements = new_data_elements;
+    max_system_segment_size = new_system_size;
+    max_system_segment_elements = new_system_elements;
+
+    /// Keep the wrapper's own (inherited) limits in sync with the children, so getSizeLimit/
+    /// getElementsLimit report the new totals and doDynamicResize sees no limits inconsistency.
+    max_size = max_size_;
+    max_elements = max_elements_;
 
     return true;
 }
@@ -249,6 +272,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     CachePriorityGuard & priority_guard,
     CacheStateGuard & state_guard)
 {
+    /// Nothing to evict anywhere -> nothing to collect.
     if (!eviction_info.requiresEviction())
         return true;
 
