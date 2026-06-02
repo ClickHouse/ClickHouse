@@ -35,7 +35,12 @@ bool initFirstCharacter(
     /// Invalid UTF-8
     if (!first_u32)
     {
-        size_t src_len = UTF8::seqLength(*needle);
+        /// Process it verbatim as a sequence of bytes. The clamp against `needle_size`
+        /// matches the inner-loop clamp in `buildCacheBytes`: a truncated first sequence
+        /// (e.g. a 1-byte needle starting with `0xE4`, where `seqLength` is 3) must not
+        /// read past the needle, otherwise the `memcpy` propagates MemorySanitizer noise
+        /// from uninitialized memory past the needle into `l_seq` / `u_seq`.
+        size_t src_len = std::min<size_t>(needle_size, UTF8::seqLength(*needle));
         memcpy(l_seq, needle, src_len);
         memcpy(u_seq, needle, src_len);
     }

@@ -22,7 +22,7 @@ constexpr size_t time_shift = 22;
 
 }
 
-class FunctionDateTimeToSnowflakeID : public IFunction
+class FunctionDateTimeToSnowflakeID final : public IFunction
 {
 public:
     static constexpr auto name = "dateTimeToSnowflakeID";
@@ -70,7 +70,7 @@ public:
 };
 
 
-class FunctionDateTime64ToSnowflakeID : public IFunction
+class FunctionDateTime64ToSnowflakeID final : public IFunction
 {
 public:
     static constexpr auto name = "dateTime64ToSnowflakeID";
