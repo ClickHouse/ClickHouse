@@ -1987,6 +1987,21 @@ static std::optional<size_t> calculatePartSizeSafe(
     }
 }
 
+static size_t calculateDirectorySize(const DiskPtr & disk, const String & path)
+{
+    if (!disk->existsFileOrDirectory(path))
+        return 0;
+
+    if (disk->existsFile(path))
+        return disk->getFileSize(path);
+
+    size_t total_size = 0;
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+        total_size += calculateDirectorySize(disk, fs::path(path) / it->name());
+
+    return total_size;
+}
+
 static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 {
     part->remove_time.store(part->modification_time, std::memory_order_relaxed);
@@ -9837,15 +9852,22 @@ void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
 
     auto table_id = getStorageID();
 
+    size_t table_size = getTotalActiveSizeInBytes();
+    if (is_dropped && table_size == 0)
+    {
+        for (const auto & disk : getStoragePolicy()->getDisks())
+            table_size += calculateDirectorySize(disk, relative_data_path);
+    }
+
     const auto & query_settings = query_context->getSettingsRef();
     if (query_settings[Setting::max_table_size_to_drop].changed)
     {
         getContext()->checkTableCanBeDropped(
-            table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings[Setting::max_table_size_to_drop]);
+            table_id.database_name, table_id.table_name, table_size, query_settings[Setting::max_table_size_to_drop]);
         return;
     }
 
-    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
+    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, table_size);
 }
 
 void MergeTreeData::writePartLog(

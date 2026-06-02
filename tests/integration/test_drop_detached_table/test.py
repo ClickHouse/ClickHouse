@@ -122,6 +122,20 @@ def check_no_table_in_detached_table(node, table_name: str):
     assert_eq_with_retry(instance=node, query=query, expectation="0")
 
 
+def create_force_drop_flag(node):
+    force_drop_flag_path = "/var/lib/clickhouse/flags/force_drop_table"
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "touch {} && chmod a=rw {}".format(
+                force_drop_flag_path, force_drop_flag_path
+            ),
+        ],
+        user="root",
+    )
+
+
 def test_drop_table_with_detached_flag(start_cluster):
     table_name = "test_table"
     create_table(replica1, table_name)
@@ -162,6 +176,61 @@ def test_drop_table_with_detached_flag(start_cluster):
             ["bash", "-c", f"ls -1 {disk_path}{metadata_path}.detached | wc -l"]
         ).strip()
     )
+
+
+def test_drop_detached_table_respects_max_table_size_to_drop(start_cluster):
+    table_name = "test_drop_detached_table_size_limit"
+    create_table(replica1, table_name)
+    replica1.query(
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 1000"
+    )
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+
+    assert (
+        "1"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+        ).rstrip()
+    )
+
+    error = replica1.query_and_get_error(
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE {table_name} SYNC SETTINGS max_table_size_to_drop=1"
+    )
+    assert "is greater than max" in error
+
+    assert (
+        "1"
+        == replica1.query(
+            f"SELECT count(table) FROM system.detached_tables WHERE table='{table_name}'"
+        ).rstrip()
+    )
+
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE {table_name} SYNC SETTINGS max_table_size_to_drop=1000000000"
+    )
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
+
+    table_name = "test_drop_detached_table_size_limit_force"
+    create_table(replica1, table_name)
+    replica1.query(
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 1000"
+    )
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+
+    error = replica1.query_and_get_error(
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE {table_name} SYNC SETTINGS max_table_size_to_drop=1"
+    )
+    assert "is greater than max" in error
+
+    create_force_drop_flag(replica1)
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE {table_name} SYNC SETTINGS max_table_size_to_drop=1"
+    )
+    check_no_table_in_detached_table(node=replica1, table_name=table_name)
 
 
 def test_drop_detached_on_cluster(start_cluster):

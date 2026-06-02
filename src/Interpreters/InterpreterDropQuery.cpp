@@ -2,6 +2,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/TablesDependencyGraph.h>
@@ -248,6 +249,19 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
         UUID detached_table_uuid = detached_create->uuid;
         StorageID detached_table_id(table_id.getDatabaseName(), table_name, detached_table_uuid);
+
+        /// Load the table to check if it can be dropped (e.g. size limits)
+        String data_path = DatabaseCatalog::getStoreDirPath(detached_table_uuid);
+        detached_create->setDatabase(table_id.getDatabaseName());
+        detached_create->setTable(table_name);
+        auto detached_table
+            = createTableFromAST(
+                  *detached_create, table_id.getDatabaseName(), data_path, getContext(), LoadingStrictnessLevel::FORCE_RESTORE)
+                  .second;
+        /// The temporary storage is not started and has no loaded parts.
+        /// Mark it as dropped so MergeTree checks the data directory size instead of the active parts size.
+        detached_table->is_dropped = true;
+        detached_table->checkTableCanBeDropped(getContext());
 
         bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
         bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
