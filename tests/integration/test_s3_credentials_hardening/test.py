@@ -60,7 +60,7 @@ RELOAD_TRUSTED_ENDPOINT_CONFIG = """        <reload_trusted_endpoint>
 """
 RELOAD_TRUSTED_ENDPOINT_WITH_HEADER_CONFIG = """        <reload_trusted_endpoint>
             <endpoint>http://resolver:18080/reload_trusted/</endpoint>
-            <header>X-Admin-Secret: TRUSTED_HEADER</header>
+            <header>X-Revoked-Endpoint-Header: TRUSTED_HEADER</header>
         </reload_trusted_endpoint>
 """
 RELOAD_TRUSTED_ENDPOINT_WITHOUT_CREDENTIALS_CONFIG = """        <reload_trusted_endpoint>
@@ -264,7 +264,7 @@ def test_s3_storage_refresh_rebuilds_client_after_header_revocation():
     try:
         assert (
             node.query("SELECT * FROM s3_refresh_revoked_endpoint_header").strip()
-            == "5"
+            == "7"
         )
 
         _set_reload_trusted_endpoint(False)

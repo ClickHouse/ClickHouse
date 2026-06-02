@@ -7,6 +7,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/":
             return b"OK"
 
+        revoked_endpoint_header = self.headers.get("X-Revoked-Endpoint-Header", "")
+        if "TRUSTED_HEADER" in revoked_endpoint_header:
+            return b"7\n"
         authorization = self.headers.get("Authorization", "")
         if "ADMIN_FAKE_KEY" in authorization:
             return b"1\n"
