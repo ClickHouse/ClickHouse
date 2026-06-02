@@ -80,7 +80,7 @@ struct SnapshotSummaryTotals
 
 enum class SnapshotSummaryOperation
 {
-    UNEXPECTED,
+    UNKNOWN,
     APPEND,
     OVERWRITE,
     DELETE,
