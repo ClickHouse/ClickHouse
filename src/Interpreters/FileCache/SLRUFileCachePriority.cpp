@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_slru_downgrade_fail_before_finalize[];
+    extern const char file_cache_modify_size_limits_fail[];
 }
 
 namespace
@@ -213,7 +214,11 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     const CacheStateGuard::Lock & lock)
 {
     if (!size && !elements)
-        return std::make_unique<EvictionInfo>();
+    {
+        auto info = probationary_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock);
+        info->add(protected_queue.collectEvictionInfo(0, 0, reservee, is_total_space_cleanup, origin_info, lock));
+        return info;
+    }
 
     /// Total space cleanup is for keep_free_space_size(elements)_ratio feature.
     if (is_total_space_cleanup)
@@ -828,6 +833,10 @@ bool SLRUFileCachePriority::modifySizeLimits(
 
     try
     {
+        fiu_do_on(FailPoints::file_cache_modify_size_limits_fail,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in modifySizeLimits");
+        });
         probationary_queue.modifySizeLimits(getRatio(max_size_, 1 - size_ratio_), getRatio(max_elements_, 1 - size_ratio_), 0, lock);
     }
     catch (...)

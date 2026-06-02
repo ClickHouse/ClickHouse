@@ -2161,13 +2161,8 @@ namespace
 
 TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 {
-    /// `modifySizeLimits` must be all-or-nothing: if the probationary update throws,
-    /// the already-applied protected sub-queue limit must be rolled back.
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// The trigger is a LOGICAL_ERROR, which aborts in debug/sanitizer builds before any
-    /// catch runs, so the rollback is only observable in release builds.
-    GTEST_SKIP() << "modifySizeLimits triggers a LOGICAL_ERROR which aborts in debug/sanitizer builds";
-#else
+    /// `modifySizeLimits` must be all-or-nothing: when the probationary update throws
+    /// (injected via failpoint), the already-applied protected limit is rolled back.
     ServerUUID::setRandomForUnitTests();
 
     const size_t max_size = 30;
@@ -2186,8 +2181,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
 
-    /// protected: a single small 5-byte entry (well under its 15-byte limit).
-    /// probationary: 15 bytes (full to its 15-byte limit).
+    /// One small 5-byte entry in each sub-queue, fitting comfortably under old and new limits.
     {
         auto write_lock = cache_guard.writeLock();
         auto state_lock = state_guard.lock();
@@ -2195,18 +2189,17 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
             IFileCachePriority::QueueEntryType::SLRU_Protected, write_lock, &state_lock);
         priority.addForRestore(key_metadata, 100, 5,
             IFileCachePriority::QueueEntryType::SLRU_Probationary, write_lock, &state_lock);
-        priority.addForRestore(key_metadata, 105, 5,
-            IFileCachePriority::QueueEntryType::SLRU_Probationary, write_lock, &state_lock);
-        priority.addForRestore(key_metadata, 110, 5,
-            IFileCachePriority::QueueEntryType::SLRU_Probationary, write_lock, &state_lock);
     }
     ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 5);
-    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 5);
     ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
 
-    /// Resize total to 20 (ratio 0.5 -> protected limit 10, probationary limit 10).
-    /// protected current 5 <= 10 (succeeds, limit 15 -> 10), then probationary current
-    /// 15 > 10 (throws).
+    /// Resize total to 20 (ratio 0.5 -> protected limit 10). The resize is valid by itself
+    /// (current 5/1 fit 10/3); the only thing that throws is the injected failpoint.
+    DB::FailPointInjection::enableFailPoint("file_cache_modify_size_limits_fail");
+    SCOPE_EXIT({
+        DB::FailPointInjection::disableFailPoint("file_cache_modify_size_limits_fail");
+    });
     {
         auto state_lock = state_guard.lock();
         ASSERT_ANY_THROW(priority.modifySizeLimits(20, max_elements, slru_size_ratio, state_lock));
@@ -2215,7 +2208,6 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
     /// With the bug the protected limit was already shrunk to 10; with the fix it is
     /// rolled back to the original 15.
     ASSERT_EQ(priority.getProtectedSizeLimit(state_guard.lock()), 15);
-#endif
 }
 
 TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
