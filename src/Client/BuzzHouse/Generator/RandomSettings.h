@@ -78,6 +78,8 @@ extern std::unordered_map<String, CHSetting> queryOracleSettings;
 
 extern std::unordered_map<String, CHSetting> formatSettings;
 
+extern std::unordered_map<String, CHSetting> icebergSessionSettings;
+
 extern std::unordered_map<String, CHSetting> allDatabaseSettings;
 
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;

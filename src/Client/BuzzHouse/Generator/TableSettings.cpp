@@ -827,7 +827,9 @@ static std::unordered_map<String, CHSetting> regexpTreeLayoutSettings = {{"requi
 
 static std::unordered_map<String, CHSetting> polygonLayoutSettings = {{"STORE_POLYGON_KEY_COLUMN", trueOrFalseSettingNoOracle}};
 
-static std::unordered_map<String, CHSetting> dataLakeSettings
+static std::unordered_map<String, CHSetting> dataLakeSettings;
+
+static std::unordered_map<String, CHSetting> icebergTableOnlySettings
     = {{"iceberg_format_version",
         CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 3)); }, {"1", "2", "3"}, false)},
        {"iceberg_recent_metadata_file_by_last_updated_ms_field", trueOrFalseSetting},
@@ -1276,6 +1278,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         cachedLayoutSettings.erase(entry);
         ssdCachedLayoutSettings.erase(entry);
         dataLakeSettings.erase(entry);
+        icebergTableOnlySettings.erase(entry);
         paimonSettings.erase(entry);
         fileTableSettings.erase(entry);
         distributedTableSettings.erase(entry);
@@ -1292,6 +1295,10 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         azureQueueSettings.erase(entry);
         logTableSettings.erase(entry);
     }
+    auto icebergTableSettings = dataLakeSettings;
+    icebergTableSettings.insert(icebergTableOnlySettings.begin(), icebergTableOnlySettings.end());
+    icebergTableSettings.insert(icebergSessionSettings.begin(), icebergSessionSettings.end());
+
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
          {ReplacingMergeTree, mergeTreeTableSettings},
@@ -1322,9 +1329,9 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {DeltaLakeS3, dataLakeSettings},
          {DeltaLakeAzure, dataLakeSettings},
          {DeltaLakeLocal, dataLakeSettings},
-         {IcebergS3, dataLakeSettings},
-         {IcebergAzure, dataLakeSettings},
-         {IcebergLocal, dataLakeSettings},
+         {IcebergS3, icebergTableSettings},
+         {IcebergAzure, icebergTableSettings},
+         {IcebergLocal, icebergTableSettings},
          {PaimonS3, paimonSettings},
          {PaimonAzure, paimonSettings},
          {PaimonLocal, paimonSettings},

@@ -48,6 +48,7 @@
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
             <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
             <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
+            <allow_experimental_cleanup_old_data_files_compaction>1</allow_experimental_cleanup_old_data_files_compaction>
             <allow_experimental_codecs>1</allow_experimental_codecs>
             <allow_experimental_correlated_subqueries>1</allow_experimental_correlated_subqueries>
             <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
