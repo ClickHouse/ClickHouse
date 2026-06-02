@@ -263,7 +263,10 @@ The bounding-box predicate is only a coarse prefilter; the exact tile boundary i
 ClickHouse does not expose a tile endpoint by default: the HTTP interface only accepts queries at `/`. A clean
 `/tile/{z}/{x}/{y}` URL is added by the operator with a [predefined query handler](/interfaces/http) in the
 server configuration. The handler's `url` uses the `regex:` form to capture the path segments, binds them to query
-parameters, and returns the bytes with `FORMAT RawBLOB`:
+parameters, and returns the bytes with `FORMAT RawBLOB`.
+
+In the simplest case the table has a `Geometry` column and the handler serves one feature per row — `mvtEncodeGeom`
+projects each geometry into the requested tile and clips it, so rows outside the tile drop out automatically:
 
 ```xml
 <http_handlers>
@@ -273,16 +276,10 @@ parameters, and returns the bytes with `FORMAT RawBLOB`:
         <handler>
             <type>predefined_query_handler</type>
             <query>
-                WITH mvtTileBBox({z:UInt8}, {x:UInt32}, {y:UInt32}, 0.0625) AS bb
-                SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
-                FROM
-                (
-                    SELECT mvtEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
-                    FROM points
-                    WHERE lon BETWEEN bb.1 AND bb.3 AND lat BETWEEN bb.2 AND bb.4
-                    GROUP BY geom
-                )
-                SETTINGS allow_suspicious_types_in_group_by = 1
+                SELECT mvtEncode('shapes')(
+                    mvtEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                    tuple(id, name)::Tuple(id UInt32, name String))
+                FROM shapes
                 FORMAT RawBLOB
             </query>
             <content_type>application/vnd.mapbox-vector-tile</content_type>
@@ -292,7 +289,13 @@ parameters, and returns the bytes with `FORMAT RawBLOB`:
 </http_handlers>
 ```
 
-A `GET /tile/10/550/335` then returns the encoded tile. Omit the inner `GROUP BY` and `count()` for unclustered tiles.
+Here `shapes` is a table with a `geom Geometry` column (any mix of points, lines and polygons). A `GET /tile/10/550/335`
+returns the encoded tile.
+
+For point data this works just as well against plain `longitude`/`latitude` columns by building the point inline with
+`mvtEncodeGeom((lon, lat)::Point, …)`. To cluster coincident features, or to add an index-using bounding-box prefilter
+for large tables, extend the inner query as shown in [Clustering](#clustering) and
+[Restricting rows to a tile](#restricting-rows-to-a-tile).
 
 ## Limitations {#limitations}
 
