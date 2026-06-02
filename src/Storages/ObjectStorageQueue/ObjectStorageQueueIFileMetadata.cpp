@@ -175,7 +175,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                  path, file_status->state.load(), current_exception);
         try
         {
-            Coordination::Error code;
+            Coordination::Error code = {};
             auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
             zk_retry.retryLoop([&]
             {
@@ -393,7 +393,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    Coordination::Error code;
+    Coordination::Error code = {};
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
@@ -584,7 +584,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-        /// Created Failed node.
+        /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
     }

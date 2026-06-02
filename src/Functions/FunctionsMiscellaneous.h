@@ -2,12 +2,15 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnSet.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 
 
 namespace DB
@@ -30,7 +33,7 @@ struct LambdaCapture
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
 
-class ExecutableFunctionExpression : public IExecutableFunction
+class ExecutableFunctionExpression final : public IExecutableFunction
 {
 public:
     struct Signature
@@ -50,6 +53,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
+
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
         if (input_rows_count == 0)
             return result_type->createColumn();
 
@@ -64,7 +77,10 @@ public:
             expr_columns.insert({argument.column, argument.type, signature->argument_names[i]});
         }
 
-        expression_actions->execute(expr_columns);
+        /// Do not propagate the outer dry_run into the lambda body: non-deterministic
+        /// functions (e.g. WASM UDFs) would return defaults during dry-run, producing
+        /// wrong constant-folding results for higher-order functions.
+        expression_actions->execute(expr_columns, dry_run);
 
         return expr_columns.getByName(signature->return_name).column;
     }
@@ -83,7 +99,7 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression : public IFunctionBase
+class FunctionExpression final : public IFunctionBase
 {
 public:
     using Signature = ExecutableFunctionExpression::Signature;
@@ -140,7 +156,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class ExecutableFunctionCapture : public IExecutableFunction
+class ExecutableFunctionCapture final : public IExecutableFunction
 {
 public:
     ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, LambdaCapturePtr capture_)
@@ -207,7 +223,7 @@ private:
     LambdaCapturePtr capture;
 };
 
-class FunctionCapture : public IFunctionBase
+class FunctionCapture final : public IFunctionBase
 {
 public:
     FunctionCapture(
@@ -225,6 +241,44 @@ public:
     String getName() const override { return name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// A lambda is suitable for constant folding only if every node in its inner DAG is.
+    /// Without this, a higher-order function like arrayMap with a constant array and a lambda
+    /// whose body contains a non-deterministic call (e.g. a non-deterministic WASM UDF) or an
+    /// unbuilt ColumnSet would be folded to a stale value at analysis time.
+    bool isSuitableForConstantFolding() const override
+    {
+        for (const auto & inner_node : expression_actions->getActionsDAG().getNodes())
+        {
+            switch (inner_node.type)
+            {
+                case ActionsDAG::ActionType::FUNCTION:
+                    if (!inner_node.function_base->isSuitableForConstantFolding())
+                        return false;
+                    break;
+                case ActionsDAG::ActionType::COLUMN:
+                    /// Same check getFunctionArguments does for direct children: an IN set
+                    /// that has not been built yet cannot be substituted at plan time.
+                    if (inner_node.column)
+                    {
+                        if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(inner_node.column.get()))
+                        {
+                            auto future_set = column_set->getData();
+                            if (!future_set || !future_set->get())
+                                return false;
+                        }
+                    }
+                    break;
+                case ActionsDAG::ActionType::ARRAY_JOIN:
+                case ActionsDAG::ActionType::PLACEHOLDER:
+                    return false;
+                case ActionsDAG::ActionType::INPUT:
+                case ActionsDAG::ActionType::ALIAS:
+                    break;
+            }
+        }
+        return true;
+    }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -244,7 +298,7 @@ private:
     String name;
 };
 
-class FunctionCaptureOverloadResolver : public IFunctionOverloadResolver
+class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     FunctionCaptureOverloadResolver(
@@ -260,7 +314,7 @@ public:
         if (actions_dag.hasArrayJoin())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
-        std::unordered_map<std::string, DataTypePtr> arguments_map;
+        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> arguments_map;
 
         for (const auto * input : actions_dag.getInputs())
             arguments_map[input->result_name] = input->result_type;
