@@ -166,8 +166,8 @@ def put_azure_file_content(filename, port, data):
 
 def get_profile_event_count(node, event):
     return int(
-        node.query(
-            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        azure_query(
+            node, f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
         ).strip()
     )
 
