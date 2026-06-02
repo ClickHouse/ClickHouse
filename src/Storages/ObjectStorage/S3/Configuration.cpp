@@ -820,8 +820,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     has_user_supplied_credentials = user_supplied_access_key_id
         || user_supplied_secret_access_key
         || user_supplied_session_token
-        || user_supplied_no_sign_request
-        || !headers_from_ast.empty();
+        || user_supplied_no_sign_request;
 
     if (has_user_supplied_credentials)
     {

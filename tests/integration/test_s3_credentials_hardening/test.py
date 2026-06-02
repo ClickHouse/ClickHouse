@@ -232,6 +232,17 @@ def test_endpoint_scoped_credentials_still_apply():
     assert result.strip() == "2"
 
 
+def test_endpoint_scoped_credentials_still_apply_with_user_headers():
+    result = node.query(
+        f"""
+        SELECT *
+        FROM s3('{TRUSTED_ENDPOINT}', 'CSV', 'leaked UInt8',
+                headers('X-User-Header' = 'user'))
+        """
+    )
+    assert result.strip() == "2"
+
+
 def test_named_collection_endpoint_scoped_credentials_still_apply():
     node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
     node.query(
