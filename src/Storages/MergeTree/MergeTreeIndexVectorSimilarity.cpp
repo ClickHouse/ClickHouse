@@ -12,6 +12,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -24,9 +25,12 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <ranges>
 #include <string_view>
+#include <vector>
 
 #include <fmt/ranges.h>
 
@@ -71,8 +75,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// The only indexing method currently supported by USearch
-const std::set<String> methods = {"hnsw"};
+/// Indexing methods: "hnsw" (usearch graph) and "fastknn" (flat brute-force scan over quantized codes)
+const std::set<String> methods = {"hnsw", "fastknn"};
 
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
@@ -589,13 +593,358 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
     return result;
 }
 
+/// ============================ Flat ("fastknn") implementation ============================
+
+MergeTreeIndexGranuleVectorSimilarityFlat::MergeTreeIndexGranuleVectorSimilarityFlat(
+    const String & index_name_,
+    unum::usearch::metric_kind_t metric_kind_,
+    unum::usearch::scalar_kind_t scalar_kind_,
+    size_t dimensions_)
+    : index_name(index_name_)
+    , metric_kind(metric_kind_)
+    , scalar_kind(scalar_kind_)
+    , dimensions(dimensions_)
+    , bytes_per_vector(dimensions_ / 8) /// b1 (binary) packs 8 dimensions per byte
+{
+}
+
+void MergeTreeIndexGranuleVectorSimilarityFlat::serializeBinary(WriteBuffer & ostr) const
+{
+    writeIntBinary(FILE_FORMAT_VERSION, ostr);
+    writeIntBinary(static_cast<UInt64>(dimensions), ostr);
+    writeIntBinary(static_cast<UInt64>(bytes_per_vector), ostr);
+    writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
+    if (!codes.empty())
+        ostr.write(reinterpret_cast<const char *>(codes.data()), codes.size());
+}
+
+void MergeTreeIndexGranuleVectorSimilarityFlat::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+{
+    UInt64 file_version;
+    readIntBinary(file_version, istr);
+    if (file_version != FILE_FORMAT_VERSION)
+        throw Exception(ErrorCodes::FORMAT_VERSION_TOO_OLD, "Unsupported flat vector similarity index version {}", file_version);
+
+    UInt64 dims;
+    UInt64 bpv;
+    UInt64 count;
+    readIntBinary(dims, istr);
+    readIntBinary(bpv, istr);
+    readIntBinary(count, istr);
+    bytes_per_vector = bpv;
+    num_vectors = count;
+    codes.resize(num_vectors * bytes_per_vector);
+    if (!codes.empty())
+        istr.readStrict(reinterpret_cast<char *>(codes.data()), codes.size());
+}
+
+MergeTreeIndexAggregatorVectorSimilarityFlat::MergeTreeIndexAggregatorVectorSimilarityFlat(
+    const String & index_name_,
+    const Block & index_sample_block_,
+    UInt64 dimensions_,
+    unum::usearch::metric_kind_t metric_kind_,
+    unum::usearch::scalar_kind_t scalar_kind_)
+    : index_name(index_name_)
+    , index_sample_block(index_sample_block_)
+    , dimensions(dimensions_)
+    , metric_kind(metric_kind_)
+    , scalar_kind(scalar_kind_)
+    , bytes_per_vector(dimensions_ / 8)
+{
+}
+
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarityFlat::getGranuleAndReset()
+{
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarityFlat>(index_name, metric_kind, scalar_kind, dimensions);
+    granule->bytes_per_vector = bytes_per_vector;
+    granule->num_vectors = num_vectors;
+    granule->codes = std::move(codes);
+    codes.clear();
+    num_vectors = 0;
+    return granule;
+}
+
+namespace
+{
+
+/// Sign-binarize `rows` vectors from `column_array` into packed bit-codes appended to `codes`.
+template <typename Column>
+void quantizeRowsToBinary(
+    const ColumnArray * column_array, const ColumnArray::Offsets & offsets,
+    size_t dimensions, size_t bytes_per_vector, std::vector<UInt8> & codes, size_t & num_vectors, size_t rows)
+{
+    const auto & data = typeid_cast<const Column &>(column_array->getData()).getData();
+
+    for (size_t row = 0; row + 1 < rows; ++row)
+        if (offsets[row + 1] - offsets[row] != dimensions)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
+
+    codes.resize((num_vectors + rows) * bytes_per_vector);
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const size_t start = (row == 0) ? 0 : offsets[row - 1];
+        const typename Column::ValueType * src = &data[start];
+        checkVectorIsSane(src, dimensions, unum::usearch::scalar_kind_t::b1x8_k, ErrorCodes::INCORRECT_DATA, "indexed vector");
+
+        char * dst = reinterpret_cast<char *>(codes.data() + num_vectors * bytes_per_vector);
+        if constexpr (std::is_same_v<Column, ColumnBFloat16>)
+            unum::usearch::cast_gt<unum::usearch::bf16_bits_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
+        else if constexpr (std::is_same_v<Column, ColumnFloat32>)
+            unum::usearch::cast_gt<unum::usearch::f32_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
+        else
+        {
+            static_assert(std::is_same_v<Column, ColumnFloat64>);
+            unum::usearch::cast_gt<unum::usearch::f64_t, unum::usearch::b1x8_t>::try_(reinterpret_cast<const char *>(src), dimensions, dst);
+        }
+        ++num_vectors;
+    }
+}
+
+}
+
+void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, size_t * pos, size_t limit)
+{
+    if (*pos >= block.rows())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.", *pos, block.rows());
+
+    size_t rows_read = std::min(limit, block.rows() - *pos);
+    if (rows_read == 0)
+        return;
+
+    if (index_sample_block.columns() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected that index is build over a single column");
+
+    const auto & index_column_name = index_sample_block.getByPosition(0).name;
+    const auto & index_column = block.getByName(index_column_name).column;
+    ColumnPtr column_cut = index_column->cut(*pos, rows_read);
+
+    const auto * column_array = typeid_cast<const ColumnArray *>(column_cut.get());
+    if (!column_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Array(Float32|Float64|BFloat16) column");
+    if (column_array->empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array is unexpectedly empty");
+
+    const size_t rows = column_array->size();
+    const auto & column_array_offsets = column_array->getOffsets();
+    const size_t dimensions_inserted = column_array_offsets[0];
+    if (dimensions != dimensions_inserted)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Array values in column with vector similarity index have {} elements, expects {} elements", dimensions_inserted, dimensions);
+
+    const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
+    if (!data_type_array)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float32|Float64|BFloat16)");
+
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+    WhichDataType which(nested_type_index);
+    if (which.isFloat32())
+        quantizeRowsToBinary<ColumnFloat32>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+    else if (which.isFloat64())
+        quantizeRowsToBinary<ColumnFloat64>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+    else if (which.isBFloat16())
+        quantizeRowsToBinary<ColumnBFloat16>(column_array, column_array_offsets, dimensions, bytes_per_vector, codes, num_vectors, rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
+
+    *pos += rows_read;
+}
+
+namespace
+{
+
+/// Adapts ClickHouse's global, bounded vector-similarity thread pool to usearch's executor interface
+/// (`size`/`fixed`/`dynamic`), so `exact_search_t` scans in parallel using a shared bounded pool instead of
+/// spawning its own unbounded `std::thread`s. Bounding by the shared pool prevents oversubscription when many
+/// parts are scanned concurrently (each part's scan competes for the same pool).
+class VectorSimilarityPoolExecutor
+{
+public:
+    VectorSimilarityPoolExecutor(ThreadPool & pool_, size_t threads_count_)
+        : pool(pool_), threads_count(std::max<size_t>(threads_count_, 1))
+    {
+    }
+
+    [[maybe_unused]] std::size_t size() const noexcept { return threads_count; }
+
+    template <typename Function>
+    void fixed(std::size_t tasks, Function && function)
+    {
+        runRange(tasks, [&](std::size_t thread_idx, std::size_t task_idx) { function(thread_idx, task_idx); return true; });
+    }
+
+    template <typename Function>
+    void dynamic(std::size_t tasks, Function && function)
+    {
+        runRange(tasks, std::forward<Function>(function));
+    }
+
+private:
+    /// Splits [0, tasks) into `min(threads_count, tasks)` contiguous chunks scheduled on the pool. `function`
+    /// returns false to request early stop (used by `exact_search_t` for progress/cancellation).
+    template <typename Function>
+    void runRange(std::size_t tasks, Function && function)
+    {
+        if (tasks == 0)
+            return;
+
+        const std::size_t num_threads = std::min(threads_count, tasks);
+        if (num_threads <= 1)
+        {
+            for (std::size_t task_idx = 0; task_idx < tasks; ++task_idx)
+                if (!function(0, task_idx))
+                    break;
+            return;
+        }
+
+        const std::size_t per_thread = (tasks + num_threads - 1) / num_threads;
+        std::atomic_bool stop{false};
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+        for (std::size_t t = 0; t < num_threads; ++t)
+        {
+            const std::size_t begin = t * per_thread;
+            if (begin >= tasks)
+                break;
+            const std::size_t end = std::min(tasks, begin + per_thread);
+            runner.enqueueAndKeepTrack([&function, &stop, t, begin, end]
+            {
+                for (std::size_t task_idx = begin; task_idx < end && !stop.load(std::memory_order_relaxed); ++task_idx)
+                    if (!function(t, task_idx))
+                        stop.store(true, std::memory_order_relaxed);
+            });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    ThreadPool & pool;
+    std::size_t threads_count;
+};
+
+}
+
+MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimilarityFlat(
+    const std::optional<VectorSearchParameters> & parameters_,
+    const String & index_column_,
+    unum::usearch::metric_kind_t metric_kind_,
+    ContextPtr context)
+    : parameters(parameters_)
+    , index_column(index_column_)
+    , metric_kind(metric_kind_)
+    , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
+    , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
+    , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
+{
+    static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
+    if (!std::isfinite(index_fetch_multiplier)
+        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
+        || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
+}
+
+bool MergeTreeIndexConditionVectorSimilarityFlat::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn &) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for vector similarity indexes");
+}
+
+bool MergeTreeIndexConditionVectorSimilarityFlat::alwaysUnknownOrTrue() const
+{
+    if (!parameters)
+        return true;
+    if (parameters->column != index_column)
+        return true;
+    if ((parameters->distance_function == "L2Distance" && metric_kind != unum::usearch::metric_kind_t::l2sq_k)
+        || (parameters->distance_function == "cosineDistance" && metric_kind != unum::usearch::metric_kind_t::cos_k && metric_kind != unum::usearch::metric_kind_t::hamming_k)
+        || (parameters->distance_function == "dotProduct" && metric_kind != unum::usearch::metric_kind_t::ip_k))
+            return true;
+    return false;
+}
+
+NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
+{
+    if (!parameters)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
+
+    const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleVectorSimilarityFlat>(granule_);
+    if (granule == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
+
+    if (parameters->reference_vector.size() != granule->dimensions)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
+            parameters->reference_vector.size(), granule->dimensions);
+
+    checkVectorIsSane(parameters->reference_vector.data(), granule->dimensions, granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
+
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present || is_rescoring)
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+
+    const size_t num_vectors = granule->num_vectors;
+    const size_t bytes_per_vector = granule->bytes_per_vector;
+    limit = std::min(limit, num_vectors);
+
+    /// Quantize the (full-precision) reference vector to the same packed-bit representation as the index.
+    std::vector<UInt8> query_code(bytes_per_vector);
+    unum::usearch::cast_gt<unum::usearch::f64_t, unum::usearch::b1x8_t>::try_(
+        reinterpret_cast<const char *>(parameters->reference_vector.data()), granule->dimensions, reinterpret_cast<char *>(query_code.data()));
+
+    if (limit == 0 || num_vectors == 0)
+        return {};
+
+    /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount.
+    unum::usearch::metric_punned_t metric(granule->dimensions, granule->metric_kind, granule->scalar_kind);
+
+    /// Parallelize the exhaustive scan over a bounded, shared pool. Unlike HNSW search (O(log N) per query, fine
+    /// single-threaded), a flat scan is O(N) and the index-analysis phase only parallelizes across parts, so a single
+    /// large part would otherwise scan single-threaded. `exact_search_t` computes all distances via the executor,
+    /// transposes, and partial-sorts to the top `limit`.
+    size_t threads_count = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (threads_count == 0)
+        threads_count = getNumberOfCPUCoresToUse();
+    auto & pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+    VectorSimilarityPoolExecutor executor(pool, threads_count);
+
+    /// Abort the scan promptly on KILL QUERY (usearch does not check for cancellation internally).
+    auto progress = [](std::size_t, std::size_t) -> bool
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->throwIfKilled();
+        return true;
+    };
+
+    unum::usearch::exact_search_t searcher;
+    auto search_result = searcher(
+        reinterpret_cast<const char *>(granule->codes.data()), num_vectors, bytes_per_vector,
+        reinterpret_cast<const char *>(query_code.data()), /*queries_count=*/ 1, bytes_per_vector,
+        limit, metric, executor, progress);
+
+    NearestNeighbours result;
+    result.rows.resize(limit);
+    if (parameters->return_distances)
+        result.distances = std::vector<float>(limit);
+
+    const auto * neighbours = search_result.at(0);
+    for (size_t i = 0; i < limit; ++i)
+    {
+        result.rows[i] = neighbours[i].offset;
+        if (parameters->return_distances)
+            result.distances.value()[i] = neighbours[i].distance;
+    }
+
+    return result;
+}
+
+/// ============================ End flat ("fastknn") implementation ============================
+
 MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     const IndexDescription & index_,
+    const String & method_,
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
+    , method(method_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
@@ -605,11 +954,15 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
+    if (method == "fastknn")
+        return std::make_shared<MergeTreeIndexGranuleVectorSimilarityFlat>(index.name, metric_kind, scalar_kind, dimensions);
     return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
+    if (method == "fastknn")
+        return std::make_shared<MergeTreeIndexAggregatorVectorSimilarityFlat>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind);
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
@@ -621,12 +974,15 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG::Node * /*predicate*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
 {
     const String & index_column = index.column_names[0];
+    if (method == "fastknn")
+        return std::make_shared<MergeTreeIndexConditionVectorSimilarityFlat>(parameters, index_column, metric_kind, context);
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
+    const String method = args[0].safeGet<String>();
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
@@ -647,7 +1003,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
     }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, method, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -682,10 +1038,19 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
     if (args[2].safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (dimensions) of vector similarity index must be > 0");
+
+    /// The flat "fastknn" method needs the quantization argument and currently only supports binary ('b1') codes.
+    const bool is_fastknn = (args[0].safeGet<String>() == "fastknn");
+    if (is_fastknn && !has_six_args)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method requires the six-argument form so a quantization can be specified (currently only 'b1' is supported)");
+
     if (has_six_args)
     {
         if (!quantizationToScalarKind.contains(args[3].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
+
+        if (is_fastknn && quantizationToScalarKind.at(args[3].safeGet<String>()) != unum::usearch::scalar_kind_t::b1x8_k)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "The 'fastknn' method currently supports only 'b1' (binary) quantization");
 
         /// More checks for binary quantization
         if (quantizationToScalarKind.at(args[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)
@@ -696,13 +1061,16 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector similarity index requires that the dimension is a multiple of 8");
         }
 
-        /// Call Usearch's own parameter validation method for HNSW-specific parameters
-        UInt64 connectivity = args[4].safeGet<UInt64>();
-        UInt64 expansion_add = args[5].safeGet<UInt64>();
-        UInt64 expansion_search = default_expansion_search;
-        unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
-        if (auto error = config.validate(); error)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+        /// Call Usearch's own parameter validation method for HNSW-specific parameters (the flat method ignores them).
+        if (!is_fastknn)
+        {
+            UInt64 connectivity = args[4].safeGet<UInt64>();
+            UInt64 expansion_add = args[5].safeGet<UInt64>();
+            UInt64 expansion_search = default_expansion_search;
+            unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
+            if (auto error = config.validate(); error)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+        }
     }
 
     /// Check that the index is created on a single column
