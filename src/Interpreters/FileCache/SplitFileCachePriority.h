@@ -41,6 +41,8 @@ public:
     size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
 
+    size_t getQueueSize() const override;
+
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
     bool canFit( /// NOLINT
@@ -98,6 +100,8 @@ public:
         IterateFunc func,
         FileCacheReserveStat & stat,
         const CachePriorityGuard::ReadLock & lock) override;
+
+    bool collectInvalidatedEntries(InvalidatedEntriesInfos & invalidated_entries, size_t limit, CachePriorityGuard & cache_guard) override;
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 

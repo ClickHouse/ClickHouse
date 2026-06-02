@@ -51,6 +51,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
+    extern const Event FilesystemCacheInvalidatedEntries;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
 }
@@ -447,11 +448,14 @@ void FileCache::initializeImpl(bool load_metadata)
         throw;
     }
 
-    if (keep_current_size_to_max_ratio != 1 || keep_current_elements_to_max_ratio != 1)
-    {
-        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
-        keep_up_free_space_ratio_task->schedule();
-    }
+    /// Always start the background task: even when keep_free_space_*_ratio is 0
+    /// (the default), the task is needed to sweep invalidated (zombie) entries
+    /// from the LRU queue. Without this, zombie entries accumulate indefinitely
+    /// because iterateImpl uses a read lock and cannot remove entries inline.
+    keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+    keep_up_free_space_ratio_task->schedule();
+    LOG_INFO(log, "Background cache cleanup task started (zombie sweep enabled, batch size: {})",
+             keep_up_free_space_remove_batch);
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
@@ -1448,8 +1452,37 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
 
         if (!size_to_evict && !elements_to_evict)
         {
-            /// Nothing to free - all limits are satisfied.
-            keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
+            /// Release cache_state_guard before taking priority guard locks,
+            /// respecting the lock ordering documented in Guards.h:
+            /// CachePriorityGuard must be acquired before CacheStateGuard.
+            lock.unlock();
+
+            /// Size/element limits are satisfied, but there may still be
+            /// invalidated (zombie) entries in the queue that need cleanup.
+            /// These entries have size=0 and are excluded from State counters,
+            /// so they are invisible to the checks above. We must still sweep
+            /// the queue to remove them, otherwise they leak memory by keeping
+            /// KeyMetadata objects alive via shared_ptr in Entry.
+            IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
+            bool has_more = main_priority->collectInvalidatedEntries(
+                invalidated_entries, keep_up_free_space_remove_batch, cache_guard);
+
+            if (!invalidated_entries.empty())
+            {
+                LOG_TRACE(
+                    log, "No eviction needed, but sweeping {} invalidated queue entries{}",
+                    invalidated_entries.size(), has_more ? " (more remain)" : "");
+
+                auto wlock = cache_guard.writeLock();
+                IFileCachePriority::removeEntries(invalidated_entries, wlock);
+
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheInvalidatedEntries, invalidated_entries.size());
+            }
+
+            if (has_more)
+                keep_up_free_space_ratio_task->schedule();
+            else
+                keep_up_free_space_ratio_task->scheduleAfter(space_ratio_satisfied_reschedule_ms);
             return;
         }
 
@@ -2153,6 +2186,11 @@ size_t FileCache::getFileSegmentsNum() const
 {
     /// We use this method for metrics, so it is ok to get approximate result.
     return main_priority->getElementsCountApprox();
+}
+
+size_t FileCache::getQueueSize() const
+{
+    return main_priority->getQueueSize();
 }
 
 void FileCache::assertCacheCorrectnessWithProbability()

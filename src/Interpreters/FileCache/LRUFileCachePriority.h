@@ -51,6 +51,8 @@ public:
     size_t getElementsCount(const CacheStateGuard::Lock & lock) const override { return state->getElementsCount(lock); }
     size_t getElementsCountApprox() const override { return state->getElementsCountApprox(); }
 
+    size_t getQueueSize() const override { return queue.size(); }
+
     size_t getQueueID() const { return queue_id; }
 
     std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
@@ -97,6 +99,8 @@ public:
         const OriginInfo & origin_info,
         CachePriorityGuard &,
         CacheStateGuard &) override;
+
+    bool collectInvalidatedEntries(InvalidatedEntriesInfos & invalidated_entries, size_t limit, CachePriorityGuard & cache_guard) override;
 
     bool tryIncreasePriority(
         Iterator & iterator,

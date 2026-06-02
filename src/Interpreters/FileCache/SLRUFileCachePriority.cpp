@@ -190,6 +190,16 @@ void SLRUFileCachePriority::iterate(
     probationary_queue.iterate(func, stat, lock);
 }
 
+bool SLRUFileCachePriority::collectInvalidatedEntries(
+    InvalidatedEntriesInfos & invalidated_entries,
+    size_t limit,
+    CachePriorityGuard & cache_guard)
+{
+    if (protected_queue.collectInvalidatedEntries(invalidated_entries, limit, cache_guard))
+        return true;
+    return probationary_queue.collectInvalidatedEntries(invalidated_entries, limit, cache_guard);
+}
+
 void SLRUFileCachePriority::resetEvictionPos()
 {
     protected_queue.resetEvictionPos();

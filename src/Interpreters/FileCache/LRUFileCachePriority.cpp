@@ -553,6 +553,25 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriori
     return std::make_shared<IPriorityDump>(res);
 }
 
+bool LRUFileCachePriority::collectInvalidatedEntries(
+    InvalidatedEntriesInfos & invalidated_entries,
+    size_t limit,
+    CachePriorityGuard & cache_guard)
+{
+    auto lock = cache_guard.readLock();
+    for (auto it = queue.begin(); it != queue.end(); ++it)
+    {
+        const auto & entry = **it;
+        if (entry.getState() == Entry::State::Invalidated)
+        {
+            invalidated_entries.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
+            if (invalidated_entries.size() >= limit)
+                return true;
+        }
+    }
+    return false;
+}
+
 bool LRUFileCachePriority::modifySizeLimits(
     size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CacheStateGuard::Lock & lock)
 {

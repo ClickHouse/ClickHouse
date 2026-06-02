@@ -196,6 +196,10 @@ public:
     virtual size_t getElementsCount(const CacheStateGuard::Lock &) const = 0;
     virtual size_t getElementsCountApprox() const = 0;
 
+    /** Total queue entries including invalidated (zombie) entries.
+      * The difference between this and getElementsCount is the zombie count. */
+    virtual size_t getQueueSize() const = 0;
+
     virtual bool isOvercommitEviction() const { return false; }
     virtual double getSLRUSizeRatio() const { return 0; }
 
@@ -322,6 +326,14 @@ public:
         const CacheStateGuard::Lock & lock) = 0;
 
     virtual void resetEvictionPos() = 0;
+
+    /** Sweep the queue under a read lock and collect up to `limit` invalidated
+      * (zombie) entries. Invalidated entries have size=0 and are excluded from
+      * State counters, so they are invisible to size/element-based eviction
+      * checks. Collected entries can be removed via removeEntries under a
+      * subsequent write lock. Returns true if the sweep was truncated by the
+      * limit (i.e. there may be more zombies to collect). */
+    virtual bool collectInvalidatedEntries(InvalidatedEntriesInfos & invalidated_entries, size_t limit, CachePriorityGuard & cache_guard) = 0;
 
     /// Remove given queue entries for the queue.
     /// Used to cleanup invalidated queue entries.

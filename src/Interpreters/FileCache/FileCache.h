@@ -207,6 +207,8 @@ public:
 
     size_t getFileSegmentsNum() const;
 
+    size_t getQueueSize() const;
+
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
     size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }

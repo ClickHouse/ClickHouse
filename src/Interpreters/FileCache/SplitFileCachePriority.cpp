@@ -82,6 +82,12 @@ size_t SplitFileCachePriority::getElementsCountApprox() const
         + getPriority(SegmentType::System).getElementsCountApprox();
 }
 
+size_t SplitFileCachePriority::getQueueSize() const
+{
+    return getPriority(SegmentType::Data).getQueueSize()
+        + getPriority(SegmentType::System).getQueueSize();
+}
+
 std::string SplitFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock & lock) const
 {
     return "DataPriority: " + getPriority(SegmentType::Data).getStateInfoForLog(lock)
@@ -110,6 +116,16 @@ void SplitFileCachePriority::iterate(
 {
     getPriority(SegmentType::Data).iterate(func, stat, lock);
     getPriority(SegmentType::System).iterate(func, stat, lock);
+}
+
+bool SplitFileCachePriority::collectInvalidatedEntries(
+    InvalidatedEntriesInfos & invalidated_entries,
+    size_t limit,
+    CachePriorityGuard & cache_guard)
+{
+    if (getPriority(SegmentType::Data).collectInvalidatedEntries(invalidated_entries, limit, cache_guard))
+        return true;
+    return getPriority(SegmentType::System).collectInvalidatedEntries(invalidated_entries, limit, cache_guard);
 }
 
 bool SplitFileCachePriority::modifySizeLimits(

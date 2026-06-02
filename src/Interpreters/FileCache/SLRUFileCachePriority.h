@@ -32,6 +32,8 @@ public:
     size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
 
+    size_t getQueueSize() const override { return protected_queue.getQueueSize() + probationary_queue.getQueueSize(); }
+
     size_t getProtectedSize(const CacheStateGuard::Lock & lock) const { return protected_queue.getSize(lock); }
     size_t getProtectedElementsCount(const CacheStateGuard::Lock & lock) const { return protected_queue.getElementsCount(lock); }
     size_t getProbationarySize(const CacheStateGuard::Lock & lock) const { return probationary_queue.getSize(lock); }
@@ -91,6 +93,8 @@ public:
         IterateFunc func,
         FileCacheReserveStat & stat,
         const CachePriorityGuard::ReadLock &) override;
+
+    bool collectInvalidatedEntries(InvalidatedEntriesInfos & invalidated_entries, size_t limit, CachePriorityGuard & cache_guard) override;
 
     bool tryIncreasePriority(
         Iterator & iterator_,

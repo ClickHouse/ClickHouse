@@ -2142,3 +2142,91 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_LE(cache->getUsedCacheSize(), 4u);
     }
 }
+
+TEST_F(FileCacheTest, CollectInvalidatedEntries)
+{
+    /// Regression for the zombie-leak bug:
+    /// `iterate` runs under a `ReadLock` and cannot remove invalidated
+    /// entries from the underlying `std::list`. They must be drained by
+    /// `collectInvalidatedEntries` (read-locked walk) followed by
+    /// `removeEntries` (write-locked drain).
+
+    ServerUUID::setRandomForUnitTests();
+
+    size_t max_size = 1000;
+    size_t max_elements = 100;
+
+    LRUFileCachePriority priority(max_size, max_elements);
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_invalidated_sweep";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    auto key = DB::FileCacheKey::fromPath("zombie_key");
+    auto origin = FileCache::getCommonOrigin();
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    auto add_entry = [&](size_t offset, size_t size)
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        return priority.add(key_metadata, offset, size, write_lock, &state_lock);
+    };
+
+    auto it1 = add_entry(0, 10);
+    auto it2 = add_entry(10, 10);
+    auto it3 = add_entry(20, 10);
+
+    ASSERT_EQ(priority.getQueueSize(), 3u);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3u);
+
+    /// Invalidate two entries. State counters drop, but `queue.size()` does
+    /// not change — these are the zombies.
+    it1->invalidate();
+    it3->invalidate();
+
+    ASSERT_EQ(priority.getQueueSize(), 3u);                                /// list unchanged
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1u);          /// counters did drop
+    ASSERT_EQ(priority.getQueueSize() - priority.getElementsCount(state_guard.lock()), 2u);
+
+    /// Sweep: collect under ReadLock, drain under WriteLock.
+    IFileCachePriority::InvalidatedEntriesInfos invalidated;
+    bool has_more = priority.collectInvalidatedEntries(invalidated, /* limit */ 100, cache_guard);
+    ASSERT_FALSE(has_more);
+    ASSERT_EQ(invalidated.size(), 2u);
+
+    IFileCachePriority::removeEntries(invalidated, cache_guard.writeLock());
+
+    ASSERT_EQ(priority.getQueueSize(), 1u);                                /// zombies drained
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 1u);
+
+    /// Batch limit is respected: invalidate one more, ask for limit=1, expect has_more=false
+    /// because there is exactly one zombie. Then invalidate another and verify limit truncation.
+    it2->invalidate();
+    auto it4 = add_entry(30, 10);
+    auto it5 = add_entry(40, 10);
+    it4->invalidate();
+    it5->invalidate();
+
+    ASSERT_EQ(priority.getQueueSize(), 3u);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0u);
+
+    invalidated.clear();
+    has_more = priority.collectInvalidatedEntries(invalidated, /* limit */ 2, cache_guard);
+    ASSERT_TRUE(has_more);                                                 /// truncated by limit
+    ASSERT_EQ(invalidated.size(), 2u);
+
+    IFileCachePriority::removeEntries(invalidated, cache_guard.writeLock());
+    ASSERT_EQ(priority.getQueueSize(), 1u);
+
+    invalidated.clear();
+    has_more = priority.collectInvalidatedEntries(invalidated, /* limit */ 100, cache_guard);
+    ASSERT_FALSE(has_more);
+    ASSERT_EQ(invalidated.size(), 1u);
+    IFileCachePriority::removeEntries(invalidated, cache_guard.writeLock());
+
+    ASSERT_EQ(priority.getQueueSize(), 0u);
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 0u);
+}

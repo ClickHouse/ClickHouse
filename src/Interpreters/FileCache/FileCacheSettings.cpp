@@ -132,6 +132,11 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
     result.add(
         ColumnDescription(
             "current_elements_num", std::make_shared<DataTypeUInt64>(), "Current cache elements (file segments) number"));
+    result.add(
+        ColumnDescription(
+            "current_queue_size", std::make_shared<DataTypeUInt64>(),
+            "Actual LRU queue size including invalidated entries. "
+            "Delta with current_elements_num indicates zombie entry count."));
 
     return result;
 }
@@ -151,6 +156,7 @@ void FileCacheSettings::dumpToSystemSettingsColumns(
     res_columns[i++]->insert(cache->isInitialized());
     res_columns[i++]->insert(cache->getUsedCacheSize());
     res_columns[i++]->insert(cache->getFileSegmentsNum());
+    res_columns[i++]->insert(cache->getQueueSize());
 }
 
 void FileCacheSettings::loadFromConfig(
