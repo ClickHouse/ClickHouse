@@ -249,7 +249,7 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     return table_sides;
 }
 
-const ActionsDAG::Node * appendExpression(
+static const ActionsDAG::Node * appendExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
@@ -267,7 +267,7 @@ const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-void buildJoinClauseImpl(
+static void buildJoinClauseImpl(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -434,7 +434,7 @@ void buildJoinClauseImpl(
     }
 }
 
-JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
+static JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
 {
     JoinClauses result;
     for (const auto & rhs_clause : rhs)
@@ -448,7 +448,7 @@ JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
     return result;
 }
 
-void buildSimpleJoinClause(
+static void buildSimpleJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -472,7 +472,7 @@ void buildSimpleJoinClause(
         join_clause);
 }
 
-void buildJoinClause(
+static void buildJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -529,7 +529,7 @@ void buildJoinClause(
         join_clause);
 }
 
-JoinClauses buildJoinClauses(
+static JoinClauses buildJoinClauses(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -667,7 +667,7 @@ JoinClauses buildJoinClauses(
     return std::move(built_clauses.at(join_expression.get()));
 }
 
-std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
+static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     ActionsDAG & left_join_actions,
     ActionsDAG & right_join_actions,
     ActionsDAG & post_join_actions,
@@ -742,7 +742,7 @@ std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     return std::make_pair(std::move(join_clauses), has_residual_filters);
 }
 
-JoinClausesAndActions buildJoinClausesAndActions(
+static JoinClausesAndActions buildJoinClausesAndActions(
     const ColumnsWithTypeAndName & left_table_expression_columns,
     const ColumnsWithTypeAndName & right_table_expression_columns,
     const JoinNode & join_node,
@@ -802,7 +802,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
     auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
-    bool has_residual_filters;
+    bool has_residual_filters = false;
 
     std::tie(result.join_clauses, has_residual_filters) = buildAllJoinClauses(
         left_join_actions,
@@ -1104,7 +1104,7 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     return result;
 }
 
-std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
+static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
 {
