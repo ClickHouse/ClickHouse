@@ -2461,18 +2461,12 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
-            /// Drop inherited `<name>.proj` checksum entries for any projection whose
-            /// directory was not hardlinked into the new part (it is in `files_to_skip`)
-            /// and that produced no rebuilt projection part (absent from
-            /// `getProjectionParts()`). `prepare` copies `source_part->checksums`
-            /// wholesale, so without this the new part keeps a `<name>.proj` entry that
-            /// points at a directory which does not exist on disk. This happens both when
-            /// a rebuilt projection yields zero rows (`lightweight_mutation_projection_mode
-            /// = 'rebuild'`) and when the projection is intentionally dropped
-            /// (`'drop'`/`'throw'`, where `projections_to_recalc` stays empty but every
-            /// projection directory is still skipped). On the next consistency-checking
-            /// load `loadProjections` would otherwise mark the projection broken instead
-            /// of absent.
+            /// `prepare` copies `source_part->checksums` wholesale, so a `<name>.proj`
+            /// entry can be inherited for a projection whose directory was skipped during
+            /// hardlinking (it is in `files_to_skip`) and that produced no part. That
+            /// happens both for a zero-row rebuild and for drop/throw mode. Drop such
+            /// entries; otherwise `loadProjections` marks the projection broken on the
+            /// next consistency-checking load.
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
                 const auto projection_file = projection.getDirectoryName();
