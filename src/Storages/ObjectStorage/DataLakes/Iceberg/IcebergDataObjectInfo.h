@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
 #include <Core/Field.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 
@@ -49,10 +50,6 @@ private:
 
 namespace DB
 {
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-
 struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
