@@ -1,5 +1,4 @@
 #include <Processors/Port.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
@@ -205,17 +204,6 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         stream->finalize();
 }
 
-static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
-{
-    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
-    auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
-    /// The merge task always writes the current on-disk format, so the legacy lazy-codec fallback
-    /// doesn't apply — pass `WithCodec` to keep the codec fixed to the index definition.
-    return PostingsSerialization(
-        PostingListCodecFactory::createPostingListCodec(codec_type),
-        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
-}
-
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -229,7 +217,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
-    , postings_serialization(createPostingsSerialization(*index_ptr))
+    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index_ptr).getPostingListCodec())
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());
@@ -469,7 +457,7 @@ void MergeTextIndexesTask::finalize()
 
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), index_stream->compressed_hashing);
+    TextIndexSerialization::serializeSparseIndex(sparse_index, index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

@@ -2,10 +2,8 @@
 #include <base/sleep.h>
 
 #include <filesystem>
-#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -461,7 +459,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->entry = entry;
     task->parseQueryFromEntry(context);
     chassert(!task->entry.query.empty());
-    chassert(!zookeeper->exists(task->getFinishedNodePath()));
+    assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
@@ -473,7 +471,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
         {
-            chassert(zookeeper->expired() || current_task <= entry_name);
+            assert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
             {
@@ -520,8 +518,7 @@ static bool getRMVCoordinationInfo(
     const ZooKeeperPtr & zookeeper,
     UUID parent_uuid,
     Coordination::Stat & stats,
-    RefreshTask::CoordinationZnode & coordination_znode,
-    ContextPtr context)
+    RefreshTask::CoordinationZnode & coordination_znode)
 {
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
@@ -529,7 +526,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;
@@ -565,7 +562,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
         return false;
 
     LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
@@ -573,7 +570,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the temporary table is created and replicated before the coordination info is updated.
+    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -584,7 +581,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
         return false;
 
     StorageID storage_id{rename_from_table};
@@ -691,8 +688,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        chassert(!zookeeper->exists(fs::path(entry_path) / "try"));
-        chassert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }

@@ -15,7 +15,6 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
-#include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
@@ -44,7 +43,6 @@
 #include <Core/Types.h>
 #include "config.h"
 
-#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -577,23 +575,16 @@ void Connection::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
     {
-        readStringBinary(server_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
-        sanitizeUntrustedServerString(server_name);
+        readStringBinary(server_name, *in);
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
             readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-        {
-            readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
-            sanitizeUntrustedServerString(server_timezone);
-        }
+            readStringBinary(server_timezone, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-        {
-            readStringBinary(server_display_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
-            sanitizeUntrustedServerString(server_display_name);
-        }
+            readStringBinary(server_display_name, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(server_version_patch, *in);
         else
@@ -601,33 +592,22 @@ void Connection::receiveHello()
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            /// These are tiny protocol tokens ("chunked" / "notchunked") compared in
-            /// `is_chunked`; cap them so a hostile server cannot force a large allocation.
-            readStringBinary(proto_send_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
-            readStringBinary(proto_recv_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            readStringBinary(proto_send_chunked_srv, *in);
+            readStringBinary(proto_recv_chunked_srv, *in);
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
             UInt64 rules_size;
             readVarUInt(rules_size, *in);
-            /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
-            /// values so a hostile server cannot force a huge allocation. The server
-            /// enforces the same cap at construction time (see TCPHandler::sendHello).
-            if (rules_size > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
-                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Server declared {} password-complexity rules, maximum allowed is {}",
-                    rules_size, DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
             password_complexity_rules.reserve(rules_size);
 
             for (size_t i = 0; i < rules_size; ++i)
             {
                 String original_pattern;
                 String exception_message;
-                readStringBinary(original_pattern, *in, DBMS_MAX_HELLO_STRING_SIZE);
-                readStringBinary(exception_message, *in, DBMS_MAX_HELLO_STRING_SIZE);
-                sanitizeUntrustedServerString(original_pattern);
-                sanitizeUntrustedServerString(exception_message);
+                readStringBinary(original_pattern, *in);
+                readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
@@ -1137,7 +1117,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1443,10 +1423,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TimezoneUpdate:
-                /// Same cap + control-char sanitization as the handshake read; the field
-                /// reaches the client's terminal via the time-zone warning path.
-                readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
-                sanitizeUntrustedServerString(server_timezone);
+                readStringBinary(server_timezone, *in);
                 res.server_timezone = server_timezone;
                 return res;
 
