@@ -27,13 +27,13 @@ Contains the list of database engines supported by the server.
 ```sql title="Query"
 SELECT name
 FROM system.database_engines
-WHERE name IN ('Atomic', 'Lazy', 'Ordinary')
+WHERE name IN ('Atomic', 'Ordinary')
+ORDER BY name
 ```
 
 ```text title="Response"
 ┌─name─────┐
-│ Ordinary │
 │ Atomic   │
-│ Lazy     │
+│ Ordinary │
 └──────────┘
 ```
