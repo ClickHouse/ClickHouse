@@ -931,6 +931,74 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     return &inverted_dag.addFunction(or_func, std::move(or_children), "");
 }
 
+/// Boolean-producing functions: the only ones that legitimately appear in a WHERE/PREWHERE boolean
+/// position. Used to restrict `tryRewriteCoalesceBoolean` below so a value-context wrapper (e.g.
+/// `ifNull(col, 5)` as an argument of a comparison) is left to `tryRewriteCoalesceComparison`.
+static bool isBooleanProducingFunction(const String & name)
+{
+    static const std::unordered_set<std::string_view> names = {
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn",
+        "like", "notLike", "ilike", "notILike", "match",
+        "isNull", "isNotNull", "empty", "notEmpty",
+        "and", "or", "not",
+    };
+    return names.contains(name);
+}
+
+/// Rewrite a boolean-position `ifNull(<predicate>, 0)` / `coalesce(<predicate>, 0)` into just
+/// `<predicate>` for key analysis, so the inner comparison becomes a normal key atom and primary-key
+/// / skip indexes can prune granules. In a WHERE/PREWHERE a row passes only when the filter is
+/// truthy, and `ifNull(X, 0)` is truthy exactly when `X` is truthy, so dropping the wrapper is
+/// equivalent for filtering. Complements `tryRewriteCoalesceComparison`, which handles the other
+/// shape `<cmp>(coalesce|ifNull(col, ...), const)`.
+///
+/// Only valid in non-inverted context (the caller checks `need_inversion == false`): under `NOT`,
+/// `ifNull(X, 0)` is not equivalent to `X` on NULL rows, so the inverted branch falls through to
+/// FUNCTION_UNKNOWN (the safe over-approximation). Two further guards:
+///   * the fallback must be a constant that is FALSE in a boolean context (numeric zero);
+///   * the wrapped expression must itself be a boolean-producing function, which only occurs in
+///     boolean position, so a value-context wrapper is left untouched.
+/// Returns nullptr if the pattern does not match. Handles the two-argument form (what query
+/// generators emit); multi-argument `coalesce(pred, ..., 0)` is left for a follow-up.
+static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
+    const ActionsDAG::Node & node,
+    const String & name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (name != "coalesce" && name != "ifNull")
+        return nullptr;
+
+    if (node.children.size() != 2)
+        return nullptr;
+
+    const ActionsDAG::Node * predicate = node.children[0];
+    const ActionsDAG::Node * fallback = node.children[1];
+
+    if (predicate->type != ActionsDAG::ActionType::FUNCTION
+        || !isBooleanProducingFunction(predicate->function_base->getName()))
+        return nullptr;
+
+    if (fallback->type != ActionsDAG::ActionType::COLUMN || !fallback->column || !isColumnConst(*fallback->column))
+        return nullptr;
+
+    const Field fallback_value = (*fallback->column)[0];
+    bool fallback_is_false = false;
+    switch (fallback_value.getType())
+    {
+        case Field::Types::UInt64:  fallback_is_false = fallback_value.safeGet<UInt64>() == 0; break;
+        case Field::Types::Int64:   fallback_is_false = fallback_value.safeGet<Int64>() == 0; break;
+        case Field::Types::Float64: fallback_is_false = fallback_value.safeGet<Float64>() == 0.0; break;
+        default: return nullptr;
+    }
+    if (!fallback_is_false)
+        return nullptr;
+
+    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false);
+}
+
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -1052,6 +1120,12 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (!need_inversion
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && (res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr)
+            {
+                handled_inversion = true;
+            }
+            else if (!need_inversion
+                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
+                && (res = tryRewriteCoalesceBoolean(node, name, inverted_dag, inputs_mapping, context)) != nullptr)
             {
                 handled_inversion = true;
             }
