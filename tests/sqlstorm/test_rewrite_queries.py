@@ -58,6 +58,40 @@ class TestArrayJoinOnClause(unittest.TestCase):
             "SELECT * FROM t \nLEFT ARRAY JOIN arr AS a WHERE id = 1",
         )
 
+    def test_alias_with_whitespace_before_column_list(self):
+        # `AS tag (TagName) ON TRUE` has whitespace before the column list; the
+        # column name must still be parsed and the `ON` clause stripped, instead
+        # of leaking ` (TagName) ON TRUE` into the rewritten query.
+        self.assertEqual(
+            rewrite_query(
+                "SELECT * FROM t LEFT JOIN arrayJoin(arr) AS tag (TagName) ON TRUE WHERE id = 1"
+            ),
+            "SELECT * FROM t \nLEFT ARRAY JOIN arr AS TagName WHERE id = 1",
+        )
+
+
+class TestAnyArrayRewrite(unittest.TestCase):
+    def test_simple_identifier(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM t WHERE x = ANY(arr)"),
+            "SELECT * FROM t WHERE has(arr, x)",
+        )
+
+    def test_qualified_identifier_with_function_operand(self):
+        self.assertEqual(
+            rewrite_query("SELECT * FROM tt WHERE tt.TagName = ANY(splitByString(',', s))"),
+            "SELECT * FROM tt WHERE has(splitByString(',', s), tt.TagName)",
+        )
+
+    def test_subquery_operand_left_untouched(self):
+        # ClickHouse handles `ANY(subquery)` natively; do not rewrite it.
+        sql = "SELECT * FROM t WHERE x = ANY(SELECT id FROM u)"
+        self.assertEqual(rewrite_query(sql), sql)
+
+    def test_with_subquery_operand_left_untouched(self):
+        sql = "SELECT * FROM t WHERE x = ANY(WITH c AS (SELECT 1) SELECT * FROM c)"
+        self.assertEqual(rewrite_query(sql), sql)
+
 
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner

@@ -7,8 +7,10 @@ here. Function names and syntax sugar that the server already understands
 either natively or via a case-insensitive alias are left alone (e.g.
 `STDDEV`, `CARDINALITY`, `ARRAY_TO_STRING`, `REGEXP_SUBSTR`, `TRANSLATE`,
 `ARRAY_AGG`, `STRING_AGG`, `EXTRACT(EPOCH|DOW|... FROM ...)`,
-`date_part('unit', ...)`, `unnest(arr)` in expression position, and
-`expr OP ANY(array_literal)` / `expr OP ALL(array_literal)`).
+`date_part('unit', ...)`, `unnest(arr)` in expression position).
+
+PostgreSQL `lhs = ANY(array_expr)` with a non-subquery operand is rewritten to
+`has(array_expr, lhs)`, since ClickHouse only understands `ANY(subquery)`.
 """
 
 import os
@@ -358,7 +360,10 @@ def rewrite_arrayjoin_to_array_join(sql):
         after = sql[paren_end + 1:]
 
         # Parse: AS alias(col) or AS alias, optionally followed by ON ...
-        alias_match = re.match(r'\s+AS\s+(\w+)(?:\((\w+)\))?(.*)', after, re.IGNORECASE | re.DOTALL)
+        # Allow optional whitespace before the column alias list, since the
+        # corpus also contains `AS tag (TagName) ON TRUE`. Without it `col`
+        # stays `None` and the ` (TagName) ON TRUE` tail leaks into the result.
+        alias_match = re.match(r'\s+AS\s+(\w+)(?:\s*\(\s*(\w+)\s*\))?(.*)', after, re.IGNORECASE | re.DOTALL)
         if not alias_match:
             result.append(sql[i:paren_end + 1])
             i = paren_end + 1
@@ -417,6 +422,44 @@ def rewrite_arrayjoin_to_array_join(sql):
     return ''.join(result)
 
 
+def rewrite_any_array(sql):
+    """Rewrite PostgreSQL `lhs = ANY(array_expr)` with a non-subquery operand to
+    `has(array_expr, lhs)`.
+
+    ClickHouse only has special `ANY` handling for subqueries, not for
+    PostgreSQL-style array operands, so `lhs = ANY(SELECT ...)` /
+    `lhs = ANY(WITH ...)` are left untouched for the native subquery path.
+    Only simple or qualified left-hand identifiers are rewritten; more complex
+    left-hand sides are left alone rather than risk producing wrong SQL."""
+    result = []
+    i = 0
+    # Capture a simple or qualified (optionally quoted) identifier as the
+    # left-hand side, immediately followed by `= ANY(`.
+    pat = re.compile(r'("?\w+"?(?:\s*\.\s*"?\w+"?)*)\s*=\s*ANY\s*\(', re.IGNORECASE)
+    while i < len(sql):
+        m = pat.search(sql, i)
+        if not m:
+            result.append(sql[i:])
+            break
+        paren_start = m.end() - 1  # position of '('
+        paren_end = find_balanced_parens(sql, paren_start)
+        if paren_end == -1:
+            result.append(sql[i:m.end()])
+            i = m.end()
+            continue
+        inner = sql[paren_start + 1:paren_end]
+        # Leave subquery operands to ClickHouse's native `ANY(subquery)` handling.
+        if re.match(r'\s*(?:SELECT|WITH)\b', inner, re.IGNORECASE):
+            result.append(sql[i:paren_end + 1])
+            i = paren_end + 1
+            continue
+        lhs = m.group(1)
+        result.append(sql[i:m.start()])
+        result.append(f"has({inner}, {lhs})")
+        i = paren_end + 1
+    return ''.join(result)
+
+
 def rewrite_query(sql):
     """Apply all rewrites to a SQL query."""
     # 1. Function rewrites (handle balanced parens)
@@ -425,6 +468,7 @@ def rewrite_query(sql):
     # 2. Syntax pattern rewrites
     sql = rewrite_unnest_lateral(sql)
     sql = rewrite_pg_cast(sql)
+    sql = rewrite_any_array(sql)
 
     # 3. Rewrite PostgreSQL `AT TIME ZONE 'tz'` -> `toTimezone(expr, 'tz')`.
     sql = re.sub(
