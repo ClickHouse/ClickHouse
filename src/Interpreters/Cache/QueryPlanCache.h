@@ -89,6 +89,11 @@ struct QueryPlanCacheEntry
     /// eviction callback can decrement the right per-user accounting bucket.
     /// Not part of the cache key and never serialized.
     std::optional<UUID> inserter_user_id;
+
+    /// Cache key under which this entry is stored. Stamped by `QueryPlanCache::set`
+    /// so that `onEntryRemoval` can erase the matching `entry_weights` record on
+    /// LRU/SLRU eviction. Not part of the cache key and never serialized.
+    std::optional<QueryPlanCacheKey> cache_key;
 };
 
 /// Hasher for QueryPlanCacheKey. Uses SipHash over all identifying fields.
@@ -159,6 +164,14 @@ private:
 
     mutable std::mutex per_user_mutex;
     std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
+
+    /// Per-key weight tracker. `LRUCachePolicy::set` and `SLRUCachePolicy::set` overwrite
+    /// existing cells silently (without invoking `onEntryRemoval`), so `set` cannot rely on
+    /// the eviction hook to compensate the previous weight on a same-key replacement.
+    /// We track the inserter+weight here at insert time, decrement on replacement, and
+    /// erase on eviction inside `onEntryRemoval`.
+    std::unordered_map<QueryPlanCacheKey, std::pair<std::optional<UUID>, size_t>, QueryPlanCacheKeyHasher>
+        entry_weights TSA_GUARDED_BY(per_user_mutex);
 };
 
 using QueryPlanCachePtr = std::shared_ptr<QueryPlanCache>;

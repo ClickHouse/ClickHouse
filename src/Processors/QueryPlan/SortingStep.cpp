@@ -266,6 +266,11 @@ SortingStep::SortingStep(
 {
 }
 
+QueryPlanStepPtr SortingStep::clone() const
+{
+    return std::make_unique<SortingStep>(*this);
+}
+
 void SortingStep::updateOutputHeader()
 {
     output_header = input_headers.front();

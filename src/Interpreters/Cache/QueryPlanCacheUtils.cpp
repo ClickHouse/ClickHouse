@@ -13,6 +13,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <algorithm>
 
@@ -108,6 +109,17 @@ std::optional<QueryPlanCacheKey> tryBuildQueryPlanCacheKey(
 
     auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
     if (!storage || storage->isRemote() || storage->isView())
+        return {};
+
+    /// Restrict caching to MergeTree-family tables. Wrapper engines (StorageAlias,
+    /// StorageBuffer, StorageMerge, ...) read through to other tables whose access
+    /// rights and runtime data are not represented by the top-level `storage_id`
+    /// stored in the cache key. Caching their plans would either bypass `SELECT`
+    /// access checks on the underlying target (`StorageAlias` after `REVOKE` on
+    /// the target) or skip wrapper-local state on hit (`StorageBuffer` in-memory
+    /// rows). Until the cache key tracks every underlying `ReadFromTableStep`,
+    /// only direct MergeTree reads are admitted.
+    if (!dynamic_cast<const MergeTreeData *>(storage.get()))
         return {};
 
     if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
