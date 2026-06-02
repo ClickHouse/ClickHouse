@@ -1,30 +1,45 @@
 -- mvtEncodeGeom: project a known point into tile-local pixel space
 (124,3384)
+-- mvtEncodeGeom: the return type is Geometry
+Geometry
+-- mvtEncodeGeom: ST_AsMVTGeom is an alias
+1
 -- mvtEncodeGeom: out-of-range longitude/latitude are clamped to the projection limits
 1
 1
 -- mvtEncodeGeom: a larger extent yields proportionally larger pixel coordinates
 (248,6767)
+-- mvtEncodeGeom: a line is projected and returned as a MultiLineString
+[[(473,3767),(1638,1850),(2803,2809)]]
+-- mvtEncodeGeom: a polygon is projected and returned as a MultiPolygon
+[[[(473,3767),(3386,3767),(3386,891),(473,891),(473,3767)]]]
 -- mvtEncodeGeom: out-of-range zoom and zero extent are errors
 -- mvtEncode: a single point feature with one uint attribute is a valid single-layer tile
 1A2F78020A06706F696E7473120D180112020000220509F801F0341A0D636C75737465725F636F756E7422022803288020
+-- mvtEncode: ST_AsMVT is an alias
+1
 -- mvtEncode: geometry only, no properties
 1A1A78020A06706F696E7473120B18011200220509F801F034288020
+-- mvtEncode: a line and a polygon feature in one layer
+1A3778020A06736861706573121018021200220A09B207EE3A0A9A12F91D121618031200221009B207F60D1AC22D0000F82CC12D000F288020
 -- mvtEncode: an empty group produces an empty tile
 0
+-- mvtEncode: NULL (clipped-out) geometry rows are skipped, so they do not change the tile
+1
 -- mvtEncode: clustering is expressed in SQL by grouping on the pixel geometry and counting
 (124,3384)	2
 (473,3767)	1
 -- mvtEncode: a shared attribute value is interned once, so a tile with one distinct value is smaller
 1
 -- mvtEncode: each supported property type maps to its vector tile value type
-1A6578020A017412151801120C00000101020203030404050522030900001A037374721A036633321A036636341A01691A01751A016422030A01732205150000C03F2209190000000000000440220B20F9FFFFFFFFFFFFFFFF0122022808220428D68E01288020
+1A7278020A01741219180112100000010102020303040405050606070722030900001A037374721A036633321A036636341A01691A01751A01641A036433321A016222030A01732205150000C03F22091900000000000004402202300D22022808220428D68E01220430AC9D0222023801288020
 -- mvtEncode: a NULL property omits that attribute for the feature
 1A2178020A0174120B18011202010022030900001A037374721A017522022808288020
 -- mvtEncode: LowCardinality property types are accepted
 1A1F78020A0174120B18011202000022030900001A0373747222030A0178288020
 -- mvtEncode: the -State / -Merge combinators round-trip the aggregate state to the same tile
 1A2F78020A06706F696E7473120D180112020000220509F801F0341A0D636C75737465725F636F756E7422022803288020
+-- mvtEncode: the geometry argument must be of type Geometry
 -- mvtEncode: a non-named properties tuple is rejected
 -- mvtEncode: an unsupported property type is rejected
 -- mvtEncode: the layer name parameter is required

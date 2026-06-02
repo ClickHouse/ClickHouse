@@ -2,26 +2,23 @@
 (-180,-85.05112877980659,180,85.05112877980659)
 -- mvtTileBBoxMercator: bounding box of a tile in Web Mercator space
 (0,0,2147483648,2147483648)
+-- ST_TileEnvelope is an alias for mvtTileBBoxMercator
+1
 -- mvtTileBBox: a positive margin expands the box on every side
 1	1	1	1
 -- mvtTileBBox round-trips with mvtEncodeGeom: the tile centre projects to an interior pixel
 (2048,2050)
--- mvtTileBBox round-trips with mvtEncodeGeom: a point inside the box projects within [0, extent]
+-- mvtEncodeGeom: clip=true (the default) returns NULL for an out-of-tile point
 1
--- mvtEncode: the buffer parameter clips out-of-tile features (only the Berlin cluster of 2 survives)
-1A2F78020A06706F696E7473120D180112020000220509F801F0341A0D636C75737465725F636F756E7422022802288020
--- mvtEncode: without a buffer nothing is clipped, so the out-of-tile point is also encoded
-49	70	1
--- mvtEncode: buffer 0 clips a point ~5px past the edge that buffer 16 keeps
-0	1
--- mvtEncode: a group entirely outside the tile yields an empty tile
-0
--- mvtEncode: clipping leaves the result a String
-String
--- mvtEncode: an out-of-range buffer parameter is rejected
+-- mvtEncodeGeom: clip=false keeps an out-of-tile point (projected, not clipped)
+1
+-- mvtEncodeGeom: buffer 0 clips a point ~5px past the edge that buffer 16 keeps
+1	1
+-- mvtEncodeGeom: a polygon covering the whole tile is clipped to the tile box (buffer 0)
+[[[(0,0),(0,4096),(4096,4096),(4096,0),(0,0)]]]
+-- mvtEncodeGeom: a line crossing the tile edge is clipped to the buffer boundary
+[[(1638,1850),(4096,1850)]]
+-- mvtEncode: a geometry coordinate outside the representable MVT range is rejected
 -- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator
 -- the largest valid tile index for a zoom is accepted
 1	1
--- mvtEncode: a coordinate beyond Int32::max is encoded (not wrapped) when the extent allows it
-1
-0

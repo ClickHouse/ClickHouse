@@ -241,6 +241,8 @@ The optional `margin` expands the box on every side by that fraction of the tile
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionMvtTileBBox<BBoxSpace::Mercator>>(documentation);
+        /// PostGIS analogue: ST_TileEnvelope returns the tile envelope in Web Mercator space.
+        factory.registerAlias("ST_TileEnvelope", "mvtTileBBoxMercator");
     }
 }
 
