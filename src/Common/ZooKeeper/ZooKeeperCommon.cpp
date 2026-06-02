@@ -238,7 +238,7 @@ void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(data, out);
     Coordination::write(acls, out);
 
-    CreateMode flags;
+    CreateMode flags = CreateMode::PERSISTENT;
     if (include_ttl)
     {
         chassert(!is_ephemeral);
