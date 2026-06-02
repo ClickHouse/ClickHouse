@@ -75,6 +75,12 @@ INCORRECT_TOKEN = "InvalidToken1234"
             False,
             id="test_named_coll_overrides_access_header",
         ),
+        pytest.param(
+            "test_no_sign",
+            "S3('http://resolver:8081/root/test_no_sign.csv', 'NOSIGN', 'CSV')",
+            False,
+            id="test_no_sign_overrides_access_header",
+        ),
     ],
 )
 def test_custom_access_header(
