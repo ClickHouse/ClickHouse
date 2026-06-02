@@ -40,14 +40,13 @@ SELECT ST_AsMVT('points')((124.0, 3384.0)::Point::Geometry) = mvtEncode('points'
 SELECT '-- mvtEncode: geometry only, no properties';
 SELECT hex(mvtEncode('points')((124.0, 3384.0)::Point::Geometry));
 
-SELECT '-- mvtEncode: a line and a polygon feature in one layer';
-SELECT hex(mvtEncode('shapes')(geom))
-FROM
-(
-    SELECT mvtEncodeGeom([(13.4, 52.5), (13.5, 52.6)]::LineString, 10, 550, 335) AS geom
-    UNION ALL
-    SELECT mvtEncodeGeom([[(13.4, 52.5), (13.65, 52.5), (13.65, 52.65), (13.4, 52.65), (13.4, 52.5)]]::Polygon, 10, 550, 335)
-);
+-- A single feature per tile is used here: mvtEncode is order-dependent, so the exact bytes of a multi-feature tile
+-- depend on the order rows reach the aggregate (not stable under parallelism), which would make the test flaky.
+SELECT '-- mvtEncode: a line feature';
+SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([(13.4, 52.5), (13.5, 52.6)]::LineString, 10, 550, 335)));
+
+SELECT '-- mvtEncode: a polygon feature';
+SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([[(13.4, 52.5), (13.65, 52.5), (13.65, 52.65), (13.4, 52.65), (13.4, 52.5)]]::Polygon, 10, 550, 335)));
 
 SELECT '-- mvtEncode: an empty group produces an empty tile';
 SELECT length(mvtEncode('points')((0.0, 0.0)::Point::Geometry)) FROM numbers(0);
