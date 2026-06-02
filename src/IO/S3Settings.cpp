@@ -80,6 +80,7 @@ void S3Settings::resetCredentialsForUserControlledRequest()
     auth_settings[S3AuthSetting::secret_access_key] = "";
     auth_settings[S3AuthSetting::session_token] = "";
     auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64] = "";
+    auth_settings[S3AuthSetting::no_sign_request] = false;
     auth_settings[S3AuthSetting::use_environment_credentials] = false;
     auth_settings[S3AuthSetting::use_insecure_imds_request] = false;
     auth_settings[S3AuthSetting::role_arn] = "";

@@ -243,6 +243,17 @@ def test_endpoint_scoped_credentials_still_apply_with_user_headers():
     assert result.strip() == "2"
 
 
+def test_endpoint_scoped_credentials_still_apply_with_no_sign_false():
+    result = node.query(
+        f"""
+        SELECT *
+        FROM s3('{TRUSTED_ENDPOINT}', format = 'CSV', structure = 'leaked UInt8',
+                no_sign = 0)
+        """
+    )
+    assert result.strip() == "2"
+
+
 def test_named_collection_endpoint_scoped_credentials_still_apply():
     node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
     node.query(
@@ -258,6 +269,28 @@ def test_named_collection_endpoint_scoped_credentials_still_apply():
         assert result.strip() == "2"
     finally:
         node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
+
+
+def test_named_collection_endpoint_scoped_credentials_still_apply_with_no_sign_false():
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint_no_sign_false")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION nc_trusted_endpoint_no_sign_false AS
+            url = '{TRUSTED_ENDPOINT}',
+            no_sign_request = 0
+        """
+    )
+    try:
+        result = node.query(
+            """
+            SELECT *
+            FROM s3(nc_trusted_endpoint_no_sign_false,
+                    format = 'CSV', structure = 'leaked UInt8')
+            """
+        )
+        assert result.strip() == "2"
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint_no_sign_false")
 
 
 def test_named_collection_role_arn_does_not_inherit_admin_keys():

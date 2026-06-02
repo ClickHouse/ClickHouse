@@ -102,7 +102,7 @@ namespace
 
 bool namedCollectionHasUserSuppliedCredentials(const NamedCollection & collection)
 {
-    return collection.has("no_sign_request")
+    return collection.getOrDefault<bool>("no_sign_request", false)
         || !collection.getOrDefault<String>("access_key_id", "").empty()
         || !collection.getOrDefault<String>("secret_access_key", "").empty()
         || !collection.getOrDefault<String>("session_token", "").empty()
@@ -814,15 +814,15 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     {
         user_no_sign_request = no_sign_value.value();
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = user_no_sign_request;
-        user_supplied_no_sign_request = true;
+        user_supplied_no_sign_request = user_no_sign_request;
     }
 
-    has_user_supplied_credentials = user_supplied_access_key_id
+    const bool has_user_supplied_auth_credentials = user_supplied_access_key_id
         || user_supplied_secret_access_key
         || user_supplied_session_token
         || user_supplied_no_sign_request;
 
-    if (has_user_supplied_credentials)
+    if (has_user_supplied_auth_credentials)
     {
         const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
         const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
@@ -842,6 +842,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         }
     }
+    has_user_supplied_credentials = has_user_supplied_auth_credentials || !headers_from_ast.empty();
 
     if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
         storage_class_name.has_value())
