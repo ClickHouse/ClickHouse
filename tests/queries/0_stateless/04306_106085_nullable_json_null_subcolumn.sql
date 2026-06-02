@@ -42,6 +42,14 @@ CREATE TABLE t_106085_int (data Nullable(Int32)) ENGINE = Memory;
 INSERT INTO t_106085_int VALUES (NULL), (42);
 SELECT 'nullable_int_null:', data, data.null, toTypeName(data.null) FROM t_106085_int ORDER BY data NULLS FIRST SETTINGS allow_suspicious_types_in_order_by = 0;
 
+-- The precedence rewrite in `IDataType::getSubcolumnData` is restricted to direct
+-- dynamic carriers (`JSON` / `Dynamic`) wrapped by `Nullable`. The type system also
+-- rejects `Nullable(Array(JSON))` / `Nullable(Map(K, JSON))` at construction time,
+-- so no SQL-reachable column can hit the over-broad branch; assert this here so
+-- the narrow contract stays meaningful if the type rules change.
+CREATE TABLE t_106085_reject_array (data Nullable(Array(JSON))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+CREATE TABLE t_106085_reject_map (data Nullable(Map(String, JSON))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 DROP TABLE t_106085;
 DROP TABLE t_106085_plain;
 DROP TABLE t_106085_int;
