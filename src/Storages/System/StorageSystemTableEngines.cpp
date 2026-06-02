@@ -26,8 +26,17 @@ ColumnsDescription StorageSystemTableEngines::getColumnsDescription()
         {"supports_parallel_insert", std::make_shared<DataTypeUInt8>(),
             "Flag that indicates if table engine supports parallel insert (see max_insert_threads setting)."
         },
-        {"description", std::make_shared<DataTypeString>(), "A high-level description of what the table engine does."},
-        {"syntax", std::make_shared<DataTypeString>(), "How the table engine is specified in the ENGINE clause of a CREATE TABLE query."},
+        {"description", std::make_shared<DataTypeString>(),
+            "A description of what the table engine does. "
+            "For engines that have a dedicated documentation page, this contains the full Markdown body of that page; "
+            "for the remaining engines it is a concise summary."
+        },
+        {"syntax", std::make_shared<DataTypeString>(),
+            "How the table engine is used when creating a table. "
+            "For most engines this is the ENGINE clause of a CREATE TABLE query, "
+            "but some engines (such as the various kinds of views or the Loop engine) are used through other forms, "
+            "such as CREATE VIEW or a SELECT from a table function."
+        },
         {"examples", std::make_shared<DataTypeString>(), "Usage examples."},
         {"introduced_in", std::make_shared<DataTypeString>(), "The ClickHouse version in which the table engine was first introduced, in the form major.minor."},
         {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related table engines."},
