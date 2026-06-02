@@ -118,6 +118,7 @@ void applyEndpointCredentialsOrReset(S3Settings & s3_settings, const S3::URI & u
 {
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
+        s3_settings.resetCredentialsForUserControlledRequest();
         s3_settings.auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings.request_settings.updateIfChanged(endpoint_settings->request_settings);
         return;

@@ -347,6 +347,35 @@ def test_endpoint_scoped_credentials_still_apply_with_no_sign_false():
     assert result.strip() == "2"
 
 
+def test_partial_endpoint_scoped_config_does_not_inherit_admin_keys():
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_partial_endpoint")
+    _set_reload_trusted_endpoint(True, with_credentials=False)
+    node.query("SYSTEM RELOAD CONFIG")
+    try:
+        result = node.query(
+            f"SELECT * FROM s3('{RELOAD_TRUSTED_ENDPOINT}', 'CSV', 'leaked UInt8')"
+        )
+        assert result.strip() == "0"
+
+        node.query(
+            f"""
+            CREATE NAMED COLLECTION nc_partial_endpoint AS
+                url = '{RELOAD_TRUSTED_ENDPOINT}'
+            """
+        )
+        result = node.query(
+            """
+            SELECT *
+            FROM s3(nc_partial_endpoint, format = 'CSV', structure = 'leaked UInt8')
+            """
+        )
+        assert result.strip() == "0"
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_partial_endpoint")
+        _set_reload_trusted_endpoint(False)
+        node.query("SYSTEM RELOAD CONFIG")
+
+
 def test_named_collection_endpoint_scoped_credentials_still_apply():
     node.query("DROP NAMED COLLECTION IF EXISTS nc_trusted_endpoint")
     node.query(
