@@ -111,7 +111,17 @@ bool namedCollectionHasUserSuppliedCredentials(const NamedCollection & collectio
         || !collection.getOrDefault<String>("http_client", "").empty()
         || !collection.getOrDefault<String>("service_account", "").empty()
         || !collection.getOrDefault<String>("metadata_service", "").empty()
-        || !collection.getOrDefault<String>("request_token_path", "").empty();
+        || !collection.getOrDefault<String>("request_token_path", "").empty()
+        || !collection.getOrDefault<String>("google_adc_client_id", "").empty()
+        || !collection.getOrDefault<String>("google_adc_client_secret", "").empty()
+        || !collection.getOrDefault<String>("google_adc_refresh_token", "").empty();
+}
+
+bool namedCollectionHasFullADC(const NamedCollection & collection)
+{
+    return !collection.getOrDefault<String>("google_adc_client_id", "").empty()
+        && !collection.getOrDefault<String>("google_adc_client_secret", "").empty()
+        && !collection.getOrDefault<String>("google_adc_refresh_token", "").empty();
 }
 
 void applyEndpointCredentialsOrReset(S3Settings & s3_settings, const S3::URI & url, ContextPtr context)
@@ -163,6 +173,9 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "metadata_service", /// For GCP
     "service_account", /// For GCP
     "request_token_path", /// For GCP
+    "google_adc_client_id", /// For GCP
+    "google_adc_client_secret", /// For GCP
+    "google_adc_refresh_token", /// For GCP
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -276,6 +289,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
             "Using `use_environment_credentials` in S3 named collections is not allowed");
     }
 
+    if (collection.getOrDefault<String>("http_client", "") == "gcp_oauth" && !namedCollectionHasFullADC(collection))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `http_client = gcp_oauth` without explicit ADC credentials in S3 named collections is not allowed");
+
     if (collection.has("access_key_id"))
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.get<String>("access_key_id");
     if (collection.has("secret_access_key"))
@@ -331,6 +349,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.get<String>("metadata_service");
     if (collection.has("request_token_path"))
         s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.get<String>("request_token_path");
+    if (collection.has("google_adc_client_id"))
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.get<String>("google_adc_client_id");
+    if (collection.has("google_adc_client_secret"))
+        s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.get<String>("google_adc_client_secret");
+    if (collection.has("google_adc_refresh_token"))
+        s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.get<String>("google_adc_refresh_token");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));

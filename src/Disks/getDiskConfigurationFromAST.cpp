@@ -67,6 +67,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_use_environment_credentials = false;
     bool use_environment_credentials = false;
     bool has_role_arn = false;
+    bool has_gcp_oauth = false;
+    bool has_explicit_google_adc_client_id = false;
+    bool has_explicit_google_adc_client_secret = false;
+    bool has_explicit_google_adc_refresh_token = false;
     bool has_include = false;
     /// "Explicit" here means the value is a literal in the SQL — not a
     /// `from_env`/`from_zk` reference. Indirect values must not count as the
@@ -165,6 +169,14 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         }
         else if (key == "role_arn" && !value_str.empty())
             has_role_arn = true;
+        else if (key == "http_client" && value_str == "gcp_oauth")
+            has_gcp_oauth = true;
+        else if (key == "google_adc_client_id" && !value_str.empty() && !is_indirect_value(value_str))
+            has_explicit_google_adc_client_id = true;
+        else if (key == "google_adc_client_secret" && !value_str.empty() && !is_indirect_value(value_str))
+            has_explicit_google_adc_client_secret = true;
+        else if (key == "google_adc_refresh_token" && !value_str.empty() && !is_indirect_value(value_str))
+            has_explicit_google_adc_refresh_token = true;
         else if (key == "access_key_id" && !value_str.empty() && !is_indirect_value(value_str))
             has_explicit_access_key_id = true;
         else if (key == "secret_access_key" && !value_str.empty() && !is_indirect_value(value_str))
@@ -253,6 +265,12 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Using `role_arn` without explicit S3 credentials in dynamic disk configuration is not allowed");
+
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_gcp_oauth
+        && (!has_explicit_google_adc_client_id || !has_explicit_google_adc_client_secret || !has_explicit_google_adc_refresh_token))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Using `http_client = gcp_oauth` without explicit ADC credentials in dynamic S3 disk configuration is not allowed");
 
     return xml_document;
 }

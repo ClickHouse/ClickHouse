@@ -25,6 +25,7 @@ NC_NOSIGN="s3_nosign_${DB}"
 NC_ENV_OFF="s3_env_off_${DB}"
 NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
+NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 
 TABLE="s3_hardening_${DB}"
 DISK="s3_hardening_disk_${DB}"
@@ -44,6 +45,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_ENV_OFF};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
+        DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
     " > /dev/null
 }
 
@@ -98,6 +100,19 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -q "
     SELECT *
     FROM s3(${NC_ENV}, format = 'TSV', structure = 'x UInt8')
+    -- { serverError ACCESS_DENIED }
+"
+
+# Named collection with `gcp_oauth` but no explicit ADC credentials.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_GCP_OAUTH} AS
+        url = 'http://localhost:11111/test/${DB}.tsv',
+        http_client = 'gcp_oauth';
+"
+
+$CLICKHOUSE_CLIENT -q "
+    SELECT *
+    FROM s3(${NC_GCP_OAUTH}, format = 'TSV', structure = 'x UInt8')
     -- { serverError ACCESS_DENIED }
 "
 
@@ -334,6 +349,18 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 -q "
         object_storage_type = s3,
         endpoint = 'http://localhost:11111/test/${DB}_indirect_access_header/',
         access_header1 = 'from_env ${DB}_ACCESS_HEADER')
+    -- { serverError ACCESS_DENIED }
+"
+
+# `gcp_oauth` without an explicit ADC credential triple would use server metadata.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(
+        name = '${DISK}_gcp_oauth',
+        type = object_storage,
+        object_storage_type = s3,
+        endpoint = 'http://localhost:11111/test/${DB}_gcp_oauth/',
+        http_client = 'gcp_oauth')
     -- { serverError ACCESS_DENIED }
 "
 
