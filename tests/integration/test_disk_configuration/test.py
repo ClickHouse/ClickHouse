@@ -749,32 +749,32 @@ def test_dynamic_disk_security_settings(start_cluster):
 
         # privileged_user (allow_dynamic_disk_access profile): from_env is allowed - CREATE TABLE succeeds
         zk_client.create(
-            "/test_security_minio_secret",
-            minio_secret_key.encode(),
+            "/test_security_endpoint",
+            b"http://minio1:9001/root/data/",
             makepath=True,
         )
 
         node.query(
-            """
+            f"""
             CREATE TABLE test_security_from_env_ok (a Int32) ENGINE = MergeTree() ORDER BY tuple()
             SETTINGS disk = disk(
                 type = s3,
-                endpoint = 'http://minio1:9001/root/data/',
+                endpoint = 'from_env HOME',
                 access_key_id = 'minio',
-                secret_access_key = 'from_env MINIO_SECRET')
+                secret_access_key = '{minio_secret_key}')
             """,
             user="privileged_user",
         )
 
         # privileged_user (allow_dynamic_disk_access profile): from_zk is allowed - CREATE TABLE succeeds
         node.query(
-            """
+            f"""
             CREATE TABLE test_security_from_zk_ok (a Int32) ENGINE = MergeTree() ORDER BY tuple()
             SETTINGS disk = disk(
                 type = s3,
-                endpoint = 'http://minio1:9001/root/data/',
+                endpoint = 'from_zk /test_security_endpoint',
                 access_key_id = 'minio',
-                secret_access_key = 'from_zk /test_security_minio_secret')
+                secret_access_key = '{minio_secret_key}')
             """,
             user="privileged_user",
         )
@@ -803,8 +803,8 @@ def test_dynamic_disk_security_settings(start_cluster):
         node.query("DROP USER IF EXISTS restricted_user")
         node.query("DROP USER IF EXISTS privileged_user")
         node.query("DROP SETTINGS PROFILE IF EXISTS allow_dynamic_disk_access")
-        if zk_client.exists("/test_security_minio_secret"):
-            zk_client.delete("/test_security_minio_secret")
+        if zk_client.exists("/test_security_endpoint"):
+            zk_client.delete("/test_security_endpoint")
 
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
