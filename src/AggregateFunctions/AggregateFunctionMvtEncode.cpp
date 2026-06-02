@@ -232,7 +232,7 @@ private:
         y = toTileCoordinate(tuple[1].safeGet<Float64>(), function_name);
     }
 
-    using TilePoints = std::vector<std::pair<Int32, Int32>>;
+    using TilePoints = VectorWithMemoryTracking<std::pair<Int32, Int32>>;
 
     static TilePoints readPointSequence(const Field & array_field, const String & function_name)
     {

@@ -355,7 +355,7 @@ public:
         {
             callOnGeometryDataType<BPoint>(geometry_type, [&](const auto & converter_type)
             {
-                using Converter = typename std::decay_t<decltype(converter_type)>::Type;
+                using Converter = std::decay_t<decltype(converter_type)>::Type;
                 auto geometries = Converter::convert(full[0].column);
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
