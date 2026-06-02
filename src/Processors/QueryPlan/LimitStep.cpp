@@ -105,14 +105,14 @@ void LimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
 
-    UInt64 limit;
-    UInt64 offset;
+    UInt64 limit = 0;
+    UInt64 offset = 0;
 
     readVarUInt(limit, ctx.in);
     readVarUInt(offset, ctx.in);
@@ -129,6 +129,7 @@ QueryPlanStepPtr LimitStep::clone() const
     return std::make_unique<LimitStep>(*this);
 }
 
+void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Limit", LimitStep::deserialize);

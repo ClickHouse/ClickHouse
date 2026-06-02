@@ -154,6 +154,7 @@ QueryPlanStepPtr UnionStep::clone() const
     return std::make_unique<UnionStep>(*this);
 }
 
+void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Union", &UnionStep::deserialize);
