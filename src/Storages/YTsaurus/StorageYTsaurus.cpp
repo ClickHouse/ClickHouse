@@ -151,6 +151,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
     return configuration;
 }
 
+void registerStorageYTsaurus(StorageFactory & factory);
 void registerStorageYTsaurus(StorageFactory & factory)
 {
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
