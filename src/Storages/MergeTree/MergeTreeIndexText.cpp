@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeTextIndexAnalyzer.h>
 
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
@@ -20,9 +21,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -36,7 +34,6 @@
 
 #include <base/range.h>
 #include <base/types.h>
-#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -73,10 +70,6 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
-static constexpr UInt64 DEFAULT_DICTIONARY_BLOCK_SIZE = 512;
-static constexpr bool DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING = true;
-static constexpr UInt64 DEFAULT_POSTING_LIST_BLOCK_SIZE = 1024 * 1024;
-static constexpr String DEFAULT_POSTING_LIST_CODEC = "none";
 
 bool DictionaryBlockBase::empty() const
 {
@@ -1673,148 +1666,24 @@ DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
     return nested_type;
 }
 
-static const String ARGUMENT_TOKENIZER = "tokenizer";
-static const String ARGUMENT_PREPROCESSOR = "preprocessor";
-static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
-static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
-static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
-static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
-
-namespace
-{
-
-template <typename Type>
-Type castAs(const Field & field, std::string_view argument_name)
-{
-    auto expected_type = Field::TypeToEnum<Type>::value;
-    if (expected_type != field.getType())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index argument '{}' expected to be {}, but got {}",
-            argument_name, fieldTypeToString(Field::TypeToEnum<Type>::value), field.getTypeName());
-    }
-    return field.safeGet<Type>();
-}
-
-template <typename Type>
-std::optional<Type> extractFieldOption(std::unordered_map<String, ASTPtr> & options, const String & option)
-{
-    auto it = options.find(option);
-    if (it == options.end())
-        return {};
-
-    Field value = getFieldFromIndexArgumentAST(it->second);
-    value = castAs<Type>(value, option);
-
-    options.erase(it);
-    return value.safeGet<Type>();
-}
-
-ASTPtr extractASTOption(std::unordered_map<String, ASTPtr> & options, const String & option, bool is_required)
-{
-    auto it = options.find(option);
-
-    if (it != options.end())
-    {
-        ASTPtr ast = it->second;
-        options.erase(it);
-        return ast;
-    }
-
-    if (is_required)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is required", option);
-
-    return nullptr;
-}
-
-std::pair<String, ASTPtr> parseNamedArgument(const ASTFunction * ast_equal_function)
-{
-    if (!ast_equal_function
-        || ast_equal_function->name != "equals"
-        || ast_equal_function->arguments->children.size() != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot mix key-value pair and single argument as text index arguments");
-
-    const auto & arguments = ast_equal_function->arguments;
-    const auto * key_identifier = arguments->children[0]->as<ASTIdentifier>();
-
-    if (!key_identifier)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument must be a key-value pair. got {}", ast_equal_function->formatForErrorMessage());
-
-    return {key_identifier->name(), arguments->children[1]};
-}
-
-std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & arguments)
-{
-    std::unordered_map<String, ASTPtr> options;
-    if (!arguments)
-        return options;
-
-    for (const auto & child : arguments->children)
-    {
-        const auto * ast_equal_function = child->as<ASTFunction>();
-        auto [key, ast] = parseNamedArgument(ast_equal_function);
-
-        if (!options.emplace(key, ast).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' argument is specified more than once", key);
-    }
-    return options;
-}
-
-}
-
 MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
 {
-    auto options = convertArgumentsToOptionsMap(index.arguments);
+    auto options = textIndexConvertArgumentsToOptionsMap(index.arguments);
+    auto params = textIndexValidateOptions(options);
 
-    auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
-    auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
-    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(params.tokenizer);
+    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(params.posting_list_codec, index.name);
 
-    UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
-    UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
-    UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
-
-    MergeTreeIndexTextParams index_params{
-        dictionary_block_size,
-        dictionary_block_frontcoding_compression,
-        posting_list_block_size,
-        std::move(preprocessor_ast)};
-
-    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
-    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
-
-    if (!options.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
-
-    return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(tokenizer), std::move(posting_list_codec));
+    return std::make_shared<MergeTreeIndexText>(index, std::move(params), std::move(tokenizer), std::move(posting_list_codec));
 }
 
 void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    auto options = convertArgumentsToOptionsMap(index.arguments);
+    auto options = textIndexConvertArgumentsToOptionsMap(index.arguments);
+    auto params = textIndexValidateOptions(options);
 
-    auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
-    auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
-
-    UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
-    if (dictionary_block_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
-
-    UInt64 dictionary_block_use_fc_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
-    if (dictionary_block_use_fc_compression > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
-
-    UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
-    if (posting_list_block_size == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
-
-    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC).value_or(DEFAULT_POSTING_LIST_CODEC);
-    PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
-
-    if (!options.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
+    TokenizerFactory::instance().get(params.tokenizer);
+    PostingListCodecFactory::createPostingListCodec(params.posting_list_codec, index.name);
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
@@ -1835,7 +1704,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// For very strict validation of the expression we fully parse it here.
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
-    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
+    MergeTreeIndexTextPreprocessor preprocessor(params.preprocessor, index);
 }
 
 }

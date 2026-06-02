@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/MergeTreeTextIndexAnalyzer.h>
 #include <Columns/IColumn.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
@@ -72,14 +73,6 @@ namespace DB
   */
 
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
-
-struct MergeTreeIndexTextParams
-{
-    size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1;
-    size_t posting_list_block_size = 1024 * 1024;
-    ASTPtr preprocessor;
-};
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
