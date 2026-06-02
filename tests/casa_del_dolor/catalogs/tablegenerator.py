@@ -1184,24 +1184,25 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
         table: SparkTable,
     ) -> str:
         if random.randint(1, 4) == 1:
-            # Delta-specific: ADD/DROP CHECK CONSTRAINT
             tpath = table.get_table_full_path()
+            if table.check_constraints and random.randint(1, 2) == 1:
+                cname = random.choice(list(table.check_constraints.keys()))
+                del table.check_constraints[cname]
+                return f"ALTER TABLE {tpath} DROP CONSTRAINT IF EXISTS {cname};"
             flat_cols = list(table.flat_columns().keys())
             if flat_cols:
-                cname = f"chk_{random.randint(1, 100)}"
-                if random.randint(1, 2) == 1:
-                    col = random.choice(flat_cols)
-                    expr = random.choice(
-                        [
-                            f"{col} IS NOT NULL",
-                            f"length({col}) > 0",
-                            f"{col} >= 0",
-                            f"{col} <> ''",
-                        ]
-                    )
-                    return f"ALTER TABLE {tpath} ADD CONSTRAINT {cname} CHECK ({expr});"
-                else:
-                    return f"ALTER TABLE {tpath} DROP CONSTRAINT IF EXISTS {cname};"
+                cname = f"chk_{random.randint(1, 10000)}"
+                col = random.choice(flat_cols)
+                expr = random.choice(
+                    [
+                        f"{col} IS NOT NULL",
+                        f"length({col}) > 0",
+                        f"{col} >= 0",
+                        f"{col} <> ''",
+                    ]
+                )
+                table.check_constraints[cname] = expr
+                return f"ALTER TABLE {tpath} ADD CONSTRAINT {cname} CHECK ({expr});"
         return self.generate_common_alter_statements(spark, table)
 
     def generate_extra_statement(
