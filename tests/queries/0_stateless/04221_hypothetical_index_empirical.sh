@@ -109,4 +109,17 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^\s+status:|^\s+source:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_split"
+
+# Sparse-serialized columns must be materialized before the aggregator (no crash).
+echo "--- empirical on sparse-serialized column ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_sparse;
+    CREATE TABLE t_hypo_sparse (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100, ratio_of_defaults_for_sparse_serialization = 0.0;
+    INSERT INTO t_hypo_sparse SELECT number, number % 3 = 0 ? 0 : number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_sparse (b) TYPE set(200) GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_sparse WHERE b = 5;
+" | grep -E '^\s+status:|^\s+source:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_sparse"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_emp"

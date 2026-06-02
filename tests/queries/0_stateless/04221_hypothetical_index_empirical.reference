@@ -31,3 +31,6 @@
 --- non-uniform marks + PK pruning ---
   status:       applicable
   source:           empirical
+--- empirical on sparse-serialized column ---
+  status:       applicable
+  source:           empirical

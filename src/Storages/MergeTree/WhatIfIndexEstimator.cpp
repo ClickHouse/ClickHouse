@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
@@ -339,6 +340,11 @@ bool tryEstimateEmpirical(
             /// MATERIALIZE INDEX would see (e.g. lower(s) instead of raw s)
             if (index_expression)
                 index_expression->execute(block);
+
+            /// Index aggregators require full columns; sparse-serialized parts
+            /// would otherwise trip `getRawData` (matches the real index writer).
+            for (auto & column : block)
+                column.column = recursiveRemoveSparse(column.column);
 
             size_t pos = 0;
             aggregator->update(block, &pos, block.rows());
