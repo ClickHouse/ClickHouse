@@ -92,6 +92,16 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         /* escape_filenames = */ true,
         context);
 
+    /// Reject unsupported types first, with a clear message, before the type-specific
+    /// validator can throw a confusing error. These types need table-level constraints
+    /// the hypothetical store cannot replicate (`text` has the one-per-column rule and
+    /// `enable_full_text_index`, `vector_similarity` requires `index_granularity_bytes != 0`)
+    if (index_desc.type == "text" || index_desc.type == "vector_similarity")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Hypothetical indexes of type '{}' are not supported",
+            index_desc.type);
+
     /// Reject unknown index types and invalid arguments at CREATE time,
     /// matching ALTER TABLE ... ADD INDEX semantics
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false);
@@ -102,16 +112,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Hypothetical indexes are not supported for tables with the old MergeTree syntax");
-
-    /// Reject index types whose real `ALTER TABLE ... ADD INDEX` validation needs
-    /// table-level constraints that the hypothetical store cannot replicate
-    /// (`text` has the one-per-column rule and `enable_full_text_index`,
-    /// `vector_similarity` requires `index_granularity_bytes != 0`)
-    if (index_desc.type == "text" || index_desc.type == "vector_similarity")
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Hypothetical indexes of type '{}' are not supported",
-            index_desc.type);
 
     /// Reject name conflicts with existing real secondary indexes
     for (const auto & existing : metadata->getSecondaryIndices())

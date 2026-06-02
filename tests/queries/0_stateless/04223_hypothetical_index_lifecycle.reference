@@ -22,8 +22,13 @@ BAD_ARGUMENTS
 With idx_b (minmax, hypothetical):
   status:       not_applicable
   reason:       EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL (PrimaryKeyExpand may re-include granules selected by skip indexes)
---- CREATE rejects text index ---
-NOT_IMPLEMENTED
+--- CREATE rejects text index (explicit unsupported-type path) ---
+of type 'text' are not supported
+--- CREATE rejects vector_similarity index (explicit unsupported-type path) ---
+of type 'vector_similarity' are not supported
+--- force_data_skipping_indices naming the hypothetical index does not break WHATIF ---
+With idx_b (minmax, hypothetical):
+  status:       applicable
 --- EXPLAIN WHATIF with function-expression index ---
 With idx_l (set, hypothetical):
   status:       applicable

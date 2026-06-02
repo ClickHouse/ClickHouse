@@ -6,6 +6,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -105,6 +106,30 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
 
     for (const auto & child : node->children)
         collectReadSteps(child, steps);
+}
+
+/// Remove `force_data_skipping_indices` from every nested SELECT's `SETTINGS`.
+/// Baseline planning has no hypothetical index, so a forced hypothetical name
+/// would otherwise throw `INDEX_NOT_USED` before the candidate is evaluated.
+void stripForcedDataSkippingIndices(IAST * node)
+{
+    if (!node)
+        return;
+
+    if (auto * select = node->as<ASTSelectQuery>())
+    {
+        if (auto settings_ast = select->settings())
+        {
+            if (auto * set_query = settings_ast->as<ASTSetQuery>())
+                std::erase_if(set_query->changes, [](const auto & change)
+                {
+                    return change.name == "force_data_skipping_indices";
+                });
+        }
+    }
+
+    for (const auto & child : node->children)
+        stripForcedDataSkippingIndices(child.get());
 }
 
 void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
@@ -489,6 +514,16 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
+    /// Baseline planning runs against real metadata, which lacks the hypothetical
+    /// index. A forced hypothetical name would make `selectRangesToRead` throw
+    /// `INDEX_NOT_USED`, so drop the forced list (session-level here, inner-query
+    /// `SETTINGS` are stripped from the query below) — candidates are evaluated later
+    local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
+
+    /// Strip `force_data_skipping_indices` from the query's own `SETTINGS` too,
+    /// otherwise the interpreter re-applies it on top of `local_context`
+    auto select_query_copy = select_query->clone();
+    stripForcedDataSkippingIndices(select_query_copy.get());
 
     SelectQueryOptions query_options;
     query_options.setExplain();
@@ -497,13 +532,13 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, query_options);
+        InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        InterpreterSelectWithUnionQuery interpreter(select_query, local_context, query_options);
+        InterpreterSelectWithUnionQuery interpreter(select_query_copy, local_context, query_options);
         plan_context = interpreter.getContext();
         interpreter.buildQueryPlan(plan);
     }

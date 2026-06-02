@@ -114,13 +114,32 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^With |^\s+status:|^\s+reason:'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_final"
 
-echo "--- CREATE rejects text index ---"
+echo "--- CREATE rejects text index (explicit unsupported-type path) ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_text;
     CREATE TABLE t_hypo_text (id UInt32, message String) ENGINE = MergeTree ORDER BY id;
     CREATE HYPOTHETICAL INDEX idx_text ON t_hypo_text (message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1;
-" 2>&1 | grep -m1 -o 'NOT_IMPLEMENTED'
+" 2>&1 | grep -m1 -o "of type 'text' are not supported"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_text"
+
+echo "--- CREATE rejects vector_similarity index (explicit unsupported-type path) ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_vec;
+    CREATE TABLE t_hypo_vec (id UInt32, v Array(Float32)) ENGINE = MergeTree ORDER BY id;
+    CREATE HYPOTHETICAL INDEX idx_vec ON t_hypo_vec (v) TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 1;
+" 2>&1 | grep -m1 -o "of type 'vector_similarity' are not supported"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_vec"
+
+echo "--- force_data_skipping_indices naming the hypothetical index does not break WHATIF ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_force;
+    CREATE TABLE t_hypo_force (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_force SELECT number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_force (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_force WHERE b = 42 SETTINGS force_data_skipping_indices = 'idx_b';
+" 2>&1 | grep -E '^With |^\s+status:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_force"
 
 echo "--- EXPLAIN WHATIF with function-expression index ---"
 $CLICKHOUSE_CLIENT -n -q "

@@ -113,6 +113,16 @@ Clears every hypothetical index defined in the current session, regardless of ta
 - They never read or write data; real queries against the table are unaffected.
 - Inspect the current session's hypothetical indexes via [`system.hypothetical_indexes`](/operations/system-tables/hypothetical_indexes).
 
+## Limitations {#limitations}
+
+`EXPLAIN WHATIF` reports `status: not_applicable` (rather than an estimate) when it cannot faithfully model the real read path:
+
+- Queries with `FINAL` (skip-index pruning interacts with `PrimaryKeyExpand`).
+- Plans served from a projection (a parent-table index is not materialized on projection parts).
+- `text` and `vector_similarity` candidates (rejected at `CREATE` time).
+
+The empirical `skip_ratio` is an **upper bound**: it counts each surviving granule independently and does not model seek-gap coalescing (`merge_tree_min_rows_for_seek` / `merge_tree_min_bytes_for_seek`), nor the combination of a candidate with an existing skip index under a disjunctive (`OR`) predicate. A real materialized index may therefore read slightly more, or prune in cases the estimate does not.
+
 ## Required privileges {#required-privileges}
 
 `SELECT` on the target table.
