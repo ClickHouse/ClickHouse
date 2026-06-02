@@ -294,16 +294,13 @@ void OOMCanary::monitorThread()
         }
 
         if (confirmed_oom)
-        {
             onCanaryOOM();
-            attempt = 0;
-            backoff_milliseconds = initial_backoff_milliseconds;
-        }
-        else
-        {
-            backoff_milliseconds = std::clamp(backoff_milliseconds * 2,
-                initial_backoff_milliseconds, max_backoff_milliseconds);
-        }
+
+        /// Backoff and attempt are accumulated for every relaunch — including confirmed
+        /// OOMs — so `oom_canary_max_rapid_relaunches` and the doubling backoff actually
+        /// throttle thrashing under sustained memory pressure.
+        backoff_milliseconds = std::clamp(backoff_milliseconds * 2,
+            initial_backoff_milliseconds, max_backoff_milliseconds);
 
         if (!config.relaunch)
             break;
