@@ -557,7 +557,7 @@ std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regex
         {
             auto tokens = substringToTokens(alternative, false, false);
             tokens.insert(tokens.end(), required_tokens.begin(), required_tokens.end());
-            tokens_for_queries.push_back(std::move(tokens));
+            tokens_for_queries.push_back(tokenizer->compactTokens(tokens));
         }
     }
 
