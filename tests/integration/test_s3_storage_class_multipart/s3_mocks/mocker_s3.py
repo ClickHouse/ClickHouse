@@ -71,6 +71,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/reset_recorded_storage_classes":
+            for key in recorded:
+                recorded[key].clear()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+            return
         self.do_HEAD()
 
     def do_PUT(self):

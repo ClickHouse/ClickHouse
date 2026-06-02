@@ -148,7 +148,12 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
     auto values = impl->allMutable();
     for (auto & field : values)
     {
-        const auto path = field.getName();
+        auto path = field.getName();
+
+        /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+        if (!collection.has(path) && field.getName() == "storage_class_name" && collection.has("storage_class"))
+            path = "storage_class";
+
         if (collection.has(path))
         {
             auto which = field.getValue().getType();

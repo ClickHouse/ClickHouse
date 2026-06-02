@@ -50,6 +50,13 @@ def get_recorded_storage_classes(cluster):
     return json.loads(response)
 
 
+def reset_recorded_storage_classes(cluster):
+    cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", "http://localhost:8081/reset_recorded_storage_classes"],
+    )
+
+
 def test_multipart_upload_uses_storage_class(started_cluster):
     node = started_cluster.instances["node"]
 
@@ -97,3 +104,33 @@ def test_multipart_upload_uses_storage_class(started_cluster):
         storage_class == "STANDARD"
         for storage_class in recorded["PutObject"]
     ), f"Some single-part uploads did not carry the configured storage class: {recorded['PutObject']}"
+
+
+def test_object_storage_storage_class_alias(started_cluster):
+    node = started_cluster.instances["node"]
+
+    # The `s3` table function (object storage) must also accept the legacy `storage_class`
+    # spelling as an alias for `storage_class_name`, passed here as a key-value argument.
+    # See https://github.com/ClickHouse/ClickHouse/issues/68551
+    reset_recorded_storage_classes(started_cluster)
+
+    node.query(
+        """
+        INSERT INTO FUNCTION s3(
+            'http://resolver:8081/root/data/test_object_storage_alias.csv',
+            'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'id UInt64, value String',
+            storage_class = 'STANDARD')
+        SELECT number, toString(number) FROM numbers(10)
+        SETTINGS s3_truncate_on_insert = 1;
+        """
+    )
+
+    recorded = get_recorded_storage_classes(started_cluster)
+
+    # Without the alias wired through the object-storage key-value path, no storage class
+    # header would be sent (recorded as None) and this assertion would fail.
+    uploads = recorded["PutObject"] + recorded["CreateMultipartUpload"]
+    assert len(uploads) > 0, "Expected at least one object-creating request"
+    assert all(
+        storage_class == "STANDARD" for storage_class in uploads
+    ), f"The `storage_class` alias did not reach the object-storage write: {recorded}"
