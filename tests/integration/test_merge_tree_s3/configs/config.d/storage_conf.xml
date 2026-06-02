@@ -1,4 +1,12 @@
 <clickhouse>
+    <s3>
+        <endpoint_reload>
+            <endpoint>http://minio1:9001/root/endpoint_reload/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </endpoint_reload>
+    </s3>
+
     <storage_configuration>
         <disks>
             <s3>
@@ -83,6 +91,12 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <persistent_removal_log>true</persistent_removal_log>
             </s3_r>
+            <s3_endpoint_reload>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/endpoint_reload/</endpoint>
+                <metadata_path>/var/lib/clickhouse/disks/s3_endpoint_reload/</metadata_path>
+                <persistent_removal_log>true</persistent_removal_log>
+            </s3_endpoint_reload>
             <s3_cache_r>
                 <type>cache</type>
                 <disk>s3_r</disk>
@@ -136,6 +150,13 @@
                     </main>
                 </volumes>
             </s3_cache_r>
+            <s3_endpoint_reload>
+                <volumes>
+                    <main>
+                        <disk>s3_endpoint_reload</disk>
+                    </main>
+                </volumes>
+            </s3_endpoint_reload>
             <external_broken_s3>
                  <volumes>
                     <main>

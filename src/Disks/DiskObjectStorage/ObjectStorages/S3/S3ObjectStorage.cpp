@@ -691,8 +691,14 @@ void S3ObjectStorage::applyNewSettings(
     };
 
     /// Apply global <s3> endpoint settings first (lowest priority) for disk configs.
-    if (for_disk_s3 && endpoint_settings)
-        apply_endpoint_settings();
+    /// Start from an empty credential surface so removing the whole endpoint
+    /// block revokes credentials that were applied by a previous reload.
+    if (for_disk_s3)
+    {
+        modified_settings->resetCredentialsForUserControlledRequest();
+        if (endpoint_settings)
+            apply_endpoint_settings();
+    }
 
     /// Apply config settings. For disk configs these take priority over endpoint defaults.
     modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
