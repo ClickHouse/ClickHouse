@@ -1,5 +1,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -391,6 +392,19 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     return result;
+}
+
+Block buildAllowedFilterInputs(
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    Block base = storage_snapshot->metadata->getSampleBlock();
+    for (const auto & col : source_header)
+        if (!base.has(col.name))
+            base.insert(col);
+    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
 }
 
 }

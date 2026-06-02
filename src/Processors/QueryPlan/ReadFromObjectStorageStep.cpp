@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/prepareReadingFromFormat.h>
 
 
 namespace DB
@@ -73,8 +74,13 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
     if (!filter_actions_dag)
         return;
-    // ExcludingGlobalIn handles non-const ColumnSet (i.e. IN (subquery)) and skips globalIn. See #100743.
-    VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*filter_actions_dag, getContext());
+
+    /// Narrow to inputs a downstream consumer can use, so unrelated IN subqueries don't execute.
+    auto allowed_inputs = buildAllowedFilterInputs(
+        storage_snapshot, info.source_header, query_info.prewhere_info, query_info.row_level_filter);
+    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0), &allowed_inputs, getContext(), /*allow_partial_result=*/ true))
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)

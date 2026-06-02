@@ -46,6 +46,13 @@ namespace DB
         FilterDAGInfoPtr row_level_filter;
     };
 
+    /// Inputs reachable by storage-level pushdown consumers. Pass to splitFilterDagForAllowedInputs to drop IN-subqueries which can't be used.
+    Block buildAllowedFilterInputs(
+        const StorageSnapshotPtr & storage_snapshot,
+        const Block & source_header,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter);
+
     struct PrepareReadingFromFormatHiveParams
     {
         /// Columns which exist inside data file.
