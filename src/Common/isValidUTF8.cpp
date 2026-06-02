@@ -64,7 +64,7 @@ UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
     while (len)
     {
-        int bytes;
+        int bytes = 0;
         const UInt8 byte1 = data[0];
         /* 00..7F */
         if (byte1 <= 0x7F)
