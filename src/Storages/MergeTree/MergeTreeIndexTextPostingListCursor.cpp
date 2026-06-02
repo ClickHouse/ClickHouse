@@ -64,11 +64,11 @@ inline UInt32 requireUInt32(UInt64 value, std::string_view field_name)
 
 }
 
-PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_, const String & index_id_)
+PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_, const String & index_id_for_cache_)
     : stream(&stream_)
     , info(&info_)
     , postings_cache(postings_cache_)
-    , index_id(index_id_)
+    , index_id_for_cache(index_id_for_cache_)
     , total_segments(info_.offsets.size())
     , density_val(computeDensity(info_))
 {
@@ -84,17 +84,14 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
         return;
     }
 
+    chassert(std::ranges::is_sorted(*shared_values));
+
     /// Zero-copy: iterate directly over the shared, immutable, pre-flattened array.
     /// No per-cursor Roaring copy or `toUint32Array` materialization.
     decoded_count = shared_values->size();
     decoded_values_ptr = shared_values->data();
 
-    /// The array is sorted, so the row-id range and density follow directly from its first
-    /// and last elements — no `TokenPostingsInfo` needed.
-    embedded_range_begin = shared_values->front();
-    embedded_range_end = shared_values->back();
-
-    double span = static_cast<double>(embedded_range_end) - static_cast<double>(embedded_range_begin) + 1.0;
+    double span = static_cast<double>(shared_values->back()) - static_cast<double>(shared_values->front()) + 1.0;
     density_val = span > 0.0 ? static_cast<double>(decoded_count) / span : 0.0;
 }
 
@@ -143,7 +140,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     else
     {
         UInt64 segment_file_offset = info->offsets[segment_idx];
-        auto key = TextIndexPostingsCache::hash(index_id, segment_file_offset, static_cast<UInt8>(TextIndexPostingsCacheKind::Segment));
+        auto key = TextIndexPostingsCache::hash(index_id_for_cache, segment_file_offset, static_cast<UInt8>(TextIndexPostingsCacheKind::Segment));
 
         auto cell = postings_cache->getOrSet(key, [&]
         {
@@ -736,12 +733,15 @@ void PostingListCursor::linearEmbedded(UInt8 * data, size_t row_offset, size_t n
 
     /// Dense shortcut: if every row in the range is in the posting list,
     /// pad the entire clipped region at once without binary search.
-    size_t range_span = embedded_range_end - embedded_range_begin + 1;
+    chassert(shared_values != nullptr);
+    size_t embedded_begin = static_cast<UInt64>(shared_values->front());
+    size_t embedded_end = static_cast<UInt64>(shared_values->back());
+    size_t range_span = embedded_end - embedded_begin + 1;
 
     if (decoded_count == range_span)
     {
-        size_t clip_begin = std::max(embedded_range_begin, row_offset);
-        size_t clip_end = std::min(embedded_range_end + 1, row_offset + num_rows);
+        size_t clip_begin = std::max(embedded_begin, row_offset);
+        size_t clip_end = std::min(embedded_end + 1, row_offset + num_rows);
 
         if (clip_begin < clip_end)
         {

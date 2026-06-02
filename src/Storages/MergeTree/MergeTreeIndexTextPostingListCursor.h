@@ -46,21 +46,12 @@ enum class PadOp { Or, And };
 class PostingListCursor
 {
 public:
-    /// Compressed posting list: state lives in `.pst` and is decoded lazily.
-    /// When `postings_cache_` is set, decoded segments are memoized in it (keyed by `index_id_` and the
-    /// segment's byte offset) and shared across all per-task cursors and queries, avoiding redundant
-    /// per-task segment reads/parsing under parallel reads. Pass `nullptr` to decode each segment
-    /// directly for this cursor without caching.
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_ = nullptr, const String & index_id_ = {});
+    /// Compressed posting list, decoded lazily from `.pst`. With a `postings_cache_`, decoded segments are
+    /// memoized (keyed by `index_id_for_cache_` + byte offset) and shared; pass `nullptr` to skip caching.
+    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_ = nullptr, const String & index_id_for_cache_ = {});
 
-    /// Fully-materialized posting list backed by a pre-flattened, shared, immutable sorted array.
-    /// Used both for the analyzer-folded postings of eagerly-read tokens and for any postings the
-    /// caller has already decoded into an array (e.g. small embedded postings or a materialized
-    /// rare-token bitmap): the array is built once and shared across all per-task cursors, avoiding
-    /// a per-cursor Roaring deep copy and `toUint32Array` materialization. Cardinality, density and
-    /// the row-id range are derived directly from the (sorted) array, so no `TokenPostingsInfo` is
-    /// needed. The cursor only keeps its own read position; the array data is read-only and safe to
-    /// share across threads.
+    /// Fully-materialized posting list over a pre-flattened, shared, immutable sorted array (analyzer-folded
+    /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
     explicit PostingListCursor(FlatPostingsPtr shared_values_);
 
     /// Flushes batched ProfileEvents counters to the global counters.
@@ -93,11 +84,8 @@ public:
     UInt32 cardinality() const;
 
 private:
-    /// Load metadata for `segment_idx`-th segment.
-    /// For compressed postings: obtains the decoded segment (payload + packed block index) — from the
-    /// shared `TextIndexPostingsCache` if available, otherwise built via `buildPostingSegment` — and
-    /// points the segment views at it. Does NOT decode any packed block data yet.
-    /// For shared-array cursors: no-op — `shared_values` already holds the decoded array.
+    /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
+    /// without decoding block data yet. No-op for shared-array cursors, which already hold the array.
     void prepareSegment(size_t segment_idx);
 
     /// Reads and parses one compressed segment from `stream` into an immutable `PostingListSegment`.
@@ -133,7 +121,7 @@ private:
     /// segments (`prepareSegment` returns early for `is_embedded`).
     TextIndexPostingsCache * postings_cache = nullptr;
     /// Per-part index identifier, mixed into the segment cache key alongside the segment byte offset.
-    String index_id;
+    String index_id_for_cache;
 
     size_t total_segments = 0;
     bool is_embedded = false;
@@ -145,11 +133,6 @@ private:
     /// into it.
     FlatPostingsPtr shared_values;
 
-    /// Row-id range [begin, end] covered by a shared-array posting list, used for the dense-range
-    /// shortcut in `linearOr` / `linearAnd`. Derived from the sorted array's first/last element.
-    size_t embedded_range_begin = 0;
-    size_t embedded_range_end = 0;
-
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
     /// point at this buffer. For shared-array cursors, `decoded_values_ptr` instead
@@ -160,15 +143,12 @@ private:
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
-    /// Packed-block iteration state within the current segment. The segment's own layout — block
-    /// count, tail size, per-block index and payload — is read directly from `current_segment`.
+    /// Packed-block iteration state within the current segment.
     size_t current_block = 0;            /// Index of the packed block being iterated.
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
 
-    /// Decoded data of the current segment, read directly wherever the segment layout is needed.
-    /// Owned by the shared `TextIndexPostingsCache` (or by the cursor itself when no cache is
-    /// available); held here to keep it alive for the cursor's lifetime. Surviving cache eviction
-    /// is intentional — an in-flight cursor stays valid.
+    /// Decoded data of the current segment, read directly wherever the segment layout is needed. Held by
+    /// shared_ptr so it stays alive for the cursor's lifetime even after the cache evicts it.
     PostingListSegmentPtr current_segment;
 
     /// Segment iteration state.

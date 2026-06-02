@@ -21,9 +21,11 @@ struct PostingListSegment
     /// Bulk-loaded compressed payload of the segment: bytes [header_end, index_section_start).
     PaddedPODArray<uint8_t> payload_buffer;
 
-    /// Per-packed-block index (parallel arrays), enabling O(log N) advance within the segment:
-    PaddedPODArray<UInt32> block_last_row_ids; // last row_id of packed block j
-    PaddedPODArray<UInt64> block_offsets; // byte offset of packed block j within payload_buffer
+    /// Per-packed-block index (parallel arrays), enabling O(log N) advance within the segment.
+    /// Last row_id of packed block j
+    PaddedPODArray<UInt32> block_last_row_ids;
+    /// Byte offset of packed block j within payload_buffer
+    PaddedPODArray<UInt64> block_offsets;
 
     /// Total doc count in this segment.
     UInt32 doc_count = 0;

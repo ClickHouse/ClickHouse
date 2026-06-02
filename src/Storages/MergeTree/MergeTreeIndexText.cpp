@@ -674,8 +674,6 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
 
     auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx]);
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
-    /// The bitmap is itself shared_ptr-held, so return it directly — it stays alive independently
-    /// of the cache cell once the cell is evicted.
     return std::get<PostingListPtr>(cell->value);
 }
 
