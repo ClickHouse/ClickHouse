@@ -1,5 +1,4 @@
 Query: select parseDateTime64InJodaSyntax('2024-10-09 10:30:10.1234567', 'yyyy-MM-dd HH:mm:ss.SSSSSSS', 'UTC')
 Expected error: Precision 7 is invalid (must be \[0, 6\])
-Output:
-Code: 41. DB::Exception: Received from 127.0.0.1:9000. DB::Exception: Precision 7 is invalid (must be [0, 6]): In scope SELECT parseDateTime64InJodaSyntax('2024-10-09 10:30:10.1234567', 'yyyy-MM-dd HH:mm:ss.SSSSSSS', 'UTC'). (CANNOT_PARSE_DATETIME)
+Result:
 OK
