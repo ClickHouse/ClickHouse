@@ -14,6 +14,7 @@
 #include <Disks/DiskLocal.h>
 
 
+int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 {
     using namespace DB;
@@ -35,7 +36,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
 
     if (options.contains("help"))
     {
-        std::cout << "Usage: " << argv[0] << " --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots" << std::endl;
+        std::cout << "Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots" << std::endl;
         std::cout << desc << std::endl;
         return 0;
     }

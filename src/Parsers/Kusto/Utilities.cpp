@@ -79,4 +79,28 @@ bool isValidKQLPos(IParser::Pos & pos)
             pos->type == TokenType::ErrorWrongNumber || // allow kql timespan data type with decimal like 2.6h
             std::string_view(pos->begin, pos->end) == "~");  // allow kql Case-Sensitive operators
 }
+
+/// Thread-local storage for KQL `let` bindings.
+///
+/// Cleared on dialect changes (`SET dialect = ...`) in `ParserKQLStatement::parseImpl`.
+/// Multi-statement scripts of the form `let x = 5; print x;` rely on the binding being
+/// observable across consecutive `parseImpl` calls within the same query, so we cannot
+/// clear at every statement boundary without breaking the conformance tests.
+///
+/// Known limitation: because `thread_local` storage outlives a single query, bindings
+/// can leak across independent queries that happen to be served by the same worker
+/// thread when the user does not toggle dialect between them. A complete fix requires
+/// associating bindings with a query/session `Context` (issue tracked in PR #102159
+/// review thread "kqlLetBindings cleanup"); per-statement RAII clearing was rejected
+/// because it would break valid multi-statement `let` scripts.
+std::unordered_map<String, String> & kqlLetBindings()
+{
+    static thread_local std::unordered_map<String, String> bindings;
+    return bindings;
+}
+
+void kqlLetBindingsClear()
+{
+    kqlLetBindings().clear();
+}
 }

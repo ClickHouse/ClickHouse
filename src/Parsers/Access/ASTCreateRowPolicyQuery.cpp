@@ -169,7 +169,7 @@ void ASTCreateRowPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSetting
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);
-    assert(names->cluster.empty());
+    chassert(names->cluster.empty());
 
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, ostr, settings);

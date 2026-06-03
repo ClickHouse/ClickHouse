@@ -55,7 +55,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
 QueryPlan::QueryPlan() = default;
 QueryPlan::~QueryPlan() = default;
 QueryPlan::QueryPlan(QueryPlan &&) noexcept = default;
-QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
+QueryPlan & QueryPlan::operator=(QueryPlan &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
 void QueryPlan::checkInitialized() const
 {
@@ -674,7 +674,15 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header, .pretty_names = {}, .runtime_filter_names = {}};
+    IQueryPlanStep::FormatSettings settings{
+        .out = buffer,
+        .header_prefix = "",
+        .detail_prefix = "",
+        .write_header = options.header,
+        .compact_repeated_processor_chains = options.compact_repeated_processor_chains,
+        .pretty_names = {},
+        .runtime_filter_names = {}
+    };
 
     struct Frame
     {
@@ -986,16 +994,24 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
+    SharedHeader expected_header;
     if (node->step)
+        expected_header = node->step->getOutputHeader();
+
+    replaceNodeWithPlan(node, std::move(plan), std::move(expected_header));
+}
+
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header)
+{
+    if (expected_header)
     {
-        const auto & header = node->step->getOutputHeader();
         const auto & plan_header = plan.getCurrentHeader();
 
-        if (!blocksHaveEqualStructure(*header, *plan_header))
+        if (!blocksHaveEqualStructure(*expected_header, *plan_header))
         {
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 plan_header->getColumnsWithTypeAndName(),
-                header->getColumnsWithTypeAndName(),
+                expected_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name,
                 nullptr);
 
