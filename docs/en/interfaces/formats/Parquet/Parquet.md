@@ -82,6 +82,9 @@ For some Parquet types there's no closely matching ClickHouse type. We read them
 
 ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification. Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read), with a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS.
 
+
+### Read behavior {#read}
+
 On read, geometry columns are mapped to the corresponding ClickHouse [geo data types](/sql-reference/data-types/geo.md):
 * A column declared as `Point`, `LineString`, `Polygon`, `MultiLineString` or `MultiPolygon` is read into the matching ClickHouse geo type.
 * A column with multiple or unknown geometry types is read into the [`Geometry`](/sql-reference/data-types/geo.md#geometry) type, which is a `Variant` over all supported geo types.
