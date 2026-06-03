@@ -450,11 +450,6 @@ public:
             /// We cannot allow to throw exceptions from ScanCallback,
             /// otherwise delta-kernel will panic and call terminate.
             context->setScanException();
-            /// Wake up the consumer thread blocked in `next`. Stopping iteration
-            /// here means no further producer notification will arrive, so without
-            /// this the consumer would wait on `data_files_cv` forever (same as the
-            /// catch in `scanDataFunc`).
-            //context->data_files_cv.notify_all();
 
             return false;  /// Stop iteration on exception
         }
