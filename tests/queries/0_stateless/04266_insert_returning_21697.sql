@@ -99,6 +99,17 @@ INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 + 0 + 0 + 0 + 0 + 
 SET max_ast_elements = 0;
 SELECT count() AS inserted_after_returning_delayed_ast FROM t_insert_returning WHERE id = 111;
 
+-- A RETURNING subquery using an identifier that needs quoting must not be rejected by the outer
+-- enforce_strict_identifier_format before the INSERT runs. The subquery is detached from the INSERT AST (both the
+-- returning_select field formatted by ASTInsertQuery::formatImpl and the children entry), so the outer
+-- strict-identifier check does not walk it. The subquery's own SETTINGS relax the check, so the row is inserted.
+SELECT 'returning delayed strict identifier';
+TRUNCATE TABLE t_insert_returning;
+SET enforce_strict_identifier_format = 1;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 AS `bad-name` SETTINGS enforce_strict_identifier_format = 0) VALUES (112, 'strictid');
+SET enforce_strict_identifier_format = 0;
+SELECT count() AS inserted_after_returning_strict_id FROM t_insert_returning WHERE id = 112;
+
 -- A different allow_experimental_analyzer in the RETURNING subquery must not be validated before the INSERT runs
 -- (the subquery is an independent query planned only after the INSERT persists)
 SELECT 'returning analyzer setting';

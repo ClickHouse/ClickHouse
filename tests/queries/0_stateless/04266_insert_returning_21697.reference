@@ -32,6 +32,9 @@ returning ast size limit
 returning delayed ast size limit
 1
 1
+returning delayed strict identifier
+1
+1
 returning analyzer setting
 1
 1

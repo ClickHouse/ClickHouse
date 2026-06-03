@@ -1473,17 +1473,20 @@ static BlockIO executeQueryImpl(
 
             /// The RETURNING subquery is an independent `SELECT` that must be validated and normalized with its own
             /// `SETTINGS`, which are applied only after the INSERT runs (see `buildReturningSelectPipeline`). Detach it
-            /// from the INSERT's child list before the pre-execution checks and global AST visitors below, so they do
-            /// not process it with the outer INSERT settings (for example the strict-identifier format check below,
-            /// resolving its `UNION` with the outer `union_default_mode` instead of the subquery's own, or rejecting it
-            /// with the outer `max_ast_elements` / `max_ast_depth` in `checkASTSizeLimits`). The same checks are re-run
-            /// for the subquery with its own settings in `buildReturningSelectPipeline`.
+            /// before the pre-execution checks and global AST visitors below, so they do not process it with the outer
+            /// INSERT settings (for example the strict-identifier format check below, resolving its `UNION` with the
+            /// outer `union_default_mode` instead of the subquery's own, or rejecting it with the outer
+            /// `max_ast_elements` / `max_ast_depth` in `checkASTSizeLimits`). The same checks are re-run for the
+            /// subquery with its own settings in `buildReturningSelectPipeline`. It must be removed both from `children`
+            /// (walked by the AST visitors and size/depth limits) and from the `returning_select` field (formatted
+            /// directly by `ASTInsertQuery::formatImpl`, which the strict-identifier check goes through).
             ASTPtr detached_returning_select;
             if (auto * insert_with_returning = out_ast->as<ASTInsertQuery>(); insert_with_returning && insert_with_returning->returning_select)
             {
                 detached_returning_select = insert_with_returning->returning_select;
                 auto & children = insert_with_returning->children;
                 children.erase(std::remove(children.begin(), children.end(), detached_returning_select), children.end());
+                insert_with_returning->returning_select = nullptr;
             }
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -1526,9 +1529,14 @@ static BlockIO executeQueryImpl(
             checkASTSizeLimits(*out_ast, settings);
 
             /// Reattach the RETURNING subquery now that every pre-execution step that must run with the outer INSERT
-            /// settings (strict-identifier check, global AST visitors, size/depth limits) is done.
+            /// settings (strict-identifier check, global AST visitors, size/depth limits) is done. Restore both the
+            /// `returning_select` field and the `children` entry removed above.
             if (detached_returning_select)
-                out_ast->as<ASTInsertQuery>()->children.push_back(detached_returning_select);
+            {
+                auto * insert_with_returning = out_ast->as<ASTInsertQuery>();
+                insert_with_returning->returning_select = detached_returning_select;
+                insert_with_returning->children.push_back(detached_returning_select);
+            }
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
