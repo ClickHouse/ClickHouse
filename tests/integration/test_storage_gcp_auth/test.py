@@ -107,7 +107,7 @@ def test_gcp_auth(started_cluster):
 
     node.query("DROP TABLE IF EXISTS s3_table")
     node.query(
-        "CREATE TABLE s3_table (line String) ENGINE = S3(gcs_conn, filename='test.txt', format='LineAsString')"
+        "CREATE TABLE s3_table (line String) ENGINE = S3('http://resolver:22234/test/test.txt', format='LineAsString')"
     )
 
     assert get_num_requests() == 0
@@ -122,14 +122,14 @@ def test_gcp_auth(started_cluster):
     assert get_num_requests() == 4
     assert (
         node.query(
-            "SELECT * FROM s3(gcs_conn, filename='test.txt', format='LineAsString')"
+            "SELECT * FROM s3('http://resolver:22234/test/test.txt', format='LineAsString')"
         )
         == "OK\n"
     )
 
     with pytest.raises(QueryRuntimeException) as ei:
         node.query(
-            "SELECT * FROM s3(gcs_conn_bad, filename='test.txt', format='LineAsString')"
+            "SELECT * FROM s3('http://resolver:22234/bad/test.txt', format='LineAsString')"
         )
 
     assert "AUTHENTICATION_FAILED" in ei.value.stderr
