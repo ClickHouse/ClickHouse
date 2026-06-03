@@ -68,9 +68,10 @@ public:
         size_t max_encoded_size,
         ContextPtr context);
 
-    /// Caller must call `finish()` (or `finalizeToStorage`, which does it
-    /// internally) before drop. Dropping without finishing leaves the local
-    /// temp SST for the dtor to best-effort remove.
+    /// `finalizeToStorage` is the only commit point — it closes the RocksDB
+    /// writer and publishes through `part_storage`. Dropping the writer
+    /// without calling it leaves the local temp SST for the dtor to
+    /// best-effort remove.
     explicit SSTIndexWriter(IDataPartStorage & part_storage, ContextPtr context);
     ~SSTIndexWriter();
 
@@ -86,12 +87,14 @@ public:
     /// Empty input → no SST file produced; returns 0.
     UInt64 finalizeToStorage();
 
+private:
     /// Close the underlying RocksDB writer. Throws on real Finish failure;
-    /// `InvalidArgument` (zero-`Put` case) is treated as success.
-    /// Idempotent.
+    /// `InvalidArgument` (zero-`Put` case) is treated as success. Idempotent.
+    /// Only called from `finalizeToStorage`; exposing this publicly would let
+    /// a caller close the writer without publishing, after which the dtor
+    /// would delete the local SST.
     void finish();
 
-private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 

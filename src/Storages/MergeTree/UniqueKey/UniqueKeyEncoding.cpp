@@ -329,6 +329,13 @@ bool dispatchNonNullableColumnWise(
     size_t num_rows,
     std::vector<String> & out)
 {
+    /// `getDataType()` reports the nested type for these wrappers, but
+    /// the dynamic type is still the wrapper — `static_cast` below would
+    /// be UB. They are not part of the UK part-build contract.
+    if (column.isSparse() || column.isReplicated())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "UNIQUE KEY encoding: ColumnSparse/ColumnReplicated unsupported");
+
     switch (column.getDataType())
     {
         case TypeIndex::UInt8:
@@ -455,8 +462,9 @@ void encodeBlock(
     if (num_rows == 0)
         return;
 
-    /// Materialize any ColumnConst wrappers — `dispatchNonNullableColumnWise`
-    /// static_casts based on `getDataType()`, which lies for ColumnConst.
+    /// `ColumnConst` can legitimately reach the encoder (expression-
+    /// evaluated UK columns); materialize it so the dispatch's
+    /// `static_cast` lands on the concrete column type.
     Columns materialized;
     materialized.reserve(columns.size());
     for (const auto & col : columns)

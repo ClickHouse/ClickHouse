@@ -92,7 +92,7 @@ bool agrees(const Columns & cols, size_t ra, size_t rb, size_t max_size = 4096)
 
     int mem = std::memcmp(ea.data(), eb.data(),
                           std::min(ea.size(), eb.size()));
-    int cmp;
+    int cmp = 0;
     if (mem != 0)
         cmp = mem > 0 ? 1 : -1;
     else if (ea.size() != eb.size())
