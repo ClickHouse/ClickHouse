@@ -56,7 +56,11 @@ struct MergeTreeMutationEntry
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
                            const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
-    MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
+    /// Must clear the moved-from ownership token (`file_name`, `is_temp`,
+    /// `is_registered`); a defaulted move leaves `file_name` unspecified (SSO
+    /// often keeps it) so the source would destruct as a spurious owner and
+    /// remove the file the destination just took over.
+    MergeTreeMutationEntry(MergeTreeMutationEntry &&) noexcept;
 
     /// Commit entry and rename it to a permanent file.
     void commit(UInt64 block_number_);

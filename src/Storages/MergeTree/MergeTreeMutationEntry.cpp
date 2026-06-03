@@ -158,6 +158,26 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     assertEOF(*buf);
 }
 
+MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
+    : create_time(other.create_time)
+    , commands(std::move(other.commands))
+    , disk(std::move(other.disk))
+    , path_prefix(std::move(other.path_prefix))
+    , file_name(std::exchange(other.file_name, {}))
+    , is_temp(std::exchange(other.is_temp, false))
+    , is_registered(std::exchange(other.is_registered, false))
+    , is_done(other.is_done)
+    , block_number(other.block_number)
+    , latest_failed_part(std::move(other.latest_failed_part))
+    , latest_failed_part_info(std::move(other.latest_failed_part_info))
+    , latest_fail_time(other.latest_fail_time)
+    , latest_fail_reason(std::move(other.latest_fail_reason))
+    , latest_fail_error_code_name(std::move(other.latest_fail_error_code_name))
+    , tid(other.tid)
+    , csn(other.csn)
+{
+}
+
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
 {
     if (file_name.empty())
