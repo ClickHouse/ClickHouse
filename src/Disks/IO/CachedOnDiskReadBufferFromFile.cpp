@@ -792,16 +792,52 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             if (!state.bytes_to_predownload || !has_more_data)
             {
                 if (state.bytes_to_predownload)
+                {
+                    /// The remote object may have been overwritten with shorter content
+                    /// between listing and reading. Check the actual remote file size
+                    /// before throwing an error (same logic as in readFromFileSegment).
+                    auto object_size = state.buf->getRemoteFileSize();
+                    if (object_size.has_value()
+                        && *object_size == file_segment.getCurrentWriteOffset())
+                    {
+                        LOG_WARNING(
+                            log,
+                            "Remote object is smaller than expected during predownload. "
+                            "Remaining bytes to predownload: {}, current write offset: {}, "
+                            "actual object size: {}, file segment: {}. Treating as truncated object.",
+                            state.bytes_to_predownload,
+                            file_segment.getCurrentWriteOffset(),
+                            *object_size,
+                            file_segment.getInfoForLog());
+
+                        state.bytes_to_predownload = 0;
+                        file_segment.completePartAndResetDownloader();
+                        state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+
+                        /// Adjust read_until_position to the actual object size so
+                        /// the caller knows the real data boundary. Without this,
+                        /// the caller would seek to `offset` (beyond the truncated
+                        /// object), get zero bytes, and the existing truncation guard
+                        /// (`object_size == offset`) would fail because
+                        /// object_size < offset by construction.
+                        info.read_until_position = *object_size;
+
+                        return false;
+                    }
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Failed to predownload remaining {} bytes. Current file segment: {}, "
-                        "current download offset: {}, expected: {}, eof: {}, internal buffer size: {}",
+                        "current download offset: {}, expected: {}, eof: {}, "
+                        "internal buffer size: {}, remote object size: {}",
                         state.bytes_to_predownload,
                         file_segment.range().toString(),
                         file_segment.getCurrentWriteOffset(),
                         offset,
                         state.buf->eof(),
-                        state.buf->internalBuffer().size());
+                        state.buf->internalBuffer().size(),
+                        object_size ? std::to_string(*object_size) : "None");
+                }
 
                 chassert(!state.buf->hasPendingData());
                 auto result = state.buf->hasPendingData();
@@ -1190,6 +1226,13 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         {
             chassert(!state.buf->available());
             chassert(state.read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+
+            /// If predownload detected a truncated remote object, it adjusts
+            /// info.read_until_position to the actual object size, which may be
+            /// less than our current offset. In that case there is nothing left
+            /// to read — return 0 so the caller treats it as EOF.
+            if (offset >= info.read_until_position)
+                return 0;
 
             auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
             buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
@@ -1585,6 +1628,20 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
         if (!size)
         {
+            /// readFromFileSegment may return 0 if the remote object was truncated
+            /// (overwritten with shorter content between listing and reading).
+            /// In that case, read_until_position was adjusted to the actual object size.
+            /// Return what we have instead of throwing.
+            if (offset >= current_info.read_until_position)
+            {
+                LOG_WARNING(
+                    log,
+                    "ReadBigAt() stopped early due to truncated remote object. "
+                    "Read {} bytes instead of requested {}. Offset: {}, read_until_position: {}",
+                    read_bytes, n, offset, current_info.read_until_position);
+                break;
+            }
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot read all data. Offset: {} (initial offset: {}), read bytes {}/{}",
