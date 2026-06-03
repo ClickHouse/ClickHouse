@@ -3,6 +3,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -422,7 +423,7 @@ void prepareEagerKeyConditionSets(
         return;
     /// Only Parquet/ORC readers build a KeyCondition that consumes the set;
     /// for other formats CreatingSetsStep materialises sets at WHERE-time.
-    if (format_name != "Parquet" && format_name != "ORC")
+    if (!boost::iequals(format_name, "Parquet") && !boost::iequals(format_name, "ORC"))
         return;
 
     auto allowed_inputs = buildAllowedFilterInputs(
