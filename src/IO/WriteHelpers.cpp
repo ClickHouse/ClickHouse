@@ -23,7 +23,7 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    std::array<char, 36> dst;
+    std::array<char, 36> dst{};
     auto * dst_ptr = dst.data();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -89,19 +89,27 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
-    static constexpr std::string_view distinct_str = "distinct";
-    static constexpr std::string_view all_str = "all";
-    static constexpr std::string_view table_str = "table";
-    static constexpr std::string_view select_str = "select";
+    /// These are valid identifiers but are problematic if present unquoted in SQL query
+    /// because they are keywords that the parser interprets as clause starters or modifiers,
+    /// causing the formatted AST to fail parsing back.
+    auto isCaseInsensitiveEqual = [](std::string_view a, std::string_view b)
+    {
+        return a.size() == b.size()
+            && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+    };
+
     if (isValidIdentifier(s)
-        /// These are valid identifiers but are problematic if present unquoted in SQL query.
-        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
-        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
-        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size()))
+        && !isCaseInsensitiveEqual(s, "distinct")
+        && !isCaseInsensitiveEqual(s, "all")
+        && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
-        && !(s.size() == select_str.size() && 0 == strncasecmp(s.data(), "select", s.size())))
+        && !isCaseInsensitiveEqual(s, "select")
+        /// These keywords cause parsing ambiguity when used as function or identifier names
+        /// because the parser consumes them as clause-starting keywords.
+        && !isCaseInsensitiveEqual(s, "from")
+        && !isCaseInsensitiveEqual(s, "values"))
     {
         writeString(s, buf);
     }
@@ -207,7 +215,7 @@ ALWAYS_INLINE inline bool tryRoundToShortest(IntType v, IntType lo, IntType hi, 
 /// and negative) confirms exact match with dragonbox output.
 NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer)
 {
-    UInt32 bits;
+    UInt32 bits = 0;
     memcpy(&bits, &f32, sizeof(bits));
     UInt32 mantissa = bits & 0x7FFFFFu;
 
@@ -238,7 +246,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 7);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
     if (tryRoundToShortest<10>(v, lo, hi, buffer, start, result)) return result;
@@ -258,7 +266,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 /// for Float64 (2^62 values in range).
 NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer)
 {
-    UInt64 bits;
+    UInt64 bits = 0;
     memcpy(&bits, &f64, sizeof(bits));
     UInt64 mantissa = bits & ((1ULL << 52) - 1);
 
@@ -285,7 +293,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 10);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 10 && tryRoundToShortest<10000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;

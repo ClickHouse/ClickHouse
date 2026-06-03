@@ -7,7 +7,7 @@
 
 namespace DB
 {
-/// Propagate every WITH alias expression to its descendent subqueries, with correct scoping visibility.
+/// Propagate every WITH alias expression to its descendant subqueries, with correct scoping visibility.
 class ApplyWithAliasVisitor
 {
 public:
