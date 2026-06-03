@@ -120,6 +120,12 @@ $CH_CLIENT -q "select * from file('$file_name', 'Avro', '
 echo
 
 echo "== CREATE TABLE avro_union_test_03237 =="
+# Pin `map_serialization_version` to `basic` so the test output is deterministic.
+# With the `with_buckets` format (which the CI runner randomizes) keys inside a
+# Map column can be reordered across the bucketing round-trip — see the comment
+# in `src/DataTypes/Serializations/SerializationMap.cpp::collectMapFromBuckets`.
+# That is valid Map behaviour but makes this reference-based test flaky; the
+# bucketing path has dedicated tests elsewhere.
 $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
   string_only String,
   string_or_null Nullable(String),
@@ -133,7 +139,8 @@ $CH_CLIENT -q "CREATE TABLE avro_union_test_03237 (
   double_or_null_or_string_or_long Variant(Float64, String, Int64),
   double_or_long_or_string_in_array Array(Variant(Float64, String, Int64)),
   double_or_string_or_long_or_null_in_map Map(String, Variant(Float64, Int64, String))
-) ENGINE = MergeTree ORDER BY tuple()"
+) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic'"
 echo
 
 echo "== SELECT * FORMAT Avro | INSERT INTO avro_union_test_03237 FORMAT Avro =="

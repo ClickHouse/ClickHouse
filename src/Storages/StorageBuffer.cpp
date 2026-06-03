@@ -44,7 +44,9 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -175,15 +177,15 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr(context_, false)->getColumns());
     }
     else
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (num_shards > 1)
     {
@@ -199,12 +201,12 @@ StorageBuffer::StorageBuffer(
 VirtualColumnsDescription StorageBuffer::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     return desc;
 }
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource final : public ISource
 {
     ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
     {
@@ -223,7 +225,7 @@ public:
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , buffer(buffer_)
         , storage_id(storage_id_)
-        , virtual_columns(storage_snapshot->virtual_columns)
+        , metadata(storage_snapshot->metadata)
         , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
@@ -248,10 +250,12 @@ protected:
         {
             const auto & [name, type] = packed;
 
-            if (buffer.data.has(name))
-                columns.emplace_back(getColumnFromBlock(buffer.data, packed));
+            if (metadata->isVirtualColumn(name))
+                columns.push_back(fillVirtualColumn(name, type, buffer.data.rows()));
+            else if (auto physical_column = tryGetColumnFromBlock(buffer.data, metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name)))
+                columns.push_back(std::move(physical_column));
             else
-                columns.emplace_back(fillVirtualColumn(name, type, buffer.data.rows()));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column or subcolumn '{}' not found in Buffer table", name);
         }
 
         res.setColumns(std::move(columns), buffer.data.rows());
@@ -261,7 +265,7 @@ protected:
 private:
     StorageBuffer::Buffer & buffer;
     StorageID storage_id;
-    VirtualsDescriptionPtr virtual_columns;
+    StorageMetadataPtr metadata;
     int32_t metadata_version;
     bool has_been_read = false;
 };
@@ -275,7 +279,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto & destination_metadata = destination->getInMemoryMetadataPtr();
+        const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -330,10 +334,10 @@ void StorageBuffer::read(
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
-        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals());
-        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals());
+        auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [&](const String & column_name)
         {
@@ -497,7 +501,7 @@ void StorageBuffer::read(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
                     std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
+                    storage_snapshot->metadata->virtuals);
 
             auto interpreter
                 = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
@@ -699,7 +703,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage, WithContext
+class BufferSink final : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
@@ -852,7 +856,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(getContext(), false), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
     {
@@ -1085,7 +1089,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -1272,7 +1276,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
     /// Flush buffers to the storage because BufferSource skips buffers with old metadata_version.
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
@@ -1284,7 +1288,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
-UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
       * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
@@ -1306,6 +1310,7 @@ UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
+void registerStorageBuffer(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory)
 {
     /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
