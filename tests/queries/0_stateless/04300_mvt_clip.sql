@@ -18,6 +18,10 @@ SELECT '-- mvtTileBBox: a negative or non-finite margin is rejected (it would in
 SELECT mvtTileBBox(0, 0, 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT mvtTileBBox(0, 0, 0, nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
+SELECT '-- mvtTileBBox: a Nullable tile control is rejected (its non-nullable Tuple return cannot represent NULL)';
+SELECT mvtTileBBox(CAST(NULL, 'Nullable(UInt8)'), 0, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT mvtTileBBoxMercator(10, 550, 335, CAST(NULL, 'Nullable(Float64)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT '-- mvtTileBBox round-trips with mvtEncodeGeom: the tile centre projects to an interior pixel';
 WITH mvtTileBBox(10, 550, 335) AS bb
 SELECT mvtEncodeGeom(((bb.1 + bb.3) / 2, (bb.2 + bb.4) / 2)::Point, 10, 550, 335);

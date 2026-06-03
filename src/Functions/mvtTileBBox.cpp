@@ -63,6 +63,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Disabled so that Nullable arguments are seen (and rejected) by argument validation: the result is a
+    /// non-nullable Tuple, so the default null adaptor would otherwise evaluate a NULL control with the nested
+    /// default value and return a bounding box for the wrong tile.
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
