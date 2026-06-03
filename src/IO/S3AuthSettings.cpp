@@ -175,18 +175,18 @@ void S3AuthSettings::updateIfChanged(const S3AuthSettings & settings)
 
 HTTPHeaderEntries S3AuthSettings::getHeaders() const
 {
-    const String access_key_id = (*this)[S3AuthSetting::access_key_id];
-    const String secret_access_key = (*this)[S3AuthSetting::secret_access_key];
-    const String session_token = (*this)[S3AuthSetting::session_token];
-    const String role_arn = (*this)[S3AuthSetting::role_arn];
-    const String role_session_name = (*this)[S3AuthSetting::role_session_name];
-    const String http_client = (*this)[S3AuthSetting::http_client];
-    const String service_account = (*this)[S3AuthSetting::service_account];
-    const String metadata_service = (*this)[S3AuthSetting::metadata_service];
-    const String request_token_path = (*this)[S3AuthSetting::request_token_path];
-    const String google_adc_client_id = (*this)[S3AuthSetting::google_adc_client_id];
-    const String google_adc_client_secret = (*this)[S3AuthSetting::google_adc_client_secret];
-    const String google_adc_refresh_token = (*this)[S3AuthSetting::google_adc_refresh_token];
+    const String & access_key_id = (*this)[S3AuthSetting::access_key_id];
+    const String & secret_access_key = (*this)[S3AuthSetting::secret_access_key];
+    const String & session_token = (*this)[S3AuthSetting::session_token];
+    const String & role_arn = (*this)[S3AuthSetting::role_arn];
+    const String & role_session_name = (*this)[S3AuthSetting::role_session_name];
+    const String & http_client = (*this)[S3AuthSetting::http_client];
+    const String & service_account = (*this)[S3AuthSetting::service_account];
+    const String & metadata_service = (*this)[S3AuthSetting::metadata_service];
+    const String & request_token_path = (*this)[S3AuthSetting::request_token_path];
+    const String & google_adc_client_id = (*this)[S3AuthSetting::google_adc_client_id];
+    const String & google_adc_client_secret = (*this)[S3AuthSetting::google_adc_client_secret];
+    const String & google_adc_refresh_token = (*this)[S3AuthSetting::google_adc_refresh_token];
 
     const bool has_explicit_credential_mechanism
         = !access_key_id.empty()
