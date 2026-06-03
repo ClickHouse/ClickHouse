@@ -5,6 +5,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -211,6 +212,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         assertBlocksHaveEqualStructure(pipeline_output_header, *expected_output_header,
             fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header->dumpNames()));
+    }
+
+    if (dataflow_cache_updater)
+    {
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
+        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
     }
 
     return joined_pipeline;

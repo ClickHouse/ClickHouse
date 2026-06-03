@@ -246,8 +246,10 @@ void considerEnablingParallelReplicas(
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
-    // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
-    // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // However, currently only relatively simple plans are supported (no UNIONs, etc.),
+    // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
+    // so they are allowed to pass through the check.
     bool plan_is_simple_enough = true;
     traverseQueryPlan(
         stack,
@@ -255,6 +257,7 @@ void considerEnablingParallelReplicas(
         [&](auto & frame_node)
         {
             plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+                || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
         });
