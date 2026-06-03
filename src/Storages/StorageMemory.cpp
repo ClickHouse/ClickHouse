@@ -363,14 +363,14 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
-            assert(out_it != out.end());
+            chassert(out_it != out.end());
 
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
 
-        assert(out_it == out.end());
+        chassert(out_it == out.end());
     }
 
     size_t rows = 0;
@@ -707,6 +707,7 @@ std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
     return total_size_bytes.load(std::memory_order_relaxed);
 }
 
+void registerStorageMemory(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)
