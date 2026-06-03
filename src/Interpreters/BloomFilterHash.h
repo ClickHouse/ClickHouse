@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -156,7 +157,117 @@ struct BloomFilterHash
 
         auto index_column = ColumnUInt64::create(limit);
         ColumnUInt64::Container & index_column_vec = index_column->getData();
+
         getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column_vec, pos);
+        return index_column;
+    }
+
+    /// Like [hashWithColumn], but returns only the *distinct* hashes for the slice
+    /// rather than one hash per row. A bloom filter granule only needs the set of
+    /// distinct hashes, so for LowCardinality columns this lets the caller insert
+    /// O(distinct) hashes instead of O(rows). The returned hashes are a subset of
+    /// what [hashWithColumn] would produce for the same slice, so the resulting bloom
+    /// filter is byte-identical and existing on-disk indexes stay valid.
+    ///
+    /// For non-LowCardinality columns this is identical to [hashWithColumn] (one hash
+    /// per row); the caller still de-duplicates via its hash set.
+    static ColumnPtr hashWithColumnDistinct(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
+    {
+        WhichDataType which(data_type);
+        if (which.isArray())
+        {
+            const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
+
+            if (checkAndGetColumn<ColumnNullable>(&array_col->getData()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+
+            const auto & offsets = array_col->getOffsets();
+            limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
+            pos = offsets[pos - 1];
+
+            if (limit == 0)
+            {
+                auto index_column = ColumnUInt64::create(1);
+                index_column->getData()[0] = 0;
+                return index_column;
+            }
+        }
+
+        const DataTypePtr actual_type = BloomFilter::getPrimitiveType(data_type);
+
+        if (const auto * low_cardinality_col = findLowCardinalityColumn(column))
+            return hashLowCardinalityColumnDistinct(actual_type.get(), *low_cardinality_col, pos, limit);
+
+        const ColumnPtr actual_col = BloomFilter::getPrimitiveColumn(column);
+        auto index_column = ColumnUInt64::create(limit);
+        getAnyTypeHash<true>(actual_type.get(), actual_col.get(), index_column->getData(), pos);
+        return index_column;
+    }
+
+    /// Drill through Array / Nullable wrappers to find a LowCardinality column, if any.
+    /// Mirrors the unwrapping done by [BloomFilter::getPrimitiveColumn].
+    static const ColumnLowCardinality * findLowCardinalityColumn(const ColumnPtr & column)
+    {
+        const IColumn * current = column.get();
+        while (current)
+        {
+            if (const auto * array_col = typeid_cast<const ColumnArray *>(current))
+                current = &array_col->getData();
+            else if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(current))
+                current = &nullable_col->getNestedColumn();
+            else if (const auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(current))
+                return low_cardinality_col;
+            else
+                return nullptr;
+        }
+        return nullptr;
+    }
+
+    /// Hash the dictionary of a LowCardinality column once, returning one hash per
+    /// distinct dictionary value (in dictionary order).
+    ///
+    /// Uses the dictionary's not-nullable nested column so its representation matches
+    /// [actual_type] (the primitive type, which [getPrimitiveType] has stripped of
+    /// Nullable). This mirrors how the full-column path treats nulls: it unwraps
+    /// Nullable via [getPrimitiveColumn]'s [getNestedColumnPtr], so a null row hashes
+    /// the value at the null slot (the default value). Hashing the not-nullable nested
+    /// column here hashes that same slot.
+    static ColumnUInt64::Container hashLowCardinalityDictionary(
+        const IDataType * actual_type, const ColumnLowCardinality & low_cardinality_col)
+    {
+        const IColumn & dictionary = *low_cardinality_col.getDictionary().getNestedNotNullableColumn();
+        ColumnUInt64::Container dictionary_hashes(dictionary.size());
+        getAnyTypeHash<true>(actual_type, &dictionary, dictionary_hashes, 0);
+        return dictionary_hashes;
+    }
+
+    /// Return the distinct hashes for the [pos, pos + limit) slice of a LowCardinality
+    /// column. We hash the dictionary once, walk the index map to find which dictionary
+    /// entries actually occur in the slice, and emit each of those hashes once. This is
+    /// O(distinct) hashes (plus an O(limit) integer scan of the index map) instead of
+    /// O(limit) hashes, which lets the bloom-filter aggregator skip an insert per row.
+    static ColumnPtr hashLowCardinalityColumnDistinct(
+        const IDataType * actual_type,
+        const ColumnLowCardinality & low_cardinality_col,
+        size_t pos,
+        size_t limit)
+    {
+        const ColumnUInt64::Container dictionary_hashes = hashLowCardinalityDictionary(actual_type, low_cardinality_col);
+        const size_t dictionary_size = dictionary_hashes.size();
+
+        /// Walk the index map with the type-specialized [getIndexAt] (no virtual
+        /// dispatch per row) to flag which dictionary entries occur in the slice.
+        std::vector<bool> used(dictionary_size, false);
+        for (size_t i = 0; i < limit; ++i)
+            used[low_cardinality_col.getIndexAt(pos + i)] = true;
+
+        auto index_column = ColumnUInt64::create();
+        ColumnUInt64::Container & vec = index_column->getData();
+        vec.reserve(dictionary_size);
+        for (size_t i = 0; i < dictionary_size; ++i)
+            if (used[i])
+                vec.push_back(dictionary_hashes[i]);
+
         return index_column;
     }
 
