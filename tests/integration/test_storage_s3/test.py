@@ -1367,7 +1367,7 @@ def test_empty_file(started_cluster):
     minio = started_cluster.minio_client
     minio.put_object(bucket, name, io.BytesIO(b""), 0)
 
-    table_function = f"s3('{url}', 'CSV', 'id Int32')"
+    table_function = f"s3('{url}', 'minio', '{minio_secret_key}', 'CSV', 'id Int32')"
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert int(result) == 0
 
