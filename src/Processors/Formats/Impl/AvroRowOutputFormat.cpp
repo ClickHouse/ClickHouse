@@ -646,6 +646,7 @@ void AvroConfluentRowOutputFormat::write(const Columns & columns, size_t row_num
     encoder->flush();
 }
 
+void registerOutputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory)
 {
     factory.registerOutputFormat("Avro", [](
@@ -679,6 +680,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatAvro(FormatFactory &);
 void registerOutputFormatAvro(FormatFactory &)
 {
 }

@@ -1,6 +1,7 @@
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <Parsers/IAST.h>
 
 namespace DB
