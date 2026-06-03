@@ -110,3 +110,31 @@ def test_audit_log_object_names(start_cluster):
     assert_audit_log_contain_with_retry(node_dml_misc, "DML")
     log_content = node_dml_misc.grep_in_log("DML", from_host=True, filename="clickhouse-server.audit.log")
     assert "test.t_audit" in log_content
+
+
+def test_audit_log_newline_escaping(start_cluster):
+    """Queries with embedded newlines must appear as a single audit log line."""
+    node_dml_misc.query("SELECT 1\n-- injected line\nFORMAT Null")
+
+    assert_audit_log_contain_with_retry(node_dml_misc, "SELECT 1")
+    log_content = node_dml_misc.grep_in_log("SELECT 1", from_host=True, filename="clickhouse-server.audit.log")
+    for line in log_content.strip().split("\n"):
+        if "SELECT 1" in line:
+            assert "injected line" in line, "Multi-line query must be collapsed into a single log line"
+            assert "AUDIT" in line, "The injected content must not start a new AUDIT line"
+            break
+    else:
+        raise AssertionError("Expected audit line with SELECT 1 not found")
+
+
+def test_audit_log_login_failure_has_client_ip(start_cluster):
+    """Failed login attempts (unknown user) must record the real client IP."""
+    try:
+        node_user_dcl.query("SELECT 1", user="nonexistent_user_12345", password="wrong")
+    except Exception:
+        pass
+
+    assert_audit_log_contain_with_retry(node_user_dcl, "LoginFailure")
+    log_content = node_user_dcl.grep_in_log("LoginFailure", from_host=True, filename="clickhouse-server.audit.log")
+    assert "nonexistent_user_12345" in log_content
+    assert "Unknown Host" not in log_content, "Pre-auth failures must include the real client IP, not 'Unknown Host'"

@@ -1647,7 +1647,7 @@ public:
     {
         try
         {
-            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name);
+            const auto user_authentication_types = session.getAuthenticationTypesOrLogInFailure(user_name, address);
 
             for (auto user_authentication_type : user_authentication_types)
             {

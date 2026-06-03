@@ -1995,7 +1995,7 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
+        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user, socket().peerAddress());
 
         bool user_supports_ssh_authentication = std::find_if(
             authentication_types.begin(),

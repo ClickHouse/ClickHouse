@@ -48,7 +48,7 @@ public:
     std::unordered_set<AuthenticationType> getAuthenticationTypes(const String & user_name) const;
 
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
-    std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name) const;
+    std::unordered_set<AuthenticationType> getAuthenticationTypesOrLogInFailure(const String & user_name, const Poco::Net::SocketAddress & address) const;
 
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.

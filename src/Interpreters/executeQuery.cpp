@@ -1085,7 +1085,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
             audit_type, elem.query_kind, elem.exception_code, elem.client_info.current_user,
-            host, object_names, elem.query);
+            host, object_names, toOneLineQuery(elem.query));
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

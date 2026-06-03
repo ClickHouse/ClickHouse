@@ -350,7 +350,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypes(const Str
     return authentication_types;
 }
 
-std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name) const
+std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFailure(const String & user_name, const Poco::Net::SocketAddress & address) const
 {
     try
     {
@@ -361,7 +361,9 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
         if (auto audit_log = getAuditLoggerIfEnabled())
         {
             const auto & client_info = getClientInfo();
-            std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
+            std::string host = client_info.current_address
+                ? client_info.current_address->host().toString()
+                : address.host().toString();
             LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", user_name, host);
         }
 
