@@ -453,6 +453,12 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     {
         if (sorting_node->children.size() != 1)
             return false;
+        /// `arrayJoin` changes the number of rows, so reapplying it after the lazy
+        /// join (i.e. after `LIMIT` was already applied) would change the query
+        /// semantics: `LIMIT` must be applied to the rows produced by `arrayJoin`,
+        /// not to the source rows. Bail out, consistent with the checks below the sort.
+        if (above_expr->getExpression().hasArrayJoin())
+            return false;
         above_sort_dags.push_front(above_expr->getExpression().clone());
         sorting_node = sorting_node->children.front();
     }
