@@ -20,3 +20,5 @@ ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/monacoeditor
 ${CLICKHOUSE_CURL} "${BASE_URL}/ui/console/newQuery" | gzip -d | grep -o 'ClickHouse SQL Console' | head -n1
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/ui/monacoeditorwork/editor.worker.bundle.js"
 ${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/ui/nonexistent.js"
+# A sibling route like "/uix" must not be captured by the "/ui" handler (route-boundary check).
+${CLICKHOUSE_CURL} -o /dev/null -w '%{http_code}\n' "${BASE_URL}/uix"
