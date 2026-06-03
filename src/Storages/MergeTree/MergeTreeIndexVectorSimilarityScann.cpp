@@ -81,6 +81,7 @@ static std::string buildScannConfigString(
     size_t num_leaves,
     size_t num_leaves_to_search,
     size_t training_sample_size,
+    size_t min_cluster_size,
     size_t num_blocks,
     bool use_residual)
 {
@@ -89,7 +90,7 @@ static std::string buildScannConfigString(
         "distance_measure {{ distance_measure: \"{}\" }}\n"
         "partitioning {{\n"
         "  num_children: {}\n"
-        "  min_cluster_size: 50\n"
+        "  min_cluster_size: {}\n"
         "  max_clustering_iterations: 12\n"
         "  single_machine_center_initialization: DEFAULT_KMEANS_PLUS_PLUS\n"
         "  partitioning_distance {{ distance_measure: \"SquaredL2Distance\" }}\n"
@@ -101,17 +102,19 @@ static std::string buildScannConfigString(
         "  asymmetric_hash {{\n"
         "    lookup_type: INT8_LUT16\n"
         "    use_residual_quantization: {}\n"
-        "    projection {{ projection_type: CHUNK num_blocks: {} num_dims_per_block: 2 }}\n"
+        "    projection {{ projection_type: CHUNK num_blocks: {} num_dims_per_block: 2 input_dim: {} }}\n"
         "  }}\n"
         "}}\n"
         "exact_reordering {{ approx_num_neighbors: 100 }}\n",
         distance_measure,
         num_leaves,
+        min_cluster_size,
         num_leaves_to_search,
         training_sample_size,
         distance_measure,
         use_residual ? "true" : "false",
-        num_blocks);
+        num_blocks,
+        num_blocks * 2);  /// input_dim = padded_dim = num_blocks × num_dims_per_block
 }
 
 // ---------------------------------------------------------------------------
@@ -295,11 +298,14 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     const size_t num_leaves_to_search = std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
+    /// Keep min_cluster_size <= half the average cluster size so ScaNN's k-means
+    /// can always satisfy the constraint; cap at 50 for large datasets.
+    const size_t min_cluster_size = std::max(size_t(1), std::min(size_t(50), (num_vectors / num_leaves) / 2));
     const size_t num_blocks = std::max(size_t(1), padded_dim / 2);
 
     const std::string config_str = buildScannConfigString(
         scann_distance_measure, num_leaves, num_leaves_to_search,
-        training_sample_size, num_blocks, use_residual);
+        training_sample_size, min_cluster_size, num_blocks, use_residual);
 
     LOG_DEBUG(log, "Building ScaNN index: num_vectors={} padded_dim={} num_leaves={} config=\n{}",
         num_vectors, padded_dim, num_leaves, config_str);
@@ -444,11 +450,12 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     const size_t num_leaves_to_search = std::max(size_t(1),
         static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
+    const size_t min_cluster_size = std::max(size_t(1), std::min(size_t(50), (num_vectors / num_leaves) / 2));
     const size_t num_blocks = std::max(size_t(1), padded_dim / 2);
 
     const std::string config_str = buildScannConfigString(
         scann_distance_measure, num_leaves, num_leaves_to_search,
-        training_sample_size, num_blocks, use_residual);
+        training_sample_size, min_cluster_size, num_blocks, use_residual);
 
     research_scann::ScannConfig config;
     if (!google::protobuf::TextFormat::ParseFromString(config_str, &config))

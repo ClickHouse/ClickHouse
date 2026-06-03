@@ -301,13 +301,14 @@ SELECT count() = 100 FROM (
     SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
 );
 -- Fallback uses exact distances so results must match brute-force.
+-- Use a secondary sort on id to break ties deterministically at the LIMIT boundary.
 SELECT count() FROM (
     WITH [toFloat32(1000), toFloat32(0.0)] AS ref
-    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC, id ASC LIMIT 100
     SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
     EXCEPT
     WITH [toFloat32(1000), toFloat32(0.0)] AS ref
-    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC, id ASC LIMIT 100
     SETTINGS use_skip_indexes = 0
 );
 DROP TABLE tab_scann_few_leaves;
