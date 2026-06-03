@@ -2904,6 +2904,44 @@ def test_aggregation_operators():
         ],
     )
 
+    # topk(-1): k<0 is clamped to 0, returns no series.
+    do_query_test(
+        "topk(-1, last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # topk(+Inf): k=+Inf causes an error because it cannot be converted to an integer.
+    do_query_test_expect_error(
+        "topk(+Inf, last_over_time(foo[10]))[50:10]",
+        150,
+        "Scalar value +Inf overflows int64",
+        "Argument k of aggregation operator is too large",
+    )
+
+    do_query_test(
+        'topk(time() / 10 - 10, last_over_time({__name__=~"foo|bar"}[10]))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
+        [
+            ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
+            ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
+            ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
+            ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:30.000',30)]"],
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
+        ],
+    )
+
+    do_query_test(
+        "topk(2, nonexistent_metric_name)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # do_query_test(
     #     "bottomk(2, bar)",
@@ -3029,14 +3067,7 @@ def test_aggregation_operators():
         ],
     )
 
-    # topk(-1) and limitk(-2): k<0 is clamped to 0, returns no series.
-    do_query_test(
-        "topk(-1, last_over_time(foo[10]))[50:10]",
-        150,
-        '{"resultType": "matrix", "result": []}',
-        [],
-    )
-
+    # limitk(-2): k<0 is clamped to 0, returns no series.
     do_query_test(
         "limitk(-2, last_over_time(foo[10]))[50:10]",
         150,
@@ -3044,30 +3075,18 @@ def test_aggregation_operators():
         [],
     )
 
-    # topk(+Inf): k=+Inf causes an error because it cannot be converted to an integer.
-    do_query_test_expect_error(
-        "topk(+Inf, last_over_time(foo[10]))[50:10]",
+    # limitk with non-constant k=time()/10 - 10 (values 0,1,2,3,4,5 at steps 100..150).
+    # ClickHouse-only because limitk picks series via CityHash64(tags) which differs from Prometheus's xxhash.Sum64.
+    do_clickhouse_only_query_test(
+        "limitk(time() / 10 - 10, last_over_time(foo[10]))[50:10]",
         150,
-        "Scalar value +Inf overflows int64",
-        "Argument k of aggregation operator is too large",
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
+        ],
     )
-
-    # FIXME: topk/bottomk/limitk with k depending on timestamp are not implemented yet.
-    # topk with k depending on the timestamp: k = time() / 10 - 10 varies per subquery step (1, 2, 3, 4, 5).
-    # do_query_test(
-    #     'topk(time() / 10 - 10, last_over_time({__name__=~"foo|bar"}[10]))[50:10]',
-    #     150,
-    #     '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[130, "50"], [150, "1000"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
-    #     [
-    #         ["[('__name__','bar'),('shape','circle'),('size','l')]", "[('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]"],
-    #         ["[('__name__','bar'),('shape','rectangle'),('size','l')]", "[('1970-01-01 00:02:10.000',90)]"],
-    #         ["[('__name__','bar'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]"],
-    #         ["[('__name__','bar'),('shape','triangle'),('size','xl')]", "[('1970-01-01 00:02:30.000',30)]"],
-    #         ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:30.000',16)]"],
-    #         ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:02:10.000',40)]"],
-    #         ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:02:00.000',80)]"],
-    #     ],
-    # )
 
 
 def test_label_manipulation_functions():
