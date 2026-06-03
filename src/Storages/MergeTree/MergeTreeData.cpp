@@ -586,10 +586,15 @@ void MergeTreeData::writeColumnIdMappingToDisk() const
 
 void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const
 {
+    writeColumnIdMappingToDisk(mapping, getStoragePolicy());
+}
+
+void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const
+{
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
     const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
 
-    /// Write to EVERY writable disk in the storage policy.  Writing to only
+    /// Write to EVERY writable disk in the target policy.  Writing to only
     /// the first writable disk leaves stale copies on other disks: if the
     /// first writable disk later becomes read-only, the load path would
     /// either pick the stale copy or (with the divergence check) refuse to
@@ -597,7 +602,7 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) 
     /// pattern and aligns with `loadColumnIdMappingFromDisk`'s divergence
     /// check.
     bool wrote_any = false;
-    for (const auto & disk : getStoragePolicy()->getDisks())
+    for (const auto & disk : target_policy->getDisks())
     {
         if (disk->isBroken())
             continue;
@@ -5253,6 +5258,12 @@ void MergeTreeData::changeSettings(
 
         const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
         StoragePolicyPtr new_storage_policy = nullptr;
+        /// Capture the new policy out of the per-change loop so we can push
+        /// `column_ids.json` onto its disks before publishing the new
+        /// `storage_settings` (the throw-on-disk-write path must leave
+        /// `storage_settings`/metadata unchanged for settings-only ALTERs,
+        /// which lack a rollback wrapper).
+        StoragePolicyPtr pending_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
         {
@@ -5291,8 +5302,22 @@ void MergeTreeData::changeSettings(
                     /// FIXME how would that be done while reloading configuration???
 
                     has_storage_policy_changed = true;
+                    pending_storage_policy = new_storage_policy;
                 }
             }
+        }
+
+        /// Persist `column_ids.json` onto the NEW policy's writable disks
+        /// BEFORE `storage_settings.set` / `setInMemoryMetadata` below.  A
+        /// disk-full / read-only / I/O exception here must leave the
+        /// in-memory and on-disk state of the table unchanged, otherwise
+        /// settings-only ALTERs (which have no rollback wrapper around
+        /// `changeSettings`) would publish the new policy while leaving
+        /// newly added disks without a mapping copy.
+        if (pending_storage_policy)
+        {
+            if (auto current_mapping = getColumnIdMapping())
+                writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
         }
 
         /// Reset to default settings before applying existing.
@@ -5344,19 +5369,7 @@ void MergeTreeData::changeSettings(
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
-        {
-            /// Newly introduced disks in the policy do not have a copy of
-            /// `column_ids.json` yet.  A subsequent background move can place
-            /// a column-ID part there; if the original disk is later removed
-            /// or broken, startup has no mapping copy to resolve non-identity
-            /// IDs.  Push the current mapping onto every writable disk in the
-            /// new policy before allowing moves.  `writeColumnIdMappingToDisk`
-            /// is idempotent on disks that already hold the same bytes.
-            if (auto current_mapping = getColumnIdMapping())
-                writeColumnIdMappingToDisk(*current_mapping);
-
             startBackgroundMovesIfNeeded();
-        }
 
         if (has_refresh_statistics_interval_changed)
         {
@@ -7355,27 +7368,25 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
     if (!backup->fileExists(column_ids_in_backup))
     {
-        /// Legacy backup (no mapping file) into a destination with a non-identity
-        /// active mapping would attach parts named by logical columns; the reader
-        /// resolves through column IDs and finds no physical files for them,
-        /// silently returning defaults.  An empty destination still triggers this
-        /// risk (e.g. after `ADD COLUMN c` + `TRUNCATE` leaves a non-identity
-        /// mapping in place), so do not gate on `getTotalActiveSizeInBytes`.
+        /// Absence of `column_ids.json` is only safe when column IDs are NOT
+        /// active for the restored table.  The previous identity-only check
+        /// was unsafe: a backup made from a column-ID table that lost its
+        /// mapping file can still hold parts whose physical files are named
+        /// by numeric IDs (after DROP+ADD or RENAME) -- restoring such parts
+        /// into a destination with an active identity mapping `c -> c` would
+        /// silently return defaults for `c`.  We cannot prove the backup is
+        /// purely-logical without re-reading every part's columns.txt, so
+        /// fail closed whenever any active mapping is present on the
+        /// destination.
         auto current = getColumnIdMapping();
         if (current && current->isActive())
-        {
-            bool is_identity = true;
-            for (const auto & [logical, id] : current->getLogicalToId())
-            {
-                if (logical != id) { is_identity = false; break; }
-            }
-            if (!is_identity)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "RESTORE: backup has no `{}` (legacy backup), but destination has "
-                    "a non-identity column-ID mapping.  Restored parts would be read "
-                    "with the wrong physical column names.  Restore into a fresh table.",
-                    COLUMN_IDS_FILE_NAME);
-        }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "RESTORE: backup has no `{}` but destination has an active "
+                "column-ID mapping.  The backup may contain parts whose files "
+                "are named by numeric IDs which would resolve to the wrong "
+                "logical columns under the destination's mapping.  Restore "
+                "into a fresh non-column-ID table instead.",
+                COLUMN_IDS_FILE_NAME);
     }
     else
     {

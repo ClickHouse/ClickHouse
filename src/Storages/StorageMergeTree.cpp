@@ -3139,6 +3139,18 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+
+    /// `checkStructureAndGetMergeTreeData` snapshots both column-ID mappings
+    /// once for the structure compatibility check, but the transfer below
+    /// runs under `lockForShare` on both tables.  Column-ID ALTERs use
+    /// `lockForAlter`, so either side could publish a new mapping between
+    /// the check and the commit.  Pin both mapping pointers now; re-check
+    /// just before the transaction commit to keep the cloned parts and the
+    /// destination's mapping coherent (`MultiVersion::set` installs a fresh
+    /// `unique_ptr` per publish, so a different pointer == mapping changed).
+    auto my_mapping_pinned = getColumnIdMapping();
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+
     DataPartsVector src_parts;
 
     if (is_all)
@@ -3234,6 +3246,23 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
+
+            /// Final coherence gate immediately before commit: a concurrent
+            /// column-ID ALTER does not block on `lockForShare` or `lockParts`
+            /// and calls `setColumnIdMapping` via MultiVersion's atomic swap,
+            /// so it can publish anywhere between the pre-clone pin and here.
+            /// Place the recheck right before `transaction.commit` to minimize
+            /// the remaining window (only the if-check-to-commit instructions).
+            /// The transaction has not yet been committed, so throwing here
+            /// rolls back the dst-parts staging via Transaction RAII.
+            if (getColumnIdMapping().get() != my_mapping_pinned.get()
+                || src_data.getColumnIdMapping().get() != src_mapping_pinned.get())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Column ID mapping changed concurrently with REPLACE/ATTACH PARTITION FROM; "
+                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
             /// Populate transaction
             transaction.commit(data_parts_lock);
 
@@ -3302,6 +3331,16 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
+
+    /// Same race window as REPLACE/ATTACH PARTITION FROM: the structure
+    /// check above snapshots both column-ID mappings once, but transfer
+    /// runs under `lockForShare` while column-ID ALTERs use `lockForAlter`.
+    /// Pin both pointers; re-check before committing the destination
+    /// transaction below.  Note `src_data` is the SOURCE table here (the
+    /// `dest_table_storage->checkStructure(*this, ...)` flips perspective).
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+    auto dest_mapping_pinned = dest_table_storage->getColumnIdMapping();
+
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
@@ -3388,6 +3427,25 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         }
 
         dest_transaction.renameParts();
+
+        /// Final coherence gate immediately before destination publish.
+        /// `renameParts` above does per-part `renameTo` I/O, so it yields
+        /// long enough for a concurrent column-ID ALTER (which republishes
+        /// via MultiVersion's atomic swap without `lockForShare`/`lockParts`)
+        /// to slip in.  Placing the recheck after `renameParts` and right
+        /// before `commit` minimizes the residual window to the if-check
+        /// instructions.  Source-mapping change after the destination
+        /// commits is not a transferred-data hazard (the source side only
+        /// publishes empty covering parts), but check both to keep the
+        /// failure-mode clear and symmetric with `replacePartitionFrom`.
+        if (src_data.getColumnIdMapping().get() != src_mapping_pinned.get()
+            || dest_table_storage->getColumnIdMapping().get() != dest_mapping_pinned.get())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column ID mapping changed concurrently with MOVE PARTITION TO TABLE; "
+                "transferred parts may resolve through stale physical IDs on the destination. "
+                "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
         dest_transaction.commit();
 
         src_transaction.renameParts();

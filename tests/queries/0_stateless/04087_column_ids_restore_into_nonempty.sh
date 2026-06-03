@@ -133,6 +133,6 @@ echo "== restore legacy backup into active-mapping destination =="
 $CLIENT --query "
 RESTORE TABLE t_legacy FROM Disk('backups', '${backup3}')
 SETTINGS allow_non_empty_tables = 1, allow_different_table_def = 1
-" 2>&1 | grep -qE "backup has no.+legacy backup" && echo "throws_on_legacy_into_active" || echo "missing_guard"
+" 2>&1 | grep -qE "backup has no .+ destination has an active" && echo "throws_on_legacy_into_active" || echo "missing_guard"
 
 $CLIENT --query "DROP TABLE t_legacy SYNC"
