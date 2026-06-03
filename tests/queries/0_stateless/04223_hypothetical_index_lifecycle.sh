@@ -283,6 +283,18 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_app"
 
+# A standalone conjunct keeps the candidate usable even when it also appears in a mixed OR.
+echo "--- applicability: candidate usable via a standalone conjunct beside a mixed OR ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_disj;
+    CREATE TABLE t_hypo_disj (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 100;
+    INSERT INTO t_hypo_disj SELECT number, number, number FROM numbers(1000);
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_disj (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_disj WHERE (b = 1 OR c = 2) AND b = 1;
+" | grep -E '^With |^\s+status:'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_disj"
+
 # Hypothetical indexes are session-local, so WHATIF must stay on the local read.
 echo "--- parallel replicas: EXPLAIN WHATIF still runs locally ---"
 $CLICKHOUSE_CLIENT --enable_parallel_replicas=1 --parallel_replicas_for_non_replicated_merge_tree=1 --cluster_for_parallel_replicas=parallel_replicas --parallel_replicas_local_plan=1 -n -q "

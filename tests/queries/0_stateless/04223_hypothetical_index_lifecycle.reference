@@ -74,6 +74,9 @@ With idx_b_set (set, hypothetical):
 With idx_a_minmax (minmax, hypothetical):
   status:       not_applicable
   reason:       Query has no filter predicate
+--- applicability: candidate usable via a standalone conjunct beside a mixed OR ---
+With idx_b (minmax, hypothetical):
+  status:       applicable
 --- parallel replicas: EXPLAIN WHATIF still runs locally ---
 With idx_a (minmax, hypothetical):
   status:       applicable

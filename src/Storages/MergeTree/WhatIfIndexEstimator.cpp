@@ -20,6 +20,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -572,24 +573,15 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    if (context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
-    {
-        NameSet index_columns_set;
-        for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
-            index_columns_set.insert(col);
-        if (disjunctionMixesIndexAndOtherColumns(filter_dag->getOutputs().front(), index_columns_set))
-        {
-            result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-            result.not_applicable_reason = "EXPLAIN WHATIF does not model combining the candidate with an existing "
-                                           "skip index under a disjunction (use_skip_indexes_for_disjunctions)";
-            return result;
-        }
-    }
+    /// Canonicalize the predicate the same way a real read does (push NOT to leaves, drop
+    /// aliases) so the index condition can use independent conjuncts of a mixed AND/OR predicate.
+    ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context);
+    const ActionsDAG::Node * predicate = predicate_dag.predicate;
 
     MergeTreeIndexConditionPtr condition;
     try
     {
-        condition = index_helper->createIndexCondition(filter_dag->getOutputs().front(), context);
+        condition = index_helper->createIndexCondition(predicate, context);
     }
     catch (...)
     {
@@ -598,9 +590,25 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
+    /// Let the condition decide applicability first: a standalone conjunct can make the candidate
+    /// usable even when it also appears in a mixed `OR`. Only when it can't prune on its own does
+    /// a mixed disjunction matter — a real read might still prune by combining it with an existing
+    /// skip index (use_skip_indexes_for_disjunctions), which the estimator can't model.
     if (!condition || condition->alwaysUnknownOrTrue())
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        if (predicate && context->getSettingsRef()[Setting::use_skip_indexes_for_disjunctions])
+        {
+            NameSet index_columns_set;
+            for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
+                index_columns_set.insert(col);
+            if (disjunctionMixesIndexAndOtherColumns(predicate, index_columns_set))
+            {
+                result.not_applicable_reason = "EXPLAIN WHATIF does not model combining the candidate with an existing "
+                                               "skip index under a disjunction (use_skip_indexes_for_disjunctions)";
+                return result;
+            }
+        }
         result.not_applicable_reason = "Index cannot filter this predicate (always unknown or true)";
         return result;
     }
@@ -620,7 +628,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     /// Fall back to column statistics
-    if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
+    if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
     /// No estimation available
