@@ -181,6 +181,7 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
