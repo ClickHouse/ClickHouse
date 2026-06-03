@@ -56,6 +56,10 @@ struct MergeTreeDataPartTTLInfos
     /// Return the smallest max recompression TTL value
     time_t getMinimalMaxRecompressionTTL() const;
 
+    /// Return the smallest `part_min_ttl`-contributing TTL among unfinished
+    /// rows-affecting TTL entries.
+    time_t getMinimalUnfinishedRowsAffectingTTL() const;
+
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);

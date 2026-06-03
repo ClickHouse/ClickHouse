@@ -243,6 +243,33 @@ time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
     return max;
 }
 
+time_t MergeTreeDataPartTTLInfos::getMinimalUnfinishedRowsAffectingTTL() const
+{
+    time_t min = std::numeric_limits<time_t>::max();
+
+    auto update_min_ttl = [&min] (const MergeTreeDataPartTTLInfo & info)
+    {
+        if (info.min && info.max && !info.finished())
+            min = std::min(info.min, min);
+    };
+
+    auto update_min_ttl_from_map = [&update_min_ttl] (const TTLInfoMap & map)
+    {
+        for (const auto & [name, info] : map)
+            update_min_ttl(info);
+    };
+
+    update_min_ttl(table_ttl);
+    update_min_ttl_from_map(columns_ttl);
+    update_min_ttl_from_map(rows_where_ttl);
+    update_min_ttl_from_map(group_by_ttl);
+
+    if (min == std::numeric_limits<time_t>::max())
+        return 0;
+
+    return min;
+}
+
 bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
 {
     auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool

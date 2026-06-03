@@ -19,7 +19,7 @@ using PartitionIdToTTLs = std::map<String, time_t>;
   *     into neighbors that pass `canIncludeInRange`. The neighbor gate is
   *     by default the same as `canConsiderPart`, but subclasses may
   *     loosen it to let finished parts piggy-back on an already-justified
-  *     merge — see `TTLPartDropMergeSelector::canIncludeInRange` and
+  *     merge - see `TTLPartDropMergeSelector::canIncludeInRange` and
   *     `TTLRowDeleteMergeSelector::canIncludeInRange`.
   */
 class ITTLMergeSelector : public IMergeSelector
@@ -39,7 +39,13 @@ protected:
     /// Get TTL value for part, may depend on child type and some settings in constructor.
     virtual time_t getTTLForPart(const PartProperties & part) const = 0;
 
-    /// Returns true if part is a valid CENTER of a merge range — i.e., the
+    /// Get TTL value used for CENTER selection. By default this is the same
+    /// value used for neighbor inclusion, but selectors can tighten it to
+    /// ignore TTL entries that are valid to merge as neighbors but must not
+    /// justify a new merge by themselves.
+    virtual time_t getTTLForPartForCenter(const PartProperties & part) const { return getTTLForPart(part); }
+
+    /// Returns true if part is a valid CENTER of a merge range - i.e., the
     /// selector will consider this part on its own as a reason to schedule a
     /// merge. Stricter checks (e.g., `has_any_non_finished_rows_affecting_ttls`)
     /// belong here so that a part with no remaining TTL work cannot keep
@@ -100,7 +106,7 @@ private:
     /// unfinished. Without this, a part whose `part_max_ttl` is past
     /// would be re-picked as a `TTLDrop` center on every scheduler tick
     /// because there is no per-partition cooldown for `TTLDrop` (issue
-    /// #105647). Finished parts can still join a merge — see
+    /// #105647). Finished parts can still join a merge - see
     /// `canIncludeInRange` below.
     bool canConsiderPart(const PartProperties & part) const override;
 
@@ -117,9 +123,10 @@ public:
 
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
+    time_t getTTLForPartForCenter(const PartProperties & part) const override;
 
     /// Center gate: same shape as `TTLPartDropMergeSelector::canConsiderPart`
-    /// — the part must have at least one unfinished rows-affecting TTL.
+    /// - the part must have at least one unfinished rows-affecting TTL.
     /// `TTLRowDeleteMergeSelector` additionally throws out parts on
     /// no-merge volumes. Finished parts are excluded as CENTERS by both
     /// selectors; they can still be folded in as NEIGHBORS via

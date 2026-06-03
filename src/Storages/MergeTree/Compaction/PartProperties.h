@@ -44,10 +44,15 @@ struct PartProperties
         /// True if at least one TTL kind that contributes to `part_max_ttl`
         /// (table/columns/rows-where/group-by) is still non-finished. Used by
         /// `TTLPartDropMergeSelector` and `TTLRowDeleteMergeSelector` so that
-        /// an unfinished move or recompression TTL — which never marks itself
-        /// finished and does not feed `part_max_ttl` — cannot keep these
+        /// an unfinished move or recompression TTL - which never marks itself
+        /// finished and does not feed `part_max_ttl` - cannot keep these
         /// selectors picking the same part forever (issue #105647).
         const bool has_any_non_finished_rows_affecting_ttls;
+        /// Minimum `min` watermark among unfinished rows-affecting TTLs.
+        /// `TTLRowDeleteMergeSelector` uses this for CENTER selection because
+        /// the persisted `part_min_ttl` may come from a finished expired
+        /// `GROUP BY` TTL next to a future unfinished rows TTL.
+        const time_t part_min_unfinished_rows_affecting_ttl;
         const time_t part_min_ttl;
         const time_t part_max_ttl;
     };
