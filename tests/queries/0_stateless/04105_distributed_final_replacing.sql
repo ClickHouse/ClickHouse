@@ -1,3 +1,4 @@
+-- Tags: no-old-analyzer
 -- Regression test: distributed query plan on SELECT FINAL from engines with specialized merging
 -- (Replacing, Collapsing, ...) must not reroute same-sort-key rows to different buckets, or
 -- deduplication is broken.
