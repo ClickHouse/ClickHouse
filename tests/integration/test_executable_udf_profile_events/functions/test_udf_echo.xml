@@ -69,4 +69,22 @@
         <command_read_timeout>30000</command_read_timeout>
         <command_write_timeout>30000</command_write_timeout>
     </function>
+    <function>
+        <type>executable</type>
+        <name>test_udf_cpu_no_exit_check</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>udf_cpu.py</command>
+        <!-- check_exit_code=false makes prepare() skip its blocking wait, so the
+             child is reaped in ShellCommandSource::cleanup instead. Used to prove
+             rusage is still captured on that path. -->
+        <check_exit_code>0</check_exit_code>
+        <max_command_execution_time>30</max_command_execution_time>
+        <command_termination_timeout>5</command_termination_timeout>
+        <command_read_timeout>30000</command_read_timeout>
+        <command_write_timeout>30000</command_write_timeout>
+    </function>
 </functions>

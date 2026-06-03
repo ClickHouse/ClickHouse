@@ -12,9 +12,8 @@ import os
 import sys
 
 
-# Tuned so that one row accumulates well above 10 ms of kernel CPU
-# (Linux's 100 Hz clock-tick granularity). Each iteration is one
-# `write(2)` syscall.
+# Tuned so the child accumulates clearly non-zero kernel CPU, reported via
+# wait4 rusage ru_stime. Each iteration is one write(2) syscall.
 SYSCALLS_PER_ROW = 50000
 
 

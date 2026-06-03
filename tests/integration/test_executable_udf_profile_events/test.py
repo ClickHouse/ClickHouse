@@ -81,17 +81,16 @@ def test_invocations(started_cluster):
     _skip_msan()
     qid = "exec-invocations-1"
     rows = 5000
-    # Use `sum` (not `count`) so the optimizer can't prune the UDF column;
-    # otherwise `SELECT count() FROM (SELECT udf(number) FROM numbers(N))`
-    # is rewritten to `SELECT count() FROM numbers(N)` and the UDF never runs.
+    # `sum` (not `count`) keeps the UDF column live so the optimizer can't prune it.
+    # max_block_size=1000 over 5000 rows yields exactly 5 blocks → 5 executeImpl calls,
+    # so Invocations is deterministically 5 — this catches both double-counting and
+    # missing-increment regressions, unlike a loose `>= 1`.
     _run(
-        f"SELECT sum(test_udf_echo(number)) FROM numbers({rows})",
+        f"SELECT sum(test_udf_echo(number)) FROM numbers({rows}) SETTINGS max_block_size = 1000",
         qid,
     )
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
-    # 5000 rows fit comfortably inside the default block size, so we expect
-    # one Invocation. Allow >= 1 to absorb planner-driven block splits.
-    assert invocations >= 1, f"Expected at least one Invocation, got {invocations}"
+    assert invocations == 5, f"Expected exactly 5 Invocations, got {invocations}"
 
 
 def test_elapsed_microseconds(started_cluster):
@@ -107,6 +106,10 @@ def test_elapsed_microseconds(started_cluster):
     elapsed = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
     # 200 ms sleep with 10% slack gives 180_000 us.
     assert elapsed >= 180_000, f"Elapsed={elapsed} below 180_000 us"
+    # Executable UDFs are non-deterministic by default, so the scalar call is not
+    # constant-folded; if that ever regresses, fail loudly here rather than via the floor.
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); elapsed floor is meaningless"
 
 
 def test_cpu_user_microseconds(started_cluster):
@@ -174,3 +177,35 @@ def test_output_bytes(started_cluster):
     )
     output_bytes = _profile_event_value(qid, "ExecutableUserDefinedFunctionOutputBytes")
     assert 2000 <= output_bytes <= 20000, f"OutputBytes out of expected range: {output_bytes}"
+
+
+def test_pool_wait_is_zero_on_executable_path(started_cluster):
+    _skip_msan()
+    qid = "exec-poolwait-zero-1"
+    _run("SELECT sum(test_udf_echo(number)) FROM numbers(1000)", qid)
+    # Executable (non-pool) UDFs never borrow from a pool: recordPoolWaitDone is
+    # only reached on the pool path (ShellCommandSource.cpp), so this event must be 0.
+    pool_wait = _profile_event_value(qid, "ExecutableUserDefinedFunctionPoolWaitMicroseconds")
+    assert pool_wait == 0, f"Expected PoolWait==0 on executable path, got {pool_wait}"
+    # Guard against a false pass from a missing QueryFinish row (the helper returns 0
+    # for both an absent row and a genuine zero):
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); PoolWait==0 is meaningless"
+
+
+def test_cpu_captured_when_check_exit_code_disabled(started_cluster):
+    _skip_msan()
+    qid = "exec-cpu-noexitcheck-1"
+    # With check_exit_code=false the source skips prepare()'s blocking wait, so the
+    # child is reaped in ShellCommandSource::cleanup. Only a *blocking* reap there
+    # captures wait4 rusage; a non-blocking reap would miss the not-yet-zombie child
+    # and report zero CPU. This is the one path that exercises that blocking reap, so
+    # without it UserTimeMicroseconds collapses to 0.
+    _run(
+        "SELECT sum(test_udf_cpu_no_exit_check(number)) FROM numbers(2000)",
+        qid,
+    )
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a check_exit_code=false UDF, got {cpu}"
+    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
+    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); CPU>0 is meaningless"

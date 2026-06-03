@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """executable UDF that does CPU work per row.
 
-Used to validate UserTimeMicroseconds is non-zero. Per-row CPU is sized so
-that a 1000-row block accumulates well above 10 ms — the tick granularity of
-the 100 Hz clock that drives `/proc/<pid>/stat` utime/stime.
+Used to validate UserTimeMicroseconds is non-zero. Per-row CPU is sized so the
+child accumulates clearly non-zero user time in wait4 rusage (ru_utime,
+microsecond resolution).
 """
 
 import sys

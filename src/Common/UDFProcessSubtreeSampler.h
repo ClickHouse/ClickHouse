@@ -66,7 +66,8 @@ public:
     UInt64 getPoolWaitMicroseconds() const noexcept { return pool_wait_us; }
 
     /// Pool mode: borrow-internal wall time (borrow acquired → released).
-    /// Executable mode: entry-wall time (ctor → child exit).
+    /// Executable mode: entry-wall time (ctor → ShellCommandSource cleanup;
+    /// includes spawn, output parsing and IO, not just child runtime).
     UInt64 getElapsedMicroseconds() const noexcept { return elapsed_us; }
 
     UInt64 getUserTimeMicroseconds() const noexcept { return user_time_us; }
