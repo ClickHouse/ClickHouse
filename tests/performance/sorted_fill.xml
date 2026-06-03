@@ -1,0 +1,9 @@
+<test>
+    <create_query>CREATE TABLE test_u64 (k UInt64, f UInt64) ENGINE = MergeTree ORDER BY (k, f)</create_query>
+    <fill_query>INSERT INTO test_u64 SELECT number % 100, number % 50 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_u64 FINAL</fill_query>
+
+    <query>SELECT k, f FROM test_u64 ORDER BY k, f WITH FILL FROM 0 TO 50 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_u64</drop_query>
+</test>
