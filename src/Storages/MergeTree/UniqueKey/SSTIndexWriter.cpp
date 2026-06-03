@@ -40,7 +40,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int LIMIT_EXCEEDED;
