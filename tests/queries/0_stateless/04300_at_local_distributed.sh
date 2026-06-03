@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_at_local_dist_local VALUES ('2001-02-16 20:38:40');
 
     CREATE TABLE t_at_local_dist AS t_at_local_dist_local
-        ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_at_local_dist_local, rand());
+        ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_at_local_dist_local, rand());
 
     -- AT LOCAL works when session_timezone is explicitly set (propagated to all shards)
     SELECT dt AT LOCAL FROM t_at_local_dist SETTINGS session_timezone = 'UTC' ORDER BY dt;
