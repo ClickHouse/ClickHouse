@@ -22,7 +22,7 @@ namespace
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
   */
-class FunctionTimestamp : public IFunction
+class FunctionTimestamp final : public IFunction
 {
 public:
     static constexpr UInt32 DATETIME_SCALE = 6;
