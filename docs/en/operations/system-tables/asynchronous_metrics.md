@@ -1040,6 +1040,14 @@ Total amount of rows (records) stored in all tables of MergeTree family.
 
 Total amount of rows (records) stored in tables of MergeTree family in the system database.
 
+### TotalUncompressedBytesOfMergeTreeTables {#totaluncompressedbytesofmergetreetables}
+
+Total amount of uncompressed bytes (including data and indices) stored in all tables of MergeTree family.
+
+### TotalUncompressedBytesOfMergeTreeTablesSystem {#totaluncompressedbytesofmergetreetablessystem}
+
+Total amount of uncompressed bytes (including data and indices) stored in tables of MergeTree family in the system database.
+
 ### TrackedMemory {#trackedmemory}
 
 Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes.
