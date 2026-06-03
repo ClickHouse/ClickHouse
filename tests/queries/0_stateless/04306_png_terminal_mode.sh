@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-OUT="${CLICKHOUSE_TMP}/04300_png_terminal_mode"
+OUT="${CLICKHOUSE_TMP}/04306_png_terminal_mode"
 mkdir -p "${OUT}"
 
 QUERY="SELECT toUInt8(number * 60) AS r, toUInt8(number * 30) AS g, toUInt8(255 - number * 50) AS b FROM numbers(8) FORMAT PNG"

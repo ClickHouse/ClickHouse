@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-OUT="${CLICKHOUSE_TMP}/04259_png_format"
+OUT="${CLICKHOUSE_TMP}/04305_png_format"
 mkdir -p "${OUT}"
 
 check_png_header()
