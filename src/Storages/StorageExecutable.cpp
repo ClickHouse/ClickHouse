@@ -5,9 +5,13 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <Columns/IColumn.h>
+
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -22,12 +26,32 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds max_execution_time;
+}
+
+namespace ExecutableSetting
+{
+    extern const ExecutableSettingsBool send_chunk_header;
+    extern const ExecutableSettingsUInt64 pool_size;
+    extern const ExecutableSettingsUInt64 max_command_execution_time;
+    extern const ExecutableSettingsUInt64 command_termination_timeout;
+    extern const ExecutableSettingsUInt64 command_read_timeout;
+    extern const ExecutableSettingsUInt64 command_write_timeout;
+    extern const ExecutableSettingsExternalCommandStderrReaction stderr_reaction;
+    extern const ExecutableSettingsBool check_exit_code;
+}
 
 namespace ErrorCodes
 {
@@ -64,7 +88,7 @@ namespace
                 }
             }
 
-            auto source = std::make_shared<SourceFromSingleChunk>(std::move(result_block));
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(result_block)));
             inputs[i] = Pipe(std::move(source));
         }
     }
@@ -74,40 +98,60 @@ StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
     const String & format,
     const ExecutableSettings & settings_,
-    const std::vector<ASTPtr> & input_queries_,
+    const VectorWithMemoryTracking<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
-    const ConstraintsDescription & constraints)
-    : IStorage(table_id_)
-    , settings(settings_)
+    const ConstraintsDescription & constraints,
+    const String & comment)
+    : StorageWithCommonVirtualColumns(table_id_)
+    , settings(std::make_unique<ExecutableSettings>(settings_))
     , input_queries(input_queries_)
-    , log(settings.is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
+    , log(settings->is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
+    storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
     {
         .format = format,
-        .command_termination_timeout_seconds = settings.command_termination_timeout,
-        .command_read_timeout_milliseconds = settings.command_read_timeout,
-        .command_write_timeout_milliseconds = settings.command_write_timeout,
-        .stderr_reaction = settings.stderr_reaction,
-        .check_exit_code = settings.check_exit_code,
+        .command_termination_timeout_seconds = (*settings)[ExecutableSetting::command_termination_timeout],
+        .command_read_timeout_milliseconds = (*settings)[ExecutableSetting::command_read_timeout],
+        .command_write_timeout_milliseconds = (*settings)[ExecutableSetting::command_write_timeout],
+        .stderr_reaction = (*settings)[ExecutableSetting::stderr_reaction],
+        .check_exit_code = (*settings)[ExecutableSetting::check_exit_code],
 
-        .pool_size = settings.pool_size,
-        .max_command_execution_time_seconds = settings.max_command_execution_time,
+        .pool_size = (*settings)[ExecutableSetting::pool_size],
+        .max_command_execution_time_seconds = (*settings)[ExecutableSetting::max_command_execution_time],
 
-        .is_executable_pool = settings.is_executable_pool,
-        .send_chunk_header = settings.send_chunk_header,
+        .is_executable_pool = settings->is_executable_pool,
+        .send_chunk_header = (*settings)[ExecutableSetting::send_chunk_header],
         .execute_direct = true
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
-void StorageExecutable::read(
+VirtualColumnsDescription StorageExecutable::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+StorageExecutable::~StorageExecutable() = default;
+
+String StorageExecutable::getName() const
+{
+    if (settings->is_executable_pool)
+        return "ExecutablePool";
+    return "Executable";
+}
+
+void StorageExecutable::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -117,7 +161,7 @@ void StorageExecutable::read(
     size_t max_block_size,
     size_t /*threads*/)
 {
-    auto & script_name = settings.script_name;
+    auto & script_name = settings->script_name;
 
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
@@ -147,7 +191,7 @@ void StorageExecutable::read(
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder;
-        if (context->getSettings().allow_experimental_analyzer)
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
         else
             builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
@@ -155,7 +199,7 @@ void StorageExecutable::read(
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.
-    if (settings.is_executable_pool)
+    if (settings->is_executable_pool)
         transformToSingleBlockSources(inputs);
 
     auto sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -163,17 +207,18 @@ void StorageExecutable::read(
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;
 
-    if (settings.is_executable_pool)
+    if (settings->is_executable_pool)
     {
         configuration.read_fixed_number_of_rows = true;
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
-    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
+    auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
     query_plan.addResources(std::move(resources));
 }
 
+void registerStorageExecutable(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory)
 {
     auto register_storage = [](const StorageFactory::Arguments & args, bool is_executable_pool) -> StoragePtr
@@ -189,14 +234,14 @@ void registerStorageExecutable(StorageFactory & factory)
 
         auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args.engine_args[0], "script_name_with_arguments_value");
 
-        std::vector<String> script_name_with_arguments;
+        VectorWithMemoryTracking<String> script_name_with_arguments;
         boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c) { return c == ' '; });
 
         auto script_name = script_name_with_arguments[0];
         script_name_with_arguments.erase(script_name_with_arguments.begin());
         auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
-        std::vector<ASTPtr> input_queries;
+        VectorWithMemoryTracking<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
             if (args.engine_args[i]->children.empty())
@@ -225,22 +270,23 @@ void registerStorageExecutable(StorageFactory & factory)
         {
             size_t max_command_execution_time = 10;
 
-            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettings().max_execution_time.totalSeconds());
+            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
             if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
                 max_command_execution_time = max_execution_time_seconds;
 
-            settings.max_command_execution_time = max_command_execution_time;
+            settings[ExecutableSetting::max_command_execution_time] = max_command_execution_time;
         }
 
         if (args.storage_def->settings)
             settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
-        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints);
+        return std::make_shared<StorageExecutable>(args.table_id, format, settings, input_queries, columns, constraints, args.comment);
     };
 
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
+    storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
@@ -254,4 +300,3 @@ void registerStorageExecutable(StorageFactory & factory)
 }
 
 }
-

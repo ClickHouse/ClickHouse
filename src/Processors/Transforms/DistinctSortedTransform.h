@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/SortDescription.h>
 #include <Core/ColumnNumbers.h>
@@ -22,12 +23,12 @@ namespace DB
   * set limit_hint to non zero value. So we stop emitting new rows after
   * count of already emitted rows will reach the limit_hint.
   */
-class DistinctSortedTransform : public ISimpleTransform
+class DistinctSortedTransform final : public ISimpleTransform
 {
 public:
     /// Empty columns_ means all columns.
     DistinctSortedTransform(
-        const Block & header,
+        SharedHeader header,
         const SortDescription & sort_description,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,

@@ -1,4 +1,4 @@
-#include "getTableOverride.h"
+#include <Interpreters/getTableOverride.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>

@@ -15,7 +15,7 @@ echo "<clickhouse>
         <console>true</console>
     </logger>
 
-    <tcp_port>9000</tcp_port>
+    <tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port>
 
     <path>${SAFE_DIR}</path>
 

@@ -1,6 +1,8 @@
-#include "registerDisks.h"
+#include <Disks/registerDisks.h>
 
-#include "DiskFactory.h"
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
 
 #include "config.h"
 
@@ -17,8 +19,6 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
 
-#ifndef CLICKHOUSE_KEEPER_STANDALONE_BUILD
-
 void registerDisks(bool global_skip_access_check)
 {
     auto & factory = DiskFactory::instance();
@@ -34,17 +34,11 @@ void registerDisks(bool global_skip_access_check)
     registerDiskObjectStorage(factory, global_skip_access_check);
 }
 
-#else
-
-void registerDisks(bool global_skip_access_check)
+void clearDiskRegistry()
 {
-    auto & factory = DiskFactory::instance();
-
-    registerDiskLocal(factory, global_skip_access_check);
-
-    registerDiskObjectStorage(factory, global_skip_access_check);
+    DiskFactory::instance().clearRegistry();
+    ObjectStorageFactory::instance().clearRegistry();
+    MetadataStorageFactory::instance().clearRegistry();
 }
-
-#endif
 
 }

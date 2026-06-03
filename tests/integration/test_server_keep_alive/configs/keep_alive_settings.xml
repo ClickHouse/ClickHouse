@@ -1,0 +1,4 @@
+<clickhouse>
+  <keep_alive_timeout>3600</keep_alive_timeout>
+  <max_keep_alive_requests>5</max_keep_alive_requests>
+</clickhouse>

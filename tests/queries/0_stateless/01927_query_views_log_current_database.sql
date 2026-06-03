@@ -3,7 +3,7 @@ SET log_query_threads=0;
 
 -- SETUP TABLES
 CREATE TABLE table_a (a String, b Int64) ENGINE = MergeTree ORDER BY b;
-CREATE TABLE table_b (a Float64,  b Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE table_b (a Float64, count Int64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE table_c (a Float64) ENGINE = MergeTree ORDER BY a;
 
 CREATE TABLE table_d (a Float64, count Int64) ENGINE MergeTree ORDER BY a;
@@ -16,6 +16,7 @@ CREATE MATERIALIZED VIEW matview_b_to_c TO table_c AS SELECT SUM(a + sleepEachRo
 CREATE MATERIALIZED VIEW matview_join_d_e TO table_f AS SELECT table_d.a as a, table_e.count + sleepEachRow(0.000003) as count FROM table_d LEFT JOIN table_e ON table_d.a = table_e.a;
 
 -- ENABLE LOGS
+SET parallel_view_processing=0;
 SET log_query_views=1;
 SET log_queries_min_type='QUERY_FINISH';
 SET log_queries=1;
@@ -26,7 +27,7 @@ INSERT INTO table_a SELECT '111', * FROM numbers(100);
 -- INSERT 2
 INSERT INTO table_d SELECT 0.5, * FROM numbers(50);
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_views_log;
 
 
 -- CHECK LOGS OF INSERT 1
@@ -46,7 +47,7 @@ SELECT
 FROM system.query_log
 WHERE query like '-- INSERT 1%INSERT INTO table_a%'
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
 FORMAT Vertical;
 
 SELECT
@@ -71,7 +72,7 @@ WHERE initial_query_id =
           FROM system.query_log
           WHERE query like '-- INSERT 1%INSERT INTO table_a%'
             AND current_database = currentDatabase()
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           LIMIT 1
       )
 ORDER BY view_name
@@ -94,7 +95,7 @@ SELECT
 FROM system.query_log
 WHERE query like '-- INSERT 2%INSERT INTO table_d%'
   AND current_database = currentDatabase()
-  AND event_date >= yesterday()
+  AND event_date >= yesterday() AND event_time >= now() - 600
 FORMAT Vertical;
 
 SELECT
@@ -119,7 +120,7 @@ WHERE initial_query_id =
           FROM system.query_log
           WHERE query like '-- INSERT 2%INSERT INTO table_d%'
             AND current_database = currentDatabase()
-            AND event_date >= yesterday()
+            AND event_date >= yesterday() AND event_time >= now() - 600
           LIMIT 1
       )
 ORDER BY view_name

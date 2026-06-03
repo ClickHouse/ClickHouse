@@ -1,3 +1,0 @@
-<Test> MergeTreeMarksLoader: Loading marks from path data.cmrk3
-<Test> MergeTreeRangeReader: First reader returned: num_rows: 1, columns: 1, total_rows_per_granule: 1, no filter, column[0]:  Int32(size = 1), requested columns: key
-<Test> MergeTreeRangeReader: read() returned num_rows: 1, columns: 1, total_rows_per_granule: 1, no filter, column[0]:  Int32(size = 1), sample block key

@@ -1,9 +1,13 @@
 #include <Planner/PlannerContext.h>
 
-#include <Analyzer/TableNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Common/quoteString.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -21,28 +25,53 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+static std::string buildColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
-    std::string column_identifier;
-
     const auto & source_alias = column_source_node->getAlias();
     if (!source_alias.empty())
-        column_identifier = source_alias + "." + column.name;
-    else
-        column_identifier = column.name;
+        return backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column.name);
+    return column.name;
+}
 
-    auto [it, inserted] = column_identifiers.emplace(column_identifier);
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+{
+    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+
+    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", *it);
 
-    assert(inserted);
+    return *it;
+}
 
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+{
+    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+
+    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     return *it;
 }
 
 bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_identifier)
 {
     return column_identifiers.contains(column_identifier);
+}
+
+void GlobalPlannerContext::collectTableExpressionDataForCorrelatedColumns(
+    const QueryTreeNodePtr & table_expression_node,
+    const PlannerContextPtr & planner_context)
+{
+
+    auto * query_node = table_expression_node->as<QueryNode>();
+    auto * union_node = table_expression_node->as<UnionNode>();
+    chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
+
+    const auto & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        auto column_source = column->as<ColumnNode>()->getColumnSource();
+        shared_table_expression_data.emplace(column_source, &planner_context->getTableExpressionDataOrThrow(column_source));
+    }
 }
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_, const SelectQueryOptions & select_query_options_)
@@ -59,6 +88,10 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextP
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)
 {
+    auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+    if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+        return *it->second;
+
     auto [it, _] = table_expression_node_to_data.emplace(table_expression_node, TableExpressionData());
     return it->second;
 }
@@ -67,9 +100,15 @@ const TableExpressionData & PlannerContext::getTableExpressionDataOrThrow(const 
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        const auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return *it->second;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Table expression {} is not registered in planner context",
             table_expression_node->formatASTForErrorMessage());
+    }
 
     return table_expression_data_it->second;
 }
@@ -78,9 +117,17 @@ TableExpressionData & PlannerContext::getTableExpressionDataOrThrow(const QueryT
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        auto it = shared_table_expression_data.find(table_expression_node);
+        if (it != shared_table_expression_data.end())
+            return *it->second;
+
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Table expression {} is not registered in planner context",
             table_expression_node->formatASTForErrorMessage());
+    }
 
     return table_expression_data_it->second;
 }
@@ -89,7 +136,14 @@ const TableExpressionData * PlannerContext::getTableExpressionDataOrNull(const Q
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        const auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return it->second;
+
         return nullptr;
+    }
 
     return &table_expression_data_it->second;
 }
@@ -98,7 +152,14 @@ TableExpressionData * PlannerContext::getTableExpressionDataOrNull(const QueryTr
 {
     auto table_expression_data_it = table_expression_node_to_data.find(table_expression_node);
     if (table_expression_data_it == table_expression_node_to_data.end())
+    {
+        auto & shared_table_expression_data = getSharedTableExpressionDataMap();
+
+        if (auto it = shared_table_expression_data.find(table_expression_node); it != shared_table_expression_data.end())
+            return it->second;
+
         return nullptr;
+    }
 
     return &table_expression_data_it->second;
 }
@@ -129,7 +190,8 @@ const ColumnIdentifier * PlannerContext::getColumnNodeIdentifierOrNull(const Que
 
 PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_operand_type, const QueryTreeNodePtr & set_source_node)
 {
-    const auto set_source_hash = set_source_node->getTreeHash();
+    /// Here and in other places, ignore the CTE name to make the distributed header compatible (we substitute CTE with a subquery).
+    const auto set_source_hash = set_source_node->getTreeHash({ .compare_aliases = false, .ignore_cte = true });
     if (set_source_node->as<ConstantNode>())
     {
         /* We need to hash the type of the left operand because we can build different sets for different types.
@@ -138,7 +200,7 @@ PlannerContext::SetKey PlannerContext::createSetKey(const DataTypePtr & left_ope
          * For example in expression `(a :: Decimal(9, 1) IN (1.0, 2.5)) AND (b :: Decimal(9, 0) IN (1, 2.5))`
          * we need to build two different sets:
          *   - `{1, 2.5} :: Set(Decimal(9, 1))` for a
-         *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because bercause it's not representable as Decimal(9, 0)).
+         *   - `{1} :: Set(Decimal(9, 0))` for b (2.5 omitted because it's not representable as Decimal(9, 0)).
          */
         return "__set_" + left_operand_type->getName() + '_' + toString(set_source_hash);
     }

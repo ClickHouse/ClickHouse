@@ -1,4 +1,4 @@
-SET allow_deprecated_functions = 1;
+SET allow_deprecated_error_prone_window_functions = 1;
 SET output_format_pretty_row_numbers = 0;
 
 SELECT

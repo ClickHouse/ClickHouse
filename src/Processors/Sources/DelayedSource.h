@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
@@ -14,29 +15,31 @@ namespace DB
 /// Then, DelayedSource just move data from inputs to outputs until finished.
 ///
 /// It main output port of DelayedSource is never needed, callback won't be called.
-class DelayedSource : public IProcessor
+class DelayedSource final : public IProcessor
 {
 public:
     using Creator = std::function<QueryPipelineBuilder()>;
 
-    DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
+    DelayedSource(SharedHeader header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
     String getName() const override { return "Delayed"; }
 
     Status prepare() override;
     void work() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
     OutputPort & getPort() { return *main; }
     OutputPort * getTotalsPort() { return totals; }
     OutputPort * getExtremesPort() { return extremes; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit.swap(counter); }
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 private:
     QueryPlanResourceHolder resources;
     Creator creator;
     Processors processors;
-    RowsBeforeLimitCounterPtr rows_before_limit;
+    RowsBeforeStepCounterPtr rows_before_limit;
+    RowsBeforeStepCounterPtr rows_before_aggregation;
 
     /// Outputs for DelayedSource.
     OutputPort * main = nullptr;
@@ -50,6 +53,6 @@ private:
 };
 
 /// Creates pipe from DelayedSource.
-Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port);
+Pipe createDelayedPipe(SharedHeader header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port);
 
 }

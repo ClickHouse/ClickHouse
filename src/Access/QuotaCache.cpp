@@ -62,8 +62,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
                     "Quota {} (for user {}) requires a client supplied key.",
                     quota->getName(),
                     params.user_name);
-            else
-                return ""; // Authentication quota has no client key at time of authentication.
+            return ""; // Authentication quota has no client key at time of authentication.
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
@@ -76,6 +75,12 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
             if (!params.client_key.empty())
                 return params.client_key;
             return params.client_address.toString();
+        }
+        case QuotaKeyType::NORMALIZED_QUERY_HASH:
+        {
+            /// For NORMALIZED_QUERY_HASH, the key is resolved per-query via IntervalResolver.
+            /// Return a placeholder key for the shared session-level intervals.
+            return params.user_name;
         }
         case QuotaKeyType::MAX: break;
     }
@@ -176,7 +181,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
-    const Poco::Net::IPAddress & client_address,
+    const std::shared_ptr<Poco::Net::IPAddress> & client_address,
     const String & forwarded_address,
     const String & client_key,
     bool throw_if_client_key_empty)
@@ -188,7 +193,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     params.user_id = user_id;
     params.user_name = user_name;
     params.enabled_roles = enabled_roles;
-    params.client_address = client_address;
+    params.client_address = *client_address;
     params.forwarded_address = forwarded_address;
     params.client_key = client_key;
     auto it = enabled_quotas.find(params);
@@ -286,14 +291,50 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_c
         {
             String key = info.calculateKey(enabled, throw_if_client_key_empty);
             intervals = info.getOrBuildIntervals(key);
+
+            /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
+            /// so that EnabledQuota can lazily resolve intervals per query hash.
+            /// Both interval_resolver and resolved_intervals_cache are protected
+            /// by resolved_intervals_mutex to avoid data races with concurrent readers.
+            {
+                std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
+                if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
+                {
+                    UUID found_quota_id = info.quota_id;
+                    enabled.interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
+                    {
+                        std::lock_guard lock(mutex);
+                        auto it = all_quotas.find(found_quota_id);
+                        if (it == all_quotas.end())
+                            return nullptr;
+                        return it->second.getOrBuildIntervals(hash_key);
+                    };
+                }
+                else
+                {
+                    enabled.interval_resolver = nullptr;
+                }
+                enabled.resolved_intervals_cache.clear();
+            }
+
             break;
         }
     }
 
     if (!intervals)
-        intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
-
-    enabled.intervals.store(intervals);
+    {
+        enabled.empty = true;
+        enabled.intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
+        {
+            std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
+            enabled.interval_resolver = nullptr;
+        }
+    }
+    else
+    {
+        enabled.intervals.store(intervals);
+        enabled.empty = false;
+    }
 }
 
 

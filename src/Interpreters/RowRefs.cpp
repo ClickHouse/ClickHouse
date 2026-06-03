@@ -1,10 +1,18 @@
 #include <Interpreters/RowRefs.h>
 
-#include <Common/RadixSort.h>
+#include <Columns/ColumnDecimal.h>
+#include <Common/Exception.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Core/Joins.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
+#include <Common/RadixSort.h>
+
+#include <mutex>
 
 
 namespace DB
@@ -80,16 +88,16 @@ public:
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
 
-    void insert(const IColumn & asof_column, const Block * block, size_t row_num) override
+    void insert(const IColumn & asof_column, const ColumnsInfo * columns, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey key = column.getElement(row_num);
 
-        assert(!sorted.load(std::memory_order_acquire));
+        chassert(!sorted.load(std::memory_order_acquire));
 
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
-        row_refs.emplace_back(RowRef(block, row_num));
+        row_refs.emplace_back(RowRef(columns, row_num));
     }
 
     /// Unrolled version of upper_bound and lower_bound
@@ -144,7 +152,7 @@ public:
         return low;
     }
 
-    RowRef findAsof(const IColumn & asof_column, size_t row_num) override
+    RowRef * findAsof(const IColumn & asof_column, size_t row_num) override
     {
         sort();
 
@@ -156,10 +164,10 @@ public:
         if (pos != entries.size())
         {
             size_t row_ref_index = entries[pos].row_ref_index;
-            return row_refs[row_ref_index];
+            return &row_refs[row_ref_index];
         }
 
-        return {nullptr, 0};
+        return nullptr;
     }
 
 private:
@@ -183,7 +191,7 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !std::is_floating_point_v<TKey>)
+        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
         {
             if (likely(entries.size() > 256))
             {
@@ -211,6 +219,18 @@ private:
     }
 };
 
+}
+
+ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+{
+    rebuildReplicatedColumns();
+}
+
+void ColumnsInfo::rebuildReplicatedColumns()
+{
+    replicated_columns.resize(columns.size());
+    for (size_t i = 0; i != columns.size(); ++i)
+        replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)

@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Common/GetPriorityForLoadBalancing.h>
 #include <Common/Priority.h>
 
@@ -34,8 +35,12 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
             get_priority = [offset](size_t i) { return i != offset ? Priority{1} : Priority{0}; };
             break;
         case LoadBalancing::ROUND_ROBIN:
-            auto local_last_used = last_used % pool_size;
-            ++last_used;
+            /// `last_used` is `std::atomic<size_t>`. Use relaxed ordering: this counter
+            /// is only used to derive a rotation index, and there is no happens-before
+            /// relationship that needs to be observed by other threads. We compute
+            /// `local_last_used` from the pre-increment value so that two concurrent
+            /// callers receive distinct rotations of the round-robin sequence.
+            auto local_last_used = last_used.fetch_add(1, std::memory_order_relaxed) % pool_size;
 
             // Example: pool_size = 5
             // | local_last_used | i=0 | i=1 | i=2 | i=3 | i=4 |
@@ -58,6 +63,28 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
             break;
     }
     return get_priority;
+}
+
+/// Some load balancing strategies (such as "nearest hostname") have preferred nodes to connect to.
+/// Usually it's a node in the same data center/availability zone.
+/// For other strategies there's no difference between nodes.
+bool GetPriorityForLoadBalancing::hasOptimalNode() const
+{
+    switch (load_balancing)
+    {
+        case LoadBalancing::NEAREST_HOSTNAME:
+            return true;
+        case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            return true;
+        case LoadBalancing::IN_ORDER:
+            return false;
+        case LoadBalancing::RANDOM:
+            return false;
+        case LoadBalancing::FIRST_OR_RANDOM:
+            return true;
+        case LoadBalancing::ROUND_ROBIN:
+            return false;
+    }
 }
 
 }

@@ -1,5 +1,6 @@
 import pytest
-from helpers.client import QueryTimeoutExceedException, QueryRuntimeException
+
+from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)

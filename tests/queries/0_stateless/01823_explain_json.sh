@@ -6,7 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 opts=(
-    "--allow_experimental_analyzer=1"
+    "--enable_analyzer=1"
+    "--optimize_group_by_function_keys=1"
 )
 $CLICKHOUSE_CLIENT "${opts[@]}" -q "EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw"
 echo "--------"

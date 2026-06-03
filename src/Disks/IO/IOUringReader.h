@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsynchronousReader.h>
+#include <cstddef>
 #include <deque>
 #include <unordered_map>
 #include <liburing.h>
@@ -35,8 +36,9 @@ private:
     bool is_supported;
 
     std::mutex mutex;
-    struct io_uring ring;
+    struct io_uring ring{};
     uint32_t cq_entries;
+    size_t tracked_ring_size = 0;
 
     std::atomic<bool> cancelled{false};
     std::unique_ptr<ThreadFromGlobalPool> ring_completion_monitor;
@@ -61,12 +63,12 @@ private:
 
     void monitorRing();
 
-    template<typename T> inline void failPromise(std::promise<T> & promise, const Exception & ex)
+    template<typename T> void failPromise(std::promise<T> & promise, const Exception & ex)
     {
         promise.set_exception(std::make_exception_ptr(ex));
     }
 
-    inline std::future<Result> makeFailedResult(const Exception & ex)
+    std::future<Result> makeFailedResult(const Exception & ex)
     {
         auto promise = std::promise<Result>{};
         failPromise(promise, ex);

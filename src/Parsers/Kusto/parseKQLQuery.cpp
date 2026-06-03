@@ -6,7 +6,7 @@
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
@@ -34,7 +34,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl;
+    const char * nl = nullptr;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
@@ -81,8 +81,8 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        assert(current_position_to_hilite <= end);
-        assert(current_position_to_hilite >= begin);
+        chassert(current_position_to_hilite <= end);
+        chassert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
 
@@ -91,16 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -289,8 +287,7 @@ UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if (
-                (stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.
@@ -317,6 +314,7 @@ ASTPtr tryParseKQLQuery(
     const char * & _out_query_end, /* also query begin as input parameter */
     const char * all_queries_end,
     std::string & out_error_message,
+    int * out_error_code,
     bool hilite,
     const std::string & query_description,
     bool allow_multi_statements,
@@ -325,7 +323,11 @@ ASTPtr tryParseKQLQuery(
     size_t max_parser_backtracks,
     bool skip_insignificant)
 {
+    if (out_error_code)
+        *out_error_code = ErrorCodes::SYNTAX_ERROR;
+
     const char * query_begin = _out_query_end;
+
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
     IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
@@ -348,7 +350,25 @@ ASTPtr tryParseKQLQuery(
 
     Expected expected;
     ASTPtr res;
-    const bool parse_res = parser.parse(token_iterator, res, expected);
+    bool parse_res = false;
+    try
+    {
+        parse_res = parser.parse(token_iterator, res, expected);
+    }
+    catch (const Exception & e)
+    {
+        out_error_message = e.message();
+        if (out_error_code)
+            *out_error_code = e.code();
+        _out_query_end = token_iterator->begin;
+        return nullptr;
+    }
+    catch (const std::exception & e)
+    {
+        out_error_message = e.what();
+        _out_query_end = token_iterator->begin;
+        return nullptr;
+    }
     const auto last_token = token_iterator.max();
     _out_query_end = last_token.end;
 
@@ -446,12 +466,25 @@ ASTPtr parseKQLQueryAndMovePosition(
     size_t max_parser_backtracks)
 {
     std::string error_message;
-    ASTPtr res = tryParseKQLQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size, max_parser_depth, max_parser_backtracks);
+    int error_code = ErrorCodes::SYNTAX_ERROR;
+    ASTPtr res = tryParseKQLQuery(
+        parser,
+        pos,
+        end,
+        error_message,
+        &error_code,
+        false,
+        query_description,
+        allow_multi_statements,
+        max_query_size,
+        max_parser_depth,
+        max_parser_backtracks,
+        true);
 
     if (res)
         return res;
 
-    throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
+    throw Exception::createDeprecated(error_message, error_code);
 }
 
 ASTPtr parseKQLQuery(

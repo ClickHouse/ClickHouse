@@ -1,16 +1,23 @@
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/TransactionsInfoLog.h>
+#include <atomic>
+#include <Core/ServerUUID.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
+#include <base/defines.h>
+#include <base/sort.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Core/ServerUUID.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace DB
@@ -20,6 +27,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_force_unknown_state_after_commit[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -51,9 +63,10 @@ TransactionLog::TransactionLog()
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
     , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
+    auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
-    updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
+    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionLog::runUpdatingThread, this);
 }
 
 TransactionLog::~TransactionLog()
@@ -67,7 +80,8 @@ void TransactionLog::shutdown()
         return;
     log_updated_event->set();
     latest_snapshot.notify_all();
-    updating_thread.join();
+    if (updating_thread)
+        updating_thread->join();
 
     std::lock_guard lock{mutex};
     /// This is required to... you'll never guess - avoid race condition inside Poco::Logger (Coordination::ZooKeeper::log)
@@ -84,7 +98,7 @@ UInt64 TransactionLog::deserializeCSN(const String & csn_node_name)
 {
     ReadBufferFromString buf{csn_node_name};
     assertString("csn-", buf);
-    UInt64 res;
+    UInt64 res = 0;
     readText(res, buf);
     assertEOF(buf);
     return res;
@@ -206,6 +220,7 @@ void TransactionLog::loadLogFromZooKeeper()
 
 void TransactionLog::runUpdatingThread()
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::runUpdatingThread");
     while (true)
     {
         try
@@ -272,6 +287,17 @@ void TransactionLog::removeOldEntries()
     if (!global_context->isServerCompletelyStarted())
         return;
 
+    /// Because `loadTableFromMetadataAsync` is running asynchronously, it is possible that the outdated parts are loading while the `tail_ptr` is updated here.
+    /// It might trigger assertion when the part `create_csn` is lower than `tail_ptr`. Refer: https://github.com/ClickHouse/ClickHouse/issues/60406
+    /// We keep track of `asyncTablesLoadingJobNumber`, and not update `tail_ptr` if there are running jobs.
+    if (!updated_tail_ptr.load(std::memory_order_relaxed) && asyncTablesLoadingJobNumber() != 0)
+    {
+        LOG_TRACE(log, "There are running async tables loading jobs, skip updating tail_ptr");
+        return;
+    }
+
+    updated_tail_ptr.store(true, std::memory_order_relaxed);
+
     /// Also similar problem is possible if some table was not attached during startup (for example, if table is detached permanently).
     /// Also we write CSNs into data parts without fsync, so it's theoretically possible that we wrote CSN, finished transaction,
     /// removed its entry from the log, but after that server restarts and CSN is not actually saved to metadata on disk.
@@ -283,7 +309,7 @@ void TransactionLog::removeOldEntries()
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
-    else if (new_tail_ptr == old_tail_ptr)
+    if (new_tail_ptr == old_tail_ptr)
         return;
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
@@ -389,12 +415,15 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
 
 CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool throw_on_unknown_status)
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::commitTransaction");
     /// Some precommit checks, may throw
     auto state_guard = txn->beforeCommit();
 
     CSN allocated_csn = Tx::UnknownCSN;
+    auto requests = txn->getRequestsOnCommit();
     if (txn->isReadOnly())
     {
+        chassert(requests.empty());
         /// Don't need to allocate CSN in ZK for readonly transactions, it's safe to use snapshot/start_csn as "commit" timestamp
         LOG_TEST(log, "Closing readonly transaction {}", txn->tid);
     }
@@ -408,13 +437,21 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
-            Coordination::Requests requests;
             requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
 
             /// Commit point
             auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
 
             csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
+
+            fiu_do_on(FailPoints::transaction_force_unknown_state_after_commit,
+            {
+                /// CSN znode is already created in ZK; simulate the response being lost.
+                /// The catch block below will postpone finalization to runUpdatingThread,
+                /// reproducing the fault_probability_after_commit code path deterministically.
+                throw Coordination::Exception::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT,
+                    "Fault injected: forced unknown state after commit");
+            });
         }
         catch (const Coordination::Exception & e)
         {
@@ -511,6 +548,33 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
     }
 
     {
+        auto requests = txn->getRequestsOnRollback();
+        if (!requests.empty())
+        {
+            Coordination::Responses responses;
+            auto code = getZooKeeper()->tryMulti(requests, responses);
+            if (code == Coordination::Error::ZOK)
+            {
+                LOG_INFO(log, "Processed requests on rollback {}", requests.size());
+            }
+            else
+            {
+                zkutil::KeeperMultiException exception(code, requests, responses);
+                if (Coordination::isHardwareError(code))
+                    LOG_WARNING(
+                        log, "Failed to process requests on rollback {} because of {}", requests.size(), Coordination::toString(code));
+                else
+                    LOG_WARNING(
+                        log,
+                        "Failed to process requests on rollback {} because of {} on path {}",
+                        requests.size(),
+                        Coordination::toString(code),
+                        exception.getPathForFirstFailedOp());
+            }
+        }
+    }
+
+    {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
@@ -534,16 +598,16 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
 CSN TransactionLog::getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
-    if (tid == Tx::PrehistoricTID)
-        return Tx::PrehistoricCSN;
+    if (tid == Tx::NonTransactionalTID)
+        return Tx::NonTransactionalCSN;
     return instance().getCSNImpl(tid.getHash(), failback_with_strict_load_csn);
 }
 
 CSN TransactionLog::getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
-    if (tid == Tx::PrehistoricTID.getHash())
-        return Tx::PrehistoricCSN;
+    if (tid == Tx::NonTransactionalTID.getHash())
+        return Tx::NonTransactionalCSN;
     return instance().getCSNImpl(tid, failback_with_strict_load_csn);
 }
 
@@ -590,7 +654,7 @@ CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> 
 
 void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
-    if (tid == Tx::PrehistoricTID)
+    if (tid == Tx::NonTransactionalTID)
         return;
 
     /// Ensure that we are not trying to get CSN for TID that was already removed from the log
@@ -603,7 +667,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
     /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
-        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+        if (CSN _ = failback_with_strict_load_csn->load())
             return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);
@@ -628,6 +692,7 @@ TransactionLog::TransactionsList TransactionLog::getTransactionsList() const
 
 void TransactionLog::sync() const
 {
+    auto component_guard = Coordination::setCurrentComponent("TransactionLog::sync");
     Strings entries_list = getZooKeeper()->getChildren(zookeeper_path_log);
     chassert(!entries_list.empty());
     ::sort(entries_list.begin(), entries_list.end());
@@ -635,4 +700,16 @@ void TransactionLog::sync() const
     waitForCSNLoaded(newest_csn);
 }
 
+void TransactionLog::increaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_add(1);
+}
+void TransactionLog::decreaseAsyncTablesLoadingJobNumber()
+{
+    async_tables_loading_job_number.fetch_sub(1);
+}
+Int64 TransactionLog::asyncTablesLoadingJobNumber()
+{
+    return async_tables_loading_job_number.load();
+}
 }

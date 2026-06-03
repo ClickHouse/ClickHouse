@@ -1,7 +1,6 @@
 #include <Common/ProxyListConfigurationResolver.h>
 
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/logger_useful.h>
+#include <Common/StringUtils.h>
 #include <Poco/URI.h>
 
 namespace DB
@@ -9,8 +8,11 @@ namespace DB
 
 ProxyListConfigurationResolver::ProxyListConfigurationResolver(
     std::vector<Poco::URI> proxies_,
-    Protocol request_protocol_, bool disable_tunneling_for_https_requests_over_http_proxy_)
-    : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_), proxies(std::move(proxies_))
+    Protocol request_protocol_,
+    const std::string & no_proxy_hosts_,
+    bool disable_tunneling_for_https_requests_over_http_proxy_)
+    : ProxyConfigurationResolver(request_protocol_, disable_tunneling_for_https_requests_over_http_proxy_),
+    proxies(std::move(proxies_)), no_proxy_hosts(no_proxy_hosts_)
 {
 }
 
@@ -26,12 +28,18 @@ ProxyConfiguration ProxyListConfigurationResolver::resolve()
 
     auto & proxy = proxies[index];
 
+    bool use_tunneling_for_https_requests_over_http_proxy = ProxyConfiguration::useTunneling(
+        request_protocol,
+        ProxyConfiguration::protocolFromString(proxy.getScheme()),
+        disable_tunneling_for_https_requests_over_http_proxy);
+
     return ProxyConfiguration {
         proxy.getHost(),
         ProxyConfiguration::protocolFromString(proxy.getScheme()),
         proxy.getPort(),
-        useTunneling(request_protocol, ProxyConfiguration::protocolFromString(proxy.getScheme()), disable_tunneling_for_https_requests_over_http_proxy),
-        request_protocol
+        use_tunneling_for_https_requests_over_http_proxy,
+        request_protocol,
+        no_proxy_hosts
     };
 }
 

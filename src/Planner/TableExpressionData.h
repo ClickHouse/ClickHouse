@@ -1,9 +1,12 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/ActionsDAG.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -16,6 +19,8 @@ namespace ErrorCodes
 using ColumnIdentifier = std::string;
 using ColumnIdentifiers = std::vector<ColumnIdentifier>;
 using ColumnIdentifierSet = std::unordered_set<ColumnIdentifier>;
+using AliasColumnExpression = std::pair<std::string, ActionsDAG>;
+using AliasColumnExpressions = std::vector<AliasColumnExpression>;
 
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -73,9 +78,10 @@ public:
     }
 
     /// Add alias column
-    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAGPtr actions_dag, bool is_selected_column = true)
+    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAG actions_dag, bool is_selected_column = true)
     {
-        alias_column_expressions.emplace(column.name, std::move(actions_dag));
+        alias_column_expressions.emplace_back(column.name, std::move(actions_dag));
+        alias_column_names_set.emplace(column.name);
         addColumnImpl(column, column_identifier, is_selected_column);
     }
 
@@ -94,9 +100,19 @@ public:
     }
 
     /// Get ALIAS columns names mapped to expressions
-    const std::unordered_map<std::string, ActionsDAGPtr> & getAliasColumnExpressions() const
+    AliasColumnExpressions & getAliasColumnExpressions()
     {
         return alias_column_expressions;
+    }
+
+    const AliasColumnExpressions & getAliasColumnExpressions() const
+    {
+        return alias_column_expressions;
+    }
+
+    bool hasAliasColumn(const std::string & column_name) const
+    {
+        return alias_column_names_set.contains(column_name);
     }
 
     /// Get column name to column map
@@ -137,7 +153,7 @@ public:
         if (it == column_name_to_column.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column for column name {} does not exists. There are only column names: {}",
+                "Column for column name {} does not exist. There are only column names: {}",
                 column_name,
                 fmt::join(column_names.begin(), column_names.end(), ", "));
         }
@@ -154,7 +170,7 @@ public:
         if (it == column_name_to_column_identifier.end())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Column identifier for column name {} does not exists. There are only column names: {}",
+                "Column identifier for column name {} does not exist. There are only column names: {}",
                 column_name,
                 fmt::join(column_names.begin(), column_names.end(), ", "));
         }
@@ -211,32 +227,32 @@ public:
         is_merge_tree = is_merge_tree_value;
     }
 
-    const ActionsDAGPtr & getPrewhereFilterActions() const
+    const std::optional<ActionsDAG> & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
     }
 
-    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
+    void setRowLevelFilterActions(ActionsDAG row_level_filter_actions_value)
     {
         row_level_filter_actions = std::move(row_level_filter_actions_value);
     }
 
-    const ActionsDAGPtr & getRowLevelFilterActions() const
+    const std::optional<ActionsDAG> & getRowLevelFilterActions() const
     {
         return row_level_filter_actions;
     }
 
-    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    void setPrewhereFilterActions(ActionsDAG prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
     }
 
-    const ActionsDAGPtr & getFilterActions() const
+    const std::optional<ActionsDAG> & getFilterActions() const
     {
         return filter_actions;
     }
 
-    void setFilterActions(ActionsDAGPtr filter_actions_value)
+    void setFilterActions(ActionsDAG filter_actions_value)
     {
         filter_actions = std::move(filter_actions_value);
     }
@@ -277,7 +293,10 @@ private:
     NameSet selected_column_names_set;
 
     /// Expression to calculate ALIAS columns
-    std::unordered_map<std::string, ActionsDAGPtr> alias_column_expressions;
+    /// Keep alias name (String) + expression (ActionsDAG) pairs; vector preserves insertion order.
+    AliasColumnExpressions alias_column_expressions;
+    /// Fast membership checks for alias column names.
+    NameSet alias_column_names_set;
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumn column_name_to_column;
@@ -289,16 +308,16 @@ private:
     ColumnIdentifierToColumnName column_identifier_to_column_name;
 
     /// Valid for table, table function
-    ActionsDAGPtr filter_actions;
+    std::optional<ActionsDAG> filter_actions;
 
     /// Valid for table, table function
     PrewhereInfoPtr prewhere_info;
 
     /// Valid for table, table function
-    ActionsDAGPtr prewhere_filter_actions;
+    std::optional<ActionsDAG> prewhere_filter_actions;
 
     /// Valid for table, table function
-    ActionsDAGPtr row_level_filter_actions;
+    std::optional<ActionsDAG> row_level_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

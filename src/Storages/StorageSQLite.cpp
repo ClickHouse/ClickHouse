@@ -1,16 +1,19 @@
-#include "StorageSQLite.h"
+#include <Storages/StorageSQLite.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
@@ -50,13 +53,14 @@ StorageSQLite::StorageSQLite(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
-    , log(getLogger("StorageSQLite (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
     , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -70,7 +74,17 @@ StorageSQLite::StorageSQLite(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSQLite::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -123,7 +137,7 @@ Pipe StorageSQLite::read(
 }
 
 
-class SQLiteSink : public SinkToStorage
+class SQLiteSink final : public SinkToStorage
 {
 public:
     explicit SQLiteSink(
@@ -131,7 +145,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         StorageSQLite::SQLitePtr sqlite_db_,
         const String & remote_table_name_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
@@ -141,7 +155,7 @@ public:
 
     String getName() const override { return "SQLiteSink"; }
 
-    void consume(Chunk chunk) override
+    void consume(Chunk & chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString sqlbuf;
@@ -193,6 +207,7 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
 }
 
 
+void registerStorageSQLite(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory)
 {
     factory.registerStorage("SQLite", [](const StorageFactory::Arguments & args) -> StoragePtr
@@ -211,11 +226,11 @@ void registerStorageSQLite(StorageFactory & factory)
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */ args.mode <= LoadingStrictnessLevel::CREATE);
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
-                                     table_name, args.columns, args.constraints, args.getContext());
+                                     table_name, args.columns, args.constraints, args.comment, args.getContext());
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::SQLITE,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
     });
 }
 

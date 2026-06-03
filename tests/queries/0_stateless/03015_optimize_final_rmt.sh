@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings, no-tsan, no-msan, no-ubsan, no-asan
+# Tags: long, no-random-settings, no-random-merge-tree-settings, no-tsan, no-msan, no-ubsan, no-asan, no-debug
 # no sanitizers: too slow
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

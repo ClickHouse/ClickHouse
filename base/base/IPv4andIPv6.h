@@ -2,7 +2,7 @@
 
 #include <base/extended_types.h>
 #include <base/strong_typedef.h>
-#include <Common/memcmpSmall.h>
+
 
 namespace DB
 {
@@ -19,32 +19,11 @@ namespace DB
         using StrongTypedef::StrongTypedef;
         using StrongTypedef::operator=;
 
-        bool operator<(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) < 0;
-        }
+        bool operator<(const IPv6 & rhs) const;
 
-        bool operator>(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) > 0;
-        }
+        bool operator>(const IPv6 & rhs) const;
 
-        bool operator==(const IPv6 & rhs) const
-        {
-            return
-                memcmp16(
-                    reinterpret_cast<const unsigned char *>(toUnderType().items),
-                    reinterpret_cast<const unsigned char *>(rhs.toUnderType().items)
-                ) == 0;
-        }
+        bool operator==(const IPv6 & rhs) const;
 
         bool operator<=(const IPv6 & rhs) const { return !operator>(rhs); }
         bool operator>=(const IPv6 & rhs) const { return !operator<(rhs); }

@@ -13,26 +13,24 @@
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <xxhash.h>
 
+#include <Common/OpenSSLHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/safe_cast.h>
 #include <Common/HashTable/Hash.h>
 
 #if USE_SSL
-#    include <openssl/md5.h>
+#    include <openssl/evp.h>
 #endif
 
 #include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -40,6 +38,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/PerformanceAdaptors.h>
@@ -48,6 +47,8 @@
 #include <base/range.h>
 #include <base/bit_cast.h>
 #include <base/unaligned.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -60,6 +61,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int OPENSSL_ERROR;
 }
 
 namespace impl
@@ -74,53 +76,68 @@ namespace impl
     {
         ColumnPtr key0;
         ColumnPtr key1;
-        bool is_const;
+        bool is_const = false;
 
         size_t size() const
         {
-            assert(key0 && key1);
-            assert(key0->size() == key1->size());
+            chassert(key0 && key1);
+            chassert(key0->size() == key1->size());
             return key0->size();
         }
+
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
+            chassert(key0->size() > i);
             return {key0data[i], key1data[i]};
+        }
+
+        /// Replicate key columns so that each array element gets the key of its parent row.
+        SipHashKeyColumns replicateForArray(const ColumnArray::Offsets & offsets) const
+        {
+            if (is_const)
+                return *this;
+            return {.key0 = key0->replicate(offsets), .key1 = key1->replicate(offsets), .is_const = false};
         }
     };
 
     static SipHashKeyColumns parseSipHashKeyColumns(const ColumnWithTypeAndName & key)
     {
-        const ColumnTuple * tuple = nullptr;
-        const auto * column = key.column.get();
+        const auto * col_key = key.column.get();
+
         bool is_const = false;
-        if (isColumnConst(*column))
+        const ColumnTuple * col_key_tuple = nullptr;
+        if (isColumnConst(*col_key))
         {
             is_const = true;
-            tuple = checkAndGetColumnConstData<ColumnTuple>(column);
+            col_key_tuple = checkAndGetColumnConstData<ColumnTuple>(col_key);
         }
         else
-            tuple = checkAndGetColumn<ColumnTuple>(column);
-        if (!tuple)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
-        if (tuple->tupleSize() != 2)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
+        {
+            is_const = false;
+            col_key_tuple = checkAndGetColumn<ColumnTuple>(col_key);
+        }
 
-        SipHashKeyColumns ret{tuple->getColumnPtr(0), tuple->getColumnPtr(1), is_const};
-        assert(ret.key0);
-        if (!checkColumn<ColumnUInt64>(*ret.key0))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
-        assert(ret.key1);
-        if (!checkColumn<ColumnUInt64>(*ret.key1))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
+        if (!col_key_tuple || col_key_tuple->tupleSize() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key must be of type Tuple(UInt64, UInt64)");
 
-        if (ret.size() == 1)
-            ret.is_const = true;
+        SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
 
-        return ret;
+        chassert(result.key0);
+        chassert(result.key1);
+
+        if (!checkColumn<ColumnUInt64>(*result.key0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
+        if (!checkColumn<ColumnUInt64>(*result.key1))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 2nd element of the key tuple is not of type UInt64");
+
+        if (result.size() == 1)
+            result.is_const = true;
+
+        return result;
     }
 }
 
@@ -186,6 +203,7 @@ struct SipHash64Impl
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash64KeyedImpl
@@ -209,6 +227,7 @@ struct SipHash64KeyedImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 #if USE_SSL
@@ -219,18 +238,28 @@ struct HalfMD5Impl
 
     static UInt64 apply(const char * begin, size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             unsigned char char_data[16];
             uint64_t uint64_data;
         } buf;
 
-        MD5_CTX ctx;
-        MD5_Init(&ctx);
-        MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD5_Final(buf.char_data, &ctx);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+        const auto ctx = EVP_MD_CTX_ptr(EVP_MD_CTX_new(), EVP_MD_CTX_free);
 
-        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        if (!ctx)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestInit_ex(ctx.get(), EVP_md5(), nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
+
+        if (EVP_DigestFinal_ex(ctx.get(), buf.char_data, nullptr) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
+
+        /// Compatibility with existing code. Cast is necessary for old poco AND macos where UInt64 != uint64_t
         transformEndianness<std::endian::big>(buf.uint64_data);
         return buf.uint64_data;
     }
@@ -244,6 +273,7 @@ struct HalfMD5Impl
     /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 #endif
 
@@ -257,6 +287,7 @@ struct SipHash128Impl
     static UInt128 apply(const char * data, const size_t size) { return sipHash128(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128KeyedImpl
@@ -280,6 +311,7 @@ struct SipHash128KeyedImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128ReferenceImpl
@@ -293,6 +325,7 @@ struct SipHash128ReferenceImpl
     static UInt128 apply(const char * data, const size_t size) { return sipHash128Reference(data, size); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct SipHash128ReferenceKeyedImpl
@@ -312,18 +345,20 @@ struct SipHash128ReferenceKeyedImpl
 
     static UInt128 combineHashesKeyed(const Key & key, UInt128 h1, UInt128 h2)
     {
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        UInt128 tmp;
-        reverseMemcpy(&tmp, &h1, sizeof(UInt128));
-        h1 = tmp;
-        reverseMemcpy(&tmp, &h2, sizeof(UInt128));
-        h2 = tmp;
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            UInt128 tmp;
+            reverseMemcpy(&tmp, &h1, sizeof(UInt128));
+            h1 = tmp;
+            reverseMemcpy(&tmp, &h2, sizeof(UInt128));
+            h2 = tmp;
+        }
         UInt128 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt128));
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /** Why we need MurmurHash2?
@@ -350,6 +385,7 @@ struct MurmurHash2Impl32
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash2Impl64
@@ -368,6 +404,7 @@ struct MurmurHash2Impl64
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// To be compatible with gcc: https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191
@@ -387,6 +424,7 @@ struct GccMurmurHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// To be compatible with Default Partitioner in Kafka:
@@ -409,6 +447,7 @@ struct KafkaMurmurHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl32
@@ -418,7 +457,7 @@ struct MurmurHash3Impl32
 
     static UInt32 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt32 h;
             char bytes[sizeof(h)];
@@ -433,6 +472,7 @@ struct MurmurHash3Impl32
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl64
@@ -442,7 +482,7 @@ struct MurmurHash3Impl64
 
     static UInt64 apply(const char * data, const size_t size)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 h[2];
             char bytes[16];
@@ -454,6 +494,7 @@ struct MurmurHash3Impl64
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return IntHash64Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct MurmurHash3Impl128
@@ -472,6 +513,7 @@ struct MurmurHash3Impl128
     static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
@@ -519,6 +561,7 @@ struct JavaHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct JavaHashUTF16LEImpl
@@ -554,6 +597,7 @@ struct JavaHashUTF16LEImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 /// This is just JavaHash with zeroed out sign bit.
@@ -575,6 +619,7 @@ struct HiveHashImpl
     }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplCityHash64
@@ -586,6 +631,7 @@ struct ImplCityHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
@@ -598,6 +644,7 @@ struct ImplFarmFingerprint64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Fingerprint64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 // see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
@@ -610,6 +657,7 @@ struct ImplFarmHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplMetroHash64
@@ -621,7 +669,7 @@ struct ImplMetroHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len)
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             UInt64 u64;
             uint8_t u8[sizeof(u64)];
@@ -633,6 +681,7 @@ struct ImplMetroHash64
     }
 
     static constexpr bool use_int_hash_for_pods = true;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXxHash32
@@ -653,6 +702,7 @@ struct ImplXxHash32
     static auto combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXxHash64
@@ -670,6 +720,7 @@ struct ImplXxHash64
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct ImplXXH3
@@ -687,6 +738,28 @@ struct ImplXXH3
     static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
+};
+
+struct ImplXXH3_128
+{
+    static constexpr auto name = "xxh3_128";
+    using ReturnType = UInt128;
+
+    static UInt128 apply(const char * s, const size_t len)
+    {
+        auto hash = XXH_INLINE_XXH3_128bits(s, len);
+        return {hash.low64, hash.high64};
+    }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducible from outside of CH. (see comment on ImplXxHash32).
+     */
+    static UInt128 combineHashes(UInt128 h1, UInt128 h2) { return combineHashesFunc<UInt128, ImplXXH3_128>(h1, h2); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = true;
 };
 
 DECLARE_MULTITARGET_CODE(
@@ -719,9 +792,9 @@ private:
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    arguments[0].column->getName(), Name::name);
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), Name::name);
     }
 
 public:
@@ -741,9 +814,18 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -752,35 +834,35 @@ public:
 
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeType<UInt16>(arguments);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeType<UInt32>(arguments);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeType<UInt64>(arguments);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeType<Int8>(arguments);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeType<Int16>(arguments);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeType<Int32>(arguments);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeType<Int64>(arguments);
-        else if (which.isDate())
+        if (which.isDate())
             return executeType<UInt16>(arguments);
-        else if (which.isDate32())
+        if (which.isDate32())
             return executeType<Int32>(arguments);
-        else if (which.isDateTime())
+        if (which.isDateTime())
             return executeType<UInt32>(arguments);
-        else if (which.isDecimal32())
+        if (which.isDecimal32())
             return executeType<Decimal32>(arguments);
-        else if (which.isDecimal64())
+        if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
-        else if (which.isIPv4())
+        if (which.isIPv4())
             return executeType<IPv4>(arguments);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0].type->getName(), getName());
+
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+            arguments[0].type->getName(), getName());
     }
 };
 
@@ -796,10 +878,14 @@ public:
             TargetSpecific::Default::FunctionIntHash<Impl, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionIntHash<Impl, Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionIntHash<Impl, Name>>();
+        /// The v3 registration is needed because `FunctionsHashingMisc.cpp` is compiled at `-march=x86-64-v2`
+        /// (to dodge an unrelated SLP regression), so the `Default` namespace inherits v2 codegen. Without this
+        /// per-function v3 attribute path, the dispatcher has no AVX2 specialization to pick and falls back to
+        /// the v2 body, regressing hash-on-UUID/Decimal queries by 12-18%.
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            TargetSpecific::x86_64_v3::FunctionIntHash<Impl, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v4,
+            TargetSpecific::x86_64_v4::FunctionIntHash<Impl, Name>>();
     #endif
     }
 
@@ -824,6 +910,10 @@ class FunctionAnyHash : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
+    static constexpr UInt128 NULL_HASH = UInt128({0xc58ad2da03d9a871ul, 0x5715f196cbea7a40ul});
+
+    /// Keep default implementation of useDefaultImplementationForNulls for compatibility.
+    /// E.g. someHash(NULL) is NULL, but someHash(tuple(NULL)) is not NULL.
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -850,10 +940,8 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    if constexpr (std::is_same_v<ToType, UInt64>)
-                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
-                    else
-                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                    static_assert(std::is_same_v<ToType, UInt64>, "");
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
                 }
                 else
                 {
@@ -883,15 +971,18 @@ private:
                     return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
-            auto value = col_from_const->template getValue<FromType>();
+            FromType value;
+            if constexpr (std::is_same_v<FromType, float>)
+                /// Float32 doesn't reliably roundtrip through Field (which only has Float64) in practice.
+                value = assert_cast<const ColumnFloat32 &>(col_from_const->getDataColumn()).getData()[0];
+            else
+                value = col_from_const->template getValue<FromType>();
 
             ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
-                else
-                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+                static_assert(std::is_same_v<ToType, UInt64>, "");
+                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
             }
             else
             {
@@ -1000,18 +1091,38 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, const IDataType * type) const
     {
         KeyType key{};
         if constexpr (Keyed)
             key = Impl::getKey(key_cols, 0);
+
+        SerializationPtr serialization;
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
                     key = Impl::getKey(key_cols, i);
-            StringRef bytes = column->getDataAt(i);
-            const ToType hash = apply(key, bytes.data, bytes.size);
+            ToType hash;
+            if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            {
+                auto bytes = column->getDataAt(i);
+                hash = apply(key, bytes.data(), bytes.size());
+            }
+            else
+            {
+                /// If column doesn't support getDataAt method we use ISerialization::serializeForHashCalculation
+                /// to serialize value and calculate hash from it.
+                if (!serialization)
+                    serialization = type->getDefaultSerialization();
+                WriteBufferFromOwnString buf;
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                    serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
+                else
+                    serialization->serializeForHashCalculation(*column, i, buf);
+                auto bytes = buf.str();
+                hash = apply(key, bytes.data(), bytes.size());
+            }
             if constexpr (first)
                 vec_to[i] = hash;
             else
@@ -1039,7 +1150,7 @@ private:
                         key = Impl::getKey(key_cols, i);
                 const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 if constexpr (first)
                     vec_to[i] = hash;
@@ -1112,7 +1223,14 @@ private:
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
             bool nested_is_first = true;
-            executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+
+            if constexpr (Keyed)
+            {
+                auto key_cols_replicated = key_cols.replicateForArray(offsets);
+                executeForArgument(key_cols_replicated, nested_type, nested_column, vec_temp, nested_is_first);
+            }
+            else
+                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1127,6 +1245,18 @@ private:
                         key = Impl::getKey(key_cols, i);
                 ColumnArray::Offset next_offset = offsets[i];
 
+                /// There are two bugs here, affecting hashes of empty arrays:
+                ///  1. If ToType is UInt128, we produce a 32-bit hash,
+                ///  2. `hash` doesn't depend on key.
+                ///
+                /// SELECT reinterpret(sipHash128Keyed((number, number), []), 'UInt128') FROM numbers(2)
+                ///
+                ///    ┌─reinterpret(⋯ 'UInt128')─┐
+                /// 1. │               4249604106 │
+                /// 2. │               4249604106 │
+                ///    └──────────────────────────┘
+                ///
+                /// There's no way to fix this without breaking compatibility.
                 ToType hash;
                 if constexpr (std::is_same_v<ToType, UInt64>)
                     hash = IntHash64Impl::apply(next_offset - current_offset);
@@ -1156,13 +1286,81 @@ private:
     }
 
     template <bool first>
+    void executeNothing(const KeyColumnsType &, const IColumn *, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        /// This value shouldn't affect anything, it should only appear inside null Nullable or
+        /// empty Array, where the caller will ignore this and assign their own hash value.
+        /// Fill it with zeroes just in case, to avoid leaking memory contents if something's broken.
+        vec_to.assign(vec_to.size(), ToType(0));
+    }
+
+    template <bool first>
+    void executeNullable(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    {
+        if (const auto * col_from = checkAndGetColumn<ColumnNullable>(column))
+        {
+            const auto * nested_type = assert_cast<const DataTypeNullable &>(*from_type).getNestedType().get();
+            const auto & nested_col = col_from->getNestedColumn();
+
+            KeyType key {};
+            ToType null_hash;
+            if constexpr (Keyed)
+            {
+                /// Make the hash depend on key.
+                key = Impl::getKey(key_cols, 0);
+                null_hash = combineHashes(key, static_cast<ToType>(NULL_HASH), 0);
+            }
+            else
+            {
+                null_hash = static_cast<ToType>(NULL_HASH);
+            }
+
+            typename ColumnVector<ToType>::Container original_vec_to;
+            if (!first)
+                original_vec_to.assign(vec_to);
+
+            /// Make sure non-null values are hashed exactly as if the type were non-Nullable.
+            bool is_first = first;
+            executeForArgument(key_cols, nested_type, &nested_col, vec_to, is_first);
+
+            for (size_t i = 0; i < vec_to.size(); ++i)
+            {
+                if (!col_from->isNullAt(i))
+                    continue;
+
+                if constexpr (Keyed)
+                {
+                    if (!key_cols.is_const && i != 0)
+                    {
+                        key = Impl::getKey(key_cols, i);
+                        null_hash = combineHashes(key, static_cast<ToType>(NULL_HASH), 0);
+                    }
+                }
+
+                if constexpr (first)
+                    vec_to[i] = null_hash;
+                else
+                    vec_to[i] = combineHashes(key, original_vec_to[i], null_hash);
+            }
+        }
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnNullable>(column))
+        {
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
+            executeNullable<first>(key_cols, from_type, full_column.get(), vec_to);
+        }
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                column->getName(), getName());
+    }
+
+    template <bool first>
     void executeAny(const KeyColumnsType & key_cols, const IDataType * from_type, const IColumn * icolumn, typename ColumnVector<ToType>::Container & vec_to) const
     {
         WhichDataType which(from_type);
 
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
-                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+                icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
@@ -1198,8 +1396,13 @@ private:
         else if (which.isString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isFixedString()) executeString<first>(key_cols, icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
-        else executeGeneric<first>(key_cols, icolumn, vec_to);
+        else if (which.isNothing()) executeNothing<first>(key_cols, icolumn, vec_to);
+        else if (which.isNullable()) executeNullable<first>(key_cols, from_type, icolumn, vec_to);
+        else executeGeneric<first>(key_cols, icolumn, vec_to, from_type);
     }
+
+    /// Return a fixed random-looking magic number when input is empty.
+    static constexpr auto filler = 0xe28dbde7fe22e41c;
 
     void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
@@ -1209,6 +1412,11 @@ private:
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
@@ -1217,6 +1425,11 @@ private:
             const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
+
+            if (0 == tuple_size && is_first)
+                for (auto & hash : vec_to)
+                    hash = static_cast<ToType>(filler);
+
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
@@ -1254,9 +1467,25 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
+        /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
+        {
+            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
+        }
+        else
+            return std::make_shared<DataTypeNumber<ToType>>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring)
         {
             return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
         }
@@ -1278,10 +1507,7 @@ public:
             constexpr size_t first_data_argument = Keyed;
 
             if (arguments.size() <= first_data_argument)
-            {
-                /// Return a fixed random-looking magic number when input is empty
-                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
-            }
+                vec_to.assign(input_rows_count, static_cast<ToType>(filler));
 
             KeyColumnsType key_cols{};
             if constexpr (Keyed)
@@ -1297,7 +1523,7 @@ public:
             }
         }
 
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
+        if constexpr (std::is_same_v<ToType, UInt128> && !Impl::return_bigint_instead_of_fixedstring) /// backward-compatible
         {
             if constexpr (std::endian::native == std::endian::big)
                 std::ranges::for_each(col_to->getData(), transformEndianness<std::endian::little, std::endian::native, ToType>);
@@ -1342,9 +1568,10 @@ public:
             .registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 
 #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, TargetSpecific::AVX2::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
-        selector
-            .registerImplementation<TargetArch::AVX512F, TargetSpecific::AVX512F::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        /// See the note in `FunctionIntHash`: `FunctionsHashingMisc.cpp` is at v2, so `Default` is v2 and the runtime
+        /// dispatcher needs the per-function v3 specialization to recover AVX2 codegen.
+        selector.registerImplementation<TargetArch::x86_64_v3, TargetSpecific::x86_64_v3::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
+        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionAnyHash<Impl, Keyed, KeyType, KeyColumnsType>>();
 #endif
     }
 
@@ -1389,14 +1616,14 @@ struct URLHierarchyHashImpl
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
-        *    For the rest, simply return the full URL as the only element of the hierarchy.
-        */
-        if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
+          * (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+          * For the rest, simply return the full URL as the only element of the hierarchy.
+          */
+        if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
         {
-            pos = end;
-            return 0 == level ? pos - begin : 0;
+            return 0 == level ? end - begin : 0;
         }
+        pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1436,7 +1663,7 @@ struct URLHierarchyHashImpl
 };
 
 
-class FunctionURLHash : public IFunction
+class FunctionURLHash final : public IFunction
 {
 public:
     static constexpr auto name = "URLHash";
@@ -1447,6 +1674,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1469,8 +1700,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -1478,10 +1713,9 @@ public:
 
         if (arg_count == 1)
             return executeSingleArg(arguments);
-        else if (arg_count == 2)
+        if (arg_count == 2)
             return executeTwoArgs(arguments);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:
@@ -1503,30 +1737,25 @@ private:
             {
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 current_offset = offsets[i];
             }
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
-        if (!isColumnConst(*level_col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
-
-        const auto level = level_col->get64(0);
-
         const auto * col_untyped = arguments.front().column.get();
+        size_t size = col_untyped->size();
+
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
-            const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
@@ -1537,18 +1766,32 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level,
+                    level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 current_offset = offsets[i];
             }
 
             return col_to;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+        if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
+        {
+            auto col_to = ColumnUInt64::create(size);
+            auto & out = col_to->getData();
+
+            const auto & chars = col_const_from->getChars();
+            const auto & offsets = col_const_from->getOffsets();
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0]);
+            }
+
+            return col_to;
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 
@@ -1561,6 +1804,7 @@ struct ImplWyHash64
     static UInt64 combineHashes(UInt64 h1, UInt64 h2) { return combineHashesFunc<UInt64, ImplWyHash64>(h1, h2); }
 
     static constexpr bool use_int_hash_for_pods = false;
+    static constexpr bool return_bigint_instead_of_fixedstring = false;
 };
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
@@ -1598,6 +1842,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
 using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionXXH3 = FunctionAnyHash<ImplXXH3>;
+using FunctionXXH3_128 = FunctionAnyHash<ImplXXH3_128>;
 
 using FunctionWyHash64 = FunctionAnyHash<ImplWyHash64>;
 }

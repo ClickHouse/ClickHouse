@@ -24,6 +24,6 @@ DESCRIBE TABLE compress_table;
 
 SHOW CREATE TABLE compress_table;
 
-ALTER TABLE compress_table MODIFY COLUMN value2 CODEC(Default(5)); --{serverError 36}
+ALTER TABLE compress_table MODIFY COLUMN value2 CODEC(Default(5)); --{serverError BAD_ARGUMENTS}
 
 DROP TABLE IF EXISTS compress_table;

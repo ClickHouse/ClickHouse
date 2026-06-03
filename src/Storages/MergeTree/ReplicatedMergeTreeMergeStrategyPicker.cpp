@@ -1,6 +1,7 @@
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
 #include <base/types.h>
 #include <base/sort.h>
@@ -13,6 +14,13 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsSeconds execute_merges_on_single_replica_time_threshold;
+    extern const MergeTreeSettingsSeconds remote_fs_execute_merges_on_single_replica_time_threshold;
+}
 
 /// minimum interval (seconds) between checks if chosen replica finished the merge.
 static const auto RECHECK_MERGE_READYNESS_INTERVAL_SECONDS = 1;
@@ -91,10 +99,10 @@ std::optional<String> ReplicatedMergeTreeMergeStrategyPicker::pickReplicaToExecu
 void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 {
     const auto settings = storage.getSettings();
-    time_t threshold = settings->execute_merges_on_single_replica_time_threshold.totalSeconds();
+    time_t threshold = (*settings)[MergeTreeSetting::execute_merges_on_single_replica_time_threshold].totalSeconds();
     time_t threshold_init = 0;
-    if (settings->allow_remote_fs_zero_copy_replication)
-        threshold_init = settings->remote_fs_execute_merges_on_single_replica_time_threshold.totalSeconds();
+    if ((*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
+        threshold_init = (*settings)[MergeTreeSetting::remote_fs_execute_merges_on_single_replica_time_threshold].totalSeconds();
 
     if (threshold == 0)
         /// we can reset the settings without lock (it's atomic)

@@ -73,8 +73,9 @@ bool ParallelReadBuffer::addReaderToPool()
 
     auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(input, range_start, size));
 
-    ++active_working_readers;
     schedule([this, my_worker = std::move(worker)]() mutable { readerThreadFunction(std::move(my_worker)); }, Priority{});
+    /// increase number of workers only after we are sure that the reader was scheduled
+    ++active_working_readers;
 
     return true;
 }
@@ -96,8 +97,8 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (!working_buffer.empty() && static_cast<size_t>(offset) >= current_position - working_buffer.size() && offset < current_position)
     {
         pos = working_buffer.end() - (current_position - offset);
-        assert(pos >= working_buffer.begin());
-        assert(pos <= working_buffer.end());
+        chassert(pos >= working_buffer.begin());
+        chassert(pos <= working_buffer.end());
 
         return offset;
     }
@@ -151,7 +152,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     return offset;
 }
 
-size_t ParallelReadBuffer::getFileSize()
+std::optional<size_t> ParallelReadBuffer::tryGetFileSize()
 {
     return file_size;
 }
@@ -164,7 +165,7 @@ off_t ParallelReadBuffer::getPosition()
 void ParallelReadBuffer::handleEmergencyStop()
 {
     // this can only be called from the main thread when there is an exception
-    assert(background_exception);
+    chassert(background_exception);
     std::rethrow_exception(background_exception);
 }
 

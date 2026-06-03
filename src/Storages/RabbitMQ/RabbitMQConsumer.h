@@ -22,6 +22,7 @@ class RabbitMQHandler;
 class RabbitMQConnection;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class RabbitMQConsumer
 {
@@ -98,7 +99,7 @@ private:
     String channel_id;
     UInt64 channel_id_counter = 0;
 
-    enum class State
+    enum class State : uint8_t
     {
         NONE,
         INITIALIZING,

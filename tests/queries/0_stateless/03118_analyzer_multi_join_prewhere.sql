@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/4596
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 CREATE TABLE a1 ( ANIMAL Nullable(String) ) engine = MergeTree order by tuple();
 insert into a1 values('CROCO');

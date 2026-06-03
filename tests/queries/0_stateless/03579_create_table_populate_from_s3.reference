@@ -1,0 +1,10 @@
+3
+1	2	3
+4	5	6
+7	8	9
+Testing with parallel_replicas_for_cluster_engines=false
+count from table	3
+count from table_s3Cluster	3
+Testing with parallel_replicas_for_cluster_engines=true
+count from table	3
+count from table_s3Cluster	3

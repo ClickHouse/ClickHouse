@@ -4,6 +4,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Common/Exception.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/grouping.h>
 
 namespace DB

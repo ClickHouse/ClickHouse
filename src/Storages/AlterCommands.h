@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -38,8 +37,9 @@ struct AlterCommand
         DROP_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
-        ADD_STATISTIC,
-        DROP_STATISTIC,
+        ADD_STATISTICS,
+        DROP_STATISTICS,
+        MODIFY_STATISTICS,
         MODIFY_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -48,13 +48,14 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
         MODIFY_SQL_SECURITY,
     };
 
     /// Which property user wants to remove from column
-    enum class RemoveProperty
+    enum class RemoveProperty : uint8_t
     {
         NO_PROPERTY,
         /// Default specifiers
@@ -123,9 +124,9 @@ struct AlterCommand
     /// For ADD/DROP PROJECTION
     String projection_name;
 
-    ASTPtr statistic_decl = nullptr;
-    std::vector<String> statistic_columns;
-    String statistic_type;
+    ASTPtr statistics_decl = nullptr;
+    std::vector<String> statistics_columns;
+    std::vector<String> statistics_types;
 
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
@@ -171,7 +172,7 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -185,7 +186,8 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    bool isDropSomething() const;
+    /// Checks that command will drop something or rename column.
+    bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -210,7 +212,7 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata);
+    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
@@ -234,8 +236,11 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index
-    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have a text index
+    static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if commands have any vector similarity index
+    static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

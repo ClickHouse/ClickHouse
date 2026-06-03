@@ -21,7 +21,7 @@ bool func_wrapper(Func && func, Arg && arg)
 template <typename T, T Begin, typename Func, T... Is>
 constexpr bool static_for_impl(Func && f, std::integer_sequence<T, Is...>)
 {
-    return (func_wrapper(std::forward<Func>(f), std::integral_constant<T, Begin + Is>{}) || ...);
+    return (func_wrapper(f, std::integral_constant<T, Begin + Is>{}) || ...);
 }
 
 template <auto Begin, decltype(Begin) End, typename Func>

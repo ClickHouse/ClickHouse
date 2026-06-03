@@ -4,8 +4,8 @@
 # To do that this script has been written.
 
 import argparse
-import os.path
 import io
+import os.path
 import struct
 import subprocess
 import sys

@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/23194
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 CREATE TEMPORARY TABLE test1 (a String, nest Nested(x String, y String));
 

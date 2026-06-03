@@ -1,6 +1,6 @@
 #pragma once
 #include <Columns/ColumnString.h>
-
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
@@ -8,19 +8,21 @@ namespace DB
 template <char not_case_lower_bound, char not_case_upper_bound>
 struct LowerUpperImpl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t /*input_rows_count*/)
     {
-        res_data.resize(data.size());
+        res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data)
+    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data, size_t /*input_rows_count*/)
     {
-        res_data.resize(data.size());
+        res_data.resize_exact(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
@@ -30,7 +32,7 @@ private:
         const auto flip_case_mask = 'A' ^ 'a';
 
 #if defined(__AVX512F__) && defined(__AVX512BW__) /// check if avx512 instructions are compiled
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
             const auto byte_avx512 = sizeof(__m512i);

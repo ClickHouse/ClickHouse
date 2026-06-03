@@ -1,4 +1,3 @@
-#include <format>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IParserBase.h>
@@ -9,6 +8,8 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
         else
             aggregation_fun = std::move(first_token);
 
-        if (allowed_aggregation.find(aggregation_fun) == allowed_aggregation.end())
+        if (!allowed_aggregation.contains(aggregation_fun))
             return false;
 
         if (open_bracket.ignore(pos, expected))
@@ -80,7 +81,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
             ++pos;
         }
         if (alias.empty())
-            alias = std::format("{}_{}", aggregation_fun, column);
+            alias = fmt::format("{}_{}", aggregation_fun, column);
         aggregation_columns.push_back(AggregationColumn(alias, aggregation_fun, column, default_value));
 
         if (!comma.ignore(pos, expected))
@@ -138,11 +139,32 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     ++step_pos;
     from_to_step.step_str = String(step_pos->begin, end_pos->end);
 
-    if (String(step_pos->begin, step_pos->end) == "time" || String(step_pos->begin, step_pos->end) == "timespan"
-        || ParserKQLDateTypeTimespan().parseConstKQLTimespan(from_to_step.step_str))
+    ParserKQLDateTypeTimespan timespan;
+    /// `step_str` is either a bare timespan literal like `1h`, a `time(...)`/`timespan(...)`
+    /// wrapper, or a numeric value. For wrappers, extract the inner literal so that
+    /// `parseConstKQLTimespan` can recognize it. We must never call `toSeconds` without
+    /// a successful `parseConstKQLTimespan` first, otherwise it reads uninitialized state.
+    const String step_token(step_pos->begin, step_pos->end);
+    String timespan_literal = from_to_step.step_str;
+    if (step_token == "time" || step_token == "timespan")
+    {
+        const auto open = timespan_literal.find('(');
+        const auto close = timespan_literal.rfind(')');
+        if (open == String::npos || close == String::npos || close <= open + 1)
+            return false;
+        timespan_literal = timespan_literal.substr(open + 1, close - open - 1);
+        if (!timespan.parseConstKQLTimespan(timespan_literal))
+            return false;
+        from_to_step.is_timespan = true;
+        from_to_step.step = timespan.toSeconds();
+    }
+    else if (timespan.parseConstKQLTimespan(from_to_step.step_str))
     {
         from_to_step.is_timespan = true;
-        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth, pos.max_backtracks));
+        /// `getExprFromToken` would wrap timespan literals like `1h` in a KQL display-format
+        /// expression (`concat(...)`), which `std::stod` cannot parse. Use the timespan parser's
+        /// `toSeconds` directly instead.
+        from_to_step.step = timespan.toSeconds();
     }
     else
         from_to_step.step = std::stod(from_to_step.step_str);
@@ -150,13 +172,15 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     return true;
 }
 
-bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const Pos & parent_pos)
 {
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
 
-    String start_str, end_str;
-    String sub_query, main_query;
+    String start_str;
+    String end_str;
+    String sub_query;
+    String main_query;
 
     auto & aggregation_columns = kql_make_series.aggregation_columns;
     auto & from_to_step = kql_make_series.from_to_step;
@@ -166,15 +190,15 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto step = from_to_step.step;
 
     if (!kql_make_series.from_to_step.from_str.empty())
-        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, max_depth, max_backtracks);
+        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, parent_pos);
 
     if (!kql_make_series.from_to_step.to_str.empty())
-        end_str = getExprFromToken(from_to_step.to_str, max_depth, max_backtracks);
+        end_str = getExprFromToken(from_to_step.to_str, parent_pos);
 
     auto date_type_cast = [&](String & src)
     {
-        Tokens tokens(src.c_str(), src.c_str() + src.size());
-        IParser::Pos pos(tokens, max_depth, max_backtracks);
+        Tokens tokens(src.data(), src.data() + src.size(), 0, true);
+        IParser::Pos pos(tokens, parent_pos);
         String res;
         while (isValidKQLPos(pos))
         {
@@ -191,7 +215,20 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     start_str = date_type_cast(start_str);
     end_str = date_type_cast(end_str);
 
-    String bin_str, start, end;
+    /// `datetime(...)` literals are wrapped in `substring(replaceOne(toString(...), ' ', 'T'), 1, 27)` for
+    /// KQL ISO display formatting, which produces a String. The arithmetic below (toUInt64, toFloat64)
+    /// would silently coerce that String to 0, so for the time-axis case we re-parse it as DateTime64.
+    if (from_to_step.is_timespan)
+    {
+        if (!start_str.empty())
+            start_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", start_str);
+        if (!end_str.empty())
+            end_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", end_str);
+    }
+
+    String bin_str;
+    String start;
+    String end;
 
     uint64_t diff = 0;
     String axis_column_format;
@@ -200,8 +237,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto get_group_expression_alias = [&]
     {
         std::vector<String> group_expression_tokens;
-        Tokens tokens(group_expression.c_str(), group_expression.c_str() + group_expression.size());
-        IParser::Pos pos(tokens, max_depth, max_backtracks);
+        Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
+        IParser::Pos pos(tokens, parent_pos);
         while (isValidKQLPos(pos))
         {
             if (String(pos->begin, pos->end) == "AS")
@@ -225,59 +262,60 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     if (from_to_step.is_timespan)
     {
-        axis_column_format = std::format("toFloat64(toDateTime64({}, 9, 'UTC'))", axis_column);
+        axis_column_format = fmt::format("toFloat64(toDateTime64({}, 9, 'UTC'))", axis_column);
     }
     else
-        axis_column_format = std::format("toFloat64({})", axis_column);
+        axis_column_format = fmt::format("toFloat64({})", axis_column);
 
     if (!start_str.empty()) // has from
     {
-        bin_str = std::format(
+        bin_str = fmt::format(
             "toFloat64({0}) + (toInt64((({1} - toFloat64({0})) / {2})) * {2}) AS {3}_ali",
             start_str,
             axis_column_format,
             step,
             axis_column);
-        start = std::format("toUInt64({})", start_str);
+        start = fmt::format("toUInt64({})", start_str);
     }
     else
     {
         if (from_to_step.is_timespan)
             diff = era_diff;
-        bin_str = std::format(" toFloat64(toInt64(({0} + {1}) / {2}) * {2}) AS {3}_ali ", axis_column_format, diff, step, axis_column);
+        bin_str = fmt::format(" toFloat64(toInt64(({0} + {1}) / {2}) * {2}) AS {3}_ali ", axis_column_format, diff, step, axis_column);
     }
 
     if (!end_str.empty())
-        end = std::format("toUInt64({})", end_str);
+        end = fmt::format("toUInt64({})", end_str);
 
-    String range, condition;
+    String range;
+    String condition;
 
     if (!start_str.empty() && !end_str.empty())
     {
-        range = std::format("range({}, {}, toUInt64({}))", start, end, step);
-        condition = std::format("where toInt64({0}) >= {1} and toInt64({0}) < {2}", axis_column_format, start, end);
+        range = fmt::format("range({}, {}, toUInt64({}))", start, end, step);
+        condition = fmt::format("where toInt64({0}) >= {1} and toInt64({0}) < {2}", axis_column_format, start, end);
     }
     else if (start_str.empty() && !end_str.empty())
     {
-        range = std::format("range(low, {} + {}, toUInt64({}))", end, diff, step);
-        condition = std::format("where toInt64({0}) - {1} < {2}", axis_column_format, diff, end);
+        range = fmt::format("range(low, {} + {}, toUInt64({}))", end, diff, step);
+        condition = fmt::format("where toInt64({0}) - {1} < {2}", axis_column_format, diff, end);
     }
     else if (!start_str.empty() && end_str.empty())
     {
-        range = std::format("range({}, high, toUInt64({}))", start, step);
-        condition = std::format("where toInt64({}) >= {}", axis_column_format, start);
+        range = fmt::format("range({}, high, toUInt64({}))", start, step);
+        condition = fmt::format("where toInt64({}) >= {}", axis_column_format, start);
     }
     else
     {
-        range = std::format("range(low, high, toUInt64({}))", step);
+        range = fmt::format("range(low, high, toUInt64({}))", step);
         condition = " ";
     }
 
-    auto range_len = std::format("length({})", range);
+    auto range_len = fmt::format("length({})", range);
 
     String sub_sub_query;
     if (group_expression.empty())
-        sub_sub_query = std::format(
+        sub_sub_query = fmt::format(
             " (Select {0}, {1} FROM {2} {4} GROUP BY  {3}_ali ORDER BY {3}_ali) ",
             subquery_columns,
             bin_str,
@@ -285,7 +323,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
             axis_column,
             condition);
     else
-        sub_sub_query = std::format(
+        sub_sub_query = fmt::format(
             " (Select {0}, {1}, {2} FROM {3} {5} GROUP BY {0}, {4}_ali ORDER BY {4}_ali) ",
             group_expression,
             subquery_columns,
@@ -296,19 +334,19 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     ASTPtr sub_query_node;
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth, max_backtracks))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, parent_pos))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
     if (!group_expression.empty())
-        main_query = std::format("{} ", group_expression_alias);
+        main_query = fmt::format("{} ", group_expression_alias);
 
     auto axis_and_agg_alias_list = axis_column;
-    auto final_axis_agg_alias_list = std::format("tupleElement(zipped,1) AS {}", axis_column);
+    auto final_axis_agg_alias_list = fmt::format("tupleElement(zipped,1) AS {}", axis_column);
     int idx = 2;
     for (auto agg_column : aggregation_columns)
     {
-        String agg_group_column = std::format(
+        String agg_group_column = fmt::format(
             "arrayConcat(groupArray({}_ali) as ga, arrayMap(x -> ({}),range(0, toUInt32({} - length(ga) < 0 ? 0 : {} - length(ga)),1)))"
             "as {}",
             agg_column.alias,
@@ -319,11 +357,11 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
         main_query = main_query.empty() ? agg_group_column : main_query + ", " + agg_group_column;
 
         axis_and_agg_alias_list += ", " + agg_column.alias;
-        final_axis_agg_alias_list += std::format(", tupleElement(zipped,{}) AS {}", idx, agg_column.alias);
+        final_axis_agg_alias_list += fmt::format(", tupleElement(zipped,{}) AS {}", idx, agg_column.alias);
     }
 
     if (from_to_step.is_timespan)
-        axis_str = std::format(
+        axis_str = fmt::format(
             "arrayDistinct(arrayConcat(groupArray(toDateTime64({0}_ali - {1},9,'UTC')), arrayMap(x->(toDateTime64(x - {1} ,9,'UTC')),"
             "{2}))) as {0}",
             axis_column,
@@ -331,12 +369,12 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
             range);
     else
         axis_str
-            = std::format("arrayDistinct(arrayConcat(groupArray({0}_ali), arrayMap(x->(toFloat64(x)), {1}))) as {0}", axis_column, range);
+            = fmt::format("arrayDistinct(arrayConcat(groupArray({0}_ali), arrayMap(x->(toFloat64(x)), {1}))) as {0}", axis_column, range);
 
     main_query += ", " + axis_str;
-    auto sub_group_by = group_expression.empty() ? "" : std::format("GROUP BY {}", group_expression_alias);
+    auto sub_group_by = group_expression.empty() ? "" : fmt::format("GROUP BY {}", group_expression_alias);
 
-    sub_query = std::format(
+    sub_query = fmt::format(
         "( SELECT toUInt64(min({}_ali)) AS low, toUInt64(max({}_ali))+ {} AS high, arraySort(arrayZip({})) as zipped, {} FROM {} {} )",
         axis_column,
         axis_column,
@@ -347,11 +385,11 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
         sub_group_by);
 
     if (group_expression.empty())
-        main_query = std::format("{}", final_axis_agg_alias_list);
+        main_query = fmt::format("{}", final_axis_agg_alias_list);
     else
-        main_query = std::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
+        main_query = fmt::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth, max_backtracks))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, parent_pos))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -404,17 +442,17 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     for (auto agg_column : aggregation_columns)
     {
-        String column_str = std::format("{}({}) AS {}_ali", agg_column.aggregation_fun, agg_column.column, agg_column.alias);
+        String column_str = fmt::format("{}({}) AS {}_ali", agg_column.aggregation_fun, agg_column.column, agg_column.alias);
         if (subquery_columns.empty())
             subquery_columns = column_str;
         else
             subquery_columns += ", " + column_str;
     }
 
-    makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
+    makeSeries(kql_make_series, node, pos);
 
-    Tokens token_main_query(kql_make_series.main_query.c_str(), kql_make_series.main_query.c_str() + kql_make_series.main_query.size());
-    IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
+    Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
+    IParser::Pos pos_main_query(token_main_query, pos);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
         return false;

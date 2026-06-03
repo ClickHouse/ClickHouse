@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationDate32.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 
 namespace DB
 {
@@ -11,20 +10,20 @@ bool DataTypeDate32::equals(const IDataType & rhs) const
     return typeid(rhs) == typeid(*this);
 }
 
-SerializationPtr DataTypeDate32::doGetDefaultSerialization() const
+SerializationPtr DataTypeDate32::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationDate32>();
+    return SerializationDate32::create();
 }
 
 Field DataTypeDate32::getDefault() const
 {
-    return -static_cast<Int64>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
+    return -static_cast<Int64>(getDayNumOffsetEpoch());
 }
 
 void registerDataTypeDate32(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType(
-        "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::CaseInsensitive);
+        "Date32", [] { return DataTypePtr(std::make_shared<DataTypeDate32>()); }, DataTypeFactory::Case::Insensitive);
 }
 
 }

@@ -1,0 +1,2894 @@
+syntax = "proto2";
+
+package BuzzHouse;
+
+enum SQLTableFunc {
+    TFarrowFlight = 1;
+    TFazureBlobStorage = 2;
+    TFazureBlobStorageCluster = 3;
+    TFcluster = 4;
+    TFclusterAllReplicas = 5;
+    TFdeltaLake = 6;
+    TFdeltaLakeAzure = 7;
+    TFdeltaLakeAzureCluster = 8;
+    TFdeltaLakeCluster = 9;
+    TFdeltaLakeLocal = 10;
+    TFdeltaLakeLocalCluster = 11;
+    TFdeltaLakeS3 = 12;
+    TFdeltaLakeS3Cluster = 13;
+    TFdictionary = 14;
+    TFexecutable = 15;
+    TFfile = 16;
+    TFfileCluster = 17;
+    TFformat = 18;
+    TFfuzzJSON = 19;
+    TFfuzzQuery = 20;
+    TFgcs = 21;
+    TFgenerateRandom = 22;
+    TFgenerateSeries = 23;
+    TFhdfs = 24;
+    TFhdfsCluster = 25;
+    TFhudi = 26;
+    TFhudiCluster = 27;
+    TFiceberg = 28;
+    TFicebergAzure = 29;
+    TFicebergAzureCluster = 30;
+    TFicebergCluster = 31;
+    TFicebergLocal = 32;
+    TFicebergLocalCluster = 33;
+    TFicebergS3 = 34;
+    TFicebergS3Cluster = 35;
+    TFinput = 36;
+    TFjdbc = 37;
+    TFloop = 38;
+    TFmerge = 39;
+    TFmergeTreeAnalyzeIndexes = 40;
+    TFmergeTreeAnalyzeIndexesUUID = 41;
+    TFmergeTreeIndex = 42;
+    TFmergeTreeProjection = 43;
+    TFmergeTreeTextIndex = 44;
+    TFmongodb = 45;
+    TFmysql = 46;
+    TFnull = 47;
+    TFnumbers = 48;
+    TFodbc = 49;
+    TFpaimon = 50;
+    TFpaimonAzure = 51;
+    TFpaimonAzureCluster = 52;
+    TFpaimonCluster = 53;
+    TFpaimonLocal = 54;
+    TFpaimonS3 = 55;
+    TFpaimonS3Cluster = 56;
+    TFpostgresql = 57;
+    TFprimes = 58;
+    TFprometheusQuery = 59;
+    TFprometheusQueryRange = 60;
+    TFredis = 61;
+    TFremote = 62;
+    TFremoteSecure = 63;
+    TFs3 = 64;
+    TFs3Cluster = 65;
+    TFsqlite = 66;
+    TFtimeSeriesData = 67;
+    TFtimeSeriesMetrics = 68;
+    TFtimeSeriesSelector = 69;
+    TFtimeSeriesTags = 70;
+    TFurl = 71;
+    TFurlCluster = 72;
+    TFvalues = 73;
+    TFview = 74;
+    TFytsaurus = 75;
+    TFfilesystem = 76;
+}
+
+message SQLIdentifier {
+    required string value = 1;
+}
+
+message Column {
+    required string column = 1;
+}
+
+message ColumnPath {
+    required Column col = 1;
+    repeated Column sub_cols = 2;
+}
+
+message Cluster {
+    optional string cluster = 1;
+}
+
+message Storage {
+    enum DataStorage {
+        DISK = 1;
+        VOLUME = 2;
+    }
+    required DataStorage storage = 1;
+    required string storage_name = 2;
+}
+
+message Window {
+    required string window = 1;
+}
+
+message SpecialVal {
+    enum SpecialValEnum {
+        VAL_NULL = 1;
+        VAL_TRUE = 2;
+        VAL_FALSE = 3;
+        VAL_ZERO = 4;
+        VAL_ONE = 5;
+        VAL_MINUS_ONE = 6;
+        VAL_EMPTY_STRING = 7;
+        VAL_EMPTY_ARRAY = 8;
+        VAL_EMPTY_TUPLE = 9;
+        VAL_EMPTY_MAP = 10;
+        VAL_EMPTY_JSON = 11;
+        VAL_MINUS_ZERO_FP = 12;
+        VAL_PLUS_ZERO_FP = 13;
+        VAL_ZERO_FP = 14;
+        VAL_INF = 15;
+        VAL_PLUS_INF = 16;
+        VAL_MINUS_INF = 17;
+        VAL_NAN = 18;
+        VAL_PLUS_NAN = 19;
+        VAL_MINUS_NAN = 20;
+        VAL_HAPPY = 21;
+        VAL_TEN_HAPPY = 22;
+        MIN_INT32 = 23;
+        MAX_INT32 = 24;
+        MIN_INT64 = 25;
+        MAX_INT64 = 26;
+        MIN_INT128 = 27;
+        MAX_INT128 = 28;
+        MIN_INT256 = 29;
+        MAX_INT256 = 30;
+        MAX_UINT32 = 31;
+        MAX_UINT64 = 32;
+        MAX_UINT128 = 33;
+        MAX_UINT256 = 34;
+        MIN_DATE = 35;
+        MAX_DATE = 36;
+        MIN_DATE32 = 37;
+        MAX_DATE32 = 38;
+        MIN_TIME = 39;
+        MAX_TIME = 40;
+        MIN_TIME64 = 41;
+        MAX_TIME64 = 42;
+        MIN_DATETIME = 43;
+        MAX_DATETIME = 44;
+        MIN_DATETIME64 = 45;
+        MAX_DATETIME64 = 46;
+        MIN_DOUBLE = 47;
+        MAX_DOUBLE = 48;
+        DENORM_MIN_DOUBLE = 49;
+        LOWEST_DOUBLE = 50;
+        VAL_NULL_CHAR = 51;
+        VAL_DEFAULT = 52;
+        VAL_STAR = 53;
+    }
+    required SpecialValEnum val = 1;
+    optional bool paren = 2;
+}
+
+message NumericLiteral {
+    required bool negative = 1;
+    repeated uint32 digits = 2;
+    required bool decimal_point = 3;
+    repeated uint32 dec_digits = 4;
+    repeated uint32 exp_digits = 5;
+    required bool negative_exp = 6;
+}
+
+enum Integers {
+    UInt8 = 1;
+    UInt16 = 2;
+    UInt32 = 3;
+    UInt64 = 4;
+    UInt128 = 5;
+    UInt256 = 6;
+    Int8 = 7;
+    Int16 = 8;
+    Int32 = 9;
+    Int64 = 10;
+    Int128 = 11;
+    Int256 = 12;
+    Int = 13;
+}
+
+enum FloatingPoints {
+    BFloat16 = 1;
+    Float32 = 2;
+    Float64 = 3;
+}
+
+enum Dates {
+    Date = 1;
+    Date32 = 2;
+}
+
+enum Times {
+    Time = 1;
+    Time64 = 2;
+}
+
+enum DateTimes {
+    DateTime = 1;
+    DateTime64 = 2;
+}
+
+message TimeTp {
+    required Times type = 1;
+    optional uint32 precision = 2;
+}
+
+message DateTimeTp {
+    required DateTimes type = 1;
+    optional uint32 precision = 2;
+    optional string timezone = 3;
+}
+
+message HugeIntLiteral {
+    required int64 upper = 1;
+    required uint64 lower = 2;
+}
+
+message UHugeIntLiteral {
+    required uint64 upper = 1;
+    required uint64 lower = 2;
+}
+
+message IntLiteral {
+    oneof int_oneof {
+        int64 int_lit = 1;
+        uint64 uint_lit = 2;
+        HugeIntLiteral huge_lit = 3;
+        UHugeIntLiteral uhuge_lit = 4;
+    }
+    optional Integers integers = 5;
+}
+
+message LiteralValue {
+    oneof lit_val_oneof {
+        IntLiteral int_lit = 1;
+        NumericLiteral numeric_lit = 2;
+        bytes string_lit = 3;
+        bytes hex_string = 4;
+        bytes heredoc = 5;
+        SpecialVal special_val = 6;
+        string no_quote_str = 7;
+    }
+}
+
+message JSONColumn {
+    required Column col = 1;
+    oneof jcol_oneof {
+        bool jcol = 2;
+        uint32 jarray = 3;
+        bool jcombined = 4;
+    }
+}
+
+message JSONColumns {
+    required JSONColumn jcol = 1;
+    repeated JSONColumn other_jcols = 2;
+    oneof jcol_oneof {
+        TypeName jcast = 3;
+        TypeName jreinterpret = 4;
+    }
+}
+
+message FieldAccess {
+    oneof nested_oneof {
+        int32 array_index = 1;
+        Expr array_expr = 2;
+        Column array_key = 3;
+        int32 tuple_index = 4;
+    }
+}
+
+message ExprColumn {
+    required ColumnPath path = 1;
+    optional JSONColumns subcols = 2;
+    optional TypeName dynamic_subtype = 3;
+}
+
+message ExprSchemaTableColumn {
+    optional SQLIdentifier database = 1;
+    optional SQLIdentifier table = 2;
+    required ExprColumn col = 3;
+}
+
+enum UnaryOperator {
+    UNOP_MINUS = 1;
+    UNOP_PLUS = 2;
+    UNOP_NOT = 3;
+}
+
+message UnaryExpr {
+    optional bool paren = 1;
+    required UnaryOperator unary_op = 2;
+    required Expr expr = 3;
+}
+
+enum BinaryOperator {
+    BINOP_LE = 1;
+    BINOP_LEQ = 2;
+    BINOP_GR = 3;
+    BINOP_GREQ = 4;
+    BINOP_EQ = 5;
+    BINOP_EQEQ = 6;
+    BINOP_NOTEQ = 7;
+    BINOP_LEGR = 8;
+    BINOP_LEEQGR = 9;
+    BINOP_IS_DISTINCT_FROM = 10;
+    BINOP_IS_NOT_DISTINCT_FROM = 11;
+    BINOP_AND = 12;
+    BINOP_OR = 13;
+    BINOP_CONCAT = 14;
+    BINOP_STAR = 15;
+    BINOP_SLASH = 16;
+    BINOP_PERCENT = 17;
+    BINOP_PLUS = 18;
+    BINOP_MINUS = 19;
+    BINOP_DIV = 20;
+    BINOP_MOD = 21;
+}
+
+message BinaryExpr {
+    required Expr lhs = 1;
+    required BinaryOperator op = 2;
+    required Expr rhs = 3;
+}
+
+message CastExpr {
+    optional bool simple = 1;
+    required Expr expr = 2;
+    required TypeName type_name = 3;
+}
+
+message ExprBetween {
+    optional bool paren = 1;
+    required bool not = 2;
+    required Expr expr1 = 3;
+    required Expr expr2 = 4;
+    required Expr expr3 = 5;
+}
+
+message ExprList {
+    required Expr expr = 1;
+    repeated Expr extra_exprs = 2;
+}
+
+message ExprIn {
+    required ExprList expr = 1;
+    required bool global = 2;
+    required bool not = 3;
+    oneof in_oneof {
+        Expr single_expr = 4;
+        ExprList array = 5;
+        ExprList tuple = 6;
+        ExplainQuery sel = 7;
+    }
+}
+
+enum AnyAllSome {
+    AAS_ANY = 1;
+    AAS_ALL = 2;
+    AAS_SOME = 3;
+}
+
+message ExprAny {
+    required Expr expr = 1;
+    required BinaryOperator op = 2;
+    required AnyAllSome anyall = 3;
+    required ExplainQuery sel = 4;
+}
+
+message ExprNullTests {
+    required Expr expr = 1;
+    required bool not = 2;
+}
+
+message ExprCase {
+    optional Expr expr = 1;
+    required ExprWhenThen when_then = 2;
+    repeated ExprWhenThen extra_when_thens = 3;
+    optional Expr else_expr = 4;
+}
+
+message ExprWhenThen {
+    required Expr when_expr = 1;
+    required Expr then_expr = 2;
+}
+
+message ExprExists {
+    required bool not = 1;
+    required ExplainQuery select = 2;
+}
+
+message ExprLike {
+    required Expr expr1 = 1;
+    required bool not = 2;
+    enum PossibleKeywords {
+        LIKE = 1;
+        ILIKE = 2;
+        REGEXP = 3;
+    }
+    required PossibleKeywords keyword = 3;
+    required Expr expr2 = 4;
+}
+
+message CondExpr {
+    optional bool paren = 1;
+    required Expr expr1 = 2;
+    required Expr expr2 = 3;
+    required Expr expr3 = 4;
+}
+
+message LambdaExpr {
+    optional bool paren = 1;
+    repeated Column args = 2;
+    required Expr expr = 3;
+}
+
+message SQLFuncArg {
+    oneof func_arg_oneof {
+        LambdaExpr lambda = 1;
+        Expr expr = 2;
+        string func_name = 3;
+    }
+}
+
+enum FuncNulls {
+    NRESPECT = 1;
+    NIGNORE = 2;
+}
+
+message SQLFuncName {
+    oneof func_arg_oneof {
+        string catalog_func = 1;
+        SQLIdentifier function = 2;
+    }
+}
+
+message SQLFuncCall {
+    enum AggregateCombinator {
+        If = 1;
+        Array = 2;
+        Map = 3;
+        ForEach = 4;
+        Distinct = 5;
+        OrDefault = 6;
+        OrNull = 7;
+        Resample = 8;
+        ArgMin = 9;
+        ArgMax = 10;
+        /// Not deterministic maybe?
+        SimpleState = 11;
+        State = 12;
+        Merge = 13;
+        MergeState = 14;
+    }
+    required SQLFuncName func = 1;
+    repeated AggregateCombinator combinators = 2;
+    optional bool distinct = 3;
+    repeated Expr params = 4;
+    repeated SQLFuncArg args = 5;
+    optional FuncNulls fnulls = 6;
+}
+
+message FrameSpecSubLeftExpr {
+    enum Which {
+        CURRENT_ROW = 1;
+        UNBOUNDED_PRECEDING = 2;
+        PRECEDING = 3;
+        FOLLOWING = 4;
+    }
+    required Which which = 1;
+    optional Expr expr = 2;
+}
+
+message FrameSpecSubRightExpr {
+    enum Which {
+        CURRENT_ROW = 1;
+        UNBOUNDED_FOLLOWING = 2;
+        PRECEDING = 3;
+        FOLLOWING = 4;
+    }
+    required Which which = 1;
+    optional Expr expr = 2;
+}
+
+message ExprFrameSpec {
+    enum RangeRows {
+        RANGE = 1;
+        ROWS = 2;
+        GROUPS = 3;
+    }
+    required RangeRows range_rows = 1;
+    required FrameSpecSubLeftExpr left_expr = 2;
+    optional FrameSpecSubRightExpr right_expr = 3;
+}
+
+message ExprOrderingWithFill {
+    oneof order_by_oneof {
+        Expr from_expr = 1;
+        Expr staleness_expr = 2;
+    }
+    optional Expr to_expr = 3;
+    optional Expr step_expr = 4;
+}
+
+message ExprOrderingTerm {
+    enum NullsOrder {
+        FIRST = 1;
+        LAST = 2;
+    }
+    required Expr expr = 1;
+    optional AscDesc asc_desc = 2;
+    optional NullsOrder nulls_order = 3;
+    optional string collation = 4;
+    optional ExprOrderingWithFill fill = 5;
+}
+
+message InterpolateExpr {
+    required Column col = 1;
+    required Expr expr = 2;
+}
+
+message OrderByList {
+    required ExprOrderingTerm ord_term = 1;
+    repeated ExprOrderingTerm extra_ord_terms = 2;
+    repeated InterpolateExpr interpolate = 3;
+}
+
+message OrderByStatement {
+    oneof order_by_oneof {
+        OrderByList olist = 1;
+        bool oall = 2;
+    }
+}
+
+message WindowDefn {
+    repeated Expr partition_exprs = 1;
+    optional OrderByStatement order_by = 2;
+    optional ExprFrameSpec frame_spec = 3;
+}
+
+enum WindowFuncs {
+    WINcume_dist = 1;
+    WINdense_rank = 2;
+    WINfirst_value = 3;
+    WINlag = 4;
+    WINlagInFrame = 5;
+    WINlast_value = 6;
+    WINleadInFrame = 7;
+    WINlead = 8;
+    WINnth_value = 9;
+    WINntile = 10;
+    WINpercent_rank = 11;
+    WINrank = 12;
+    WINrow_number = 13;
+}
+
+message SQLWindowCall {
+    required WindowFuncs func = 1;
+    repeated Expr args = 2;
+    optional FuncNulls fnulls = 3;
+}
+
+message WindowFuncCall {
+    oneof window_fn_oneof {
+        SQLWindowCall win_func = 1;
+        SQLFuncCall agg_func = 2;
+    }
+    oneof window_over_oneof {
+        WindowDefn win_defn = 3;
+        Window window = 4;
+    }
+}
+
+message WindowDef {
+    required Window window = 1;
+    required WindowDefn win_defn = 2;
+}
+
+message IntervalExpr {
+    enum Interval {
+        NANOSECOND = 1;
+        MICROSECOND = 2;
+        MILLISECOND = 3;
+        SECOND = 4;
+        MINUTE = 5;
+        HOUR = 6;
+        DAY = 7;
+        WEEK = 8;
+        MONTH = 9;
+        QUARTER = 10;
+        YEAR = 11;
+        EPOCH = 12;
+        DOW = 13;
+        DOY = 14;
+        ISODOW = 15;
+        ISOYEAR = 16;
+        CENTURY = 17;
+        DECADE = 18;
+        MILLENNIUM = 19;
+    }
+    required Interval interval = 1;
+    required Expr expr = 2;
+}
+
+/// Separate this out to inflate the probability of having a literal value
+message ComplicatedExpr {
+    oneof complicated_expr_oneof {
+        ExprSchemaTableColumn expr_stc = 1;
+        UnaryExpr unary_expr = 2;
+        BinaryExpr binary_expr = 3;
+        ExprColAlias alias_expr = 4;
+        CastExpr cast_expr = 5;
+        ExprBetween expr_between = 6;
+        ExprIn expr_in = 7;
+        ExprAny expr_any = 8;
+        ExprNullTests expr_null_tests = 9;
+        ExprCase expr_case = 10;
+        ExprExists expr_exists = 11;
+        ExprLike expr_like = 12;
+        CondExpr expr_cond = 13;
+        ExplainQuery subquery = 14;
+        SQLFuncCall func_call = 15;
+        WindowFuncCall window_call = 16;
+        IntervalExpr interval = 17;
+        string columns = 18;
+        ExprList array = 19;
+        ExprList tuple = 20;
+        SQLIdentifier table = 21;
+        LambdaExpr lambda = 22;
+    }
+}
+
+message Expr {
+    oneof expr_oneof {
+        LiteralValue lit_val = 1;
+        ComplicatedExpr comp_expr = 2;
+    }
+    repeated FieldAccess fields = 3;
+}
+
+message ExprColAlias {
+    optional bool use_parenthesis = 1;
+    required Expr expr = 2;
+    optional Column col_alias = 3;
+}
+
+message ResultColumn {
+    oneof result_col_oneof {
+        ExprSchemaTableColumn etc = 1;
+        ExprColAlias eca = 2;
+    }
+}
+
+message ExprSchemaTable {
+    optional SQLIdentifier database = 1;
+    required SQLIdentifier table = 2;
+}
+
+enum InFormat {
+    IN_Arrow = 1;
+    IN_ArrowStream = 2;
+    IN_Avro = 3;
+    IN_AvroConfluent = 4;
+    IN_BSONEachRow = 5;
+    IN_Buffers = 6;
+    IN_CapnProto = 7;
+    IN_CSV = 8;
+    IN_CSVWithNames = 9;
+    IN_CSVWithNamesAndTypes = 10;
+    IN_CustomSeparated = 11;
+    IN_CustomSeparatedIgnoreSpaces = 12;
+    IN_CustomSeparatedIgnoreSpacesWithNames = 13;
+    IN_CustomSeparatedIgnoreSpacesWithNamesAndTypes = 14;
+    IN_CustomSeparatedWithNames = 15;
+    IN_CustomSeparatedWithNamesAndTypes = 16;
+    IN_DWARF = 17;
+    IN_Form = 18;
+    IN_HiveText = 19;
+    IN_JSON = 20;
+    IN_JSONAsObject = 21;
+    IN_JSONAsString = 22;
+    IN_JSONColumns = 23;
+    IN_JSONColumnsWithMetadata = 24;
+    IN_JSONCompact = 25;
+    IN_JSONCompactColumns = 26;
+    IN_JSONCompactEachRow = 27;
+    IN_JSONCompactEachRowWithNames = 28;
+    IN_JSONCompactEachRowWithNamesAndTypes = 29;
+    IN_JSONCompactStringsEachRow = 30;
+    IN_JSONCompactStringsEachRowWithNames = 31;
+    IN_JSONCompactStringsEachRowWithNamesAndTypes = 32;
+    IN_JSONEachRow = 33;
+    IN_JSONLines = 34;
+    IN_JSONObjectEachRow = 35;
+    IN_JSONStringsEachRow = 36;
+    IN_LineAsString = 37;
+    IN_MsgPack = 38;
+    IN_MySQLDump = 39;
+    IN_Native = 40;
+    IN_Npy = 41;
+    IN_One = 42;
+    IN_ORC = 43;
+    IN_Parquet = 44;
+    IN_ParquetMetadata = 45;
+    IN_Protobuf = 46;
+    IN_ProtobufList = 47;
+    IN_ProtobufSingle = 48;
+    IN_RawBLOB = 49;
+    IN_Regexp = 50;
+    IN_RowBinary = 51;
+    IN_RowBinaryWithDefaults = 52;
+    IN_RowBinaryWithNames = 53;
+    IN_RowBinaryWithNamesAndTypes = 54;
+    IN_TabSeparated = 55;
+    IN_TabSeparatedRaw = 56;
+    IN_TabSeparatedRawWithNames = 57;
+    IN_TabSeparatedRawWithNamesAndTypes = 58;
+    IN_TabSeparatedWithNames = 59;
+    IN_TabSeparatedWithNamesAndTypes = 60;
+    IN_Template = 61;
+    IN_TemplateIgnoreSpaces = 62;
+    IN_TSKV = 63;
+    IN_Values = 64;
+}
+
+enum OutFormat {
+    OUT_Arrow = 1;
+    OUT_ArrowStream = 2;
+    OUT_Avro = 3;
+    OUT_AvroConfluent = 4;
+    OUT_BSONEachRow = 5;
+    OUT_Buffers = 6;
+    OUT_CapnProto = 7;
+    OUT_CSV = 8;
+    OUT_CSVWithNames = 9;
+    OUT_CSVWithNamesAndTypes = 10;
+    OUT_CustomSeparated = 11;
+    OUT_CustomSeparatedWithNames = 12;
+    OUT_CustomSeparatedWithNamesAndTypes = 13;
+    OUT_Hash = 14;
+    OUT_JSON = 15;
+    OUT_JSONColumns = 16;
+    OUT_JSONColumnsWithMetadata = 17;
+    OUT_JSONCompact = 18;
+    OUT_JSONCompactColumns = 19;
+    OUT_JSONCompactEachRow = 20;
+    OUT_JSONCompactEachRowWithNames = 21;
+    OUT_JSONCompactEachRowWithNamesAndTypes = 22;
+    OUT_JSONCompactEachRowWithProgress = 23;
+    OUT_JSONCompactStrings = 24;
+    OUT_JSONCompactStringsEachRow = 25;
+    OUT_JSONCompactStringsEachRowWithNames = 26;
+    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 27;
+    OUT_JSONCompactStringsEachRowWithProgress = 28;
+    OUT_JSONEachRow = 29;
+    OUT_JSONEachRowWithProgress = 30;
+    OUT_JSONLines = 31;
+    OUT_JSONObjectEachRow = 32;
+    OUT_JSONStrings = 33;
+    OUT_JSONStringsEachRow = 34;
+    OUT_JSONStringsEachRowWithProgress = 35;
+    OUT_Markdown = 36;
+    OUT_MsgPack = 37;
+    OUT_MySQLWire = 38;
+    OUT_Native = 39;
+    OUT_Npy = 40;
+    OUT_Null = 41;
+    OUT_ODBCDriver2 = 42;
+    OUT_ORC = 43;
+    OUT_Parquet = 44;
+    OUT_PostgreSQLWire = 45;
+    OUT_Pretty = 46;
+    OUT_PrettyCompact = 47;
+    OUT_PrettyCompactMonoBlock = 48;
+    OUT_PrettyCompactNoEscapes = 49;
+    OUT_PrettyCompactNoEscapesMonoBlock = 50;
+    OUT_PrettyJSONEachRow = 51;
+    OUT_PrettyMonoBlock = 52;
+    OUT_PrettyNoEscapes = 53;
+    OUT_PrettyNoEscapesMonoBlock = 54;
+    OUT_PrettySpace = 55;
+    OUT_PrettySpaceMonoBlock = 56;
+    OUT_PrettySpaceNoEscapes = 57;
+    OUT_PrettySpaceNoEscapesMonoBlock = 58;
+    OUT_Prometheus = 59;
+    OUT_Protobuf = 60;
+    OUT_ProtobufList = 61;
+    OUT_ProtobufSingle = 62;
+    OUT_RawBLOB = 63;
+    OUT_RowBinary = 64;
+    OUT_RowBinaryWithNames = 65;
+    OUT_RowBinaryWithNamesAndTypes = 66;
+    OUT_SQLInsert = 67;
+    OUT_TabSeparated = 68;
+    OUT_TabSeparatedRaw = 69;
+    OUT_TabSeparatedRawWithNames = 70;
+    OUT_TabSeparatedRawWithNamesAndTypes = 71;
+    OUT_TabSeparatedWithNames = 72;
+    OUT_TabSeparatedWithNamesAndTypes = 73;
+    OUT_Template = 74;
+    OUT_TSKV = 75;
+    OUT_Values = 76;
+    OUT_Vertical = 77;
+    OUT_XML = 78;
+}
+
+enum InOutFormat {
+    INOUT_Arrow = 1;
+    INOUT_ArrowStream = 2;
+    INOUT_Avro = 3;
+    INOUT_AvroConfluent = 4;
+    INOUT_BSONEachRow = 5;
+    INOUT_Buffers = 6;
+    INOUT_CapnProto = 7;
+    INOUT_CSV = 8;
+    INOUT_CSVWithNames = 9;
+    INOUT_CSVWithNamesAndTypes = 10;
+    INOUT_CustomSeparated = 11;
+    INOUT_CustomSeparatedWithNames = 12;
+    INOUT_CustomSeparatedWithNamesAndTypes = 13;
+    INOUT_JSON = 14;
+    INOUT_JSONColumns = 15;
+    INOUT_JSONColumnsWithMetadata = 16;
+    INOUT_JSONCompact = 17;
+    INOUT_JSONCompactColumns = 18;
+    INOUT_JSONCompactEachRow = 19;
+    INOUT_JSONCompactEachRowWithNames = 20;
+    INOUT_JSONCompactEachRowWithNamesAndTypes = 21;
+    INOUT_JSONCompactStringsEachRow = 22;
+    INOUT_JSONCompactStringsEachRowWithNames = 23;
+    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 24;
+    INOUT_JSONEachRow = 25;
+    INOUT_JSONLines = 26;
+    INOUT_JSONObjectEachRow = 27;
+    INOUT_JSONStringsEachRow = 28;
+    INOUT_MsgPack = 29;
+    INOUT_Native = 30;
+    INOUT_Npy = 31;
+    INOUT_ORC = 32;
+    INOUT_Parquet = 33;
+    INOUT_Protobuf = 34;
+    INOUT_ProtobufList = 35;
+    INOUT_ProtobufSingle = 36;
+    INOUT_RawBLOB = 37;
+    INOUT_RowBinary = 38;
+    INOUT_RowBinaryWithNames = 39;
+    INOUT_RowBinaryWithNamesAndTypes = 40;
+    INOUT_TabSeparated = 41;
+    INOUT_TabSeparatedRaw = 42;
+    INOUT_TabSeparatedRawWithNames = 43;
+    INOUT_TabSeparatedRawWithNamesAndTypes = 44;
+    INOUT_TabSeparatedWithNames = 45;
+    INOUT_TabSeparatedWithNamesAndTypes = 46;
+    INOUT_Template = 47;
+    INOUT_TSKV = 48;
+    INOUT_Values = 49;
+}
+
+message UsingExpr {
+    required ExprColumn column = 1;
+    repeated ExprColumn other_columns = 2;
+}
+
+message JoinConstraint {
+    oneof join_constraint_oneof {
+        Expr on_expr = 1;
+        UsingExpr using_expr = 2;
+    }
+}
+
+enum JoinType {
+    J_LEFT = 1;
+    J_INNER = 2;
+    J_RIGHT = 3;
+    J_FULL = 4;
+    J_PASTE = 5;
+    J_CROSS = 6;
+}
+
+enum JoinConst {
+    J_ANY = 1;
+    J_ALL = 2;
+    J_SEMI = 3;
+    J_ANTI = 4;
+    J_ASOF = 5;
+    J_NATURAL = 6;
+}
+
+message JoinCore {
+    optional bool global = 1;
+    optional bool const_on_right = 2;
+    optional JoinConst join_const = 3;
+    optional JoinType join_op = 4;
+    required TableOrSubquery tos = 5;
+    required JoinConstraint join_constraint = 6;
+}
+
+message ArrayJoin {
+    optional bool left = 1;
+    required ExprColAlias constraint = 2;
+    repeated ExprColAlias other_constraints = 3;
+}
+
+message JoinClauseCore {
+    oneof join_clause_oneof {
+        JoinCore core = 1;
+        ArrayJoin arr = 2;
+    }
+}
+
+message JoinClause {
+    required TableOrSubquery tos = 1;
+    repeated JoinClauseCore clauses = 2;
+}
+
+message KeyValuePair {
+    required string key = 1;
+    required string value = 2;
+}
+
+message HTTPHeader {
+    required string name = 1;
+    required string value = 2;
+}
+
+message SetValue {
+    required string property = 1;
+    required string value = 2;
+}
+
+message SettingValues {
+    required SetValue set_value = 1;
+    repeated SetValue other_values = 2;
+}
+
+message FileFunc {
+    enum FName {
+        file = 1;
+        fileCluster = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string path = 3;
+    oneof file_func_oneof {
+        InFormat informat = 4;
+        OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
+    }
+    optional Expr structure = 7;
+    optional string fcomp = 8;
+}
+
+message FormatFunc {
+    required InFormat format = 1;
+    optional Expr structure = 2;
+    required string data = 3;
+}
+
+message NumbersFunc {
+    enum NumbersName {
+        generate_series = 1;
+        generateSeries = 2;
+        numbers = 3;
+        numbers_mt = 4;
+        primes = 5;
+    }
+    required NumbersName fname = 1;
+    required Expr expr1 = 2;
+    optional Expr expr2 = 3;
+    optional Expr expr3 = 4;
+}
+
+message TableOrFunction {
+    oneof jtf_oneof {
+        ExprSchemaTable est = 1;
+        TableFunction tfunc = 2;
+        ExplainQuery select = 3;
+        ValuesStatement values_standard = 4;
+    }
+}
+
+message RemoteFunc {
+    enum RName {
+        remote = 1;
+        remoteSecure = 2;
+    }
+    required RName rname = 1;
+    optional string named_collection = 2;
+    optional string address = 3;
+    required TableOrFunction tof = 4;
+    optional string user = 5;
+    optional string password = 6;
+    optional Expr sharding_key = 7;
+}
+
+message MySQLFunc {
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
+    optional string address = 4;
+    optional string user = 5;
+    optional string password = 6;
+}
+
+message PostgreSQLFunc {
+    optional string named_collection = 1;
+    optional string rdatabase = 2;
+    optional string rschema = 3;
+    optional string rtable = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
+}
+
+message SQLiteFunc {
+    required string rdatabase = 1;
+    required string rtable = 2;
+}
+
+message RedisFunc {
+    required string address = 1;
+    required Expr key = 2;
+    optional Expr structure = 3;
+    optional uint32 db_index = 4;
+    optional string password = 5;
+    optional uint32 pool_size = 6;
+}
+
+message MongoDBFunc {
+    optional string named_collection = 1;
+    optional string database = 2;
+    optional string collection = 3;
+    optional Expr structure = 4;
+    optional string address = 5;
+    optional string user = 6;
+    optional string password = 7;
+}
+
+message ObjectStoreFunc {
+    enum FName {
+        gcs = 1;
+        s3 = 2;
+        azureBlobStorage = 3;
+        deltaLake = 4;
+        deltaLakeS3 = 5;
+        deltaLakeAzure = 6;
+        deltaLakeLocal = 7;
+        iceberg = 8;
+        icebergS3 = 9;
+        icebergAzure = 10;
+        icebergLocal = 11;
+        paimon = 12;
+        paimonS3 = 13;
+        paimonAzure = 14;
+        paimonCluster = 15;
+        paimonLocal = 16;
+    }
+    optional bool cluster_func = 1;
+    required FName fname = 2;
+    optional Cluster cluster = 3;
+    required string credential = 4;
+    repeated KeyValuePair params = 5;
+    optional SettingValues setting_values = 6;
+    repeated HTTPHeader http_headers = 7;
+}
+
+message URLFunc {
+    enum FName {
+        url = 1;
+        urlCluster = 2;
+    }
+    required FName fname = 1;
+    optional Cluster cluster = 2;
+    required string uurl = 3;
+    oneof url_func_oneof {
+        InFormat informat = 4;
+        OutFormat outformat = 5;
+        InOutFormat inoutformat = 6;
+    }
+    optional Expr structure = 7;
+    repeated HTTPHeader http_headers = 8;
+}
+
+message SQLTableFuncCall {
+    required SQLTableFunc func = 1;
+    repeated SQLFuncArg args = 2;
+}
+
+message MergeFunc {
+    optional string mdatabase = 1;
+    required string mtable = 2;
+}
+
+message ClusterFunc {
+    optional bool all_replicas = 1;
+    required Cluster cluster = 2;
+    required TableOrFunction tof = 3;
+    optional Expr sharding_key = 4;
+}
+
+message MergeTreeIndexFunc {
+    required ExprSchemaTable est = 1;
+    optional bool with_marks = 2;
+    optional bool with_minmax = 3;
+}
+
+message MergeTreeProjectionFunc {
+    required ExprSchemaTable est = 1;
+    required SQLIdentifier proj = 2;
+}
+
+message MergeTreeTextIndexFunc {
+    required ExprSchemaTable est = 1;
+    required SQLIdentifier idx = 2;
+}
+
+message PartsList {
+    repeated string parts = 1;
+}
+
+message MergeTreeAnalyzeIndexesFunc {
+    required ExprSchemaTable est = 1;
+    optional Expr pred = 2;
+    optional PartsList plist = 3;
+}
+
+message GenerateRandomFunc {
+    required Expr structure = 1;
+    optional uint64 random_seed = 2;
+    optional uint32 max_string_length = 3;
+    optional uint64 max_array_length = 4;
+}
+
+message ValuesStatement {
+    required ExprList expr_list = 1;
+    repeated ExprList extra_expr_lists = 2;
+}
+
+message ArrowFlightFunc {
+    required string address = 1;
+    required string dataset = 2;
+}
+
+message TableFunction {
+    oneof jtf_oneof {
+        FileFunc file = 1;
+        FormatFunc format = 2;
+        NumbersFunc numbers = 3;
+        RemoteFunc remote = 4;
+        MySQLFunc mysql = 5;
+        PostgreSQLFunc postgresql = 6;
+        SQLiteFunc sqite = 7;
+        ObjectStoreFunc object_func = 8;
+        MergeFunc merge = 9;
+        ClusterFunc cluster = 10;
+        TableOrFunction loop = 11;
+        GenerateRandomFunc grandom = 12;
+        ValuesStatement values = 13;
+        ExprSchemaTable dictionary = 14;
+        URLFunc url = 15;
+        RedisFunc redis = 16;
+        MongoDBFunc mongodb = 17;
+        Expr nullf = 18;
+        ArrowFlightFunc flight = 19;
+        MergeTreeIndexFunc mtindex = 20;
+        MergeTreeProjectionFunc mtproj = 21;
+        MergeTreeTextIndexFunc mttxtidx = 22;
+        MergeTreeAnalyzeIndexesFunc mtanindex = 23;
+        SQLTableFuncCall func = 24;
+    }
+}
+
+message SampleClause {
+    oneof sample_type {
+        double ratio = 1;      // SAMPLE 0.1 (between 0 and 1)
+        uint64 num_rows = 2;   // SAMPLE 1000000 (absolute number of rows)
+    }
+    oneof offset_type {
+        double offset_ratio = 3;   // OFFSET 0.05 (between 0 and 1)
+        uint64 offset_rows = 4;    // OFFSET 500000 (absolute number of rows)
+    }
+}
+
+message JoinedTableOrFunction {
+    required TableOrFunction tof = 1;
+    optional SQLIdentifier table_alias = 2;
+    repeated Column col_aliases = 3;
+    optional bool final = 4;
+    optional SampleClause sample = 5;
+}
+
+message TableOrSubquery {
+    oneof tos_oneof {
+        JoinedTableOrFunction joined_table = 1;
+        JoinedQuery joined_query = 2;
+    }
+}
+
+message JoinedQuery {
+    /// If empty, use the join clause
+    repeated TableOrSubquery tos_list = 1;
+    required JoinClause join_clause = 2;
+}
+
+message FromStatement {
+    required JoinedQuery tos = 1;
+}
+
+message ColumnComparison {
+    required ExprSchemaTableColumn col = 1;
+    required BinaryOperator op = 2;
+    required Expr expr = 3;
+}
+
+message ExprComparisonHighProbability {
+    oneof expr_comp_oneof {
+        ColumnComparison cc = 1;
+        Expr expr = 2;
+    }
+}
+
+message WhereStatement {
+    required ExprComparisonHighProbability expr = 1;
+}
+
+message OptionalExprList {
+    repeated Expr exprs = 1;
+}
+
+message GroupingSets {
+    required OptionalExprList exprs = 1;
+    repeated OptionalExprList other_exprs = 2;
+}
+
+message GroupByList {
+    enum GroupingSetsModifier {
+        ROLLUP = 1;
+        CUBE = 2;
+    }
+    oneof group_by_list_oneof {
+        ExprList exprs = 1;
+        ExprList rollup = 2;
+        ExprList cube = 3;
+        GroupingSets sets = 4;
+    }
+    optional GroupingSetsModifier gsm = 5;
+    optional bool with_totals = 6;
+}
+
+message GroupByStatement {
+    oneof group_by_oneof {
+        GroupByList glist = 1;
+        bool gall = 2;
+    }
+    optional WhereStatement having_expr = 3;
+}
+
+enum RowsKeyword {
+    OFF_ROW = 1;
+    OFF_ROWS = 2;
+}
+
+message LimitByStatement {
+    required Expr limit = 1;
+    optional bool comma = 2;
+    optional Expr offset = 3;
+    oneof limit_by_oneof {
+        Expr by_expr = 4;
+        bool lall = 5;
+    }
+}
+
+message LimitStatement {
+    required Expr limit = 1;
+    optional bool with_ties = 2;
+}
+
+message FetchStatement {
+    required bool first = 1;
+    required Expr row_count = 2;
+    required RowsKeyword rows = 3;
+}
+
+message OffsetStatement {
+    optional bool comma = 1;
+    required Expr row_count = 2;
+    optional RowsKeyword rows = 3;
+    optional FetchStatement fetch = 4;
+    optional bool with_ties = 5;
+}
+
+enum AllOrDistinct {
+    DISTINCT = 1;
+    ALL = 2;
+}
+
+message SelectStatementCore {
+    optional AllOrDistinct s_or_d = 1;
+    optional bool from_first = 2;
+    repeated ResultColumn result_columns = 3;
+    optional FromStatement from = 4;
+    optional WhereStatement pre_where = 5;
+    optional WhereStatement where = 6;
+    optional GroupByStatement groupby = 7;
+    optional OrderByStatement orderby = 8;
+    repeated WindowDef window_defs = 9;
+    optional WhereStatement qualify_expr = 10;
+    optional LimitByStatement limit_by = 11;
+    optional LimitStatement limit = 12;
+    optional OffsetStatement offset = 13;
+}
+
+message SetQuery {
+    enum SetOp {
+        UNION = 1;
+        EXCEPT = 2;
+        INTERSECT = 3;
+    }
+    optional bool paren1 = 1;
+    required ExplainQuery sel1 = 2;
+    required SetOp set_op = 3;
+    optional AllOrDistinct s_or_d = 4;
+    optional bool paren2 = 5;
+    required ExplainQuery sel2 = 6;
+}
+
+message CTEquery {
+    optional bool recursive = 1;
+    required SQLIdentifier table = 2;
+    required Select query = 3;
+    optional bool is_materialized = 4;
+}
+
+message CTEexpr {
+    required Expr expr = 1;
+    required Column col_alias = 2;
+}
+
+message SingleCTE {
+    oneof cte_oneof {
+        CTEquery cte_query = 1;
+        CTEexpr cte_expr = 2;
+    }
+}
+
+message CTEs {
+    required SingleCTE cte = 1;
+    repeated SingleCTE other_ctes = 2;
+}
+
+message Select {
+    optional CTEs ctes = 1;
+    oneof select_oneof {
+        SelectStatementCore select_core = 2;
+        SetQuery set_query = 3;
+    }
+    optional SettingValues setting_values = 4;
+}
+
+enum DatabaseEngineValues {
+    DAtomic = 1;
+    DMemory = 2;
+    DReplicated = 3;
+    DShared = 4;
+    DOrdinary = 5;
+    DDataLakeCatalog = 6;
+    DPostgreSQL = 7;
+    DMySQL = 8;
+    DSQLite = 9;
+    DBackup = 10;
+    DMaterializedPostgreSQL = 11;
+}
+
+message BackupParam {
+    oneof backup_param_oneof {
+        string svalue = 1;
+        string rvalue = 2;
+    }
+}
+
+message BackupOut {
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
+        AzureBlobStorage = 6;
+    }
+    required BackupOutput out = 1;
+    repeated BackupParam out_params = 2;
+    /// Need to know backup number
+    required uint32 backup_number = 3;
+}
+
+message DatabaseEngineParam {
+    oneof database_engine_param_oneof {
+        string svalue = 1;
+        Expr expr = 2;
+        BackupOut backup_out = 3;
+    }
+}
+
+message DatabaseEngine {
+    required DatabaseEngineValues engine = 1;
+    repeated DatabaseEngineParam params = 2;
+    optional SettingValues setting_values = 3;
+}
+
+message CreateDatabase {
+    optional bool if_not_exists = 1;
+    required SQLIdentifier database = 2;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    required DatabaseEngine dengine = 5;
+    optional string comment = 6;
+}
+
+message CreateFunction {
+    required CreateReplaceOption create_opt = 1;
+    required SQLIdentifier function = 2;
+    optional Cluster cluster = 3;
+    required LambdaExpr lexpr = 4;
+}
+
+message DecimalN {
+    enum DecimalPrecision {
+        D32 = 1;
+        D64 = 2;
+        D128 = 3;
+        D256 = 4;
+    }
+    required DecimalPrecision precision = 1;
+    required uint32 scale = 2;
+}
+
+message DecimalSimple {
+    optional uint32 precision = 1;
+    optional uint32 scale = 2;
+}
+
+message Decimal {
+    oneof decimal_oneof {
+        DecimalN decimaln = 1;
+        DecimalSimple decimal_simple = 2;
+    }
+}
+
+message ColumnPathList {
+    required ColumnPath col = 1;
+    repeated ColumnPath other_cols = 2;
+}
+
+message JSONPathType {
+    required ColumnPath col = 1;
+    required TopTypeName type = 2;
+}
+
+message JSONDefItem {
+    oneof JSON_spec_oneof {
+        uint32 max_dynamic_paths = 1;
+        uint32 max_dynamic_types = 2;
+        ColumnPath skip_path = 3;
+        JSONPathType path_type = 4;
+    }
+}
+
+message JSONDef {
+    repeated JSONDefItem spec = 1;
+}
+
+message EnumDefValue {
+    required string enumv = 1;
+    required int32 number = 2;
+}
+
+message EnumDef {
+    /// False for 8 or true for 16
+    optional bool bits = 1;
+    required EnumDefValue first_value = 2;
+    repeated EnumDefValue other_values = 3;
+}
+
+message Dynamic {
+    optional uint32 ntypes = 1;
+}
+
+message QBit {
+    required FloatingPoints subtype = 1;
+    required uint32 dimension = 2;
+}
+
+message AggregateParam {
+    oneof value {
+        uint64 int_param = 1;
+        double float_param = 2;
+    }
+}
+
+message AggregateFunction {
+    required bool simple = 1;
+    required string aggr = 2;
+    repeated AggregateParam params = 3;
+    repeated TopTypeName types = 4;
+}
+
+enum GeoTypes {
+    Point = 1;
+    Ring = 2;
+    LineString = 3;
+    MultiLineString = 4;
+    Polygon = 5;
+    MultiPolygon = 6;
+    Geometry = 7;
+}
+
+message BottomTypeName {
+    oneof bottom_one_of {
+        Integers integers = 1;
+        FloatingPoints floats = 2;
+        bool standard_string = 3;
+        uint32 fixed_string = 4;
+        Dates dates = 5;
+        TimeTp times = 6;
+        DateTimeTp datetimes = 7;
+        Decimal decimal = 8;
+        bool boolean = 9;
+        bool uuid = 10;
+        JSONDef jdef = 11;
+        Dynamic dynamic = 12;
+        EnumDef enum_def = 13;
+        bool IPv4 = 14;
+        bool IPv6 = 15;
+        QBit qbit = 16;
+        GeoTypes geo = 17;
+        AggregateFunction aggr = 18;
+    }
+}
+
+message MapTypeDef {
+    required TopTypeName key = 1;
+    required TopTypeName value = 2;
+}
+
+message TypeColumnDef {
+    required Column col = 1;
+    required TopTypeName type_name = 2;
+}
+
+message TupleWithColumnNames {
+    repeated TypeColumnDef values = 1;
+}
+
+message TupleWithOutColumnNames {
+    repeated TopTypeName values = 1;
+}
+
+message TupleTypeDef {
+    optional bool is_nullable = 1;
+    oneof tuple_oneof {
+        TupleWithColumnNames with_names = 2;
+        TupleWithOutColumnNames no_names = 3;
+    }
+}
+
+message NestedTypeDef {
+    required TypeColumnDef type1 = 1;
+    repeated TypeColumnDef others = 2;
+}
+
+message TopTypeName {
+    oneof type_oneof {
+        BottomTypeName non_nullable = 1;
+        BottomTypeName nullable = 2;
+        BottomTypeName non_nullable_lcard = 3;
+        BottomTypeName nullable_lcard = 4;
+        TopTypeName array = 5;
+        MapTypeDef map = 6;
+        TupleTypeDef tuple = 7;
+        NestedTypeDef nested = 8;
+        TupleWithOutColumnNames variant = 9;
+    }
+}
+
+message TypeName {
+    required TopTypeName type = 1;
+}
+
+enum ColumnStat {
+    STAT_MinMax = 1;
+    STAT_TDigest = 2;
+    STAT_Uniq = 3;
+    STAT_CountMin = 4;
+    STAT_NullCount = 5;
+}
+
+message ColumnStatistics {
+    required ColumnStat stat = 1;
+    repeated ColumnStat other_stats = 2;
+}
+
+enum DModifier {
+    DEF_DEFAULT = 1;
+    DEF_MATERIALIZED = 2;
+    DEF_EPHEMERAL = 3;
+    DEF_ALIAS = 4;
+}
+
+message DefaultModifier {
+    required DModifier dvalue = 1;
+    optional Expr expr = 2;
+}
+
+message IndexKeyVal {
+    required string key = 1;
+    required Expr value = 2;
+}
+
+message IndexParam {
+    oneof index_param_oneof {
+        double dval = 1;
+        uint32 ival = 2;
+        string sval = 3;
+        string unescaped_sval = 4;
+        IndexKeyVal kval = 5;
+    }
+}
+
+message ColumnDef {
+    required ColumnPath col = 1;
+    required TypeName type = 2;
+    optional bool nullable = 3;
+    optional DefaultModifier defaultv = 4;
+    optional string comment = 5;
+    optional string codecs = 6;
+    optional ColumnStatistics stats = 7;
+    optional Expr ttl_expr = 8;
+    optional bool is_pkey = 9;
+    optional SettingValues setting_values = 10;
+}
+
+enum IndexType {
+    IDX_set = 1;
+    IDX_minmax = 2;
+    IDX_bloom_filter = 3;
+    IDX_vector_similarity = 4;
+    IDX_ngrambf_v1 = 5;
+    IDX_tokenbf_v1 = 6;
+    IDX_text = 7;
+    /// Indexes for projections
+    IDX_basic = 8;
+    IDX_commit_order = 9;
+}
+
+message IndexDef {
+    optional SQLIdentifier idx = 1;
+    required Expr expr = 2;
+    required IndexType type = 3;
+    repeated IndexParam params = 4;
+    optional uint32 granularity = 5;
+}
+
+message ProjectionSelectDef {
+    required Select select = 1;
+    optional SettingValues setting_values = 2;
+}
+
+message ProjectionDef {
+    required SQLIdentifier proj = 1;
+    oneof projection_oneof {
+        ProjectionSelectDef sel_def = 2;
+        IndexDef idx_def = 3;
+    }
+}
+
+message ConstraintDef {
+    enum ConstraintType {
+        CHECK = 1;
+        ASSUME = 2;
+    }
+    required SQLIdentifier constr = 1;
+    required ConstraintType ctype = 2;
+    required Expr expr = 3;
+}
+
+message TableDefItem {
+    oneof createdef_oneof {
+        ColumnDef col_def = 1;
+        IndexDef idx_def = 2;
+        ProjectionDef proj_def = 3;
+        ConstraintDef const_def = 4;
+    }
+}
+
+message TableDef {
+    repeated TableDefItem table_defs = 1;
+}
+
+enum AscDesc {
+    ASC = 1;
+    DESC = 2;
+}
+
+message TableKeyExpr {
+    required Expr expr = 1;
+    optional AscDesc asc_desc = 2;
+}
+
+message TableKey {
+    repeated TableKeyExpr exprs = 1;
+}
+
+enum TableEngineValues {
+    MergeTree = 1;
+    ReplacingMergeTree = 2;
+    CoalescingMergeTree = 3;
+    SummingMergeTree = 4;
+    AggregatingMergeTree = 5;
+    CollapsingMergeTree = 6;
+    VersionedCollapsingMergeTree = 7;
+    GraphiteMergeTree = 8;
+    File = 9;
+    Null = 10;
+    Set = 11;
+    Join = 12;
+    Memory = 13;
+    StripeLog = 14;
+    Log = 15;
+    TinyLog = 16;
+    EmbeddedRocksDB = 17;
+    Buffer = 18;
+    MySQL = 19;
+    PostgreSQL = 20;
+    SQLite = 21;
+    MongoDB = 22;
+    Redis = 23;
+    S3 = 24;
+    S3Queue = 25;
+    Hudi = 26;
+    DeltaLakeS3 = 27;
+    DeltaLakeAzure = 28;
+    DeltaLakeLocal = 29;
+    IcebergS3 = 30;
+    IcebergAzure = 31;
+    IcebergLocal = 32;
+    Merge = 33;
+    Distributed = 34;
+    Dictionary = 35;
+    GenerateRandom = 36;
+    AzureBlobStorage = 37;
+    AzureQueue = 38;
+    URL = 39;
+    KeeperMap = 40;
+    ExternalDistributed = 41;
+    MaterializedPostgreSQL = 42;
+    ArrowFlight = 43;
+    Alias = 44;
+    TimeSeries = 45;
+    HDFS = 46;
+    Hive = 47;
+    JDBC = 48;
+    Kafka = 49;
+    NATS = 50;
+    ODBC = 51;
+    RabbitMQ = 52;
+    YTsaurus = 53;
+    Executable = 54;
+    ExecutablePool = 55;
+    FileLog = 56;
+    PaimonS3 = 57;
+    PaimonAzure = 58;
+    PaimonLocal = 59;
+}
+
+enum TableEngineOption {
+    TShared = 1;
+    TReplicated = 2;
+}
+
+message TableEngineParam {
+    oneof table_engine_param_oneof {
+        ColumnPath cols = 1;
+        InFormat in = 2;
+        OutFormat out = 3;
+        InOutFormat in_out = 4;
+        JoinType join_op = 5;
+        JoinConst join_const = 6;
+        SQLIdentifier database = 7;
+        SQLIdentifier table = 8;
+        uint32 num = 9;
+        string svalue = 10;
+        ColumnPathList col_list = 11;
+        string regexp = 12;
+        ExprSchemaTable est = 13;
+        Expr expr = 14;
+        KeyValuePair kvalue = 15;
+        string rvalue = 16;
+    }
+}
+
+message TTLDelete {
+    optional WhereStatement where = 1;
+}
+
+message TTLUpdate {
+    oneof ttlupdate_oneof {
+        TTLDelete del = 1;
+        string codecs = 2;
+        Storage storage = 3;
+    }
+    optional WhereStatement where = 4;
+}
+
+message TTLSet {
+    required ColumnPath col = 1;
+    required Expr expr = 2;
+}
+
+message TTLGroupBy {
+    required ExprList expr_list = 1;
+    required TTLSet ttl_set = 2;
+    repeated TTLSet other_ttl_set = 3;
+}
+
+message TTLEntry {
+    required Expr time_expr = 1;
+    oneof ttlentry_oneof {
+        TTLUpdate update = 2;
+        TTLGroupBy group_by = 3;
+    }
+}
+
+message TTLExpr {
+    required TTLEntry ttl_expr = 1;
+    repeated TTLEntry other_ttl = 2;
+}
+
+message TableEngine {
+    optional TableEngineOption toption = 1;
+    optional TableEngineValues engine = 2;
+    repeated TableEngineParam params = 3;
+    optional TableKey order = 4;
+    optional TableKey partition_by = 5;
+    optional TableKey primary_key = 6;
+    optional TableKey unique_key = 7;
+    optional TableKey sample_by = 8;
+    optional TTLExpr ttl_expr = 9;
+    optional SettingValues setting_values = 10;
+}
+
+message CreateTableAs {
+    optional bool clone = 1;
+    required ExprSchemaTable est = 2;
+}
+
+message CreateTableSelect {
+    optional bool empty = 1;
+    optional bool paren = 2;
+    required Select select = 3;
+}
+
+enum CreateReplaceOption {
+    Create = 1;
+    Replace = 2;
+    CreateOrReplace = 3;
+}
+
+message CreateTable {
+    required CreateReplaceOption create_opt = 1;
+    optional bool is_temp = 2;
+    optional bool if_not_exists = 3;
+    required ExprSchemaTable est = 4;
+    optional string uuid = 5;
+    optional Cluster cluster = 6;
+    oneof create_table_oneof {
+        TableDef table_def = 7;
+        CreateTableAs table_as = 8;
+    }
+    required TableEngine engine = 9;
+    optional TTLExpr ttl_expr = 10;
+    optional CreateTableSelect as_select_stmt = 11;
+    optional string comment = 12;
+}
+
+enum SQLObject {
+    DATABASE = 1;
+    DICTIONARY = 2;
+    FUNCTION = 3;
+    TABLE = 4;
+    VIEW = 5;
+    ROW_POLICY = 6;
+    MASKING_POLICY = 7;
+}
+
+message SQLObjectName {
+    oneof objn_oneof {
+        ExprSchemaTable est = 1;
+        SQLIdentifier database = 2;
+        SQLIdentifier function = 3;
+        SQLIdentifier policy = 4;
+    }
+}
+
+message Drop {
+    optional bool is_temp = 1;
+    required SQLObject sobject = 2;
+    optional bool if_exists = 3;
+    optional bool if_empty = 4;
+    required SQLObjectName object = 5;
+    repeated SQLObjectName other_objects = 6;
+    optional Cluster cluster = 7;
+    optional ExprSchemaTable target = 8;
+    optional bool sync = 9;
+    optional SettingValues setting_values = 10;
+}
+
+message InsertFromFile {
+    required string path = 1;
+    optional string fcomp = 2;
+    required InFormat format = 3;
+}
+
+message SelectParen {
+    optional bool paren = 1;
+    required Select select = 2;
+}
+
+message Insert {
+    optional CTEs ctes = 1;
+    required TableOrFunction tof = 2;
+    repeated ColumnPath cols = 3;
+    oneof insert_oneof {
+        ValuesStatement values = 4;
+        SelectParen select = 5;
+        InsertFromFile insert_file = 6;
+        string query = 7;
+    }
+    optional SettingValues setting_values = 8;
+}
+
+message PartitionExpr {
+    oneof partition_oneof {
+        string part = 1;
+        string partition = 2;
+        string partition_id = 3;
+        bool all = 4;
+        bool tuple = 5;
+    }
+}
+
+message SinglePartitionExpr {
+    required PartitionExpr partition = 1;
+}
+
+message Delete {
+    optional SinglePartitionExpr single_partition = 1;
+    required WhereStatement where = 2;
+}
+
+message LightDelete {
+    required ExprSchemaTable est = 1;
+    optional Cluster cluster = 2;
+    required Delete del = 3;
+    optional SettingValues setting_values = 4;
+}
+
+message UpdateSet {
+    required ColumnPath col = 1;
+    required Expr expr = 2;
+}
+
+message Update {
+    required UpdateSet update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional SinglePartitionExpr single_partition = 3;
+    required WhereStatement where = 4;
+}
+
+message LightUpdate {
+    required ExprSchemaTable est = 1;
+    optional Cluster cluster = 2;
+    required Update upt = 3;
+    optional SettingValues setting_values = 4;
+}
+
+message Truncate {
+    oneof truncate_oneof {
+        ExprSchemaTable est = 1;
+        SQLIdentifier all_tables = 2;
+        SQLIdentifier database = 3;
+    }
+    optional Cluster cluster = 4;
+    optional bool sync = 5;
+    optional SettingValues setting_values = 6;
+}
+
+
+message SelectIntoFile {
+    enum SelectIntoFileStep {
+        APPEND = 1;
+        TRUNCATE = 2;
+    }
+    required string path = 1;
+    optional bool tstdout = 2;
+    optional SelectIntoFileStep step = 3;
+    optional string compression = 4;
+    optional uint32 level = 5;
+}
+
+message TopSelect {
+    required Select sel = 1;
+    optional SelectIntoFile intofile = 2;
+    optional OutFormat format = 3;
+}
+
+message CheckTable {
+    required ExprSchemaTable est = 1;
+    optional SinglePartitionExpr single_partition = 2;
+    optional SettingValues setting_values = 3;
+    optional OutFormat format = 4;
+}
+
+message DescribeStatement {
+    optional bool paren = 1;
+    oneof desc_oneof {
+        TableOrFunction tof = 2;
+        ExplainQuery sel = 3;
+        SQLTableFuncCall stf = 4;
+    }
+    optional SettingValues setting_values = 5;
+    optional OutFormat format = 6;
+    /// When set with a `tof` target, emits `DESCRIBE TEMPORARY TABLE ...`. Only valid for
+    /// targets that are actual temporary tables.
+    optional bool temporary = 7;
+}
+
+message DeduplicateExpr {
+    oneof deduplicate_oneof {
+        ColumnPathList col_list = 1;
+        bool ded_star = 2;
+        ColumnPathList ded_star_except = 3;
+    }
+}
+
+message OptimizeTable {
+    required ExprSchemaTable est = 1;
+    optional Cluster cluster = 2;
+    optional SinglePartitionExpr single_partition = 3;
+    optional bool use_force = 4;
+    repeated PartitionExpr dry_run_parts = 5;
+    optional bool final = 6;
+    optional DeduplicateExpr dedup = 7;
+    optional bool cleanup = 8;
+    optional SettingValues setting_values = 9;
+    optional OutFormat format = 10;
+}
+
+message Exchange {
+    required SQLObject sobject = 1;
+    required SQLObjectName object1 = 2;
+    required SQLObjectName object2 = 3;
+    optional Cluster cluster = 4;
+    optional SettingValues setting_values = 5;
+}
+
+message AddWhere {
+    oneof add_where_oneof {
+        ColumnPath col = 1;
+        SQLIdentifier idx = 2;
+        bool first = 3;
+    }
+}
+
+message AddColumn {
+    required ColumnDef new_col = 1;
+    optional AddWhere add_where = 2;
+}
+
+message RenameCol {
+    required ColumnPath old_name = 1;
+    required ColumnPath new_name = 2;
+}
+
+message ColInPartition {
+    required ColumnPath col = 1;
+    optional SinglePartitionExpr single_partition = 2;
+}
+
+message CommentColumn {
+    required ColumnPath col = 1;
+    required string comment = 2;
+}
+
+message AddStatistics {
+    required ColumnPathList cols = 1;
+    required ColumnStatistics stats = 2;
+}
+
+message MaterializeStatistics {
+    oneof statistics_oneof {
+        ColumnPathList cols = 1;
+        bool all = 2;
+    }
+}
+
+message AddIndex {
+    required IndexDef new_idx = 1;
+    optional AddWhere add_where = 2;
+}
+
+message IdxInPartition {
+    required SQLIdentifier idx = 1;
+    optional SinglePartitionExpr single_partition = 2;
+}
+
+message ProjectionInPartition {
+    required SQLIdentifier proj = 1;
+    optional SinglePartitionExpr single_partition = 2;
+}
+
+message RemoveColumnProperty {
+    enum ColumnProperties {
+        DEFAULT = 1;
+        ALIAS = 2;
+        MATERIALIZED = 3;
+        CODEC = 4;
+        COMMENT = 5;
+        TTL = 6;
+        SETTINGS = 7;
+    }
+    required ColumnPath col = 1;
+    required ColumnProperties property = 2;
+}
+
+message ModifyColumnSetting {
+    required ColumnPath col = 1;
+    required SettingValues setting_values = 2;
+}
+
+message SettingList {
+    required string setting = 1;
+    repeated string other_settings = 2;
+}
+
+message RemoveColumnSetting {
+    required ColumnPath col = 1;
+    required SettingList setting_values = 2;
+}
+
+message RefreshInterval {
+    enum RefreshUnit {
+        SECOND = 1;
+        MINUTE = 2;
+        HOUR = 3;
+        DAY = 4;
+        WEEK = 5;
+        MONTH = 6;
+        YEAR = 7;
+    }
+    required uint32 interval = 1;
+    required RefreshUnit unit = 2;
+}
+
+message DependsList {
+    required ExprSchemaTable est = 1;
+    repeated ExprSchemaTable other_est = 2;
+}
+
+message RefreshableView {
+    enum RefreshPolicy {
+        EVERY = 1;
+        AFTER = 2;
+    }
+    required RefreshPolicy policy = 1;
+    required RefreshInterval interval = 2;
+    optional RefreshInterval offset = 3;
+    optional RefreshInterval randomize = 4;
+    optional DependsList depends = 5;
+    optional SettingValues setting_values = 6;
+    optional bool append = 7;
+}
+
+message CreateMatViewTo {
+    required ExprSchemaTable est = 1;
+    repeated ColumnDef col_list = 2;
+}
+
+message CreateView {
+    required CreateReplaceOption create_opt = 1;
+    optional bool is_temp = 2;
+    optional bool if_not_exists = 3;
+    optional bool materialized = 4;
+    required ExprSchemaTable est = 5;
+    optional string uuid = 6;
+    optional Cluster cluster = 7;
+    optional RefreshableView refresh = 8;
+    optional CreateMatViewTo to = 9;
+    optional TableEngine engine = 10;
+    optional bool populate = 11;
+    optional bool empty = 12;
+    required SelectParen select = 13;
+    optional string comment = 14;
+}
+
+message DictionaryColumn {
+    required Column col = 1;
+    required TypeName type = 2;
+    required Expr default_val = 3;
+    optional Expr expression = 4;
+    optional bool hierarchical = 5; /// or injective
+    optional bool is_object_id = 6;
+}
+
+message DictionarySourceDetails {
+    enum DictionarySourceType {
+        CLICKHOUSE = 1;
+        MYSQL = 2;
+        POSTGRESQL = 3;
+        MONGODB = 4;
+        REDIS = 5;
+        HTTP = 6;
+        FILE = 7;
+        YAMLRegExpTree = 8;
+    }
+    enum RedisStorageType {
+        simple = 1;
+        hash_map = 2;
+    }
+    required DictionarySourceType source = 1;
+    optional string named_collection = 2;
+    optional ExprSchemaTable est = 3;
+    optional string host = 4;
+    optional string port = 5;
+    optional string user = 6;
+    optional string password = 7;
+    optional RedisStorageType redis_storage = 8;
+    optional string invalidate_query = 9;
+    optional ColumnPath update_field = 10;
+    optional uint32 update_lag = 11;
+    optional string url = 12;
+    optional string path = 13;
+    optional string format = 14;
+}
+
+message DictionarySource {
+    oneof dictionary_source_oneof {
+        DictionarySourceDetails source = 1;
+        bool null_src = 2;
+    }
+}
+
+enum DictionaryLayouts {
+    CACHE = 1;
+    COMPLEX_KEY_CACHE = 2;
+    COMPLEX_KEY_DIRECT = 3;
+    COMPLEX_KEY_HASHED = 4;
+    COMPLEX_KEY_HASHED_ARRAY = 5;
+    COMPLEX_KEY_RANGE_HASHED = 6;
+    COMPLEX_KEY_SPARSE_HASHED = 7;
+    COMPLEX_KEY_SSD_CACHE = 8;
+    DIRECT = 9;
+    FLAT = 10;
+    HASHED = 11;
+    HASHED_ARRAY = 12;
+    IP_TRIE = 13;
+    RANGE_HASHED = 14;
+    SPARSE_HASHED = 15;
+    SSD_CACHE = 16;
+    REGEXP_TREE = 17;
+    POLYGON = 18;
+    POLYGON_SIMPLE = 19;
+    POLYGON_INDEX_EACH = 20;
+    POLYGON_INDEX_CELL = 21;
+}
+
+message DictionaryLayout {
+    required DictionaryLayouts layout = 1;
+    optional SettingValues setting_values = 2;
+}
+
+message DictionaryLifetime {
+    required uint32 min = 1;
+    optional uint32 max = 2;
+}
+
+message DictionaryRange {
+    required Expr min = 1;
+    required Expr max = 2;
+}
+
+message CreateDictionary {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    required ExprSchemaTable est = 3;
+    optional string uuid = 4;
+    optional Cluster cluster = 5;
+    required DictionaryColumn col = 6;
+    repeated DictionaryColumn other_cols = 7;
+    required TableKey primary_key = 8;
+    optional DictionarySource source = 9;
+    required DictionaryLayout layout = 10;
+    optional DictionaryRange range = 11;
+    optional DictionaryLifetime lifetime = 12;
+    optional SettingValues setting_values = 13;
+    optional string comment = 14;
+}
+
+message OptionalPartitionExpr {
+    optional SinglePartitionExpr single_partition = 1;
+}
+
+message AttachPartitionFrom {
+    required SinglePartitionExpr single_partition = 1;
+    required ExprSchemaTable est = 2;
+}
+
+message ClearColumnInPartition {
+    required ColumnPath col = 1;
+    required SinglePartitionExpr single_partition = 2;
+}
+
+message FreezePartition {
+    optional SinglePartitionExpr single_partition = 1;
+    required string fname = 2;
+}
+
+message ClearIndexInPartition {
+    required SQLIdentifier idx = 1;
+    required SinglePartitionExpr single_partition = 2;
+}
+
+message MovePartition {
+    required SinglePartitionExpr single_partition = 1;
+    required Storage storage = 2;
+}
+
+message ExpireSnapshots {
+    optional string positional_timestamp = 1;
+    optional string expire_before = 2;
+    optional string retention_period = 3;
+    optional uint32 retain_last = 4;
+    repeated string snapshot_ids = 5;
+    optional bool dry_run = 6;
+}
+
+message RemoveOrphanFiles {
+    optional string older_than = 1;
+    optional string location = 2;
+    optional bool dry_run = 3;
+}
+
+message ExecuteCommand {
+    oneof command {
+        ExpireSnapshots expire_snapshots = 1;
+        RemoveOrphanFiles remove_orphan_files = 2;
+    }
+}
+
+message CreateRowPolicy {
+    optional bool is_restrictive = 1;
+    optional bool for_select = 2;
+}
+
+message CreateMaskingPolicy {
+    optional UpdateSet first_update = 1;
+    repeated UpdateSet other_updates = 2;
+    optional int32 priority = 3;
+}
+
+message AlterPolicyContent {
+    required ExprSchemaTable target = 1;
+    optional WhereStatement where_expr = 2;
+    optional SQLIdentifier role = 3;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 4;
+        CreateMaskingPolicy masking = 5;
+    }
+    optional SQLIdentifier rename_to = 6;
+}
+
+message AlterItem {
+    optional bool paren = 1;
+    oneof alter_oneof {
+        /// For tables
+        Delete del = 2;
+        Update update = 3;
+        TableKey order = 4;
+        ColInPartition materialize_column = 5;
+        AddColumn add_column = 6;
+        ColumnPath drop_column = 7;
+        RenameCol rename_column = 8;
+        ColInPartition clear_column = 9;
+        AddColumn modify_column = 10;
+        CommentColumn comment_column = 11;
+        OptionalPartitionExpr delete_mask = 12;
+        AddStatistics add_stats = 13;
+        AddStatistics mod_stats = 14;
+        ColumnPathList drop_stats = 15;
+        ColumnPathList clear_stats = 16;
+        MaterializeStatistics mat_stats = 17;
+        AddIndex add_index = 18;
+        IdxInPartition materialize_index = 19;
+        SQLIdentifier drop_index = 20;
+        IdxInPartition clear_index = 21;
+        RemoveColumnProperty column_remove_property = 22;
+        ModifyColumnSetting column_modify_setting = 23;
+        RemoveColumnSetting column_remove_setting = 24;
+        SettingValues table_modify_setting = 25;
+        SettingList table_remove_setting = 26;
+        ProjectionDef add_projection = 27;
+        SQLIdentifier remove_projection = 28;
+        ProjectionInPartition materialize_projection = 29;
+        ProjectionInPartition clear_projection = 30;
+        ConstraintDef add_constraint = 31;
+        SQLIdentifier remove_constraint = 32;
+        SinglePartitionExpr detach_partition = 33;
+        SinglePartitionExpr drop_partition = 34;
+        SinglePartitionExpr drop_detached_partition = 35;
+        SinglePartitionExpr forget_partition = 36;
+        SinglePartitionExpr attach_partition = 37;
+        AttachPartitionFrom attach_partition_from = 38;
+        AttachPartitionFrom replace_partition_from = 39;
+        AttachPartitionFrom move_partition_to = 40;
+        ClearColumnInPartition clear_column_partition = 41;
+        FreezePartition freeze_partition = 42;
+        FreezePartition unfreeze_partition = 43;
+        ClearIndexInPartition clear_index_partition = 44;
+        MovePartition move_partition = 45;
+        TTLExpr modify_ttl  = 46;
+        bool remove_ttl = 47;
+        OptionalPartitionExpr rewrite_parts = 48;
+        OptionalPartitionExpr apply_patches = 49;
+        /// For Iceberg tables
+        ExecuteCommand execute_command = 50;
+        /// For views
+        SelectParen modify_query = 51;
+        RefreshableView refresh = 52;
+        /// For tables, views and databases
+        string comment = 53;
+        /// For policies
+        AlterPolicyContent alter_policy = 54;
+    }
+}
+
+message Alter {
+    optional bool is_temp = 1;
+    required SQLObject sobject = 2;
+    required SQLObjectName object = 3;
+    optional Cluster cluster = 4;
+    required AlterItem alter = 5;
+    repeated AlterItem other_alters = 6;
+    optional SettingValues setting_values = 7;
+}
+
+message Attach {
+    required SQLObject sobject = 1;
+    required SQLObjectName object = 2;
+    optional string uuid = 3;
+    optional Cluster cluster = 4;
+    optional bool as_replicated = 5;
+    optional SettingValues setting_values = 6;
+}
+
+message Detach {
+    required SQLObject sobject = 1;
+    required SQLObjectName object = 2;
+    optional Cluster cluster = 3;
+    optional bool permanently = 4;
+    optional bool sync = 5;
+    optional SettingValues setting_values = 6;
+}
+
+message LightweightSyncReplica {
+    repeated string replicas = 1;
+}
+
+message SyncReplica {
+    required ExprSchemaTable est = 1;
+    oneof sync_oneof {
+        bool strict = 2;
+        LightweightSyncReplica lightweight = 3;
+        bool pull = 4;
+    }
+}
+
+message DropReplica {
+    required string replica = 1;
+    oneof drop_oneof {
+        ExprSchemaTable est = 2;
+        SQLIdentifier database = 3;
+    }
+}
+
+message DropDatabaseReplica {
+    required string replica = 1;
+    optional string shard = 2;
+    optional SQLIdentifier database = 3;
+}
+
+enum DeltaKernelTraceLevel {
+    ERROR = 1;
+    WARN = 2;
+    INFO = 3;
+    DEBUG = 4;
+    TRACE = 5;
+}
+
+message UnlockSnapshot {
+    required string name = 1;
+    optional BackupOut from = 2;
+}
+
+message SystemCommand {
+    optional Cluster cluster = 1;
+    oneof system_cmd_oneof {
+        bool reload_embedded_dictionaries = 2;
+        bool reload_dictionaries = 3;
+        bool reload_models = 4;
+        bool reload_functions = 5;
+        SQLIdentifier reload_function = 6;
+        bool reload_asynchronous_metrics = 7;
+        bool drop_dns_cache = 8;
+        bool drop_mark_cache = 9;
+        bool drop_uncompressed_cache = 10;
+        bool drop_compiled_expression_cache = 11;
+        bool drop_query_cache = 12;
+        /// The bool value is used here
+        bool drop_format_schema_cache = 13;
+        bool flush_logs = 14;
+        bool reload_config = 15;
+        bool reload_users = 16;
+        ExprSchemaTable stop_merges = 17;
+        ExprSchemaTable start_merges = 18;
+        ExprSchemaTable stop_ttl_merges = 19;
+        ExprSchemaTable start_ttl_merges = 20;
+        ExprSchemaTable stop_moves = 21;
+        ExprSchemaTable start_moves = 22;
+        ExprSchemaTable wait_loading_parts = 23;
+        ExprSchemaTable stop_fetches = 24;
+        ExprSchemaTable start_fetches = 25;
+        ExprSchemaTable stop_replicated_sends = 26;
+        ExprSchemaTable start_replicated_sends = 27;
+        ExprSchemaTable stop_replication_queues = 28;
+        ExprSchemaTable start_replication_queues = 29;
+        ExprSchemaTable stop_pulling_replication_log = 30;
+        ExprSchemaTable start_pulling_replication_log = 31;
+        SyncReplica sync_replica = 32;
+        SQLIdentifier sync_replicated_database = 33;
+        ExprSchemaTable restart_replica = 34;
+        ExprSchemaTable restore_replica = 35;
+        bool restart_replicas = 36;
+        bool drop_filesystem_cache = 37;
+        bool sync_file_cache = 38;
+        bool load_pks = 39;
+        ExprSchemaTable load_pk = 40;
+        bool unload_pks = 41;
+        ExprSchemaTable unload_pk = 42;
+        ExprSchemaTable refresh_view = 43;
+        bool stop_views = 44;
+        ExprSchemaTable stop_view = 45;
+        bool start_views = 46;
+        ExprSchemaTable start_view = 47;
+        ExprSchemaTable cancel_view = 48;
+        ExprSchemaTable wait_view = 49;
+        ExprSchemaTable prewarm_cache = 50;
+        ExprSchemaTable prewarm_primary_index_cache = 51;
+        bool drop_connections_cache = 52;
+        bool drop_primary_index_cache = 53;
+        bool drop_index_mark_cache = 54;
+        bool drop_index_uncompressed_cache = 55;
+        bool drop_mmap_cache = 56;
+        bool drop_page_cache = 57;
+        bool drop_schema_cache = 58;
+        bool drop_s3_client_cache = 59;
+        bool flush_async_insert_queue = 60;
+        bool sync_filesystem_cache = 61;
+        bool drop_vector_similarity_index_cache = 62;
+        ExprSchemaTable reload_dictionary = 63;
+        ExprSchemaTable flush_distributed = 64;
+        ExprSchemaTable stop_distributed_sends = 65;
+        ExprSchemaTable start_distributed_sends = 66;
+        bool drop_query_condition_cache = 67;
+        string enable_failpoint = 68;
+        string disable_failpoint = 69;
+        bool iceberg_metadata_cache = 70;
+        bool reconnect_keeper = 71;
+        bool drop_text_index_tokens_cache = 72;
+        bool drop_text_index_header_cache = 73;
+        bool drop_text_index_postings_cache = 74;
+        bool drop_text_index_caches = 75;
+        bool reset_ddl_worker = 76;
+        bool drop_parquet_metadata_cache = 77;
+        string wait_failpoint = 78;
+        string notify_failpoint = 79;
+        DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
+        SQLIdentifier restore_database_replica = 81;
+        ExprSchemaTable stop_replicated_view = 82;
+        ExprSchemaTable start_replicated_view = 83;
+        string unfreeze = 84;
+        DropReplica drop_replica = 85;
+        DropDatabaseReplica drop_database_replica = 86;
+        ExprSchemaTable stop_cleanup = 87;
+        ExprSchemaTable start_cleanup = 88;
+        bool stop_replicated_ddl_queries = 89;
+        bool start_replicated_ddl_queries = 90;
+        bool jemalloc_purge = 91;
+        bool jemalloc_enable_profile = 92;
+        bool jemalloc_disable_profile = 93;
+        bool jemalloc_flush_profile = 94;
+        bool sync_transaction_log = 95;
+        bool start_thread_fuzzer = 96;
+        bool stop_thread_fuzzer = 97;
+        bool drop_distributed_cache = 98;
+        UnlockSnapshot unlock_snapshot = 99;
+        FlushObjectStorageQueue flush_object_storage_queue = 100;
+        ExprSchemaTable stop_virtual_parts_update = 101;
+        ExprSchemaTable start_virtual_parts_update = 102;
+        ExprSchemaTable stop_reduce_blocking_parts = 103;
+        ExprSchemaTable start_reduce_blocking_parts = 104;
+        string wait_blobs_cleanup = 105;
+        ExprSchemaTable pause_view = 106;
+        bool pause_views = 107;
+    }
+}
+
+message FlushObjectStorageQueue {
+    required ExprSchemaTable table = 1;
+    required string path = 2;
+}
+
+message BackupRestoreObject {
+    optional bool is_temp = 1;
+    required SQLObject sobject = 2;
+    required SQLObjectName object = 3;
+    optional SQLObjectName alias = 4;
+    repeated PartitionExpr partitions = 5;
+}
+
+message BackupRestoreElement {
+    oneof backup_oneof {
+        BackupRestoreObject bobject = 1;
+        bool all = 2;
+    }
+    repeated ExprSchemaTable except_tables = 3;
+}
+
+message BackupRestore {
+    enum BackupCommand {
+        BACKUP = 1;
+        RESTORE = 2;
+    }
+    required BackupCommand command = 1;
+    oneof backup_source {
+        BackupRestoreElement backup_element = 2;
+        /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
+        BackupOut from_snapshot = 3;
+    }
+    repeated BackupRestoreElement other_elements = 4;
+    optional Cluster cluster = 5;
+    required BackupOut out = 6;
+    optional SettingValues setting_values = 7;
+    enum SyncOrAsync {
+        SYNC = 1;
+        ASYNC = 2;
+    }
+    optional SyncOrAsync sync = 8;
+    oneof backup_format_oneof {
+        InFormat informat = 9;
+        OutFormat outformat = 10;
+    }
+}
+
+message SnapshotQuery {
+    required BackupRestoreElement element = 1;
+    required BackupOut out = 2;
+}
+
+message Rename {
+    required SQLObject sobject = 1;
+    required SQLObjectName old_object = 2;
+    required SQLObjectName new_object = 3;
+    optional Cluster cluster = 4;
+    optional SettingValues setting_values = 5;
+}
+
+message Kill {
+    enum KillEnum {
+        QUERY = 1;
+        MUTATION = 2;
+    }
+    required KillEnum command = 1;
+    optional Cluster cluster = 2;
+    required WhereStatement where = 3;
+    enum KillOption {
+        SYNC = 1;
+        ASYNC = 2;
+        TEST = 3;
+    }
+    optional KillOption option = 4;
+    oneof kill_format_oneof {
+        InFormat informat = 5;
+        OutFormat outformat = 6;
+    }
+    optional SettingValues setting_values = 7;
+}
+
+message ShowObject {
+    optional bool create = 1;
+    optional bool is_temp = 2;
+    required SQLObject sobject = 3;
+    required SQLObjectName object = 4;
+}
+
+message ShowTables {
+    optional bool full = 1;
+    optional bool is_temp = 2;
+    optional SQLIdentifier database = 3;
+}
+
+message ShowDictionaries {
+    optional SQLIdentifier database = 1;
+}
+
+message ShowColumns {
+    optional bool extended = 1;
+    optional bool full = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowIndex {
+    enum IndexShow {
+        INDEX = 1;
+        INDEXES = 2;
+        INDICES = 3;
+        KEYS = 4;
+    }
+    optional bool extended = 1;
+    required IndexShow key = 2;
+    required ExprSchemaTable est = 3;
+}
+
+message ShowStatement {
+    oneof show_oneof {
+        ShowObject object = 1;
+        bool databases = 2;
+        ShowTables tables = 3;
+        ShowColumns columns = 4;
+        ShowDictionaries dictionaries = 5;
+        ShowIndex indexes = 6;
+        bool processlist = 7;
+        bool grants = 8; /// bool is used here
+        bool users = 9;
+        bool roles = 10; /// bool is used here
+        bool profiles = 11; /// bool is used here
+        ExprSchemaTable policies = 12;
+        bool quotas = 13;
+        bool quota = 14; /// bool is used here
+        bool access = 15;
+        Cluster cluster = 16;
+        bool clusters = 17;
+        bool settings = 18; /// bool is used here
+        string setting = 19;
+        bool filesystem_caches = 20;
+        bool engines = 21;
+        bool functions = 22;
+        bool merges = 23;
+    }
+    optional SettingValues setting_values = 24;
+}
+
+message CreatePolicy {
+    required CreateReplaceOption create_opt = 1;
+    optional bool if_not_exists = 2;
+    required SQLIdentifier policy = 3;
+    required ExprSchemaTable target = 4;
+    optional Cluster cluster = 5;
+    optional WhereStatement where_expr = 6;
+    optional SQLIdentifier role = 7;
+    oneof create_policy_oneof {
+        CreateRowPolicy row = 8;
+        CreateMaskingPolicy masking = 9;
+    }
+}
+
+message SQLQueryInner {
+    oneof query_inner_oneof {
+        TopSelect select = 1;
+        CreateTable create_table = 2;
+        Drop drop = 3;
+        Insert insert = 4;
+        LightDelete del = 5;
+        LightUpdate upt = 6;
+        Truncate trunc = 7;
+        OptimizeTable opt = 8;
+        CheckTable check = 9;
+        DescribeStatement desc = 10;
+        Exchange exchange = 11;
+        Alter alter = 12;
+        SettingValues setting_values = 13;
+        CreateView create_view = 14;
+        Attach attach = 15;
+        Detach detach = 16;
+        CreateDatabase create_database = 17;
+        CreateFunction create_function = 18;
+        SystemCommand system_cmd = 19;
+        BackupRestore backup_restore = 20;
+        CreateDictionary create_dictionary = 21;
+        Rename rename = 22;
+        Kill kill = 23;
+        ShowStatement show = 24;
+        CreatePolicy create_policy = 25;
+        SnapshotQuery snapshot_query = 26;
+    }
+}
+
+message ExplainOption {
+    enum ExplainOpt {
+        graph = 1;
+        optimize = 2;
+        oneline = 3;
+        dump_ast = 4;
+        dump_passes = 5;
+        dump_tree = 6;
+        run_passes = 7;
+        passes = 8;
+        distributed = 9;
+        sorting = 10;
+        json = 11;
+        description = 12;
+        indexes = 13;
+        keep_logical_steps = 14;
+        actions = 15;
+        header = 16;
+        compact = 17;
+        run_query_tree_passes = 18;
+        query_tree_passes = 19;
+        projections = 20;
+        input_headers = 21;
+        column_structure = 22;
+        pretty = 23;
+    }
+    required ExplainOpt opt = 1;
+    required uint32 val = 2;
+}
+
+message ExplainQuery {
+    enum ExplainValues {
+        PLAN = 1;
+        PIPELINE = 2;
+        QUERY_TREE = 3;
+        AST = 4;
+        SYNTAX = 5;
+        ESTIMATE = 6;
+        TABLE_OVERRIDE = 7;
+        CURRENT_TRANSACTION = 8;
+    }
+    optional string execute_as = 1;
+    optional bool is_explain = 2;
+    optional ExplainValues expl = 3;
+    repeated ExplainOption opts = 4;
+    required SQLQueryInner inner_query = 5;
+}
+
+message SingleSQLQuery {
+    oneof query_oneof {
+        ExplainQuery explain = 1;
+        bool start_trans = 2;
+        bool commit_trans = 3;
+        bool rollback_trans = 4;
+    }
+}
+
+message SQLQuery {
+    required SingleSQLQuery single_query = 1;
+    repeated SingleSQLQuery parallel_queries = 2;
+}

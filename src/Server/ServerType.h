@@ -13,11 +13,13 @@ public:
     {
         TCP_WITH_PROXY,
         TCP_SECURE,
+        TCP_SSH,
         TCP,
         HTTP,
         HTTPS,
         MYSQL,
         GRPC,
+        ARROW_FLIGHT,
         POSTGRESQL,
         PROMETHEUS,
         CUSTOM,
@@ -51,7 +53,7 @@ public:
     bool shouldStart(Type server_type, const std::string & server_custom_name = "") const;
     bool shouldStop(const std::string & port_name) const;
 
-    Type type;
+    Type type{};
     std::string custom_name;
 
     Types exclude_types;

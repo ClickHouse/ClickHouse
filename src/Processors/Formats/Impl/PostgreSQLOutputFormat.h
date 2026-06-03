@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Core/Block.h>
 
 #include <Core/PostgreSQLProtocol.h>
 #include <Formats/FormatSettings.h>
@@ -13,11 +12,11 @@ namespace DB
 class PostgreSQLOutputFormat final : public IOutputFormat
 {
 public:
-    PostgreSQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override {return "PostgreSQLOutputFormat";}
 
-    void flush() override;
+    void flushImpl() override;
 
 private:
     void writePrefix() override;

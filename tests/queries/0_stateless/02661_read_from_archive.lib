@@ -6,10 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 function read_archive_file() {
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${user_files_path}/$1') ORDER BY 1, 2"
-    $CLICKHOUSE_CLIENT --query "SELECT * FROM file('${user_files_path}/$1') ORDER BY 1, 2"
-    $CLICKHOUSE_CLIENT --query "DESC file('${user_files_path}/$1')"
-    $CLICKHOUSE_CLIENT --query "CREATE TABLE 02661_archive_table Engine=File('CSV', '${user_files_path}/$1')"
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${USER_FILES_PATH}/$1') ORDER BY 1, 2"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM file('${USER_FILES_PATH}/$1') ORDER BY 1, 2"
+    $CLICKHOUSE_CLIENT --query "DESC file('${USER_FILES_PATH}/$1')"
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE 02661_archive_table Engine=File('CSV', '${USER_FILES_PATH}/$1')"
     $CLICKHOUSE_CLIENT --query "SELECT * FROM 02661_archive_table ORDER BY 1, 2"
     $CLICKHOUSE_CLIENT --query "DROP TABLE 02661_archive_table"
 }
@@ -20,16 +20,14 @@ function run_archive_test() {
     extension_without_dot=$(echo $1 | sed -e 's/\.//g')
     FILE_PREFIX="02661_read_from_archive_${CLICKHOUSE_DATABASE}_$extension_without_dot"
 
-    user_files_path=$(clickhouse-client --query "select _path, _file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep -o "/[^[:space:]]*nonexist.txt" | awk '{gsub("/nonexist.txt","",$1); print $1}')
-
     touch ${FILE_PREFIX}_data0.csv
     echo -e "1,2\n3,4" > ${FILE_PREFIX}_data1.csv
     echo -e "5,6\n7,8" > ${FILE_PREFIX}_data2.csv
     echo -e "9,10\n11,12" > ${FILE_PREFIX}_data3.csv
 
-    eval "$2 ${user_files_path}/${FILE_PREFIX}_archive1.$1 ${FILE_PREFIX}_data0.csv ${FILE_PREFIX}_data1.csv ${FILE_PREFIX}_data2.csv > /dev/null"
-    eval "$2 ${user_files_path}/${FILE_PREFIX}_archive2.$1 ${FILE_PREFIX}_data1.csv ${FILE_PREFIX}_data3.csv > /dev/null"
-    eval "$2 ${user_files_path}/${FILE_PREFIX}_archive3.$1 ${FILE_PREFIX}_data2.csv ${FILE_PREFIX}_data3.csv > /dev/null"
+    eval "$2 ${USER_FILES_PATH}/${FILE_PREFIX}_archive1.$1 ${FILE_PREFIX}_data0.csv ${FILE_PREFIX}_data1.csv ${FILE_PREFIX}_data2.csv > /dev/null"
+    eval "$2 ${USER_FILES_PATH}/${FILE_PREFIX}_archive2.$1 ${FILE_PREFIX}_data1.csv ${FILE_PREFIX}_data3.csv > /dev/null"
+    eval "$2 ${USER_FILES_PATH}/${FILE_PREFIX}_archive3.$1 ${FILE_PREFIX}_data2.csv ${FILE_PREFIX}_data3.csv > /dev/null"
 
     echo "archive1 data1.csv"
     read_archive_file "${FILE_PREFIX}_archive1.$1 :: ${FILE_PREFIX}_data1.csv"
@@ -44,10 +42,10 @@ function run_archive_test() {
     echo "archive* {2..3}.csv"
     read_archive_file "${FILE_PREFIX}_archive*.$1 :: ${FILE_PREFIX}_data{2..3}.csv"
 
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${user_files_path}/${FILE_PREFIX}_archive1.$1::nonexistent.csv')" 2>&1 | grep -q "CANNOT_EXTRACT_TABLE_STRUCTURE" && echo "OK" || echo "FAIL"
-    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${user_files_path}/${FILE_PREFIX}_archive3.$1::{2..3}.csv')" 2>&1 | grep -q "CANNOT_EXTRACT_TABLE_STRUCTURE" && echo "OK" || echo "FAIL"
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${USER_FILES_PATH}/${FILE_PREFIX}_archive1.$1::nonexistent.csv')" 2>&1 | grep -q "CANNOT_EXTRACT_TABLE_STRUCTURE" && echo "OK" || echo "FAIL"
+    $CLICKHOUSE_LOCAL --query "SELECT * FROM file('${USER_FILES_PATH}/${FILE_PREFIX}_archive3.$1::{2..3}.csv')" 2>&1 | grep -q "CANNOT_EXTRACT_TABLE_STRUCTURE" && echo "OK" || echo "FAIL"
 
-    rm ${user_files_path}/${FILE_PREFIX}_archive{1..3}.$1
+    rm ${USER_FILES_PATH}/${FILE_PREFIX}_archive{1..3}.$1
 
     rm ${FILE_PREFIX}_data{0..3}.csv
 }

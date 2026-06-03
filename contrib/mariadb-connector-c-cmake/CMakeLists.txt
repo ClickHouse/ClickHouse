@@ -50,7 +50,11 @@ if(NOT MARIADB_UNIX_ADDR)
   set(MARIADB_UNIX_ADDR "/tmp/mysql.sock")
 endif()
 
-set(HAVE_ALLOCA_H 1)
+if (OS_FREEBSD)
+  set(HAVE_ALLOCA_H 0)
+else()
+  set(HAVE_ALLOCA_H 1)
+endif()
 set(HAVE_ARPA_INET_H 1)
 set(HAVE_DLFCN_H 1)
 set(HAVE_FCNTL_H 1)
@@ -243,5 +247,11 @@ target_include_directories(_mariadbclient PRIVATE ${CC_BINARY_DIR}/include-priva
 target_include_directories(_mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(_mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+# NOTE: revert it once https://github.com/llvm/llvm-project/issues/173168 will be resolved
+target_compile_options(_mariadbclient
+    PRIVATE
+        -Wno-incompatible-pointer-types
+)
+
 
 add_library(ch_contrib::mariadbclient ALIAS _mariadbclient)

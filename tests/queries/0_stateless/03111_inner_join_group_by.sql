@@ -1,6 +1,6 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/50705
 
-set allow_experimental_analyzer=1;
+set enable_analyzer=1;
 
 SELECT
     count(s0.number),

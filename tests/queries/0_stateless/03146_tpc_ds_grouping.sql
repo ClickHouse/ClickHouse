@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/46335
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SELECT
     key_a + key_b AS d,
     rank() OVER () AS f

@@ -1,13 +1,14 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ namespace DB
 
 namespace
 {
-    enum class Kind
+    enum class Kind : uint8_t
     {
         currentProfiles,
         enabledProfiles,
@@ -32,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles : public IFunction
+    class FunctionProfiles final : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -47,8 +48,28 @@ namespace
 
         explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
             : kind(kind_)
-            , context(context_)
-        {}
+        {
+            const auto & manager = context_->getAccessControl();
+
+            UUIDs profile_ids;
+
+            switch (kind)
+            {
+                case Kind::currentProfiles:
+                    profile_ids = context_->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context_->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    const auto user = context_->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
+                    break;
+            }
+
+            profile_names = manager.tryReadNames(profile_ids);
+        }
 
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
@@ -60,8 +81,6 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
-            std::call_once(initialized_flag, [&]{ initialize(); });
-
             auto col_res = ColumnArray::create(ColumnString::create());
             ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
             ColumnArray::Offsets & res_offsets = col_res->getOffsets();
@@ -72,35 +91,85 @@ namespace
         }
 
     private:
-        void initialize() const
-        {
-            const auto & manager = context->getAccessControl();
-
-            std::vector<UUID> profile_ids;
-
-            switch (kind)
-            {
-                case Kind::currentProfiles: profile_ids = context->getCurrentProfiles(); break;
-                case Kind::enabledProfiles: profile_ids = context->getEnabledProfiles(); break;
-                case Kind::defaultProfiles: profile_ids = context->getUser()->settings.toProfileIDs(); break;
-            }
-
-            profile_names = manager.tryReadNames(profile_ids);
-        }
-
-        mutable std::once_flag initialized_flag;
-
         Kind kind;
-        ContextPtr context;
-        mutable Strings profile_names;
+        Strings profile_names;
     };
 }
 
 REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); });
-    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); });
-    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); });
+    FunctionDocumentation::Description description_currentProfiles = R"(
+Returns an array of the setting profiles for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_currentProfiles = "currentProfiles()";
+    FunctionDocumentation::Arguments arguments_currentProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_currentProfiles = {"Returns an array of setting profiles for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_currentProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT currentProfiles();
+        )",
+        R"(
+┌─currentProfiles()─────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics'] │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_currentProfiles = {21, 9};
+    FunctionDocumentation::Category category_currentProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, {}, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
+
+    FunctionDocumentation::Description description_enabledProfiles = R"(
+Returns an array of setting profile names which are enabled for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_enabledProfiles = "enabledProfiles()";
+    FunctionDocumentation::Arguments arguments_enabledProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_enabledProfiles = {"Returns an array of setting profile names which are enabled for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_enabledProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT enabledProfiles();
+        )",
+        R"(
+┌─enabledProfiles()─────────────────────────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_enabledProfiles = {21, 9};
+    FunctionDocumentation::Category category_enabledProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, {}, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
+
+    FunctionDocumentation::Description description_defaultProfiles = R"(
+Returns an array of default setting profile names for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_defaultProfiles = "defaultProfiles()";
+    FunctionDocumentation::Arguments arguments_defaultProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_defaultProfiles = {"Returns an array of default setting profile names for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_defaultProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT defaultProfiles();
+        )",
+        R"(
+┌─defaultProfiles()─┐
+│ ['default']       │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultProfiles = {21, 9};
+    FunctionDocumentation::Category category_defaultProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, {}, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
+
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); }, documentation_currentProfiles);
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); }, documentation_enabledProfiles);
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); }, documentation_defaultProfiles);
 }
 
 }

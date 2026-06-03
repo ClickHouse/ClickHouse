@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
-#include <Processors/RowsBeforeLimitCounter.h>
+#include <unordered_map>
+
 #include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeStepCounter.h>
 
 namespace DB
 {
@@ -16,7 +19,7 @@ private:
     UInt64 offset;
     UInt64 rows_read = 0; /// including the last read block
 
-    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
+    RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
     /// State of port's pair.
     /// Chunks from different port pairs are not mixed for better cache locality.
@@ -30,6 +33,8 @@ private:
     };
 
     std::vector<PortsData> ports_data;
+    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
+    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
 
 public:
@@ -37,7 +42,7 @@ public:
 
     String getName() const override { return "Offset"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+    Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data) const;
@@ -45,7 +50,7 @@ public:
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
 };
 
 }

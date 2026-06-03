@@ -4,20 +4,6 @@
 namespace DB
 {
 
-Tokens::Tokens(const char * begin, const char * end, size_t max_query_size, bool skip_insignificant)
-{
-    Lexer lexer(begin, end, max_query_size);
-
-    bool stop = false;
-    do
-    {
-        Token token = lexer.nextToken();
-        stop = token.isEnd() || token.type == TokenType::ErrorMaxQuerySizeExceeded;
-        if (token.isSignificant() || (!skip_insignificant && !data.empty() && data.back().isSignificant()))
-            data.emplace_back(std::move(token));
-    } while (!stop);
-}
-
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
 {
     /// We have just two kind of parentheses: () and [].
@@ -39,7 +25,7 @@ UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin)
                 stack.push_back(*it);
                 return stack;
             }
-            else if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
+            if ((stack.back().type == TokenType::OpeningRoundBracket && it->type == TokenType::ClosingRoundBracket)
                 || (stack.back().type == TokenType::OpeningSquareBracket && it->type == TokenType::ClosingSquareBracket))
             {
                 /// Valid match.
