@@ -112,6 +112,25 @@ static bool isUUIDField(const arrow::Field & field)
 namespace
 {
 
+/// Validate that the validity bitmap (buffers[0]) covers all declared rows.
+/// Must be called before any IsNull() / IsValid() loop when null_count() > 0.
+/// When null_count() == 0 Arrow omits the bitmap entirely (buffers[0] == nullptr),
+/// so we only check when there actually are nulls to read.
+void checkValidityBitmap(const arrow::Array & chunk, const String & column_name)
+{
+    if (chunk.null_count() == 0)
+        return;
+    const auto & buffer = chunk.data()->buffers[0];
+    const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0);
+    if (unlikely(buffer_size < required))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow validity bitmap too small for column '{}': {} bytes available, {} required",
+            column_name, buffer_size, required);
+}
+
 /// Validate that buffers[1] of an Arrow array chunk is large enough to hold
 /// elem_size * (offset + length) bytes, then throw INCORRECT_DATA if not.
 /// All readers that access buffers[1] directly must call one of these helpers
@@ -120,12 +139,19 @@ void checkArrowBuffer(const arrow::Array & chunk, size_t elem_size, const String
 {
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t required = elem_size * static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    size_t required;
+    if (unlikely(__builtin_mul_overflow(elem_size, count, &required)))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow buffer size overflow for column '{}': element size {} × {} elements",
+            column_name, elem_size, count);
     if (unlikely(buffer_size < required))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow buffer too small for column '{}': {} bytes available, {} required",
             column_name, buffer_size, required);
+    checkValidityBitmap(chunk, column_name);
 }
 
 /// Typed wrapper: validates and returns a pointer to the first element at chunk.offset().
@@ -144,12 +170,14 @@ void checkBooleanBuffer(const arrow::BooleanArray & chunk, const String & column
 {
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t required = (static_cast<size_t>(chunk.offset() + chunk.length()) + 7) / 8;
+    const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
+    const size_t required = count / 8 + (count % 8 != 0 ? 1 : 0); /// overflow-safe ceiling division
     if (unlikely(buffer_size < required))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow buffer too small for column '{}': {} bytes available, {} required",
             column_name, buffer_size, required);
+    checkValidityBitmap(chunk, column_name);
 }
 
 /// Cast array to ArrowNumericArray and validate the data buffer is large enough
@@ -228,6 +256,7 @@ const ArrowViewArray & checkedCastView(const arrow::Array & array, const String 
     return typed;
 }
 
+/// Validate that the validity bitmap (buffers[0]) covers all declared rows.
 /// Validate that the offsets buffer (buffers[1]) of a BinaryArray or LargeBinaryArray
 /// holds at least (offset + length + 1) entries.  One more than length is required
 /// because value_length(i) = offset[i+1] - offset[i], so the last element needs
@@ -238,13 +267,19 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
 {
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t required = sizeof(typename ArrowBinaryArray::offset_type)
-        * static_cast<size_t>(chunk.offset() + chunk.length() + 1);
+    const size_t count_plus_one = static_cast<size_t>(chunk.offset() + chunk.length()) + 1;
+    size_t required;
+    if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow offsets buffer size overflow for column '{}': {} entries",
+            column_name, count_plus_one);
     if (unlikely(buffer_size < required))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow buffer too small for column '{}': {} bytes available, {} required",
             column_name, buffer_size, required);
+    checkValidityBitmap(chunk, column_name);
 }
 
 /// Cast to a FixedSizeBinaryArray subclass (plain FixedSizeBinaryArray, Decimal128Array,
@@ -962,7 +997,7 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
 }
 
 /// Creates a null bytemap from arrow's null bitmap
-static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column)
+static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     if (!arrow_column->null_count())
         return ColumnUInt8::create(arrow_column->length(), static_cast<UInt8>(0));
@@ -974,6 +1009,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     for (int chunk_i = 0; chunk_i != arrow_column->num_chunks(); ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
+        checkValidityBitmap(*chunk, column_name);
 
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
             bytemap_data.emplace_back(chunk->IsNull(value_i));
@@ -2002,7 +2038,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         if (!nested_column.column)
             return {};
 
-        auto nullmap_column = readByteMapFromArrowColumn(arrow_column);
+        auto nullmap_column = readByteMapFromArrowColumn(arrow_column, column_name);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
 
