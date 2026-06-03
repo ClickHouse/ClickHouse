@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -121,7 +123,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
-                if (last_element->finalized && last_element->function != RPNElement::FUNCTION_UNKNOWN)
+                if (last_element->finalized)
                     last_element->selectivity = 1 - last_element->selectivity;
                 else
                 {
@@ -215,7 +217,25 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
         String func_name = func.getFunctionName();
         if (atom_map.find(func_name) == std::end(atom_map))
+        {
+            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
+            /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
+            if (func_name == "like" || func_name == "ilike")
+                out.selectivity = default_like_factor;
+            else if (func_name == "notLike" || func_name == "notILike")
+                out.selectivity = 1.0 - default_like_factor;
+            else if (func_name == "__applyFilter")
+            {
+                /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
+                /// (after cheaper column predicates) and neutral for join reorder estimates.
+                out.selectivity = 1.0;
+            }
+            else
+                return false;
+
+            out.finalized = true;
             return false;
+        }
 
         if (num_args == 2)
         {
@@ -350,8 +370,38 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     if (!column_type->equals(*common_type))
                     {
-                        /// we assume that is "cast(column) < const", will not estimate this condition.
-                        return false;
+                        /// The common type is wider than the column type (e.g. Float64 literal on a
+                        /// Float32 column). For floating-point columns, narrow the constant to the
+                        /// column type so that column statistics can be used.
+                        /// For other combinations (e.g. Int32 column with Float64 constant) the
+                        /// conversion semantics are non-trivial (ceiling vs. floor for range queries),
+                        /// so we skip statistics estimation.
+                        if (!isFloat(column_type))
+                            return false;
+
+                        Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        /// Narrowing to the column type is only semantically sound when the literal is
+                        /// exactly representable in that type. At execution time the column value is
+                        /// widened to the literal's type and compared against the original literal, not
+                        /// against its narrowed value. For a non-representable literal (e.g. `f32 = 0.1`)
+                        /// the comparison is always false, but narrowing would round the literal to a
+                        /// representable value and make an impossible predicate look selective, which can
+                        /// reorder PREWHERE incorrectly. Detect this with a round-trip and short-circuit
+                        /// equality/inequality instead of estimating from the narrowed value.
+                        if (func_name == "equals" || func_name == "notEquals")
+                        {
+                            Field round_trip = tryConvertFieldToType(converted, *common_type, column_type.get(), {});
+                            if (round_trip.isNull() || round_trip != const_value)
+                            {
+                                out.function = func_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                        }
+
+                        const_value = converted;
                     }
                 }
             }
@@ -563,6 +613,18 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     if (function == FUNCTION_UNKNOWN)
     {
         selectivity = default_unknown_cond_factor;
+        return;
+    }
+
+    if (function == ALWAYS_FALSE)
+    {
+        selectivity = 0.0;
+        return;
+    }
+
+    if (function == ALWAYS_TRUE)
+    {
+        selectivity = 1.0;
         return;
     }
 

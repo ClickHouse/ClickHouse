@@ -4,6 +4,7 @@ SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_text_index_add_hint = 1;
 SET use_statistics = 0;
+SET use_text_index_like_evaluation_by_dictionary_scan = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 
@@ -25,14 +26,14 @@ SELECT count() FROM tab WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
@@ -51,14 +52,14 @@ SELECT count() FROM tab WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
@@ -77,14 +78,14 @@ SELECT count() FROM tab WHERE s = '5555';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s = '5555' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE s LIKE '%5555%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%5555%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1, query_plan_direct_read_from_text_index = 1 -- Explicit to guard against CI injection: direct_read_from_text_index=0 → hint INPUT entries absent (missing rows); remove_unused_columns=0 → extra unpruned INPUT entries (extra rows)
 ) WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 DROP TABLE tab;
