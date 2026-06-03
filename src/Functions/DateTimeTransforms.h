@@ -2454,9 +2454,9 @@ struct ToYYYYMMDDhhmmssImpl
 
 struct DateTimeComponentsWithFractionalPart : public DateLUTImpl::DateTimeComponents
 {
-    UInt16  millisecond;
-    UInt16  microsecond;
-    UInt16  nanosecond;
+    UInt16  millisecond{};
+    UInt16  microsecond{};
+    UInt16  nanosecond{};
 };
 
 struct ToDateTimeComponentsImpl
