@@ -138,9 +138,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-        invalidate_query_response = response;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -211,6 +209,7 @@ static void validateConfigKeys(
 
 #endif
 
+void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
