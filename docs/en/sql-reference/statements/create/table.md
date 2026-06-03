@@ -433,6 +433,10 @@ These codecs are designed to make compression more effective by exploiting speci
 
 `Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
+#### Chimp {#chimp}
+
+`Chimp(bytes_size)` — A XOR-based floating point compression algorithm in the spirit of `Gorilla`. It improves the compression ratio over `Gorilla` by referencing one of the previous 128 values rather than only the immediately preceding one, and by encoding the number of leading zero bits more compactly. It is particularly effective on datasets where values exhibit local correlation, such as time series, while offering compression and decompression speed comparable to `Gorilla`. Possible `bytes_size` values: 4, 8, the default value is `sizeof(type)` if type is `Float32` or `Float64`. In all other cases, it's 1. For a detailed description of the algorithm, see [Chimp: Efficient Lossless Floating Point Compression for Time Series Databases](https://doi.org/10.14778/3551793.3551852).
+
 #### ALP {#alp}
 
 <ExperimentalBadge/>
