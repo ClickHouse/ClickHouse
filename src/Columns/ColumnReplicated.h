@@ -63,7 +63,7 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
-    static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
         /// The nested column may be shared with the caller; same rationale as the
         /// `create(const ColumnPtr &, const ColumnPtr &)` overload above.
@@ -236,19 +236,5 @@ ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.
 bool isLazyReplicationUseful(const ColumnPtr & column);
-/// Apply transformation on replicated columns with shared index only once.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> index_transform,
-    std::function<void(ColumnPtr &)> non_replicated_transform,
-    std::span<size_t> positions = {});
-/// Same as above, but apply the same transformation to replicated and non replicated columns.
-void transformColumnsWithSharedIndex(
-    Columns & columns,
-    std::function<ColumnPtr(const ColumnPtr &)> transform,
-    std::span<size_t> positions = {});
-/// Materializes ColumnReplicated where lazy replication is not useful:
-/// - `isLazyReplicationUseful` returns false.
-/// - index size <= nested data size, when size check is enabled.
-ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check = true);
+
 }
