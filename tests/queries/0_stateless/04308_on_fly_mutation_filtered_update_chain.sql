@@ -19,15 +19,17 @@
 -- (UPDATE b) still skips `a` even though only the later step (UPDATE a)
 -- overwrites it, so the same mismatch fires.
 --
--- Variant 3 (sanity, from r3350748853): both assignments in a single
--- `UPDATE b = isNotNull(materialize(a)), a = 'x'` so they share a stage.
--- `a` is then both a target of the stage and a source of the same step's
--- expression. The bot warned this could re-trigger the type mismatch. I
--- could not reproduce a user-visible failure here, runtime materialize
--- handles `a` arriving as the on-disk `Nullable(String)` even though the
--- action DAG was analysed with `LowCardinality(Nullable(String))`.
--- Locking it in as a sanity check so any future change to action analysis
--- or to the per-step skip set has to re-evaluate this shape.
+-- Variants 3 and 4 (sanity, from r3350748853 and r3350836226): both
+-- assignments in a single `UPDATE` so they share a stage. `a` is then both
+-- a target of the stage and a source of the same step's expression. The
+-- bot warned this could re-trigger the type mismatch, first with
+-- `isNotNull(materialize(a))` and then with `isNull(a)` for a stricter
+-- function dispatch path. I could not reproduce a user-visible failure for
+-- either shape: runtime function dispatch checks the actual column class
+-- rather than the DAG-declared type, so `a` arriving as the on-disk
+-- `ColumnNullable` does not trip the `isLowCardinalityNullable` path.
+-- Locking the shapes in as sanity checks so any future change to action
+-- analysis or to the per-step skip set has to re-evaluate them.
 
 DROP TABLE IF EXISTS t_filtered_chain_isnotnull SYNC;
 
@@ -101,3 +103,37 @@ FROM t_combined_assignments
 SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_combined_assignments SYNC;
+
+-- Variant 4: same shape as variant 3 but using `isNull(a)` for a stricter
+-- function-dispatch path. Runtime dispatch still checks the actual column
+-- class so the `isLowCardinalityNullable` branch does not fire.
+DROP TABLE IF EXISTS t_combined_assignments_isnull SYNC;
+
+CREATE TABLE t_combined_assignments_isnull
+(
+    id UInt64,
+    a Nullable(String),
+    b UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO t_combined_assignments_isnull
+SELECT number, if(number % 2 = 0, NULL, toString(number)), 0
+FROM numbers(100);
+
+SYSTEM STOP MERGES t_combined_assignments_isnull;
+
+ALTER TABLE t_combined_assignments_isnull
+    UPDATE b = isNull(a), a = 'x' WHERE 1 = 1
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+ALTER TABLE t_combined_assignments_isnull
+    MODIFY COLUMN a LowCardinality(Nullable(String))
+    SETTINGS mutations_sync = 0, alter_sync = 0;
+
+SELECT sum(b), any(a)
+FROM t_combined_assignments_isnull
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_combined_assignments_isnull SYNC;
