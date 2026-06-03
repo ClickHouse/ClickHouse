@@ -251,7 +251,7 @@ public:
         auto col = assert_cast<const DB::ColumnConst &>(*type->createColumnConst(0, value)).getPtr();
         auto name = "const_" + DB::toString(literal_counter++);
 
-        const auto & node = dag->addColumn(std::move(col), type, std::move(name));
+        const auto & node = dag->addColumn(std::move(col), std::move(type), std::move(name));
 
         node_lists[list_id].push_back(&node);
 

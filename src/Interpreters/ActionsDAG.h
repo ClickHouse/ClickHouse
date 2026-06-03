@@ -106,7 +106,7 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
-        /// For COLUMN node and propagated constants. Always ColumnConst.
+        /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
         /// If result of this not is deterministic. Checks only this node, not a subtree.

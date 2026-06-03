@@ -43,13 +43,6 @@
 namespace DB
 {
 
-ActionsDAG::ActionsDAG() = default;
-ActionsDAG::ActionsDAG(ActionsDAG &&) noexcept = default;
-ActionsDAG & ActionsDAG::operator=(ActionsDAG &&) noexcept = default;
-ActionsDAG::~ActionsDAG() = default;
-
-ActionsDAG::Nodes ActionsDAG::detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -149,6 +142,13 @@ bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
 }
 
 }
+
+ActionsDAG::ActionsDAG() = default;
+ActionsDAG::ActionsDAG(ActionsDAG &&) noexcept = default;
+ActionsDAG & ActionsDAG::operator=(ActionsDAG &&) noexcept = default;
+ActionsDAG::~ActionsDAG() = default;
+
+ActionsDAG::Nodes ActionsDAG::detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
 
 bool ActionsDAG::Node::isDeterministic() const
 {
@@ -440,7 +440,7 @@ const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const Da
     ColumnConstPtr column = type->createColumnConst(0, cast_type_constant_value);
     auto name = calculateConstantActionNodeName(cast_type_constant_value);
 
-    const auto * cast_type_constant_node = &addColumn(std::move(column), type, std::move(name));
+    const auto * cast_type_constant_node = &addColumn(std::move(column), std::move(type), std::move(name));
     ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
     auto func_base_cast = createInternalCast(ColumnWithTypeAndName{node_to_cast.result_type, node_to_cast.result_name}, cast_type, CastType::nonAccurate, {}, context);
 
@@ -1895,7 +1895,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
             auto type_name = res_elem.type->getName();
             auto type_const = string_type->createColumnConst(0, type_name);
 
-            const auto * right_arg = &actions_dag.addColumn(std::move(type_const), string_type, std::move(type_name));
+            const auto * right_arg = &actions_dag.addColumn(std::move(type_const), std::move(string_type), std::move(type_name));
             const auto * left_arg = dst_node;
 
             CastDiagnostic diagnostic = {dst_node->result_name, res_elem.name};

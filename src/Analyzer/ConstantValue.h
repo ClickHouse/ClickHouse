@@ -10,8 +10,8 @@ namespace DB
 class ConstantValue
 {
 public:
-    ConstantValue(const ColumnPtr & column_, DataTypePtr data_type_)
-        : column(wrapToColumnConst(column_))
+    ConstantValue(ColumnConstPtr column_, DataTypePtr data_type_)
+        : column(std::move(column_))
         , data_type(std::move(data_type_))
     {}
 
@@ -35,8 +35,6 @@ public:
         return column->getValueName(0, options);
     }
 
-private:
-
     static ColumnConstPtr wrapToColumnConst(const ColumnPtr & column_)
     {
         if (const auto * column_const = typeid_cast<const ColumnConst *>(column_.get()))
@@ -44,6 +42,7 @@ private:
         return ColumnConst::create(column_, 1);
     }
 
+private:
     ColumnConstPtr column;
     DataTypePtr data_type;
 };

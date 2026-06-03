@@ -37,11 +37,11 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
     : ConstantNode(ConstantValue{constant_column_, value_data_type_})
 {}
 
-ConstantNode::ConstantNode(ColumnPtr constant_column_)
+ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 

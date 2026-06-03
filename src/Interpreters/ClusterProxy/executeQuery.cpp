@@ -36,7 +36,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
-#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

@@ -830,7 +830,7 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
 
     auto is_const = [](const ActionsDAG::Node & n)
     {
-        return n.type == ActionsDAG::ActionType::COLUMN && n.column;
+        return n.type == ActionsDAG::ActionType::COLUMN;
     };
 
     const bool c0 = is_const(*node.children[0]);

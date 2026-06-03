@@ -50,7 +50,8 @@ namespace
             ColumnsWithTypeAndName cast_args
             {
                 arguments[0],
-                {   col,
+                {
+                    col,
                     std::make_shared<DataTypeString>(),
                     ""
                 }
