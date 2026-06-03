@@ -170,8 +170,76 @@ void calculateHashTableCacheKeys(
             continue;
         }
 
-        for (const auto * child : node.children)
-            frame.hash.update(cache_keys[child]);
+        /// Hash a `JoinStep`'s children in their physical order. `considerEnablingParallelReplicas`
+        /// picks the parallelized side by physical slot (child 0, or child 1 for `RIGHT`) — see
+        /// `ParallelReplicasLocalPlan::findReadingStep` — and later transplants the single-replica
+        /// reading-step analysis onto the parallel-replicas reading step found the same way. So a
+        /// hash match must imply both plans put the *same table* in the same physical slot. We must
+        /// therefore NOT canonicalize commutative kinds by sorting children: if the two plan builds
+        /// pick opposite child orders the parallelized side genuinely differs, and the right outcome
+        /// is to NOT match (skip the optimization) rather than transplant cross-table parts/ranges.
+        ///
+        /// `RIGHT` is the one safe remap: by the equivalence `A RIGHT JOIN B ≡ B LEFT JOIN A` we
+        /// swap the children and remap the kind to `LEFT`. This is consistent with the physical
+        /// selector, which is also kind-aware (`RIGHT`→child 1, `LEFT`→child 0), so both equivalent
+        /// representations resolve to the same table. The (remapped) kind is mixed into the hash so
+        /// that otherwise identical subtrees with different kinds (`INNER` vs `LEFT`) do not collide.
+        if (const auto * join_step = dynamic_cast<const JoinStep *>(node.step.get()); join_step && node.children.size() == 2)
+        {
+            const auto & table_join = join_step->getJoin()->getTableJoin();
+            auto kind = table_join.kind();
+
+            /// Fold each physical side's equi-keys (with null-safety) and its on-clause residual
+            /// condition into that side's child hash, so they travel with the child under the
+            /// RIGHT->LEFT remap below (keeping `A RIGHT JOIN B ≡ B LEFT JOIN A`). Two joins over the
+            /// same inputs but with different keys/conditions then yield different child
+            /// contributions, hence different cache keys, instead of colliding.
+            SipHash keys_left;
+            SipHash keys_right;
+            for (const auto & clause : table_join.getClauses())
+            {
+                for (size_t i = 0; i < clause.keysCount(); ++i)
+                {
+                    const bool nullsafe = clause.nullsafe_compare_key_indexes.contains(i);
+                    keys_left.update(clause.key_names_left[i]);
+                    keys_left.update(nullsafe);
+                    keys_right.update(clause.key_names_right[i]);
+                    keys_right.update(nullsafe);
+                }
+                const auto [left_cond, right_cond] = clause.condColumnNames();
+                keys_left.update(left_cond);
+                keys_right.update(right_cond);
+            }
+            auto a = cache_keys[node.children.at(0)] ^ keys_left.get64();
+            auto b = cache_keys[node.children.at(1)] ^ keys_right.get64();
+            if (isRight(kind))
+            {
+                std::swap(a, b);
+                kind = JoinKind::Left;
+            }
+            /// Orientation-invariant semantics that still change the join's output and therefore the
+            /// collected statistics: the (remapped) kind, strictness (ALL/ANY/SEMI/ANTI/ASOF),
+            /// `join_use_nulls`, and any residual cross-side predicate in the mixed join expression.
+            /// (Locality is not mixed in: it is a distributed-execution strategy and does not change
+            /// the join result's cardinality, so it doesn't affect the collected output bytes.)
+            frame.hash.update(static_cast<uint8_t>(kind));
+            frame.hash.update(static_cast<uint8_t>(table_join.strictness()));
+            /// For ASOF the inequality (`<`, `<=`, `>`, `>=`) is part of the join semantics: it
+            /// changes which rows match and thus the output, so the same inputs under different
+            /// inequalities must not share collected statistics.
+            if (table_join.strictness() == JoinStrictness::Asof)
+                frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
+            frame.hash.update(table_join.joinUseNulls());
+            if (const auto & mixed = table_join.getMixedJoinExpression())
+                mixed->getActionsDAG().updateHash(frame.hash);
+            frame.hash.update(a);
+            frame.hash.update(b);
+        }
+        else
+        {
+            for (const auto * child : node.children)
+                frame.hash.update(cache_keys[child]);
+        }
 
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));
