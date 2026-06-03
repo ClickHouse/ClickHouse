@@ -239,6 +239,15 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
 
+    if (settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`invalidated_entries_cleanup_interval_ms` cannot be zero");
+
+    if (settings[FileCacheSetting::invalidated_entries_cleanup_threshold] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`invalidated_entries_cleanup_threshold` cannot be zero");
+
+    if (settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`invalidated_entries_cleanup_remove_batch` cannot be zero");
+
     if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

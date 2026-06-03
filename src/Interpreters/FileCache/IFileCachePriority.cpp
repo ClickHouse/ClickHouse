@@ -139,7 +139,7 @@ void IFileCachePriority::cleanupTaskFunc()
     if (removed && removed == cleanup_batch)
         cleanup_task->schedule();
     else
-        cleanup_task->scheduleAfter(cleanup_interval_ms ? cleanup_interval_ms : 1);
+        cleanup_task->scheduleAfter(cleanup_interval_ms);
 }
 
 size_t IFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)

@@ -214,9 +214,7 @@ void LRUFileCachePriority::collectInvalidatedEntries(
 {
     /// Resume from where the previous scan stopped and wrap around, so that draining
     /// many invalidated entries sweeps the queue once instead of rescanning from the
-    /// head on every batch. We examine at most queue.size() entries (a full loop), so
-    /// any invalidated entry is found. Unlike iterateImpl we neither lock keys nor
-    /// invoke a callback - we only pick up the entries left behind by invalidate().
+    /// head on every batch.
     const size_t to_examine = queue.size();
     auto it = cleanup_pos == LRUQueue::iterator{} ? queue.begin() : cleanup_pos;
     for (size_t examined = 0; examined < to_examine && res.size() < max_batch; ++examined)
