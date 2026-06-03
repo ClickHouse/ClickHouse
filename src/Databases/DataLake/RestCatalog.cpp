@@ -5,6 +5,7 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
@@ -65,6 +66,20 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+}
+
+namespace ProfileEvents
+{
+    extern const Event DataLakeRestCatalogLoadConfig;
+    extern const Event DataLakeRestCatalogLoadConfigMicroseconds;
+    extern const Event DataLakeRestCatalogGetNamespaces;
+    extern const Event DataLakeRestCatalogGetNamespacesMicroseconds;
+    extern const Event DataLakeRestCatalogGetTables;
+    extern const Event DataLakeRestCatalogGetTablesMicroseconds;
+    extern const Event DataLakeRestCatalogGetTableMetadata;
+    extern const Event DataLakeRestCatalogGetTableMetadataMicroseconds;
+    extern const Event DataLakeRestCatalogGetCredentials;
+    extern const Event DataLakeRestCatalogGetCredentialsMicroseconds;
 }
 
 namespace DataLake
@@ -211,10 +226,15 @@ RestCatalog::RestCatalog(
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
-    auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
 
     std::string json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogLoadConfig);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogLoadConfigMicroseconds);
+        auto buf = createReadBuffer(CONFIG_ENDPOINT, params);
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+    }
 
     LOG_DEBUG(log, "Received catalog configuration settings: {}", json_str);
 
@@ -741,9 +761,15 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             if (!page_token.empty())
                 params.push_back({"pageToken", page_token});
 
-            auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
             String next_page_token;
-            auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
+            RestCatalog::Namespaces page_namespaces;
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetNamespaces);
+                auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetNamespacesMicroseconds);
+                auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
+                page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
+            }
+
             LOG_DEBUG(
                 log,
                 "Loaded {} namespaces in base namespace `{}` (page_token=`{}`, next_page_token=`{}`)",
@@ -891,13 +917,17 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
         if (!page_token.empty())
             params.push_back({"pageToken", page_token});
 
-        auto buf = createReadBuffer(config.prefix / endpoint, params);
-
         /// Pass through the remaining limit so that single-page short-circuiting still works
         /// when the caller is in `empty()` (limit=1) and the first page already contains a row.
         const size_t remaining_limit = (limit == 0) ? 0 : (limit > tables.size() ? limit - tables.size() : 0);
         String next_page_token;
-        auto page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+        DB::Names page_tables;
+        {        
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTables);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTablesMicroseconds);
+            auto buf = createReadBuffer(config.prefix / endpoint, params);
+            page_tables = parseTables(*buf, base_namespace, remaining_limit, next_page_token);
+        }
 
         tables.insert(
             tables.end(),
@@ -1027,16 +1057,21 @@ bool RestCatalog::getTableMetadataImpl(
     }
 
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-    auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
-
-    if (buf->eof())
-    {
-        LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
-        return false;
-    }
-
     String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
+
+    {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTableMetadata);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTableMetadataMicroseconds);
+        auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+
+        if (buf->eof())
+        {
+            LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
+            return false;
+        }
+
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+    }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
@@ -1436,16 +1471,21 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
         const auto & table = storage_id.getTableName();
         auto [namespace_name, table_name] = DataLake::parseTableName(table);
         const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
-        auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
-
-        if (buf->eof())
-        {
-            LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
-            return nullptr;
-        }
-
         String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
+
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetCredentials);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetCredentialsMicroseconds);
+            auto buf = createReadBuffer(config.prefix / endpoint, /* params */{}, headers);
+
+            if (buf->eof())
+            {
+                LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
+                return nullptr;
+            }
+
+            readJSONObjectPossiblyInvalid(json_str, *buf);
+        }
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var json = parser.parse(json_str);
