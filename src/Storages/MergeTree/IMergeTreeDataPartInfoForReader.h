@@ -32,6 +32,8 @@ using AlterConversionsPtr = std::shared_ptr<const AlterConversions>;
 using Index = Columns;
 using IndexPtr = std::shared_ptr<const Index>;
 
+class MergedPartOffsets;
+
 /**
  * A class which contains all information about a data part that is required
  * in order to use MergeTreeDataPartReader's.
@@ -109,6 +111,12 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
+
+    virtual const MergedPartOffsets * getMergedPartOffsets() const { return nullptr; }
+
+    virtual size_t getPartIndex() const { return 0; }
+
+    virtual size_t getPartStartingOffset() const { return 0; }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

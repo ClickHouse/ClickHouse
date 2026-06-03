@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -19,6 +21,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
@@ -219,6 +222,103 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+
+        ProjectionIndexDeserializationContext projection_index_context;
+        if (dynamic_cast<const DataTypePostingList *>(name_and_type.type->getCustomName()))
+        {
+            projection_index_context.large_posting_getter
+                = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListReaderStreamPtr
+            {
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    name_and_type,
+                    substream_path,
+                    PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+                    data_part_info_for_read->getChecksums(),
+                    storage_settings);
+                if (!stream_name)
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Projection text index for column {} is missing required stream {}",
+                        name_and_type.name, PROJECTION_INDEX_LARGE_POSTING_SUFFIX);
+                auto it = large_posting_streams.find(*stream_name);
+                if (it == large_posting_streams.end())
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Projection text index stream {} is referenced but not registered for column {}",
+                        *stream_name, name_and_type.name);
+                auto posting_reader = it->second;
+                posting_reader->getDataBuffer(); /// Call init()
+                return posting_reader;
+            };
+
+            auto pos_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, {}, PROJECTION_INDEX_POSITION_SUFFIX,
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (pos_stream_name && position_streams.contains(*pos_stream_name))
+            {
+                projection_index_context.position_getter
+                    = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListReaderStreamPtr
+                {
+                    auto sn = IMergeTreeDataPart::getStreamNameForColumn(
+                        name_and_type, substream_path,
+                        PROJECTION_INDEX_POSITION_SUFFIX,
+                        data_part_info_for_read->getChecksums(), storage_settings);
+                    if (!sn)
+                        throw Exception(
+                            ErrorCodes::CORRUPTED_DATA,
+                            "Projection text index for column {} is missing required stream {}",
+                            name_and_type.name, PROJECTION_INDEX_POSITION_SUFFIX);
+                    auto it = position_streams.find(*sn);
+                    if (it == position_streams.end())
+                        throw Exception(
+                            ErrorCodes::CORRUPTED_DATA,
+                            "Projection text index position stream {} is referenced but not registered for column {}",
+                            *sn, name_and_type.name);
+                    auto pos_reader = it->second;
+                    pos_reader->getDataBuffer();
+                    return pos_reader;
+                };
+            }
+
+            auto idx_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, {}, PROJECTION_INDEX_INDEX_SUFFIX,
+                data_part_info_for_read->getChecksums(), storage_settings);
+            if (idx_stream_name && lidx_streams.contains(*idx_stream_name))
+            {
+                projection_index_context.index_getter
+                    = [&](const ISerialization::SubstreamPath & substream_path) -> LargePostingListReaderStreamPtr
+                {
+                    auto sn = IMergeTreeDataPart::getStreamNameForColumn(
+                        name_and_type, substream_path,
+                        PROJECTION_INDEX_INDEX_SUFFIX,
+                        data_part_info_for_read->getChecksums(), storage_settings);
+                    if (!sn)
+                        throw Exception(
+                            ErrorCodes::CORRUPTED_DATA,
+                            "Projection text index for column {} is missing required stream {}",
+                            name_and_type.name, PROJECTION_INDEX_INDEX_SUFFIX);
+                    auto it = lidx_streams.find(*sn);
+                    if (it == lidx_streams.end())
+                        throw Exception(
+                            ErrorCodes::CORRUPTED_DATA,
+                            "Projection text index large-index stream {} is referenced but not registered for column {}",
+                            *sn, name_and_type.name);
+                    auto idx_reader = it->second;
+                    idx_reader->getDataBuffer();
+                    return idx_reader;
+                };
+            }
+
+            /// See `MergeTreeReaderWide::deserializePrefixForColumn` for the rationale:
+            /// wire `matched_row_indices` whenever the filter optional has a value (including
+            /// the zero-match case) so the posting stream is always advanced past the entire
+            /// mark, keeping `continue_reading = true` on the next mark in sync.
+            if (matched_row_indices_for_posting.has_value())
+                projection_index_context.matched_row_indices = &*matched_row_indices_for_posting;
+
+            deserialize_settings.projection_index_context = &projection_index_context;
+        }
+
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
@@ -302,10 +402,19 @@ void MergeTreeReaderCompact::readData(
         columns_cache[name] = column;
 
         size_t read_rows_in_column = column->size() - column_size_before_reading;
-        if (read_rows_in_column != rows_to_read)
+        size_t expected_rows = rows_to_read;
+
+        /// When the posting filter is active, the posting column only materialises the
+        /// rows listed in the optional (which may be empty for the zero-match case —
+        /// the deserializer is still wired and skipping every row).
+        if (matched_row_indices_for_posting.has_value()
+            && deserialize_settings.projection_index_context)
+            expected_rows = matched_row_indices_for_posting->size();
+
+        if (read_rows_in_column != expected_rows)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
-                read_rows_in_column, rows_to_read);
+                read_rows_in_column, expected_rows);
     }
     catch (Exception & e)
     {
@@ -519,6 +628,37 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 
     bool is_offsets = !substream.empty() && substream.back().type == ISerialization::Substream::ArraySizes;
     return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
+}
+
+LargePostingListReaderStreamPtr MergeTreeReaderCompact::getProjectionIndexPostingStreamPtr() const
+{
+    auto it = large_posting_streams.find("posting");
+    if (it == large_posting_streams.end())
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            "posting", {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+        if (!stream_name)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Projection text index posting stream is missing (checksums report no {} file for column 'posting')",
+                PROJECTION_INDEX_LARGE_POSTING_SUFFIX);
+        return createLargePostingStream(*stream_name, profile_callback, clock_type);
+    }
+    return it->second;
+}
+
+LargePostingListReaderStreamPtr MergeTreeReaderCompact::getProjectionIndexPostingIndexStreamPtr() const
+{
+    auto it = lidx_streams.find("posting");
+    if (it == lidx_streams.end())
+    {
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            "posting", {}, PROJECTION_INDEX_INDEX_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+        if (!stream_name)
+            return nullptr;
+        return createIndexStream(*stream_name, profile_callback, clock_type);
+    }
+    return it->second;
 }
 
 }

@@ -571,4 +571,27 @@ std::pair<size_t, size_t> MergeTreeReaderStreamAllOfMultipleColumns::estimateMar
     return {max_range_bytes, sum_range_bytes};
 }
 
+void LargePostingListReaderStream::seek(UInt64 offset)
+{
+    init();
+    MergeTreeReaderStream::seekToMark({offset, 0});
+    if (decode_buf)
+        decode_buf->reset();
+}
+
+TurboPForBlockDecodeBuffer & LargePostingListReaderStream::decodeBuffer()
+{
+    if (!decode_buf)
+    {
+        init();
+        decode_buf.emplace(*getDataBuffer());
+    }
+    return *decode_buf;
+}
+
+off_t MergeTreeReaderStream::getPosition()
+{
+    return plain_file_buffer->getPosition();
+}
+
 }

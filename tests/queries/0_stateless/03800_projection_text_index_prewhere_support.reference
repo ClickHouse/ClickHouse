@@ -1,0 +1,156 @@
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse')
+9
+9
+Prewhere filter column: hasToken(text1, \'clickhouse\'_String) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database'])
+12
+12
+Prewhere filter column: hasAnyTokens(text1, _CAST([\'clickhouse\', \'database\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store'])
+4
+4
+Prewhere filter column: hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text2, 'fastio')
+3
+3
+Prewhere filter column: hasToken(text2, \'fastio\'_String) (removed)
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAnyTokens(text2, ['search', 'index'])
+8
+8
+Prewhere filter column: hasAnyTokens(text2, _CAST([\'search\', \'index\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAllTokens(text2, ['merge', 'tree'])
+2
+2
+Prewhere filter column: hasAllTokens(text2, _CAST([\'merge\', \'tree\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND a > 0
+9
+9
+Prewhere filter column: and(hasToken(text1, \'clickhouse\'_String), greater(a, 0_UInt8)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database']) AND id BETWEEN 10 AND 100
+9
+9
+Prewhere filter column: and(hasAnyTokens(text1, _CAST([\'clickhouse\', \'database\']_Array(String), \'Array(String)\'_String)), and(greaterOrEquals(id, 10_UInt8), lessOrEquals(id, 100_UInt8))) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) AND (a % 2) = 0
+4
+4
+Prewhere filter column: and(hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)), equals(modulo(a, 2_UInt8), 0_UInt8)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'analytics') OR a < 0
+4
+4
+Prewhere filter column: or(hasToken(text1, \'analytics\'_String), less(a, 0_UInt8)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (hasAnyTokens(text1, ['log', 'event']) OR hasToken(text2, 'error')) AND id > 0
+5
+5
+Prewhere filter column: and(or(hasAnyTokens(text1, _CAST([\'log\', \'event\']_Array(String), \'Array(String)\'_String)), hasToken(text2, \'error\'_String)), greater(id, 0_UInt8)) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE (a > 100 AND hasToken(text1, 'hot')) OR (a <= 100 AND hasAnyTokens(text2, ['cold', 'warm']))
+0
+0
+Prewhere filter column: or(and(greater(a, 100_UInt8), hasToken(text1, \'hot\'_String)), and(lessOrEquals(a, 100_UInt8), hasAnyTokens(text2, _CAST([\'cold\', \'warm\']_Array(String), \'Array(String)\'_String)))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND hasAnyTokens(text1, ['clickhouse', 'database'])
+9
+9
+Prewhere filter column: and(hasToken(text1, \'clickhouse\'_String), hasAnyTokens(text1, _CAST([\'clickhouse\', \'database\']_Array(String), \'Array(String)\'_String))) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database']) AND NOT hasToken(text1, 'mysql')
+12
+12
+Prewhere filter column: and(hasAnyTokens(text1, _CAST([\'clickhouse\', \'database\']_Array(String), \'Array(String)\'_String)), not(hasToken(text1, \'mysql\'_String))) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) OR hasAnyTokens(text1, ['olap', 'analytics'])
+8
+8
+Prewhere filter column: or(hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)), hasAnyTokens(text1, _CAST([\'olap\', \'analytics\']_Array(String), \'Array(String)\'_String))) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND hasToken(text2, 'fastio')
+3
+3
+Prewhere filter column: and(hasToken(text1, \'clickhouse\'_String), hasToken(text2, \'fastio\'_String)) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['search', 'query']) OR hasAllTokens(text2, ['index', 'optimize'])
+14
+14
+Prewhere filter column: or(hasAnyTokens(text1, _CAST([\'search\', \'query\']_Array(String), \'Array(String)\'_String)), hasAllTokens(text2, _CAST([\'index\', \'optimize\']_Array(String), \'Array(String)\'_String))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE (hasToken(text1, 'user') AND hasAnyTokens(text2, ['login', 'logout'])) OR (a >= 0 AND a <= 10)
+12
+12
+Prewhere filter column: or(and(hasToken(text1, \'user\'_String), hasAnyTokens(text2, _CAST([\'login\', \'logout\']_Array(String), \'Array(String)\'_String))), and(greaterOrEquals(a, 0_UInt8), lessOrEquals(a, 10_UInt8))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE NOT hasToken(text1, 'debug') AND hasAnyTokens(text2, ['info', 'warn', 'error'])
+2
+2
+Prewhere filter column: and(not(hasToken(text1, \'debug\'_String)), hasAnyTokens(text2, _CAST([\'info\', \'warn\', \'error\']_Array(String), \'Array(String)\'_String))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE NOT hasAllTokens(text1, ['internal', 'test']) AND a > 0 AND hasToken(text2, 'prod')
+2
+2
+Prewhere filter column: and(not(hasAllTokens(text1, _CAST([\'internal\', \'test\']_Array(String), \'Array(String)\'_String))), greater(a, 0_UInt8), hasToken(text2, \'prod\'_String)) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE NOT (hasAnyTokens(text1, ['drop', 'truncate']) OR hasToken(text2, 'danger')) AND id IN (1, 2, 3, 4)
+4
+4
+Prewhere filter column: and(not(or(hasAnyTokens(text1, _CAST([\'drop\', \'truncate\']_Array(String), \'Array(String)\'_String)), hasToken(text2, \'danger\'_String))), in(id, __set_Int64_9176252633170876565_1307576728392119372)) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE (a > 10 AND hasToken(text1, 'clickhouse')) OR (a <= 10 AND hasAnyTokens(text2, ['mysql', 'postgres']))
+8
+8
+Prewhere filter column: or(and(greater(a, 10_UInt8), hasToken(text1, \'clickhouse\'_String)), and(lessOrEquals(a, 10_UInt8), hasAnyTokens(text2, _CAST([\'mysql\', \'postgres\']_Array(String), \'Array(String)\'_String)))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE (hasAllTokens(text1, ['column', 'store']) AND a BETWEEN 1 AND 100) OR (hasAnyTokens(text2, ['lake', 'warehouse']) AND id > 1000)
+2
+2
+Prewhere filter column: or(and(hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)), and(greaterOrEquals(a, 1_UInt8), lessOrEquals(a, 100_UInt8))), and(hasAnyTokens(text2, _CAST([\'lake\', \'warehouse\']_Array(String), \'Array(String)\'_String)), greater(id, 1000_UInt16))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE (NOT hasToken(text1, 'archived') AND a > 0) OR (hasAnyTokens(text2, ['active', 'online']) AND id % 5 = 0)
+128
+128
+Prewhere filter column: or(and(not(hasToken(text1, \'archived\'_String)), greater(a, 0_UInt8)), and(hasAnyTokens(text2, _CAST([\'active\', \'online\']_Array(String), \'Array(String)\'_String)), equals(modulo(id, 5_UInt8), 0_UInt8))) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE a > 0
+9
+9
+Filter column: greater(__table1.a, 0_UInt8) (removed)
+Prewhere filter column: hasToken(text1, \'clickhouse\'_String) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) WHERE a NOT IN (150, 160) AND id != 15
+4
+4
+Filter column: and(notIn(__table1.a, __set_Int32_7643145616119059242_14966076103117198194), notEquals(__table1.id, 15_UInt8)) (removed)
+Prewhere filter column: hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE hasToken(text2, 'fastio')
+3
+3
+Filter column: hasToken(__table1.text2, \'fastio\'_String) (removed)
+Prewhere filter column: hasToken(text1, \'clickhouse\'_String) (removed)
+Name: inv_idx1
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) WHERE hasAnyTokens(text1, ['olap', 'analytics'])
+1
+1
+Filter column: hasAnyTokens(__table1.text1, _CAST([\'olap\', \'analytics\']_Array(String), \'Array(String)\'_String)) (removed)
+Prewhere filter column: hasAllTokens(text1, _CAST([\'column\', \'store\']_Array(String), \'Array(String)\'_String)) (removed)
+Name: inv_idx1

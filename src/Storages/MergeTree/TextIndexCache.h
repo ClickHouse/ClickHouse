@@ -35,13 +35,13 @@ namespace DB
 /// Estimate of the memory usage (bytes) of a token info in cache
 struct TextIndexTokensWeightFunction
 {
-    size_t operator()(const TokenPostingsInfo & token_info) const
+    size_t operator()(const TokenInfoBase & token_info) const
     {
         return token_info.bytesAllocated();
     }
 };
 
-class TextIndexTokensCache : public CacheBase<UInt128, TokenPostingsInfo, UInt128TrivialHash, TextIndexTokensWeightFunction>
+class TextIndexTokensCache : public CacheBase<UInt128, TokenInfoBase, UInt128TrivialHash, TextIndexTokensWeightFunction>
 {
 public:
     TextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)

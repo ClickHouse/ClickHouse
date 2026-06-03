@@ -34,7 +34,7 @@ SELECT count() FROM tab_seg WHERE hasToken(s, 'common') AND hasToken(s, 'rare');
 SELECT 'Test 2: Invalid DDL parameter is rejected';
 
 DROP TABLE IF EXISTS tab_invalid_param;
-CREATE TABLE tab_invalid_param(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', has_block_index = 1))
+CREATE TABLE tab_invalid_param(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', unknown_option = 1))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'; -- { serverError BAD_ARGUMENTS }
 

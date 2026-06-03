@@ -76,6 +76,9 @@ MergeTreeIndexReader::~MergeTreeIndexReader() = default;
 
 void MergeTreeIndexReader::initStreamIfNeeded()
 {
+    if (index->isProjectionIndex())
+        return;
+
     if (!streams.empty())
         return;
 

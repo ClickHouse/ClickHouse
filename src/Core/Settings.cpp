@@ -7972,6 +7972,11 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
 )", 0, allow_experimental_full_text_index) \
+    DECLARE(Bool, allow_experimental_projection_text_index, false, R"(
+If set to true, allow creating projection-based text indexes (`PROJECTION ... TYPE text(...)`).
+This is a separate on-disk format from the GA skip text index and is still experimental; it must
+be explicitly opted into before a table or projection of this kind can be created or attached.
+)", 0) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \

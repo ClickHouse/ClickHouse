@@ -120,6 +120,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_projection_text_index;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -783,11 +784,31 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
+        {
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
+
+                const auto & settings = getContext()->getSettingsRef();
+                if (projection.index && projection.index->getName() == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                }
+                /// Projection-based text indexes use a separate on-disk format and reader path
+                /// from the GA skip text index — gate it behind its own experimental setting so
+                /// users opt in explicitly before relying on a format that may still change.
+                if (projection.index && projection.index->getName() == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_projection_text_index])
+                {
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Projection text index is experimental. Enable the setting 'allow_experimental_projection_text_index' to use it.");
+                }
+
                 properties.projections.add(std::move(projection));
             }
+        }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }

@@ -320,6 +320,10 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
             "map_serialization_version",
             "map_serialization_version_for_zero_level_parts",
             "propagate_types_serialization_versions_to_nested_types",
+            "compress_per_column_in_compact_parts",
+            "write_marks_for_substreams_in_compact_parts",
+            "enable_block_number_column",
+            "enable_block_offset_column",
         };
 
         for (const auto & change : result.settings_changes)

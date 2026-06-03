@@ -1,0 +1,10 @@
+- Test direct read optimization from text log
+Test hasToken:	1
+Test hasAllTokens:	1
+Test hasAnyTokens:	1
+Test hasToken + length(text):	2
+Test select text + hasAnyTokens:	Alick a01
+Test hasToken and hasToken:	0
+Test hasAnyTokens or hasToken:	2
+Test NOT hasAllTokens:	1
+- Test direct read optimization with EXPLAIN

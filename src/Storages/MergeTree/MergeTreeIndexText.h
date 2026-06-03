@@ -79,6 +79,8 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     ASTPtr preprocessor;
+    bool has_block_index = true;
+    bool enable_phrase_query_support = false;
 };
 
 using PostingList = roaring::Roaring;
@@ -183,35 +185,42 @@ private:
     std::vector<char> deserialization_buffer;
 };
 
-/// Closed range of rows.
-struct RowsRange
+/// Base class for token posting info, shared by skip-index (`TokenPostingsInfo`)
+/// and projection-index (`ProjectionTokenInfo`).
+///
+/// Contains the common fields used by both paths: `cardinality` and `ranges`.
+/// Provides a virtual interface so that `TextIndexTokensCache` can store either
+/// subclass and the weight function can compute the correct memory footprint.
+struct TokenInfoBase
 {
-    size_t begin;
-    size_t end;
+    UInt32 cardinality = 0;
+    absl::InlinedVector<RowsRange, 1> ranges;
 
-    RowsRange() = default;
-    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+    TokenInfoBase() = default;
+    TokenInfoBase(const TokenInfoBase &) = default;
+    TokenInfoBase(TokenInfoBase &&) noexcept = default;
+    TokenInfoBase & operator=(const TokenInfoBase &) = default;
+    TokenInfoBase & operator=(TokenInfoBase &&) noexcept = default;
+    virtual ~TokenInfoBase() = default;
 
-    bool intersects(const RowsRange & other) const;
-    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
-    RowsRange unionWith(const RowsRange & other) const;
+    virtual size_t bytesAllocated() const = 0;
 };
 
+using TokenInfoBasePtr = std::shared_ptr<TokenInfoBase>;
+
 /// Stores information about posting list for a token.
-struct TokenPostingsInfo
+struct TokenPostingsInfo : public TokenInfoBase
 {
     UInt64 header = 0;
-    UInt32 cardinality = 0;
 
     /// The majority of tokens have only one block,
     /// so use inlined vector to avoid heap allocations.
     absl::InlinedVector<UInt64, 1> offsets;
-    absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
-    size_t bytesAllocated() const;
+    size_t bytesAllocated() const override;
 };
 
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
@@ -332,7 +341,7 @@ public:
 
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
-    void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    void setCurrentRange(RowsRange range) override { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }

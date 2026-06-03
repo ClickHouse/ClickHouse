@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -7,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
     size_t from_mark, size_t current_task_last_mark,
@@ -61,6 +68,22 @@ try
             /// If we have substream marks, subcolumns will be read separately.
             if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
                 continue;
+
+            /// Projection text index optimization: after reading the term column,
+            /// invoke the filter callback to compute which posting rows need full
+            /// deserialization. The optional encodes three states (no filter, zero-match
+            /// filter, sparse filter) — see IMergeTreeReader.h. The previous fast path
+            /// that bypassed readData on no-match would leave the posting stream
+            /// unaligned for the next mark; now the deserializer always advances the
+            /// stream past the entire mark even when no rows match.
+            if (posting_filter_callback && pos > 0 && res_columns[0])
+            {
+                auto matched = posting_filter_callback(*res_columns[0]);
+                if (matched.size() == res_columns[0]->size())
+                    matched_row_indices_for_posting.reset();
+                else
+                    matched_row_indices_for_posting = std::move(matched);
+            }
 
             stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
@@ -133,6 +156,33 @@ try
         all_mark_ranges, stream_settings,uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
+
+    for (auto & column : columns_to_read)
+    {
+        if (dynamic_cast<const DataTypePostingList *>(column.type->getCustomName()))
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Projection text index for column {} is missing required stream {}",
+                    column.name, PROJECTION_INDEX_LARGE_POSTING_SUFFIX);
+            large_posting_streams.emplace(*stream_name, createLargePostingStream(*stream_name, profile_callback, clock_type));
+
+            auto pos_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, {}, PROJECTION_INDEX_POSITION_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+            if (pos_stream_name
+                && data_part_info_for_read->getFileSizeOrZero(*pos_stream_name + PROJECTION_INDEX_POSITION_SUFFIX) > 0)
+                position_streams.emplace(*pos_stream_name, createPositionStream(*pos_stream_name, profile_callback, clock_type));
+
+            auto idx_stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, {}, PROJECTION_INDEX_INDEX_SUFFIX, data_part_info_for_read->getChecksums(), storage_settings);
+            if (idx_stream_name
+                && data_part_info_for_read->getFileSizeOrZero(*idx_stream_name + PROJECTION_INDEX_INDEX_SUFFIX) > 0)
+                lidx_streams.emplace(*idx_stream_name, createIndexStream(*idx_stream_name, profile_callback, clock_type));
+        }
+    }
 
     initialized = true;
 }

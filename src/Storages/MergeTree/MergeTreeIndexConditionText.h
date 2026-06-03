@@ -27,6 +27,7 @@ enum class TextSearchMode : uint8_t
 {
     Any,
     All,
+    Phrase,
 };
 
 enum class TextIndexDirectReadMode : uint8_t
@@ -69,7 +70,8 @@ public:
         ContextPtr context_,
         const Block & index_sample_block,
         TokenizerPtr tokenizer_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        bool enable_phrase_query_support_ = false);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -186,6 +188,7 @@ private:
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
     TokensCardinalitiesCachePtr cardinalities_cache;
+    [[maybe_unused]] bool enable_phrase_query_support = false;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

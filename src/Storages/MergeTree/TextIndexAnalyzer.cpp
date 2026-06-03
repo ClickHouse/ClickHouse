@@ -68,7 +68,7 @@ void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
     {
         rows_range = rows_range->unionWith(token_rows_range);
     }
-    else if (query->search_mode == TextSearchMode::All)
+    else if (query->search_mode == TextSearchMode::All || query->search_mode == TextSearchMode::Phrase)
     {
         rows_range = rows_range->intersectWith(token_rows_range);
 
@@ -266,6 +266,19 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
             }
 
             return n * (1.0 - not_in_any);
+        }
+        case TextSearchMode::Phrase:
+        {
+            /// Phrase query: all tokens must match (like All), with positional constraint.
+            /// Estimate as intersection of all token posting lists.
+            double estimate = n;
+            for (const auto & token : query.tokens)
+            {
+                auto it = query_builder.tokens.find(token);
+                double token_card = (it == query_builder.tokens.end()) ? n : static_cast<double>(it->second->cardinality);
+                estimate *= token_card / n;
+            }
+            return std::max(1.0, estimate);
         }
     }
 }
