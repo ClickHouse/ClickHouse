@@ -109,14 +109,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const StorageID & storage_id,
+    const String & table_identifier,
     const String & table_path,
     const DataLakeStorageSettings & data_lake_settings,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
-    CompressionMethod known_compression_method);
+    CompressionMethod known_compression_method,
+    bool ignore_explicit_metadata_file_path = true);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);

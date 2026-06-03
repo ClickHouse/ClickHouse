@@ -1272,14 +1272,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ObjectStoragePtr & object_storage,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const StorageID & storage_id,
+    const String & table_identifier,
     const String & table_path,
     const DataLakeStorageSettings & data_lake_settings,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
-    CompressionMethod known_compression_method)
+    CompressionMethod known_compression_method,
+    bool ignore_explicit_metadata_file_path)
 {
     if (!catalog)
         return getLatestOrExplicitMetadataFileAndVersion(
@@ -1292,11 +1293,11 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             table_uuid,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
-            /* ignore_explicit_metadata_file_path */ true);
+            ignore_explicit_metadata_file_path);
 
     DataLake::TableMetadata table_metadata;
     table_metadata.withDataLakeSpecificProperties().withLocation();
-    const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);
 
     auto specific_properties = table_metadata.getDataLakeSpecificProperties();

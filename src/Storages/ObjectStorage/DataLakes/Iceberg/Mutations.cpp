@@ -573,7 +573,7 @@ void mutate(
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
-            storage_id,
+            storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
@@ -693,7 +693,7 @@ void alter(
         auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
-            storage_id,
+            storage_id.getTableName(),
             persistent_table_components.table_path,
             data_lake_settings,
             persistent_table_components.metadata_cache,
