@@ -1,4 +1,11 @@
 <clickhouse>
+    <!-- Userspace page cache (block-granular, in-memory). Enabled by a non-zero
+         max size; the executor uses it for disks WITHOUT a file cache when
+         use_page_cache_for_disks_without_file_cache=1. Block size 1 MiB, so cached
+         holes can be small enough for the live connection to bridge - unlike the
+         4 MiB-aligned FileCache. -->
+    <page_cache_max_size>2Gi</page_cache_max_size>
+
     <storage_configuration>
         <disks>
             <disk_s3>
@@ -28,6 +35,16 @@
                     </main>
                 </volumes>
             </s3_cache>
+            <!-- Raw S3, no file cache: the executor routes reads through the
+                 userspace page cache instead, exercising the block-granular
+                 (1 MiB) cache where the live-connection bridge can fire. -->
+            <s3_page>
+                <volumes>
+                    <main>
+                        <disk>disk_s3</disk>
+                    </main>
+                </volumes>
+            </s3_page>
         </policies>
     </storage_configuration>
 </clickhouse>

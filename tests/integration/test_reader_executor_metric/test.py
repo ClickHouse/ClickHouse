@@ -64,6 +64,14 @@ def _settings(live):
         "reader_executor_use_live_connections": 1 if live else 0,
     }
 
+
+# Page-cache path: a raw-S3 disk (no file cache) plus this setting makes the
+# executor route reads through the userspace page cache (block-granular, 1 MiB).
+def _pc_settings(live):
+    s = _settings(live)
+    s["use_page_cache_for_disks_without_file_cache"] = 1
+    return s
+
 LOADS = {
     # full-column scan -> R + I regime
     "sequential": "SELECT sum(v) FROM t",
@@ -139,6 +147,22 @@ def _setup_table():
     node.query("SYSTEM STOP MERGES t")
     logging.info("table parts: %s", node.query("SELECT count() FROM system.parts WHERE table='t' AND active").strip())
 
+    # Same data on a raw-S3 (no file cache) disk, so reads route through the
+    # userspace page cache - the block-granular (1 MiB) cache where the
+    # live-connection bridge can fire on small cached holes.
+    node.query("DROP TABLE IF EXISTS t_pc SYNC")
+    node.query(
+        """
+        CREATE TABLE t_pc (id UInt64, k UInt32, v UInt64, bucket UInt8)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS storage_policy = 's3_page', min_bytes_for_wide_part = 0,
+                 index_granularity = 8192, index_granularity_bytes = 0
+        """
+    )
+    node.query("INSERT INTO t_pc SELECT * FROM t", settings={"max_insert_threads": 1})
+    node.query("OPTIMIZE TABLE t_pc FINAL")
+    node.query("SYSTEM STOP MERGES t_pc")
+
 
 def _cost_ms(m):
     """The server-emitted modeled cost (ReaderExecutorModeledCostMicroseconds), in ms."""
@@ -173,9 +197,17 @@ def _drop_caches():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, live):
+def _drop_pc():
+    # Cold page-cache reads: drop the page cache (and mark/uncompressed) so the
+    # read genuinely goes to S3 through the executor each time.
+    node.query("SYSTEM DROP PAGE CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query("SYSTEM DROP UNCOMPRESSED CACHE")
+
+
+def _measure(query, live, pc=False):
     qid = str(uuid.uuid4())
-    node.query(query, query_id=qid, settings=_settings(live))
+    node.query(query, query_id=qid, settings=_pc_settings(live) if pc else _settings(live))
     node.query("SYSTEM FLUSH LOGS")
     extra = ["ReaderExecutorModeledCostMicroseconds", "ReaderExecutorRequestedBytes"]
     cols = ", ".join(f"ProfileEvents['{e}']" for e in list(ALL_EVENTS.values()) + extra)
@@ -300,5 +332,61 @@ def test_metric_values_and_stability(started_cluster):
     assert float(async_val) >= 0.0, f"async cost-per-MiB metric is negative: {async_val}"
 
     banner = "\n=== ReaderExecutor real-load metric (state x pattern x mode) ===\n" + "\n".join(report) + "\n"
+    logging.info(banner)
+    print(banner)
+
+
+def test_page_cache_path(started_cluster):
+    """Real-load coverage of the executor's userspace page-cache read path (a raw-S3
+    disk with no file cache). The page cache is block-granular (1 MiB), unlike the
+    4 MiB-aligned FileCache, so a cold sequential scan fragments into MORE, smaller
+    source reads - the regime where connection churn (and the seek-side optimisation)
+    matters most. Warm reads are served from the page cache (no source request).
+    Asserts the executor runs on the page-cache disk, warm reads hit the cache, the
+    metric/cost wiring works there, and the mode invariant holds (live: I == pool
+    resets; stateless: I == 0)."""
+    query = "SELECT sum(v) FROM t_pc"
+    report = []
+    results = {}
+    for live in (True, False):
+        mode = "live" if live else "stateless"
+        for state in ("cold", "warm"):
+            if state == "warm":
+                _drop_pc()
+                _measure(query, live, pc=True)  # prime, then measure the warm cache
+                samples = [_measure(query, live, pc=True) for _ in range(SAMPLES)]
+            else:
+                samples = []
+                for _ in range(SAMPLES):
+                    _drop_pc()
+                    samples.append(_measure(query, live, pc=True))
+            st = _stats(samples)
+            cost_per_mib = sum(_cost_per_mib(s) for s in samples) / len(samples)
+            line = (
+                f"[pc/{state}/{mode}] "
+                + " ".join(f"{k}={st[k][0]:.0f}(cv={st[k][2]:.2f})" for k in ALL_EVENTS)
+                + f" cost/MiB={cost_per_mib:.2f}ms"
+            )
+            report.append(line)
+            logging.info(line)
+            results[(state, mode)] = st
+            # Mode invariant holds on the page-cache path too. The server's modeled
+            # cost event must equal the formula recomputed from the raw counters.
+            for s in samples:
+                if live:
+                    assert s["I"] == s["ConnReset"], (
+                        f"pc/{state}/live: executor I={s['I']} != pool ConnReset={s['ConnReset']}")
+                else:
+                    assert s["I"] == 0, f"pc/{state}/stateless: expected I=0, got {s['I']}"
+                assert abs(_cost_ms(s) - _formula_cost_ms(s)) <= max(2.0, 0.005 * _formula_cost_ms(s)), (
+                    f"pc/{state}/{mode}: cost event {_cost_ms(s):.1f}ms != formula {_formula_cost_ms(s):.1f}ms")
+
+    # The executor actually ran through the page cache on a cold read.
+    assert results[("cold", "live")]["R"][0] > 0, "executor did not run on the page-cache disk"
+    # Warm reads are served from the page cache, not S3 (far fewer source requests).
+    assert results[("warm", "live")]["R"][0] * 10 < results[("cold", "live")]["R"][0], (
+        "warm page-cache scan should issue far fewer source requests than cold")
+
+    banner = "\n=== ReaderExecutor page-cache path (state x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
     print(banner)
