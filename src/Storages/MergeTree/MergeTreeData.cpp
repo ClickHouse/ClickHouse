@@ -2259,7 +2259,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
-    bool inserted;
+    bool inserted = false;
 
     {
         std::lock_guard lock(part_loading_mutex);
@@ -9480,7 +9480,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
     SerializationInfo::Settings serialization_settings
     {
-        settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
@@ -10972,7 +10972,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
 
     SerializationInfo::Settings settings
     {
-        (*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
@@ -11224,7 +11224,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     SerializationInfo::Settings info_settings
     {
-        (*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],

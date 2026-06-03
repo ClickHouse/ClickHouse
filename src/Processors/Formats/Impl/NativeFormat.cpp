@@ -115,6 +115,7 @@ private:
 };
 
 
+void registerInputFormatNative(FormatFactory & factory);
 void registerInputFormatNative(FormatFactory & factory)
 {
     factory.registerInputFormat("Native", [](
@@ -128,6 +129,7 @@ void registerInputFormatNative(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("Native");
 }
 
+void registerOutputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory)
 {
     factory.registerOutputFormat("Native", [](
@@ -143,6 +145,7 @@ void registerOutputFormatNative(FormatFactory & factory)
 }
 
 
+void registerNativeSchemaReader(FormatFactory & factory);
 void registerNativeSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings & settings)
