@@ -231,13 +231,13 @@ void SettingFieldNumber<T>::readBinary(ReadBuffer & in)
 {
     if constexpr (std::is_integral_v<T> && is_unsigned_v<T>)
     {
-        UInt64 x;
+        UInt64 x = 0;
         readVarUInt(x, in);
         *this = static_cast<T>(x);
     }
     else if constexpr (std::is_integral_v<T> && is_signed_v<T>)
     {
-        Int64 x;
+        Int64 x = 0;
         readVarInt(x, in);
         *this = static_cast<T>(value);
     }
@@ -324,19 +324,19 @@ UInt64 SettingFieldMaxThreads::getAuto()
 
 namespace
 {
-    Poco::Timespan::TimeDiff float64AsSecondsToTimespan(Float64 d)
+    Int64 float64AsSecondsToTimespan(Float64 d)
     {
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+        if (d * 1000000 > std::numeric_limits<Int64>::max() || d * 1000000 < std::numeric_limits<Int64>::min())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
 #pragma clang diagnostic pop
 
-        return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
+        return static_cast<Int64>(d * 1000000);
     }
 
 }
@@ -369,7 +369,7 @@ SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond> & SettingFieldMillis
 template <>
 String SettingFieldSeconds::toString() const
 {
-    return ::DB::toString(static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit);
+    return ::DB::toString(static_cast<Float64>(microseconds) / microseconds_per_unit);
 }
 
 template <>
@@ -381,7 +381,7 @@ String SettingFieldMilliseconds::toString() const
 template <>
 SettingFieldSeconds::operator Field() const
 {
-    return static_cast<Float64>(value.totalMicroseconds()) / microseconds_per_unit;
+    return static_cast<Float64>(microseconds) / microseconds_per_unit;
 }
 
 template <>
@@ -394,7 +394,7 @@ template <>
 void SettingFieldSeconds::parseFromString(const String & str)
 {
     Float64 n = parse<Float64>(str.data(), str.size());
-    *this = Poco::Timespan{static_cast<Poco::Timespan::TimeDiff>(n * microseconds_per_unit)};
+    *this = Poco::Timespan{static_cast<Int64>(n * microseconds_per_unit)};
 }
 
 template <>
