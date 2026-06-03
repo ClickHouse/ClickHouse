@@ -1,12 +1,17 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <condition_variable>
+#include <vector>
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
 #include <Common/logger_useful.h>
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -15,108 +20,88 @@ namespace ProfileEvents
     extern const Event ConnectionPoolIsFullMicroseconds;
 }
 
-namespace DB
+/** What is given to the user. */
+template <typename TObject>
+class PoolEntry
 {
-    namespace ErrorCodes
+public:
+    PoolEntry() = default;    /// For deferred initialization.
+
+    /** The `Entry` object protects the resource from being used by another thread.
+      * The following methods are forbidden for `rvalue`, so you can not write a similar to
+      *
+      * auto q = pool.get()->query("SELECT .."); // Oops, after this line Entry was destroyed
+      * q.execute (); // Someone else can use this Connection
+      */
+    TObject * operator->() && = delete;
+    const TObject * operator->() const && = delete;
+    TObject & operator*() && = delete;
+    const TObject & operator*() const && = delete;
+
+    TObject * operator->() &             { return data->object; }
+    const TObject * operator->() const & { return data->object; }
+    TObject & operator*() &              { return *data->object; }
+    const TObject & operator*() const &  { return *data->object; }
+
+    /**
+     * Expire an object to make it reallocated later.
+     */
+    void expire()
     {
-        extern const int LOGICAL_ERROR;
+        data->is_expired->store(true);
     }
-}
+
+    bool isNull() const { return data == nullptr; }
+
+private:
+    template <typename, typename, typename> friend class PoolBase;
+
+    struct PoolEntryHelper
+    {
+        PoolEntryHelper(TObject * object_, std::atomic<bool> * is_expired_, std::function<void()> on_destroy_)
+            : object(object_), is_expired(is_expired_), on_destroy(std::move(on_destroy_)) {}
+        ~PoolEntryHelper() { on_destroy(); }
+
+        TObject * object;
+        std::atomic<bool> * is_expired;
+        std::function<void()> on_destroy;
+    };
+
+    std::shared_ptr<PoolEntryHelper> data;
+
+    explicit PoolEntry(std::shared_ptr<PoolEntryHelper> data_) : data(std::move(data_)) {}
+};
 
 /** A class from which you can inherit and get a pool of something. Used for database connection pools.
   * Descendant class must provide a method for creating a new object to place in the pool.
   */
-
-template <typename TObject>
+template <typename TObject,
+          typename TLocker = std::mutex,
+          typename TWaiter = std::condition_variable>
 class PoolBase : private boost::noncopyable
 {
 public:
     using Object = TObject;
     using ObjectPtr = std::shared_ptr<Object>;
-    using Ptr = std::shared_ptr<PoolBase<TObject>>;
+    using Ptr = std::shared_ptr<PoolBase<TObject, TLocker, TWaiter>>;
+
+    using Entry = PoolEntry<TObject>;
 
 private:
 
     /** The object with the flag, whether it is currently used. */
     struct PooledObject
     {
-        PooledObject(ObjectPtr object_, PoolBase & pool_)
-            : object(object_), pool(pool_)
-        {
-        }
+        explicit PooledObject(ObjectPtr object_) : object(object_) {}
 
         ObjectPtr object;
         bool in_use = false;
         std::atomic<bool> is_expired = false;
-        PoolBase & pool;
     };
 
     using Objects = std::vector<std::shared_ptr<PooledObject>>;
 
-    /** The helper, which sets the flag for using the object, and in the destructor - removes,
-      *  and also notifies the event using condvar.
-      */
-    struct PoolEntryHelper
-    {
-        explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
-        ~PoolEntryHelper()
-        {
-            std::lock_guard lock(data.pool.mutex);
-            data.in_use = false;
-            data.pool.available.notify_one();
-        }
-
-        PooledObject & data;
-    };
-
 public:
-    /** What is given to the user. */
-    class Entry
-    {
-    public:
-        friend class PoolBase<Object>;
-
-        Entry() = default;    /// For deferred initialization.
-
-        /** The `Entry` object protects the resource from being used by another thread.
-          * The following methods are forbidden for `rvalue`, so you can not write a similar to
-          *
-          * auto q = pool.get()->query("SELECT .."); // Oops, after this line Entry was destroyed
-          * q.execute (); // Someone else can use this Connection
-          */
-        Object * operator->() && = delete;
-        const Object * operator->() const && = delete;
-        Object & operator*() && = delete;
-        const Object & operator*() const && = delete;
-
-        Object * operator->() &             { return &*data->data.object; }
-        const Object * operator->() const & { return &*data->data.object; }
-        Object & operator*() &              { return *data->data.object; }
-        const Object & operator*() const &  { return *data->data.object; }
-
-        /**
-         * Expire an object to make it reallocated later.
-         */
-        void expire()
-        {
-            data->data.is_expired = true;
-        }
-
-        bool isNull() const { return data == nullptr; }
-
-        PoolBase * getPool() const
-        {
-            if (!data)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Attempt to get pool from uninitialized entry");
-            return &data->data.pool;
-        }
-
-    private:
-        std::shared_ptr<PoolEntryHelper> data;
-
-        explicit Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
-    };
-
     virtual ~PoolBase() = default;
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
@@ -130,22 +115,25 @@ public:
             {
                 if (!item->in_use)
                 {
+                    item->in_use = true;
+
                     if (likely(!item->is_expired))
                     {
-                        return Entry(*item);
+                        return makeEntry(*item);
                     }
 
                     expireObject(item->object);
                     item->object = allocObject();
                     item->is_expired = false;
-                    return Entry(*item);
+                    return makeEntry(*item);
                 }
             }
             if (items.size() < max_items)
             {
                 ObjectPtr object = allocObject();
-                items.emplace_back(std::make_shared<PooledObject>(object, *this));
-                return Entry(*items.back());
+                auto & item = items.emplace_back(std::make_shared<PooledObject>(object));
+                item->in_use = true;
+                return makeEntry(*item);
             }
 
             Stopwatch blocked;
@@ -158,7 +146,10 @@ public:
             {
                 auto timeout_ms = std::chrono::milliseconds(timeout);
                 LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
-                available.wait_for(lock, timeout_ms);
+                if constexpr (requires { available.wait_for(lock, timeout_ms); })
+                    available.wait_for(lock, timeout_ms);
+                else
+                    static_cast<void>(available.wait_for(lock, static_cast<uint64_t>(timeout_ms.count()) * 1'000'000ULL));
             }
             ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());
         }
@@ -169,7 +160,7 @@ public:
         std::lock_guard lock(mutex);
 
         while (items.size() < count)
-            items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
+            items.emplace_back(std::make_shared<PooledObject>(allocObject()));
     }
 
     size_t size()
@@ -179,6 +170,20 @@ public:
     }
 
 private:
+    Entry makeEntry(PooledObject & item)
+    {
+        bool * in_use = &item.in_use;
+        return Entry(std::make_shared<typename Entry::PoolEntryHelper>(
+            item.object.get(),
+            &item.is_expired,
+            [this, in_use]
+            {
+                std::lock_guard lock(mutex);
+                *in_use = false;
+                available.notify_one();
+            }));
+    }
+
     /** The maximum size of the pool. */
     unsigned max_items;
 
@@ -186,8 +191,8 @@ private:
     Objects items;
 
     /** Lock to access the pool. */
-    std::mutex mutex;
-    std::condition_variable available;
+    TLocker mutex;
+    TWaiter available;
 
 protected:
     LoggerPtr log;

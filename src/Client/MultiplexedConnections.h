@@ -81,7 +81,7 @@ private:
     struct ReplicaState
     {
         Connection * connection = nullptr;
-        ConnectionPool::Entry pool_entry;
+        IConnectionPool::Entry pool_entry;
     };
 
     /// Get a replica where you can read the data.

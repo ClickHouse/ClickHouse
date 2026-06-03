@@ -233,7 +233,7 @@ public:
     }
 
 private:
-    using Entry = ConnectionPool::Entry;
+    using Entry = IConnectionPool::Entry;
     using EntryPtr = std::shared_ptr<Entry>;
     using EntryPtrs = std::vector<EntryPtr>;
 
@@ -267,7 +267,7 @@ private:
     using Queue = ConcurrentBoundedQueue<Query>;
     Queue queue;
 
-    using ConnectionPoolUniq = std::unique_ptr<ConnectionPool>;
+    using ConnectionPoolUniq = std::unique_ptr<ConnectionPool<>>;
     using ConnectionPoolUniqs = std::vector<ConnectionPoolUniq>;
     ConnectionPoolUniqs connections;
 
@@ -431,7 +431,7 @@ private:
             UInt16 cur_port = i >= ports.size() ? default_port : ports[i];
             std::string cur_host = i >= hosts.size() ? "localhost" : hosts[i];
 
-            connections.emplace_back(std::make_unique<ConnectionPool>(
+            connections.emplace_back(std::make_unique<ConnectionPool<>>(
                 max_concurrency,
                 cur_host,
                 cur_port,
@@ -723,7 +723,7 @@ private:
             cur_interval = interval;
         }
 
-        ConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
+        IConnectionPool::Entry entry = connections[connection_index]->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings));
 
         bool should_reconnect = false;
         {

@@ -102,7 +102,7 @@ ShuffledPool extractLocalReplica(std::vector<ShuffledPool> & pools, const Cluste
 {
     for (size_t i = 0, s = pools.size(); i < s; ++i)
     {
-        const auto & pool = dynamic_cast<ConnectionPool &>(*pools[i].pool);
+        const auto & pool = dynamic_cast<ConnectionPool<> &>(*pools[i].pool);
         const auto & hostname = pool.getHost();
         const auto & port = pool.getPort();
         const auto found = std::find_if(begin(local_addresses), end(local_addresses), [&hostname, &port](const auto & local_addr)
@@ -247,7 +247,7 @@ public:
         original_pool = shard.pool;
         remote_pools = shard.pool->getShuffledPools(settings, replicaIndexPriorityFunc());
         auto local_pool = extractLocalReplica(remote_pools, shard.local_addresses);
-        local_address = dynamic_cast<ConnectionPool &>(*local_pool.pool).getAddress();
+        local_address = dynamic_cast<ConnectionPool<> &>(*local_pool.pool).getAddress();
         local_original_index = local_pool.index;
         total_replicas = shard.getAllNodeCount();
         remote_replicas = remote_pools.size();
@@ -255,7 +255,7 @@ public:
 
         replica_addresses.resize(remote_replicas);
         for (size_t i = 0; i < remote_replicas; ++i)
-            replica_addresses[i] = dynamic_cast<ConnectionPool &>(*remote_pools[i].pool).getAddress();
+            replica_addresses[i] = dynamic_cast<ConnectionPool<> &>(*remote_pools[i].pool).getAddress();
 
         execution_context = Context::createCopy(context);
         external_tables = execution_context->getExternalTables();
@@ -384,7 +384,7 @@ private:
 
         std::unordered_map<std::string, size_t> address_to_replica;
         for (size_t i = 0; i < remote_replicas; ++i)
-            address_to_replica[host_port(dynamic_cast<ConnectionPool &>(*remote_pools[i].pool))] = i;
+            address_to_replica[host_port(dynamic_cast<ConnectionPool<> &>(*remote_pools[i].pool))] = i;
         for (auto * conn : ready_connections)
         {
             if (auto it = address_to_replica.find(host_port(*conn)); it != address_to_replica.end())
@@ -837,7 +837,7 @@ private:
     std::optional<ThreadPool> sync_thread_pool;
 
     /// Keep `ConnectionPool::Entry` objects alive for the sync path.
-    std::vector<ConnectionPool::Entry> connection_entries;
+    std::vector<IConnectionPool::Entry> connection_entries;
 
 #if defined(OS_LINUX)
     /// Keep `HedgedConnectionsFactory` alive for the async path.

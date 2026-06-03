@@ -113,6 +113,7 @@ Connection::Connection(const String & host_, UInt16 port_,
 #if USE_JWT_CPP && USE_SSL
     , std::shared_ptr<JWTProvider> jwt_provider_
 #endif
+    , SocketFactory socket_factory_
 )
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
@@ -132,6 +133,7 @@ Connection::Connection(const String & host_, UInt16 port_,
     , secure(secure_)
     , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
+    , socket_factory(std::move(socket_factory_))
     , log_wrapper(*this)
 {
     /// Don't connect immediately, only on first need.
@@ -140,6 +142,19 @@ Connection::Connection(const String & host_, UInt16 port_,
         user = "default";
 
     setDescription();
+}
+
+std::unique_ptr<Poco::Net::StreamSocket> Connection::defaultSocketFactory(bool secure)
+{
+    if (secure)
+    {
+#if USE_SSL
+        return std::make_unique<Poco::Net::SecureStreamSocket>();
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
+#endif
+    }
+    return std::make_unique<Poco::Net::StreamSocket>();
 }
 
 
@@ -170,11 +185,11 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             if (isConnected())
                 disconnect();
 
+            socket = socket_factory(static_cast<bool>(secure));
+
             if (static_cast<bool>(secure))
             {
 #if USE_SSL
-                socket = std::make_unique<Poco::Net::SecureStreamSocket>();
-
                 /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
@@ -196,8 +211,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             }
             else
             {
-                socket = std::make_unique<Poco::Net::StreamSocket>();
-
                 if (!bind_host.empty())
                 {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
