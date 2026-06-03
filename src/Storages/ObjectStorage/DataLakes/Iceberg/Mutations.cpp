@@ -44,6 +44,7 @@ namespace DB::ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -684,6 +685,11 @@ void alter(
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
+
+    if (catalog && catalog->isTransactional())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER is not supported for Iceberg tables backed by a transactional catalog");
 
     size_t i = 0;
     bool succeeded = false;
