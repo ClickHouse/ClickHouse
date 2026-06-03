@@ -37,7 +37,17 @@ public:
 
     using RowLayout = std::vector<FieldLayout>;
 
+    struct RowLayoutWithColumnsFilter
+    {
+        RowLayout layout;
+        std::vector<bool> filter;
+    };
+
+    /// Compute the row-major layout for `columns` in input order.
     static RowLayout computeLayout(const Columns & columns);
+
+    /// Same as above, but selects row store columns bounded by `capacity_bytes`.
+    static RowLayoutWithColumnsFilter computeLayout(const Columns & columns, size_t rows, size_t capacity_bytes);
 
     static std::shared_ptr<RowDataStore> create();
 

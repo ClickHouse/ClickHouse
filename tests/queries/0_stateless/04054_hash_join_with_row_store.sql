@@ -6,14 +6,14 @@ DROP TABLE IF EXISTS right_asof;
 DROP TABLE IF EXISTS right_storage_join;
 
 CREATE TABLE left (k Int64, t DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE right (k Int64, v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE right (k Int64, v1 Nullable(Int64), v2 UInt8, s String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right_asof (k Int64, t DateTime('UTC'), v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY (k, t);
-CREATE TABLE right_storage_join (k Int64, v2 Nullable(Int64), s String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE right_storage_join (k Int64, v1 Nullable(Int64), s String) ENGINE = Join(ANY, LEFT, k);
 
 INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10);
-INSERT INTO right SELECT number + 7, number, toString(number) FROM numbers(5);
+INSERT INTO right SELECT number + 7, number, number, toString(number) FROM numbers(5);
 INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number, number, toString(number) FROM numbers(5);
-INSERT INTO right_storage_join SELECT * FROM right;
+INSERT INTO right_storage_join SELECT k, v1, s FROM right;
 
 SET join_algorithm = 'hash';
 SET min_columns_for_hash_join_row_store = 1;
@@ -44,6 +44,22 @@ FROM (
     GROUP BY q.log_comment
 );
 
+SELECT '--- Row store columns filtering ---';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL
+SETTINGS max_bytes_for_hash_join_row_store = 45, log_comment = 'rs_04054_filtered';
+
+SYSTEM FLUSH LOGS query_log, text_log;
+
+SELECT extract(t.message, 'Initialized Row store with [0-9]+ columns: (.*)\\.')
+FROM system.text_log t
+INNER JOIN system.query_log q ON t.query_id = q.query_id
+WHERE q.log_comment = 'rs_04054_filtered'
+  AND q.current_database = currentDatabase()
+  AND q.type = 'QueryFinish'
+  AND t.message LIKE '%Initialized Row store%'
+ORDER BY t.event_time_microseconds
+LIMIT 1;
+
 SELECT '--- Verify different join types ---';
 SELECT '--- INNER JOIN ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL;
@@ -71,8 +87,8 @@ SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL SETTINGS max_j
 
 SELECT '--- joinGet / joinGetOrNull on Join engine storage ---';
 SELECT k,
-       joinGet({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v2', k),
-       joinGetOrNull({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v2', k)
+       joinGet({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k),
+       joinGetOrNull({CLICKHOUSE_DATABASE:String} || '.right_storage_join', 'v1', k)
 FROM left ORDER BY ALL;
 
 SELECT '--- Join with spilling ---';

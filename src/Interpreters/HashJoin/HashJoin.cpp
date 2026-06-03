@@ -2396,11 +2396,9 @@ void HashJoin::finalizeRowStoreStatus()
         data->row_store_state = RowStoreState::Disabled;
     };
 
-    const size_t max_bytes_for_row_store = table_join->maxBytesForHashJoinRowStore();
     if (data->row_store_state != RowStoreState::Enabled
         || data->columns.empty()
-        || rightTableCanBeReranged()
-        || (max_bytes_for_row_store > 0 && data->allocated_size > max_bytes_for_row_store))
+        || rightTableCanBeReranged())
     {
         disable_row_store();
         return;
@@ -2408,40 +2406,57 @@ void HashJoin::finalizeRowStoreStatus()
 
     const Block & saved = savedBlockSample();
 
-    ColumnAccessIndexes access_indexes;
-    access_indexes.reserve(saved.columns());
-    Columns row_store_columns;
-    size_t columns_count = 0;
+    /// Collect columns for which the row store is useful.
+    Columns eligible_columns;
+    std::vector<size_t> eligible_indexes;
     for (size_t i = 0; i < saved.columns(); ++i)
     {
         const auto & col = saved.getByPosition(i).column;
         if (isRowStorageUseful(col) && !data->column_replicated_flags[i])
         {
-            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
-            row_store_columns.push_back(col);
+            eligible_columns.push_back(col);
+            eligible_indexes.push_back(i);
         }
-        else
-            access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_count++});
     }
 
-    if (row_store_columns.size() < table_join->minColumnsForHashJoinRowStore())
+    /// Select the columns that fit into the capacity and compute the layout of the row store.
+    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, data->rows_to_join, table_join->maxBytesForHashJoinRowStore());
+    size_t row_store_size = std::ranges::count(filter, true);
+    if (row_store_size < table_join->minColumnsForHashJoinRowStore())
     {
         disable_row_store();
         return;
     }
 
-    const auto layout = RowDataStore::computeLayout(row_store_columns);
-    for (auto & access_index : access_indexes)
+    /// Translate the filter over eligible columns to all columns to determine which ones stay columnar.
+    std::vector<bool> expanded_filter(saved.columns(), false);
+    for (size_t i = 0; i < eligible_indexes.size(); ++i)
+        if (filter[i])
+            expanded_filter[eligible_indexes[i]] = true;
+
+    /// Initialize the final access indexes (columnar or row store) for the join payload.
+    data->column_access_indexes.reserve(saved.columns());
+    size_t columns_index = 0;
+    size_t row_store_index = 0;
+    Strings row_store_column_names;
+    for (size_t i = 0; i < saved.columns(); ++i)
     {
-        if (access_index.type != ColumnAccessIndex::Type::RowStore)
-            continue;
-        const auto & field = layout[access_index.index];
-        access_index.field_offset = field.offset;
-        access_index.field_size = field.size;
-        access_index.is_nullable = field.is_nullable;
+        if (expanded_filter[i])
+        {
+            const auto & field = layout[row_store_index];
+            data->column_access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_index, field.offset, field.size, field.is_nullable});
+            ++row_store_index;
+            row_store_column_names.push_back(saved.getByPosition(i).name);
+        }
+        else
+        {
+            data->column_access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_index});
+            ++columns_index;
+        }
     }
 
-    data->column_access_indexes = std::move(access_indexes);
+    LOG_DEBUG(log, "{}Initialized Row store with {} columns: {}.",
+        instance_log_id, row_store_column_names.size(), fmt::join(row_store_column_names, ", "));
 }
 
 void HashJoin::tryConvertToRowStore()

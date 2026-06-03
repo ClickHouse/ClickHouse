@@ -5,7 +5,9 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 
+#include <algorithm>
 #include <cstring>
+#include <numeric>
 
 
 namespace DB
@@ -43,6 +45,54 @@ RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
         offset += field_size;
     }
     return layout;
+}
+
+RowDataStore::RowLayoutWithColumnsFilter RowDataStore::computeLayout(const Columns & columns, size_t rows, size_t capacity_bytes)
+{
+    const RowLayout full_layout = computeLayout(columns);
+
+    RowLayoutWithColumnsFilter filtered_layout;
+    filtered_layout.filter.assign(columns.size(), capacity_bytes == 0 || rows == 0);
+
+    if (capacity_bytes > 0 && rows > 0)
+    {
+        std::vector<size_t> indexes(columns.size());
+        std::iota(indexes.begin(), indexes.end(), 0);
+
+        /// Prefer smaller columns to fit as many as possible in the row store.
+        auto cmp_field_size = [&](size_t i, size_t j)
+        {
+            if (full_layout[i].size != full_layout[j].size)
+                return full_layout[i].size < full_layout[j].size;
+            return i < j;
+        };
+        std::ranges::sort(indexes, cmp_field_size);
+
+        size_t row_length = 0;
+        for (size_t index : indexes)
+        {
+            size_t field_size = full_layout[index].size;
+            if (rows * (row_length + field_size) > capacity_bytes)
+                break;
+            filtered_layout.filter[index] = true;
+            row_length += field_size;
+        }
+    }
+
+    /// Re-assign offsets over the filtered columns for the final layout.
+    size_t offset = 0;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (!filtered_layout.filter[i])
+            continue;
+
+        FieldLayout field = full_layout[i];
+        field.offset = offset;
+        filtered_layout.layout.push_back(field);
+        offset += field.size;
+    }
+
+    return filtered_layout;
 }
 
 RowDataStore::RowDataStore(RowLayout && layout_)
