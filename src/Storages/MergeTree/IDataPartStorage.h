@@ -18,6 +18,7 @@ namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
 
 struct IDiskTransaction;
@@ -135,10 +136,19 @@ public:
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const = 0;
+        std::optional<size_t> read_hint) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    /// Every implementation must override this method.
+    virtual void prepareRead(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const = 0;
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
@@ -207,7 +217,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;
