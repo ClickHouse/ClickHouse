@@ -48,6 +48,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/SilkRunInFiber.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
@@ -1446,6 +1447,14 @@ try
         server_settings[ServerSetting::thread_pool_queue_size],
         has_trace_collector ? server_settings[ServerSetting::global_profiler_real_time_period_ns].value : 0,
         has_trace_collector ? server_settings[ServerSetting::global_profiler_cpu_time_period_ns].value : 0);
+
+#if defined(OS_LINUX)
+    Silk::initializeFiberScheduler();
+    SCOPE_EXIT_SAFE({
+        LOG_INFO(log, "Stopping silk fiber scheduler");
+        Silk::destroyFiberScheduler();
+    });
+#endif
 
     if (has_trace_collector)
     {
