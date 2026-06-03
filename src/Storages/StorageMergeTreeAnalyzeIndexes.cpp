@@ -37,7 +37,7 @@ namespace ErrorCodes
 ///
 /// MergeTreeAnalyzeIndexSource
 ///
-class MergeTreeAnalyzeIndexSource : public ISource, WithContext
+class MergeTreeAnalyzeIndexSource final : public ISource, WithContext
 {
 public:
     MergeTreeAnalyzeIndexSource(

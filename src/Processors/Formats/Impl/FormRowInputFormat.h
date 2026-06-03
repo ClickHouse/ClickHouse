@@ -33,7 +33,7 @@ protected:
     std::vector<UInt8> seen_columns;
 };
 
-class FormSchemaReader : public IRowWithNamesSchemaReader
+class FormSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     FormSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

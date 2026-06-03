@@ -8,8 +8,6 @@ title: 'icebergCluster'
 doc_type: 'reference'
 ---
 
-# icebergCluster Table Function
-
 This is an extension to the [iceberg](/sql-reference/table-functions/iceberg.md) table function.
 
 Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
