@@ -9897,7 +9897,7 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
     ///      `~BackgroundJobsAssignee` for both assignees.
     ///
     /// If anything between step 2 and the actual `finish()` call goes wrong
-    /// (`shutdown()` throwing partway, an `flushAndPrepareForShutdown` /
+    /// (`shutdown()` throwing partway, a `flushAndPrepareForShutdown` /
     /// `partialShutdown` exception, an external `shutdown()` that returned
     /// early without reaching the assignee cleanup), the holder can still be
     /// non-null when we reach step 4. `~BackgroundJobsAssignee::finish()` then

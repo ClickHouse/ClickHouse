@@ -6087,6 +6087,16 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    /// If shutdown threw before stopping the background assignees, they are
+    /// still active here while the derived members (queue, cleanup_thread, ...)
+    /// are about to be destroyed. Stop them now, before derived member
+    /// destruction begins, so a pool thread cannot dispatch into this object
+    /// during teardown. finish is idempotent, so it is a no-op on the normal
+    /// path where shutdown already stopped them.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 
