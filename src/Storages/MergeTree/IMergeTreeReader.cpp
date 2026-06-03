@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -18,6 +20,11 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
 
 namespace
 {
@@ -53,7 +60,9 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
-    , converted_requested_columns(Nested::convertToSubcolumns(columns_))
+    , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
+        ? Nested::convertToSubcolumns(columns_)
+        : columns_)
     , virtual_fields(virtual_fields_)
 {
     /// Check the memory consumption before doing all the heavy-lifting such as
@@ -92,7 +101,8 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
     if (data_part_info_for_read->isProjectionPart())
         return false;
 
-    return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage());
+    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+    return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
@@ -166,13 +176,17 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
+            bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
                 num_rows,
                 converted_requested_columns,
-                Nested::convertToSubcolumns(available_columns),
+                share_nested
+                ? Nested::convertToSubcolumns(available_columns)
+                : available_columns,
                 partially_read_columns,
-                storage_snapshot);
+                storage_snapshot,
+                share_nested);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -300,6 +314,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
 
 bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const
 {
+    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
+        return false;
+
     /// We cannot read separate subcolumn with offsets from compact parts.
     if (!data_part_info_for_read->isWidePart() || subcolumn_name != "size0")
         return false;
@@ -429,6 +446,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
 std::optional<IMergeTreeReader::ColumnForOffsets>
 IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) const
 {
+    if (!(*storage_settings)[MergeTreeSetting::share_nested_offsets])
+        return std::nullopt;
+
     auto get_offsets_streams = [](const auto & serialization, const auto & name_in_storage)
     {
         std::vector<std::pair<String, size_t>> offsets_streams;
@@ -582,12 +602,6 @@ MergeTreeReaderPtr createMergeTreeReader(
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown part type");
 }
-
-MergeTreeReaderPtr createMergeTreeReaderTextIndex(
-    const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
-    const NamesAndTypesList & columns_to_read,
-    MergeTreeIndexGranulePtr index_granule);
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
