@@ -242,7 +242,11 @@ void MergeTreeDeduplicationLog::initCurrentWriter()
     if (current_writer)
         return;
     if (existing_logs.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTree deduplication log has no log files");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "MergeTree deduplication log has no log files (logs_dir='{}', disk='{}')",
+            logs_dir,
+            disk->getName());
     auto write_mode = disk_supports_writing_with_append ? WriteMode::Append : WriteMode::Rewrite;
     current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, write_mode);
 }
