@@ -10,22 +10,11 @@ namespace DB
     DECLARE(UInt64, refresh_retry_initial_backoff_ms, 100, "Delay before the first retry if refresh query fails (if refresh_retries setting is not zero). Each subsequent retry doubles the delay, up to refresh_retry_max_backoff_ms.", 0) \
     DECLARE(UInt64, refresh_retry_max_backoff_ms, 60'000, "Limit on the exponential growth of delay between refresh attempts, if they keep failing and refresh_retries is positive.", 0) \
     DECLARE(Bool, all_replicas, /* do not change or existing tables will break */ false, "If the materialized view is in a Replicated database, and APPEND is enabled, this flag controls whether all replicas or one replica will refresh.", 0) \
+    DECLARE(Bool, prefer_dependency_replica, false, "Deprecated and ignored.", 0) \
+    DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "Deprecated and ignored.", 0) \
 
-DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
-
-struct RefreshSettingsImpl : public BaseSettings<RefreshSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) RefreshSettings##TYPE NAME = &RefreshSettingsImpl ::NAME;
-
-namespace RefreshSetting
-{
-LIST_OF_REFRESH_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, REFRESH_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, RefreshSettings, RefreshSetting)
 
 RefreshSettings::RefreshSettings() : impl(std::make_unique<RefreshSettingsImpl>())
 {
@@ -35,10 +24,7 @@ RefreshSettings::RefreshSettings(const RefreshSettings & settings) : impl(std::m
 {
 }
 
-RefreshSettings::RefreshSettings(RefreshSettings && settings) noexcept
-    : impl(std::make_unique<RefreshSettingsImpl>(std::move(*settings.impl)))
-{
-}
+RefreshSettings::RefreshSettings(RefreshSettings && settings) noexcept = default;
 
 RefreshSettings::~RefreshSettings() = default;
 

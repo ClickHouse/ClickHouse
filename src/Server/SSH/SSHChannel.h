@@ -30,11 +30,13 @@ public:
     // Exposes ssh_channel c pointer, which could be used to be passed into other objects
     ChannelPtr getCChannelPtr() const;
 
-    int read(void * dest, uint32_t count, int isStderr);
-    int readTimeout(void * dest, uint32_t count, int isStderr, int timeout);
+    int read(void * dest, uint32_t count, int is_stderr);
+    int readTimeout(void * dest, uint32_t count, int is_stderr, int timeout);
     int write(const void * data, uint32_t len);
     // Send eof signal to the other side of channel. It does not close the socket.
     int sendEof();
+    // Send exit status to the remote process.
+    int sendExitStatus(int exit_status);
     // Sends eof if it has not been sent and then closes channel.
     int close();
     bool isOpen();

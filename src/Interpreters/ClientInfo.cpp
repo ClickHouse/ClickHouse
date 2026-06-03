@@ -9,9 +9,9 @@
 
 #include <Common/config_version.h>
 
-#include <format>
-#include <unistd.h>
 #include <boost/algorithm/string/trim.hpp>
+#include <fmt/format.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -24,6 +24,7 @@ namespace ErrorCodes
 
 ClientInfo::ClientInfo()
 {
+    connection_address = std::make_shared<Poco::Net::SocketAddress>();
     current_address = std::make_shared<Poco::Net::SocketAddress>();
     initial_address = std::make_shared<Poco::Net::SocketAddress>();
 }
@@ -238,7 +239,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
-        UInt64 value;
+        UInt64 value = 0;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
         readVarUInt(obsolete_count_participating_replicas, in);
@@ -282,7 +283,7 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 
 String ClientInfo::getVersionStr() const
 {
-    return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    return fmt::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
@@ -321,9 +322,13 @@ String toString(ClientInfo::Interface interface)
             return "TCP_INTERSERVER";
         case ClientInfo::Interface::PROMETHEUS:
             return "PROMETHEUS";
+        case ClientInfo::Interface::BACKGROUND:
+            return "BACKGROUND";
+        case ClientInfo::Interface::ARROW_FLIGHT:
+            return "ARROWFLIGHT";
     }
 
-    return std::format("Unknown server interface ({}).", static_cast<int>(interface));
+    return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));
 }
 
 void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)

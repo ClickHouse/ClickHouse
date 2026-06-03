@@ -1,5 +1,5 @@
-#include "AggregateFunctionOrFill.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionOrFill.h>
 
 namespace DB
 {
@@ -43,6 +43,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrNull));

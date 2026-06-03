@@ -1,7 +1,8 @@
 #if defined(OS_LINUX)
 
-#include "Epoll.h"
+#include <Common/Epoll.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <unistd.h>
@@ -37,7 +38,7 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
 
 void Epoll::add(int fd, void * ptr, uint32_t events)
 {
-    epoll_event event;
+    epoll_event event{};
     event.events = events | EPOLLPRI;
     if (ptr)
         event.data.ptr = ptr;
@@ -64,7 +65,7 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
     Stopwatch watch;
-    int ready_size;
+    int ready_size = 0;
     while (true)
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);

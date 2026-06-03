@@ -1,17 +1,14 @@
-#include <TableFunctions/ITableFunctionFileLike.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
-
-#include <Storages/StorageFile.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/VirtualColumnUtils.h>
-
-#include <Interpreters/evaluateConstantExpression.h>
-
 #include <Formats/FormatFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
 
 namespace DB
 {
@@ -88,7 +85,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
@@ -96,7 +93,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method);
+    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
     storage->startup();
     return storage;
 }

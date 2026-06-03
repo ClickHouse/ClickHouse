@@ -22,6 +22,9 @@ RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_setting
     if (regexp_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The regular expression is not set for the `Regexp` format. It requires setting the value of the `format_regexp` setting.");
 
+    if (!regexp.ok())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid regular expression '{}' for the `Regexp` format: {}", regexp_str, regexp.error());
+
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
     re2_arguments.resize(fields_count);
@@ -74,13 +77,13 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
 {
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-    std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, *buf_, std::move(params_))
     , buf(std::move(buf_))
     , format_settings(format_settings_)
@@ -173,6 +176,7 @@ void RegexpSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr 
 }
 
 
+void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatRegexp(FormatFactory & factory)
 {
     factory.registerInputFormat("Regexp", [](
@@ -181,7 +185,7 @@ void registerInputFormatRegexp(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
     {
-        return std::make_shared<RegexpRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<RegexpRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 }
 
@@ -222,11 +226,13 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
+void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("Regexp", &segmentationEngine);
 }
 
+void registerRegexpSchemaReader(FormatFactory & factory);
 void registerRegexpSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings)

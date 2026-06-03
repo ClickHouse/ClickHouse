@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/BloomFilter.h>
 
 namespace DB
@@ -264,7 +263,7 @@ struct BloomFilterHash
             for (size_t index = 0, size = vec.size(); index < size; ++index)
             {
                 ColumnString::Offset current_offset = offsets[index + pos - 1];
-                size_t length = offsets[index + pos] - current_offset - 1 /* terminating zero */;
+                size_t length = offsets[index + pos] - current_offset;
                 UInt64 city_hash = CityHash_v1_0_2::CityHash64(
                     reinterpret_cast<const char *>(&data[current_offset]), length);
 
@@ -293,7 +292,7 @@ struct BloomFilterHash
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
     }
 
-    static std::pair<size_t, size_t> calculationBestPractices(double max_conflict_probability)
+    static std::pair<size_t, size_t> calculationBestPractices(double false_positive_rate)
     {
         static const size_t MAX_BITS_PER_ROW = 20;
         static const size_t MAX_HASH_FUNCTION_COUNT = 15;
@@ -305,7 +304,7 @@ struct BloomFilterHash
         /// Otherwise, for those rates the loop won't find any possible values in the lookup table
         /// returning bits_per_row = 19 & size_of_hash_functions = 13. Which are the most restrictive values
         /// to be used with the smallest false positive rates.
-        if (max_conflict_probability >= 0.283)
+        if (false_positive_rate >= 0.283)
             return std::pair<size_t, size_t>(MIN_BITS_PER_ROW, MIN_HASH_FUNCTION_COUNT);
 
         /// For the smallest index per level in probability_lookup_table
@@ -313,36 +312,36 @@ struct BloomFilterHash
 
         static const long double probability_lookup_table[MAX_BITS_PER_ROW + 1][MAX_HASH_FUNCTION_COUNT] =
             {
-                {1.0},  /// dummy, 0 bits per row
-                {1.0, 1.0},
-                {1.0, 0.393,  0.400},
-                {1.0, 0.283,  0.237,   0.253},
-                {1.0, 0.221,  0.155,   0.147,   0.160},
-                {1.0, 0.181,  0.109,   0.092,   0.092,   0.101}, // 5
-                {1.0, 0.154,  0.0804,  0.0609,  0.0561,  0.0578,   0.0638},
-                {1.0, 0.133,  0.0618,  0.0423,  0.0359,  0.0347,   0.0364},
-                {1.0, 0.118,  0.0489,  0.0306,  0.024,   0.0217,   0.0216,   0.0229},
-                {1.0, 0.105,  0.0397,  0.0228,  0.0166,  0.0141,   0.0133,   0.0135,   0.0145},
-                {1.0, 0.0952, 0.0329,  0.0174,  0.0118,  0.00943,  0.00844,  0.00819,  0.00846}, // 10
-                {1.0, 0.0869, 0.0276,  0.0136,  0.00864, 0.0065,   0.00552,  0.00513,  0.00509},
-                {1.0, 0.08,   0.0236,  0.0108,  0.00646, 0.00459,  0.00371,  0.00329,  0.00314},
-                {1.0, 0.074,  0.0203,  0.00875, 0.00492, 0.00332,  0.00255,  0.00217,  0.00199,  0.00194},
-                {1.0, 0.0689, 0.0177,  0.00718, 0.00381, 0.00244,  0.00179,  0.00146,  0.00129,  0.00121,  0.0012},
-                {1.0, 0.0645, 0.0156,  0.00596, 0.003,   0.00183,  0.00128,  0.001,    0.000852, 0.000775, 0.000744}, // 15
-                {1.0, 0.0606, 0.0138,  0.005,   0.00239, 0.00139,  0.000935, 0.000702, 0.000574, 0.000505, 0.00047,  0.000459},
-                {1.0, 0.0571, 0.0123,  0.00423, 0.00193, 0.00107,  0.000692, 0.000499, 0.000394, 0.000335, 0.000302, 0.000287, 0.000284},
-                {1.0, 0.054,  0.0111,  0.00362, 0.00158, 0.000839, 0.000519, 0.00036,  0.000275, 0.000226, 0.000198, 0.000183, 0.000176},
-                {1.0, 0.0513, 0.00998, 0.00312, 0.0013,  0.000663, 0.000394, 0.000264, 0.000194, 0.000155, 0.000132, 0.000118, 0.000111, 0.000109},
-                {1.0, 0.0488, 0.00906, 0.0027,  0.00108, 0.00053,  0.000303, 0.000196, 0.00014,  0.000108, 8.89e-05, 7.77e-05, 7.12e-05, 6.79e-05, 6.71e-05} // 20
+                {1.0L},  /// dummy, 0 bits per row
+                {1.0L, 1.0L},
+                {1.0L, 0.393L,  0.400L},
+                {1.0L, 0.283L,  0.237L,   0.253L},
+                {1.0L, 0.221L,  0.155L,   0.147L,   0.160L},
+                {1.0L, 0.181L,  0.109L,   0.092L,   0.092L,   0.101L}, // 5
+                {1.0L, 0.154L,  0.0804L,  0.0609L,  0.0561L,  0.0578L,   0.0638L},
+                {1.0L, 0.133L,  0.0618L,  0.0423L,  0.0359L,  0.0347L,   0.0364L},
+                {1.0L, 0.118L,  0.0489L,  0.0306L,  0.024L,   0.0217L,   0.0216L,   0.0229L},
+                {1.0L, 0.105L,  0.0397L,  0.0228L,  0.0166L,  0.0141L,   0.0133L,   0.0135L,   0.0145L},
+                {1.0L, 0.0952L, 0.0329L,  0.0174L,  0.0118L,  0.00943L,  0.00844L,  0.00819L,  0.00846L}, // 10
+                {1.0L, 0.0869L, 0.0276L,  0.0136L,  0.00864L, 0.0065L,   0.00552L,  0.00513L,  0.00509L},
+                {1.0L, 0.08L,   0.0236L,  0.0108L,  0.00646L, 0.00459L,  0.00371L,  0.00329L,  0.00314L},
+                {1.0L, 0.074L,  0.0203L,  0.00875L, 0.00492L, 0.00332L,  0.00255L,  0.00217L,  0.00199L,  0.00194L},
+                {1.0L, 0.0689L, 0.0177L,  0.00718L, 0.00381L, 0.00244L,  0.00179L,  0.00146L,  0.00129L,  0.00121L,  0.0012L},
+                {1.0L, 0.0645L, 0.0156L,  0.00596L, 0.003L,   0.00183L,  0.00128L,  0.001L,    0.000852L, 0.000775L, 0.000744L}, // 15
+                {1.0L, 0.0606L, 0.0138L,  0.005L,   0.00239L, 0.00139L,  0.000935L, 0.000702L, 0.000574L, 0.000505L, 0.00047L,  0.000459L},
+                {1.0L, 0.0571L, 0.0123L,  0.00423L, 0.00193L, 0.00107L,  0.000692L, 0.000499L, 0.000394L, 0.000335L, 0.000302L, 0.000287L, 0.000284L},
+                {1.0L, 0.054L,  0.0111L,  0.00362L, 0.00158L, 0.000839L, 0.000519L, 0.00036L,  0.000275L, 0.000226L, 0.000198L, 0.000183L, 0.000176L},
+                {1.0L, 0.0513L, 0.00998L, 0.00312L, 0.0013L,  0.000663L, 0.000394L, 0.000264L, 0.000194L, 0.000155L, 0.000132L, 0.000118L, 0.000111L, 0.000109L},
+                {1.0L, 0.0488L, 0.00906L, 0.0027L,  0.00108L, 0.00053L,  0.000303L, 0.000196L, 0.00014L,  0.000108L, 8.89e-05L, 7.77e-05L, 7.12e-05L, 6.79e-05L, 6.71e-05L} // 20
             };
 
         for (size_t bits_per_row = 1; bits_per_row < MAX_BITS_PER_ROW; ++bits_per_row)
         {
-            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= max_conflict_probability)
+            if (probability_lookup_table[bits_per_row][min_probability_index_each_bits[bits_per_row]] <= static_cast<long double>(false_positive_rate))
             {
                 size_t max_size_of_hash_functions = min_probability_index_each_bits[bits_per_row];
                 for (size_t size_of_hash_functions = max_size_of_hash_functions; size_of_hash_functions > 0; --size_of_hash_functions)
-                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > max_conflict_probability)
+                    if (probability_lookup_table[bits_per_row][size_of_hash_functions] > static_cast<long double>(false_positive_rate))
                         return std::pair<size_t, size_t>(bits_per_row, size_of_hash_functions + 1);
             }
         }

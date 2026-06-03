@@ -5,7 +5,7 @@
 namespace DB
 {
 
-IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_)
+IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_)
     : description(std::move(description_))
     , header(std::move(header_))
     , current_inputs(num_inputs)
@@ -24,7 +24,7 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
             continue;
 
         cursors[source_num] = SortCursorImpl(
-            header,
+            *header,
             current_inputs[source_num].chunk.getColumns(),
             current_inputs[source_num].chunk.getNumRows(),
             description,
@@ -46,7 +46,7 @@ void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t sourc
     last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
     current_input.swap(input);
-    cursors[source_num].reset(current_input.chunk.getColumns(), header, current_input.chunk.getNumRows(), current_input.permutation);
+    cursors[source_num].reset(current_input.chunk.getColumns(), *header, current_input.chunk.getNumRows(), current_input.permutation);
 
     inputs_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(current_input.chunk);
 

@@ -1,11 +1,13 @@
-#include "CassandraDictionarySource.h"
+#include <Dictionaries/CassandraDictionarySource.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/RemoteHostFilter.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -16,9 +18,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void registerDictionarySourceCassandra(DictionarySourceFactory & factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=]([[maybe_unused]] const DictionaryStructure & dict_struct,
+    auto create_table_source = [=]([[maybe_unused]] const String & name,
+                                   [[maybe_unused]] const DictionaryStructure & dict_struct,
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
@@ -47,7 +51,6 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
-#include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -62,7 +65,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(config.getUInt(config_prefix + ".port", 0))
+    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))
@@ -110,7 +113,7 @@ CassandraDictionarySource::CassandraDictionarySource(
     : log(getLogger("CassandraDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
-    , sample_block(sample_block_)
+    , sample_block(std::make_shared<const Block>(sample_block_))
     , query_builder(dict_struct, configuration.db, "", configuration.table, configuration.query, configuration.where, IdentifierQuotingStyle::DoubleQuotes)
 {
     cassandraCheck(cass_cluster_set_contact_points(cluster, configuration.host.c_str()));
@@ -140,12 +143,14 @@ void CassandraDictionarySource::maybeAllowFiltering(String & query) const
     query += " ALLOW FILTERING;";
 }
 
-QueryPipeline CassandraDictionarySource::loadAll()
+BlockIO CassandraDictionarySource::loadAll()
 {
     String query = query_builder.composeLoadAllQuery();
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading all using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
 std::string CassandraDictionarySource::toString() const
@@ -153,21 +158,24 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-QueryPipeline CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
     LOG_INFO(log, "Loading ids using query: {}", query);
-    return QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
 
     /// TODO is there a better way to load data by complex keys?
-    std::unordered_map<UInt64, std::vector<size_t>> partitions;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
     for (const auto & row : requested_rows)
     {
         SipHash partition_key;
@@ -185,10 +193,12 @@ QueryPipeline CassandraDictionarySource::loadKeys(const Columns & key_columns, c
         pipes.push_back(Pipe(std::make_shared<CassandraSource>(getSession(), query, sample_block, max_block_size)));
     }
 
-    return QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    BlockIO io;
+    io.pipeline = QueryPipeline(Pipe::unitePipes(std::move(pipes)));
+    return io;
 }
 
-QueryPipeline CassandraDictionarySource::loadUpdatedAll()
+BlockIO CassandraDictionarySource::loadUpdatedAll()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }

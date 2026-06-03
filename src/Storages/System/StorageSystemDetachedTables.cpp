@@ -1,7 +1,8 @@
-#include "StorageSystemDetachedTables.h"
+#include <Storages/System/StorageSystemDetachedTables.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -27,12 +28,12 @@ namespace DB
 namespace
 {
 
-class DetachedTablesBlockSource : public ISource
+class DetachedTablesBlockSource final : public ISource
 {
 public:
     DetachedTablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         ColumnPtr detached_tables_,
@@ -47,7 +48,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
+            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
         }
     }
 
@@ -67,7 +68,7 @@ protected:
         size_t rows_count = 0;
         for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx).toString();
+            database_name = databases->getDataAt(database_idx);
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)
@@ -170,7 +171,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : IStorage(table_id_)
+StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -184,10 +185,19 @@ StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table
 
     storage_metadata.setColumns(std::move(description));
 
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDetachedTables::read(
+VirtualColumnsDescription StorageSystemDetachedTables::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDetachedTables::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -216,7 +226,7 @@ ReadFromSystemDetachedTables::ReadFromSystemDetachedTables(
     Block sample_block,
     std::vector<UInt8> columns_mask_,
     size_t max_block_size_)
-    : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(std::make_shared<const Block>(std::move(sample_block)), column_names_, query_info_, storage_snapshot_, context_)
     , columns_mask(std::move(columns_mask_))
     , max_block_size(max_block_size_)
 {

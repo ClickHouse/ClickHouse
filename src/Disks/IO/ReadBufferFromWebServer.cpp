@@ -1,13 +1,12 @@
-#include "ReadBufferFromWebServer.h"
+#include <Disks/IO/ReadBufferFromWebServer.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-
-#include <thread>
 
 
 namespace DB
@@ -16,11 +15,6 @@ namespace Setting
 {
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_receive_timeout;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsSeconds keep_alive_timeout;
 }
 
 namespace ErrorCodes
@@ -38,11 +32,11 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(settings_.remote_fs_settings.buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
-    , buf_size(settings_.remote_fs_buffer_size)
+    , buf_size(settings_.remote_fs_settings.buffer_size)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
@@ -56,7 +50,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     if (read_until_position)
     {
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -99,7 +93,7 @@ bool ReadBufferFromWebServer::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     if (!impl)

@@ -1,19 +1,28 @@
 ---
+description: 'Documentation for FROM Clause'
+sidebar_label: 'FROM'
 slug: /sql-reference/statements/select/from
-sidebar_label: FROM
+title: 'FROM Clause'
+doc_type: 'reference'
 ---
-
-# FROM Clause
 
 The `FROM` clause specifies the source to read data from:
 
 - [Table](../../../engines/table-engines/index.md)
 - [Subquery](../../../sql-reference/statements/select/index.md) 
-- [Table function](../../../sql-reference/table-functions/index.md#table-functions)
+- [Table function](/sql-reference/table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) and [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) clauses may also be used to extend the functionality of the `FROM` clause.
 
 Subquery is another `SELECT` query that may be specified in parenthesis inside `FROM` clause.
+
+A SQL standard `VALUES` clause can also be used as a table expression:
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+See [Values table function](/sql-reference/table-functions/values#sql-standard-values-clause) for more details.
 
 The `FROM` can contain multiple data sources, separated by commas, which is equivalent of performing [CROSS JOIN](../../../sql-reference/statements/select/join.md) on them.
 
@@ -28,14 +37,14 @@ SELECT *
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.
 
-It is applicable when selecting data from from tables using the following table engines:
+It is applicable when selecting data from tables using the following table engines:
 - `ReplacingMergeTree`
 - `SummingMergeTree`
 - `AggregatingMergeTree`
 - `CollapsingMergeTree`
 - `VersionedCollapsingMergeTree`
 
-`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/operations/settings/settings#max_final_threads) setting limits the number of threads used.
 
 ### Drawbacks {#drawbacks}
 

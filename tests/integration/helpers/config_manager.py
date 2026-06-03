@@ -48,7 +48,11 @@ class ConfigManager:
             dest_path = os.path.join(
                 "/etc/clickhouse-server", dest_dir, os.path.basename(local_path)
             )
-            node.copy_file_to_container(src_path, dest_path)
+            # Function copy_file_to_container() is not atomic, so to add a configuration file atomically
+            # first we create a temporary file and then we rename it.
+            temp_dest_path = dest_path + ".temp"
+            node.copy_file_to_container(src_path, temp_dest_path)
+            node.move_file_in_container(temp_dest_path, dest_path)
         if reload_config:
             for node in nodes_to_add_config:
                 node.query("SYSTEM RELOAD CONFIG")

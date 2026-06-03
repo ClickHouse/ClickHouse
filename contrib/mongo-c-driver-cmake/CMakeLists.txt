@@ -4,14 +4,14 @@ if(NOT USE_MONGODB)
     return()
 endif()
 
-set(libbson_VERSION_MAJOR 1)
-set(libbson_VERSION_MINOR 27)
+set(libbson_VERSION_MAJOR 2)
+set(libbson_VERSION_MINOR 3)
 set(libbson_VERSION_PATCH 0)
-set(libbson_VERSION 1.27.0)
-set(libmongoc_VERSION_MAJOR 1)
-set(libmongoc_VERSION_MINOR 27)
+set(libbson_VERSION 2.3.0)
+set(libmongoc_VERSION_MAJOR 2)
+set(libmongoc_VERSION_MINOR 3)
 set(libmongoc_VERSION_PATCH 0)
-set(libmongoc_VERSION 1.27.0)
+set(libmongoc_VERSION 2.3.0)
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
@@ -20,11 +20,14 @@ file(GLOB_RECURSE LIBBSON_SOURCES "${LIBBSON_SOURCE_DIR}/*.c")
 set(LIBBSON_BINARY_ROOT "${ClickHouse_BINARY_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/libbson/src")
 
-include(TestBigEndian)
-test_big_endian(BSON_BIG_ENDIAN)
-if(BSON_BIG_ENDIAN)
+# Hard-code endianness based on the target architecture (set in cmake/arch.cmake) instead
+# of probing the compiler. Of ClickHouse's supported architectures, only s390x is
+# big-endian; everything else is little-endian.
+if (ARCH_S390X)
+    set(BSON_BIG_ENDIAN 1)
     set(BSON_BYTE_ORDER 4321)
 else()
+    set(BSON_BIG_ENDIAN 0)
     set(BSON_BYTE_ORDER 1234)
 endif()
 
@@ -37,6 +40,7 @@ set(BSON_HAVE_RAND_R 1)
 set(BSON_HAVE_STRINGS_H 1)
 set(BSON_HAVE_STRLCPY 0)
 set(BSON_HAVE_STRNLEN 1)
+set(BSON_HAVE_ALIGNED_ALLOC 1)
 set(BSON_HAVE_STDBOOL_H 1)
 set(BSON_HAVE_CLOCK_GETTIME 1)
 
@@ -77,6 +81,7 @@ set(MONGOC_ENABLE_SSL_LIBRESSL 0)
 set(MONGOC_ENABLE_CRYPTO_LIBCRYPTO 0)
 set(MONGOC_ENABLE_CLIENT_SIDE_ENCRYPTION 0)
 set(MONGOC_HAVE_ASN1_STRING_GET0_DATA 0)
+set(MONGOC_HAVE_BCRYPT_PBKDF2 1)
 if(ENABLE_SSL)
     set(MONGOC_ENABLE_SSL 1)
     set(MONGOC_ENABLE_CRYPTO 1)
@@ -100,23 +105,25 @@ set(MONGOC_HAVE_SCHED_GETCPU 0)
 set(MONGOC_HAVE_SS_FAMILY 0)
 
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-config.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-config.h
+        ${LIBBSON_SOURCE_DIR}/bson/config.h.in
+        ${LIBBSON_BINARY_DIR}/bson/config.h
 )
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-version.h
+        ${LIBBSON_SOURCE_DIR}/bson/version.h.in
+        ${LIBBSON_BINARY_DIR}/bson/version.h
 )
 
-set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common")
+set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common/src")
+set(COMMON_BINARY_DIR "${LIBBSON_BINARY_ROOT}/common/src")
 file(GLOB_RECURSE COMMON_SOURCES "${COMMON_SOURCE_DIR}/*.c")
 configure_file(
         ${COMMON_SOURCE_DIR}/common-config.h.in
-        ${COMMON_SOURCE_DIR}/common-config.h
+        ${COMMON_BINARY_DIR}/common-config.h
 )
 add_library(_libbson ${LIBBSON_SOURCES} ${COMMON_SOURCES})
 add_library(ch_contrib::libbson ALIAS _libbson)
-target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR})
+target_include_directories(_libbson SYSTEM PUBLIC ${LIBBSON_SOURCE_DIR} ${LIBBSON_BINARY_DIR} ${COMMON_SOURCE_DIR} ${COMMON_BINARY_DIR})
+target_include_directories(_libbson PRIVATE ${COMMON_SOURCE_DIR}/src)
 target_compile_definitions(_libbson PRIVATE BSON_COMPILATION)
 if(OS_LINUX)
     target_compile_definitions(_libbson PRIVATE -D_GNU_SOURCE -D_POSIX_C_SOURCE=199309L -D_XOPEN_SOURCE=600)
@@ -126,23 +133,29 @@ endif()
 
 
 set(LIBMONGOC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libmongoc/src")
+set(LIBMONGOC_BINARY_DIR "${LIBBSON_BINARY_ROOT}/libmongoc/src")
 file(GLOB_RECURSE LIBMONGOC_SOURCES "${LIBMONGOC_SOURCE_DIR}/*.c")
 set(UTF8PROC_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/utf8proc-2.8.0")
 set(UTF8PROC_SOURCES "${UTF8PROC_SOURCE_DIR}/utf8proc.c")
 set(UTHASH_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/uthash")
 
+set(MONGOC_CXX_COMPILER_ID "${CMAKE_CXX_COMPILER_ID}")
+set(MONGOC_CXX_COMPILER_VERSION "${CMAKE_CXX_COMPILER_VERSION}")
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h.in
-        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config.h
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config.h
 )
 configure_file(
         ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h.in
-        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-version.h
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-version.h
+)
+configure_file(
+        ${LIBMONGOC_SOURCE_DIR}/mongoc/mongoc-config-private.h.in
+        ${LIBMONGOC_BINARY_DIR}/mongoc/mongoc-config-private.h
 )
 add_library(_libmongoc ${LIBMONGOC_SOURCES} ${COMMON_SOURCES} ${UTF8PROC_SOURCES})
 add_library(ch_contrib::libmongoc ALIAS _libmongoc)
-target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR} ${UTHASH_SOURCE_DIR})
-target_include_directories(_libmongoc SYSTEM PRIVATE ${LIBMONGOC_SOURCE_DIR}/mongoc ${UTHASH_SOURCE_DIR})
+target_include_directories(_libmongoc SYSTEM PUBLIC ${LIBMONGOC_SOURCE_DIR} ${LIBMONGOC_BINARY_DIR} ${LIBMONGOC_SOURCE_DIR}/mongoc ${LIBMONGOC_BINARY_DIR}/mongoc ${COMMON_SOURCE_DIR} ${UTF8PROC_SOURCE_DIR} ${UTHASH_SOURCE_DIR} )
 target_compile_definitions(_libmongoc PRIVATE MONGOC_COMPILATION)
 target_link_libraries(_libmongoc ch_contrib::libbson ch_contrib::c-ares ch_contrib::zstd)
 if(ENABLE_SSL)

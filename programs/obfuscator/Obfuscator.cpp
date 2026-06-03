@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -42,12 +43,14 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
+#include <iostream>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
+#include <Common/ErrnoException.h>
 #include <bit>
 
 
@@ -600,7 +603,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -666,7 +669,7 @@ private:
 
     static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
-        return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
+        return static_cast<NGramHash>(CRC32Hash()(std::string_view(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint))));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
@@ -841,12 +844,12 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
+                double average = static_cast<double>(histogram.total) / static_cast<double>(histogram.buckets.size());
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
+                    bucket.second = static_cast<UInt64>(static_cast<double>(bucket.second) * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
@@ -866,7 +869,7 @@ public:
 
         while (pos < end)
         {
-            Table::LookupResult it;
+            Table::LookupResult it = {};
 
             size_t context_size = params.order;
             while (true)
@@ -913,7 +916,7 @@ public:
             {
                 /// Heuristic: break at ASCII non-alnum code point.
                 /// This allows to be close to desired_size but not break natural looking words.
-                if (code < 128 && !isAlphaNumericASCII(code))
+                if (code < 128 && !isAlphaNumericASCII(static_cast<char>(code)))
                     break;
             }
 
@@ -950,8 +953,8 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef string = column_string.getDataAt(i);
-            markov_model.consume(string.data, string.size);
+            auto string = column_string.getDataAt(i);
+            markov_model.consume(string.data(), string.size());
         }
     }
 
@@ -971,13 +974,13 @@ public:
         std::string new_string;
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef src_string = column_string.getDataAt(i);
-            size_t desired_string_size = transform(src_string.size, seed);
+            auto src_string = column_string.getDataAt(i);
+            size_t desired_string_size = transform(src_string.size(), seed);
             new_string.resize(desired_string_size * 2);
 
             size_t actual_size = 0;
             if (desired_string_size != 0)
-                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data, src_string.size);
+                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data(), src_string.size());
 
             res_column->insertData(new_string.data(), actual_size);
         }
@@ -1206,6 +1209,7 @@ public:
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wmissing-declarations"
 
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
@@ -1237,20 +1241,20 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    if (options.contains("help")
+        || !options.contains("seed")
+        || !options.contains("input-format")
+        || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
-            << "\nUsage: " << argv[0] << " [options] < in > out\n"
+            << "\nUsage: clickhouse obfuscator [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    clickhouse obfuscator --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
-    if (options.count("save") && options.count("load"))
+    if (options.contains("save") && options.contains("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -1260,7 +1264,7 @@ try
 
     std::string structure;
 
-    if (options.count("structure"))
+    if (options.contains("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -1269,18 +1273,18 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.count("load"))
+    if (options.contains("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.count("save"))
+    else if (options.contains("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.count("limit"))
+    if (options.contains("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
 
-    MarkovModelParameters markov_model_params;
+    MarkovModelParameters markov_model_params{};
 
     markov_model_params.order = options["order"].as<UInt64>();
     markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();
@@ -1429,7 +1433,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.count("limit"))
+    if (!options.contains("limit"))
         limit = source_rows;
 
     /// Generation step
@@ -1446,7 +1450,7 @@ try
 
         if (processed_rows + source_rows > limit)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
             });

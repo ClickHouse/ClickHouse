@@ -1,14 +1,11 @@
 ---
-slug: /operations/utilities/clickhouse-local
+description: 'Guide to using clickhouse-local for processing data without a server'
+sidebar_label: 'clickhouse-local'
 sidebar_position: 60
-sidebar_label: clickhouse-local
+slug: /operations/utilities/clickhouse-local
+title: 'clickhouse-local'
+doc_type: 'reference'
 ---
-
-# clickhouse-local
-
-## Related Content {#related-content}
-
-- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 
 ## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
@@ -27,7 +24,7 @@ curl https://clickhouse.com/ | sh
 ```
 
 :::note
-The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](../../quick-start.mdx).
+The binary you just downloaded can run all sorts of ClickHouse tools and utilities. If you want to run ClickHouse as a database server, check out the [Quick Start](/get-started/quick-start).
 :::
 
 ## Query data in a file using SQL {#query_data_in_file}
@@ -71,21 +68,21 @@ Examples:
 :::
 
 ```response
-marketplace	Nullable(String)
-customer_id	Nullable(Int64)
-review_id	Nullable(String)
-product_id	Nullable(String)
-product_parent	Nullable(Int64)
-product_title	Nullable(String)
-product_category	Nullable(String)
-star_rating	Nullable(Int64)
-helpful_votes	Nullable(Int64)
-total_votes	Nullable(Int64)
-vine	Nullable(String)
-verified_purchase	Nullable(String)
-review_headline	Nullable(String)
-review_body	Nullable(String)
-review_date	Nullable(Date)
+marketplace    Nullable(String)
+customer_id    Nullable(Int64)
+review_id    Nullable(String)
+product_id    Nullable(String)
+product_parent    Nullable(Int64)
+product_title    Nullable(String)
+product_category    Nullable(String)
+star_rating    Nullable(Int64)
+helpful_votes    Nullable(Int64)
+total_votes    Nullable(Int64)
+vine    Nullable(String)
+verified_purchase    Nullable(String)
+review_headline    Nullable(String)
+review_body    Nullable(String)
+review_date    Nullable(Date)
 ```
 
 Let's find a product with the highest rating:
@@ -98,7 +95,7 @@ FROM file('reviews.tsv')"
 ```
 
 ```response
-Monopoly Junior Board Game	5
+Monopoly Junior Board Game    5
 ```
 
 ## Query data in a Parquet file in AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
@@ -124,20 +121,20 @@ It's always useful to see what the inferred schema that ClickHouse determines fr
 ```
 
 ```response
-price	Nullable(Int64)
-date	Nullable(UInt16)
-postcode1	Nullable(String)
-postcode2	Nullable(String)
-type	Nullable(String)
-is_new	Nullable(UInt8)
-duration	Nullable(String)
-addr1	Nullable(String)
-addr2	Nullable(String)
-street	Nullable(String)
-locality	Nullable(String)
-town	Nullable(String)
-district	Nullable(String)
-county	Nullable(String)
+price    Nullable(Int64)
+date    Nullable(UInt16)
+postcode1    Nullable(String)
+postcode2    Nullable(String)
+type    Nullable(String)
+is_new    Nullable(UInt8)
+duration    Nullable(String)
+addr1    Nullable(String)
+addr2    Nullable(String)
+street    Nullable(String)
+locality    Nullable(String)
+town    Nullable(String)
+district    Nullable(String)
+county    Nullable(String)
 ```
 
 Let's see what the most expensive neighborhoods are:
@@ -160,42 +157,40 @@ LIMIT 10"
 ```
 
 ```response
-LONDON	CITY OF LONDON	886	2271305	█████████████████████████████████████████████▍
-LEATHERHEAD	ELMBRIDGE	206	1176680	███████████████████████▌
-LONDON	CITY OF WESTMINSTER	12577	1108221	██████████████████████▏
-LONDON	KENSINGTON AND CHELSEA	8728	1094496	█████████████████████▉
-HYTHE	FOLKESTONE AND HYTHE	130	1023980	████████████████████▍
-CHALFONT ST GILES	CHILTERN	113	835754	████████████████▋
-AMERSHAM	BUCKINGHAMSHIRE	113	799596	███████████████▉
-VIRGINIA WATER	RUNNYMEDE	356	789301	███████████████▊
-BARNET	ENFIELD	282	740514	██████████████▊
-NORTHWOOD	THREE RIVERS	184	731609	██████████████▋
+LONDON    CITY OF LONDON    886    2271305    █████████████████████████████████████████████▍
+LEATHERHEAD    ELMBRIDGE    206    1176680    ███████████████████████▌
+LONDON    CITY OF WESTMINSTER    12577    1108221    ██████████████████████▏
+LONDON    KENSINGTON AND CHELSEA    8728    1094496    █████████████████████▉
+HYTHE    FOLKESTONE AND HYTHE    130    1023980    ████████████████████▍
+CHALFONT ST GILES    CHILTERN    113    835754    ████████████████▋
+AMERSHAM    BUCKINGHAMSHIRE    113    799596    ███████████████▉
+VIRGINIA WATER    RUNNYMEDE    356    789301    ███████████████▊
+BARNET    ENFIELD    282    740514    ██████████████▊
+NORTHWOOD    THREE RIVERS    184    731609    ██████████████▋
 ```
 
 :::tip
-When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](../../quick-start.mdx) for more details.
+When you are ready to insert your files into ClickHouse, startup a ClickHouse server and insert the results of your `file` and `s3` table functions into a `MergeTree` table. View the [Quick Start](/get-started/quick-start) for more details.
 :::
-
 
 ## Format Conversions {#format-conversions}
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
-``` bash
+```bash
 $ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 Formats are auto-detected from file extensions: 
 
-``` bash
+```bash
 $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-``` bash
+```bash
 $ clickhouse-local --copy < data.json > data.csv
 ```
-
 
 ## Usage {#usage}
 
@@ -203,13 +198,13 @@ By default `clickhouse-local` has access to data of a ClickHouse server on the s
 
 Basic usage (Linux):
 
-``` bash
+```bash
 $ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 Basic usage (Mac):
 
-``` bash
+```bash
 $ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
@@ -242,10 +237,63 @@ Arguments:
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
+## Commands {#commands}
+
+### LS Command {#ls-command}
+
+Lists all the files in the current working directory accessible to clickhouse-local.
+
+You can run it in interactive mode like:
+
+```sql title="Query"
+ClickHouse local version 26.3.1.1.
+
+:) ls
+
+SELECT _file AS file
+FROM file('*', 'One')
+ORDER BY file ASC
+```
+
+```text title="Response"
+┌─file────────┐
+│ file1.csv   │
+│ file2.json  │
+│ file3.xml   │
+└─────────────┘
+```
+
+You can also run it as a query using the argument -q:
+
+```sh
+./clickhouse-local -q ls
+```
+
+```text title="Response"
+file1.csv
+file2.json
+file3.xml
+```
+
+### CLEAR command {#clear-command}
+
+Clears the terminal screen (similar to the `clear` command on Linux or Ctrl+L in many terminals). This is a client-side action: it is not sent to the SQL engine.
+
+In `clickhouse-local`, the meta-command is recognized in **interactive** mode and for **`-q`** and **`--queries-file`** input (same client path as `-q`, same idea as `ls`), so a bare `clear` does not produce an `UNKNOWN_IDENTIFIER` error. Remote **`clickhouse-client --queries-file`** is unchanged: file contents are executed as SQL only (no text-level meta-commands).
+
+In `clickhouse-client`, it is recognized only in **interactive** mode. With **`-q`** or query files, `clear` is still parsed as SQL, so automation keeps the previous error behavior instead of turning typos into a silent no-op.
+
+Supported forms: `clear`, `CLEAR`, `/clear` (optional trailing `;` is ignored). If standard output is not a terminal (for example, when piping output), the meta-command is accepted when recognized but does not emit control sequences.
+
+With `clickhouse-local` and `-q`:
+
+```sh
+./clickhouse-local -q clear
+```
 
 ## Examples {#examples}
 
-``` bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
     --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
@@ -255,7 +303,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 
 Previous example is the same as:
 
-``` bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
@@ -267,7 +315,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 
 You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
 
-``` bash
+```bash title="Query"
 $ echo 1 | tee 1.tsv
 1
 
@@ -277,23 +325,19 @@ $ echo 2 | tee 2.tsv
 $ clickhouse-local --query "
     select * from file('1.tsv', TSV, 'a int') t1
     cross join file('2.tsv', TSV, 'b int') t2"
-1	2
+1    2
 ```
 
 Now let's output memory user for each Unix user:
 
-Query:
-
-``` bash
+```bash title="Query"
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
     | clickhouse-local --structure "user String, mem Float64" \
         --query "SELECT user, round(sum(mem), 2) as memTotal
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
 
-Result:
-
-``` text
+```text title="Response"
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ┏━━━━━━━━━━┳━━━━━━━━━━┓
 ┃ user     ┃ memTotal ┃
@@ -305,10 +349,9 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-
-
 ## Related Content {#related-content-1}
 
 - [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 - [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
 - [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)

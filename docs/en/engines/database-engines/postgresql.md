@@ -1,12 +1,11 @@
 ---
-slug: /engines/database-engines/postgresql
+description: 'Allows to connect to databases on a remote PostgreSQL server.'
+sidebar_label: 'PostgreSQL'
 sidebar_position: 40
-sidebar_label: PostgreSQL
-title: "PostgreSQL"
-description: "Allows to connect to databases on a remote PostgreSQL server."
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
+doc_type: 'guide'
 ---
-
-# PostgreSQL
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 
@@ -14,9 +13,9 @@ Gives the real-time access to table list and table structure from remote Postgre
 
 Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) is set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
-``` sql
+```sql
 CREATE DATABASE test_database
 ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
 ```
@@ -30,7 +29,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-## Data Types Support {#data_types-support}
+## Data types support {#data_types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
@@ -48,21 +47,20 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
 
-
-## Examples of Use {#examples-of-use}
+## Examples of use {#examples-of-use}
 
 Database in ClickHouse, exchanging data with the PostgreSQL server:
 
-``` sql
+```sql
 CREATE DATABASE test_database
 ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
 ```
 
-``` sql
+```sql
 SHOW DATABASES;
 ```
 
-``` text
+```text
 ┌─name──────────┐
 │ default       │
 │ test_database │
@@ -70,11 +68,11 @@ SHOW DATABASES;
 └───────────────┘
 ```
 
-``` sql
+```sql
 SHOW TABLES FROM test_database;
 ```
 
-``` text
+```text
 ┌─name───────┐
 │ test_table │
 └────────────┘
@@ -82,11 +80,11 @@ SHOW TABLES FROM test_database;
 
 Reading data from the PostgreSQL table:
 
-``` sql
+```sql
 SELECT * FROM test_database.test_table;
 ```
 
-``` text
+```text
 ┌─id─┬─value─┐
 │  1 │     2 │
 └────┴───────┘
@@ -94,12 +92,12 @@ SELECT * FROM test_database.test_table;
 
 Writing data to the PostgreSQL table:
 
-``` sql
+```sql
 INSERT INTO test_database.test_table VALUES (3,4);
 SELECT * FROM test_database.test_table;
 ```
 
-``` text
+```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │
@@ -108,16 +106,16 @@ SELECT * FROM test_database.test_table;
 
 Consider the table structure was modified in PostgreSQL:
 
-``` sql
+```sql
 postgre> ALTER TABLE test_table ADD COLUMN data Text
 ```
 
 As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
 
-``` sql
+```sql
 DESCRIBE TABLE test_database.test_table;
 ```
-``` text
+```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
 │ value  │ Nullable(Integer) │
@@ -126,12 +124,12 @@ DESCRIBE TABLE test_database.test_table;
 
 After detaching the table and attaching it again, the structure was updated:
 
-``` sql
+```sql
 DETACH TABLE test_database.test_table;
 ATTACH TABLE test_database.test_table;
 DESCRIBE TABLE test_database.test_table;
 ```
-``` text
+```text
 ┌─name───┬─type──────────────┐
 │ id     │ Nullable(Integer) │
 │ value  │ Nullable(Integer) │

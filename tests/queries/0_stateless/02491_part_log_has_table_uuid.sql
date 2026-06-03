@@ -5,7 +5,7 @@ insert into data_02491 values (1);
 optimize table data_02491 final;
 truncate table data_02491;
 
-system flush logs;
+system flush logs part_log;
 with (select uuid from system.tables where database = currentDatabase() and table = 'data_02491') as table_uuid_
 select
     table_uuid != toUUIDOrDefault(Null),
@@ -13,7 +13,7 @@ select
     merge_reason,
     part_name
 from system.part_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     database = currentDatabase() and
     table = 'data_02491' and
     table_uuid = table_uuid_

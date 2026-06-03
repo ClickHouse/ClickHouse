@@ -3,6 +3,7 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
@@ -200,8 +201,8 @@ int HedgedConnectionsFactory::getNextIndex()
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl(Connection *& connection_out)
 {
-    int index;
-    State state;
+    int index = 0;
+    State state = {};
     do
     {
         index = getNextIndex();
@@ -217,7 +218,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(bool blocking, Connection *& connection_out, AsyncCallback & async_callback)
 {
-    int event_fd;
+    int event_fd = 0;
     while (!epoll.empty())
     {
         event_fd = getReadyFileDescriptor(blocking, async_callback);
@@ -261,7 +262,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
 
 int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallback & async_callback)
 {
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     if (!blocking)
     {

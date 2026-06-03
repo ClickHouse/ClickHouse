@@ -1,34 +1,33 @@
 ---
-slug: /sql-reference/table-functions/view
+description: 'Turns a subquery into a table. The function implements views.'
+sidebar_label: 'view'
 sidebar_position: 210
-sidebar_label: view
-title: view
-description: "Turns a subquery into a table. The function implements views."
+slug: /sql-reference/table-functions/view
+title: 'view'
+doc_type: 'reference'
 ---
 
-# view Table Function
+Turns a subquery into a table. The function implements views (see [CREATE VIEW](/sql-reference/statements/create/view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 
-Turns a subquery into a table. The function implements views (see [CREATE VIEW](/sql-reference/statements/create/view/#create-view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
+## Syntax {#syntax}
 
-**Syntax**
-
-``` sql
+```sql
 view(subquery)
 ```
 
-**Arguments**
+## Arguments {#arguments}
 
 - `subquery` — `SELECT` query.
 
-**Returned value**
+## Returned value {#returned_value}
 
 - A table.
 
-**Example**
+## Examples {#examples}
 
 Input table:
 
-``` text
+```text
 ┌─id─┬─name─────┬─days─┐
 │  1 │ January  │   31 │
 │  2 │ February │   29 │
@@ -37,15 +36,11 @@ Input table:
 └────┴──────────┴──────┘
 ```
 
-Query:
-
-``` sql
+```sql title="Query"
 SELECT * FROM view(SELECT name FROM months);
 ```
 
-Result:
-
-``` text
+```text title="Response"
 ┌─name─────┐
 │ January  │
 │ February │
@@ -54,16 +49,16 @@ Result:
 └──────────┘
 ```
 
-You can use the `view` function as a parameter of the [remote](/sql-reference/table-functions/remote/#remote-remotesecure) and [cluster](/sql-reference/table-functions/cluster/#cluster-clusterallreplicas) table functions:
+You can use the `view` function as a parameter of the [remote](/sql-reference/table-functions/remote) and [cluster](/sql-reference/table-functions/cluster) table functions:
 
-``` sql
+```sql title="Query"
 SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
 ```
 
-``` sql
+```sql title="Query"
 SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 ```
 
-**See Also**
+## Related {#related}
 
 - [View Table Engine](/engines/table-engines/special/view/)

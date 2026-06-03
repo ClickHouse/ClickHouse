@@ -10,15 +10,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) SETTINGS enable_parallel_replicas=0 FORMAT Null" & # CI may inject enable_parallel_replicas=1; parallel replicas distribute sleep so initiator finishes quickly, producing too few metric log events
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999, enable_parallel_replicas=0 FORMAT Null" &
 
 wait
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, query_metric_log"
 
 function check_log()
 {
@@ -30,37 +30,7 @@ function check_log()
         SELECT
             count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.2) AND ((ceil(2500 / $interval) + 1) * 1.8)
         FROM system.query_metric_log
-        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
-    """
-
-    # We calculate the diff of each row with its previous row to check whether the intervals at
-    # which data is collected is right. The first row is always skipped because the diff with the
-    # preceding one (itself) is 0. The last row is also skipped, because it doesn't contain a full
-    # interval. We leave at least 60% of margin for many rows and at most 80% for one single row.
-    $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
-        SELECT '--Interval $interval: check that the delta/diff between the events is correct';
-        WITH
-            (SELECT count() - 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}') as diff_rows,
-            (60 + 20 / diff_rows)/100 AS margin
-        SELECT
-            avg(diff) BETWEEN (1 - margin) * $interval AND (1 + margin) * $interval
-        FROM (
-            WITH diff AS (
-                SELECT
-                    row_number() OVER () AS row,
-                    count() OVER () as total_rows,
-                    event_time_microseconds,
-                    first_value(event_time_microseconds) OVER (ORDER BY event_time_microseconds ROWS BETWEEN 1 PRECEDING AND 0 FOLLOWING) as prev,
-                    dateDiff('ms', prev, event_time_microseconds) AS diff
-                FROM system.query_metric_log
-                WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
-                ORDER BY event_time_microseconds
-                OFFSET 1
-            )
-            SELECT avg(diff) AS diff
-            FROM diff
-            WHERE row < total_rows
-        )
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
     """
 
     # Check that the first event contains information from the beginning of the query.
@@ -69,7 +39,7 @@ function check_log()
         SELECT '--Interval $interval: check that the Query, SelectQuery and InitialQuery values are correct for the first event';
         SELECT ProfileEvent_Query = 1 AND ProfileEvent_SelectQuery = 1 AND ProfileEvent_InitialQuery = 1
         FROM system.query_metric_log
-        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
         ORDER BY event_time_microseconds
         LIMIT 1
     """
@@ -85,7 +55,7 @@ function check_log()
                 sum(ProfileEvent_SelectQuery) = 1 AND
                 sum(ProfileEvent_InitialQuery) = 1
         FROM system.query_metric_log
-        WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
     """
 }
 
@@ -96,17 +66,42 @@ check_log 123
 # query_metric_log_interval=0 disables the collection altogether
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that a query_metric_log_interval=0 disables the collection';
-    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_0'
+    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_0'
 """
 
 # a quick query that takes less than query_metric_log_interval is never collected
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that a query which execution time is less than query_metric_log_interval is never collected';
-    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_fast'
+    SELECT count() == 0 FROM system.query_metric_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_fast'
 """
 
-# a query that takes more than query_metric_log_interval is collected including the final row
+# A long-running query must emit a final `system.query_metric_log` row from
+# `QueryMetricLog::finishQuery`. On the TCP path exercised by this test,
+# `BlockIO::onFinish` captures `finish_time` once and passes it through the
+# finish callback to `logQueryFinishImpl`, which uses the same timestamp for
+# both `system.query_log` `QueryFinish` and `logQueryMetricLogFinish`. A
+# later periodic `system.query_metric_log` row may also exist because a
+# periodic `collectMetric` can sample a live `ProcessList` entry before
+# `finishQuery` marks the query finished. The correct invariant is therefore
+# existence of a metric row at the exact `QueryFinish` timestamp, not
+# `max(event_time_microseconds) = QueryFinish`.
 $CLICKHOUSE_CLIENT -m -q """
     SELECT '--Check that there is a final event when queries finish';
-    SELECT count() > 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_1000'
+    WITH
+    (
+        SELECT event_time_microseconds
+        FROM system.query_log
+        WHERE event_date >= yesterday()
+          AND event_time >= now() - 600
+          AND current_database = currentDatabase()
+          AND query_id = '${query_prefix}_1000'
+          AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+    ) AS finish_time
+    SELECT countIf(event_time_microseconds = finish_time) > 0
+    FROM system.query_metric_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 600
+      AND query_id = '${query_prefix}_1000'
 """

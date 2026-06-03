@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -13,7 +14,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -29,6 +29,8 @@
 
 #include <algorithm>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -40,6 +42,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
@@ -83,26 +86,26 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
-        Block full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.at(0), required_result_column_names);
+        auto full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.at(0), required_result_column_names);
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
 
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
-            positions_of_required_result_columns[required_result_num] = full_result_header.getPositionByName(required_result_column_names[required_result_num]);
+            positions_of_required_result_columns[required_result_num] = full_result_header->getPositionByName(required_result_column_names[required_result_num]);
 
         for (size_t query_num = 1; query_num < num_children; ++query_num)
         {
-            Block full_result_header_for_current_select
+            auto full_result_header_for_current_select
                 = getCurrentChildResultHeader(ast->list_of_selects->children.at(query_num), required_result_column_names);
 
-            if (full_result_header_for_current_select.columns() != full_result_header.columns())
+            if (full_result_header_for_current_select->columns() != full_result_header->columns())
                 throw Exception(ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH,
                                 "Different number of columns in UNION ALL elements:\n{}\nand\n{}\n",
-                                full_result_header.dumpNames(), full_result_header_for_current_select.dumpNames());
+                                full_result_header->dumpNames(), full_result_header_for_current_select->dumpNames());
 
             required_result_column_names_for_other_selects[query_num].reserve(required_result_column_names.size());
             for (const auto & pos : positions_of_required_result_columns)
-                required_result_column_names_for_other_selects[query_num].push_back(full_result_header_for_current_select.getByPosition(pos).name);
+                required_result_column_names_for_other_selects[query_num].push_back(full_result_header_for_current_select->getByPosition(pos).name);
         }
     }
 
@@ -123,12 +126,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             {
                 limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
                 UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(new_limit_offset);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
             else if (settings[Setting::offset])
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings[Setting::offset].value);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
@@ -144,12 +147,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                     new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
                                                        : (limit_length - settings[Setting::offset].value);
 
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(new_limit_length);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
             else if (settings[Setting::limit])
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(settings[Setting::limit].value);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
@@ -177,7 +180,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     }
     else
     {
-        Blocks headers(num_children);
+        SharedHeaders headers(num_children);
         for (size_t query_num = 0; query_num < num_children; ++query_num)
         {
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
@@ -190,7 +193,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                 : required_result_column_names_for_other_selects[query_num];
             if (!current_required_result_column_names.empty())
             {
-                const auto & header_columns = headers[query_num].getNames();
+                const auto & header_columns = headers[query_num]->getNames();
                 if (current_required_result_column_names != header_columns)
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -202,7 +205,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             }
         }
 
-        result_header = getCommonHeaderForUnion(headers);
+        result_header = std::make_shared<const Block>(getCommonHeaderForUnion(headers));
     }
 
     /// InterpreterSelectWithUnionQuery ignores limits if all nested interpreters ignore limits.
@@ -220,26 +223,26 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
 }
 
-Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & headers)
+Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeaders & headers)
 {
     size_t num_selects = headers.size();
-    Block common_header = headers.front();
+    Block common_header = *headers.front();
     size_t num_columns = common_header.columns();
 
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
     {
-        if (headers[query_num].columns() != num_columns)
+        if (headers[query_num]->columns() != num_columns)
             throw Exception(ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH,
                             "Different number of columns in UNION ALL elements:\n{}\nand\n{}\n",
-                            common_header.dumpNames(), headers[query_num].dumpNames());
+                            common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &headers[i].getByPosition(column_num);
+            columns[i] = &headers[i]->getByPosition(column_num);
 
         ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
         result_elem = getLeastSuperColumn(columns);
@@ -248,7 +251,7 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
     return common_header;
 }
 
-Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
+SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
@@ -270,7 +273,7 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery, bool is_create_parameterized_view)
+SharedHeader InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery, bool is_create_parameterized_view)
 {
     if (!context_->hasQueryContext())
     {
@@ -282,12 +285,12 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
         return InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
     }
 
-    auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
-    auto key = queryToString(query_ptr_);
-    if (cache.find(key) != cache.end())
+    auto key = query_ptr_->formatWithSecretsOneLine();
     {
-        return cache[key];
+        auto [cache, lock] = context_->getSampleBlockCache();
+        if (cache->contains(key))
+            return cache->at(key);
     }
 
     SelectQueryOptions options;
@@ -295,7 +298,10 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
         options = options.subquery();
     if (is_create_parameterized_view)
         options = options.createParameterizedView();
-    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
+
+    auto sample_block = InterpreterSelectWithUnionQuery(query_ptr_, context_, std::move(options.analyze())).getSampleBlock();
+    auto [cache, lock] = context_->getSampleBlockCache();
+    return (*cache)[key] = sample_block;
 }
 
 
@@ -317,19 +323,20 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     else
     {
         std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-        Headers headers(num_plans);
+        SharedHeaders headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
 
-            if (!blocksHaveEqualStructure(plans[i]->getCurrentHeader(), result_header))
+            if (!blocksHaveEqualStructure(*plans[i]->getCurrentHeader(), *result_header))
             {
                 auto actions_dag = ActionsDAG::makeConvertingActions(
-                        plans[i]->getCurrentHeader().getColumnsWithTypeAndName(),
-                        result_header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Position);
+                        plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
+                        result_header->getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Position,
+                        context);
                 auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
                 converting_step->setStepDescription("Conversion before UNION");
                 plans[i]->addStep(std::move(converting_step));
@@ -338,8 +345,9 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
             headers[i] = plans[i]->getCurrentHeader();
         }
 
-        auto max_threads = settings[Setting::max_threads];
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads);
+        auto max_threads = getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* is_sql_union = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -353,7 +361,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 query_plan.getCurrentHeader(),
                 limits,
                 0,
-                result_header.getNames(),
+                result_header->getNames(),
                 false);
 
             query_plan.addStep(std::move(distinct_step));
@@ -401,25 +409,7 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
-{
-    for (const auto & interpreter : nested_interpreters)
-    {
-        if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))
-        {
-            auto filter = select_interpreter->getRowPolicyFilter();
-            if (filter)
-            {
-                for (const auto & row_policy : filter->policies)
-                {
-                    auto name = row_policy->getFullName().toString();
-                    elem.used_row_policies.emplace(std::move(name));
-                }
-            }
-        }
-    }
-}
-
+void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

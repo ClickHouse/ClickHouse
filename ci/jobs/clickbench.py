@@ -1,4 +1,5 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
@@ -9,13 +10,37 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
+    info = Info()
 
     if res:
         print("Install ClickHouse")
 
         def install():
-            return ch.install() and ch.clickbench_config_tweaks()
+            res = ch.install_clickbench_config()
+            # The ClickBench `create.sql` attaches `hits` on a cached disk
+            # rooted at `/dev/shm/clickhouse/`; ship the matching server-side
+            # allowed-directory override alongside it.
+            res = res and Shell.check(
+                f"cp ./ci/jobs/scripts/clickbench/filesystem_caches_path.xml {temp_dir}/config.d/",
+                verbose=True,
+            )
+            # `programs/server/config.d/storage_conf_local.xml` is a symlink to
+            # the test-only config that defines pre-configured `local_cache*`
+            # disks with `max_size = 22548578304` (~21 GiB) under relative path
+            # `local_cache/`. With our `filesystem_caches_path` override the
+            # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
+            # the ClickBench container runs with `--shm-size=16g`, so the
+            # capacity check in `FileCache::initialize` rejects the disk and
+            # the server fails to start. ClickBench doesn't use these test
+            # disks, so drop the config.
+            res = res and Shell.check(
+                f"rm -f {temp_dir}/config.d/storage_conf_local.xml",
+                verbose=True,
+            )
+            if info.is_local_run:
+                return res
+            return res and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -26,16 +51,16 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start()
-
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
+            res = ch.start_light()
+            if not info.is_local_run:
+                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
+                    print("WARNING: Failed to start log export")
+            return res
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
-                with_log=True,
+                command=start,
             )
         )
         res = results[-1].is_ok()
@@ -72,7 +97,7 @@ def main():
                     query_results.append(
                         Result(
                             name=f"{QUERY_NUM}_{i}",
-                            status=Result.Status.SUCCESS,
+                            status=Result.Status.OK,
                             duration=float(time_err),
                         )
                     )
@@ -92,7 +117,11 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results,
+        stopwatch=stop_watch,
+        files=ch.prepare_logs(all=False, info=info),
+    ).complete_job()
 
 
 if __name__ == "__main__":

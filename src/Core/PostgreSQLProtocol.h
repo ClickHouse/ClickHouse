@@ -5,12 +5,24 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
+#include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Base64.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
+#include <Poco/RandomStream.h>
+#include <Poco/SHA1Engine.h>
+#include <Access/Credentials.h>
+#include <algorithm>
 #include <unordered_map>
 #include <utility>
+
+#include <Interpreters/Context.h>
+#include <Access/AccessControl.h>
+#include <Access/User.h>
+#include <fmt/core.h>
 
 namespace DB
 {
@@ -50,6 +62,8 @@ enum class FrontMessageType : Int32
     FLUSH = 'H',
     CLOSE = 'C',
     EXECUTE = 'E',
+    COPY_DATA = 'd',
+    COPY_COMPLETION = 'c',
 };
 
 enum class MessageType : Int32
@@ -121,9 +135,10 @@ enum class MessageType : Int32
     FUNCTION_CALL_RESPONSE = 191,
 };
 
-//// Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones
+/** Column 'typelem' from 'pg_type' table. NB: not all types are compatible with PostgreSQL's ones */
 enum class ColumnType : Int32
 {
+    BOOL = 16,
     CHAR = 18,
     INT8 = 20,
     INT2 = 21,
@@ -145,7 +160,7 @@ public:
     ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
-ColumnTypeSpec convertTypeIndexToPostgresColumnTypeSpec(TypeIndex type_index);
+ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
 
 class MessageTransport
 {
@@ -204,7 +219,7 @@ public:
 
     void dropMessage()
     {
-        Int32 size;
+        Int32 size = 0;
         readBinaryBigEndian(size, *in);
         in->ignore(size - 4);
     }
@@ -461,6 +476,106 @@ public:
     }
 };
 
+class AuthenticationSASL : public Messaging::BackendMessage
+{
+public:
+    static constexpr std::string_view supported_method = "SCRAM-SHA-256";
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('R');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int32>(10), out);
+        writeNullTerminatedString(String(supported_method), out);
+        out.write(0);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 4 + supported_method.size() + 1 + 1;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::AUTHENTICATION_SASL;
+    }
+};
+
+class SASLInitialResponse : public Messaging::FrontMessage
+{
+public:
+    String auth_method;
+    String sasl_mechanism;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        UInt8 message_type = 0;
+        readBinaryBigEndian(message_type, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        readNullTerminated(auth_method, in);
+        Int32 size_sasl_mechanism = 0;
+        readBinaryBigEndian(size_sasl_mechanism, in);
+        sasl_mechanism.resize(size_sasl_mechanism);
+        in.readStrict(sasl_mechanism.data(), size_sasl_mechanism);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::SASL_INITIAL_RESPONSE;
+    }
+};
+
+class AuthenticationSASLContinue : public Messaging::BackendMessage
+{
+public:
+    String data;
+
+    explicit AuthenticationSASLContinue(const String & data_)
+        : data(data_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('R');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int32>(11), out);
+        out.write(data.data(), data.size());
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 4 + static_cast<Int32>(data.size());
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::AUTHENTICATION_SASL_CONTINUE;
+    }
+};
+
+class SASLResponse : public Messaging::FrontMessage
+{
+public:
+    String sasl_mechanism;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        UInt8 message_type = 0;
+        readBinaryBigEndian(message_type, in);
+        Int32 size = 0;
+        readBinaryBigEndian(size, in);
+        sasl_mechanism.resize(size - 4);
+        in.readStrict(sasl_mechanism.data(), size - 4);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::SASL_RESPONSE;
+    }
+};
+
 class AuthenticationOk : BackendMessage
 {
 public:
@@ -490,7 +605,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
@@ -570,7 +685,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -586,16 +701,16 @@ class ParseQuery : FrontMessage
 public:
     String function_name;
     String sql_query;
-    Int16 num_params;
+    Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
-        Int32 oid_param;
+        Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
             readBinaryBigEndian(oid_param, in);
     }
@@ -634,18 +749,18 @@ public:
     String portal_name;
     String function_name;
     std::vector<String> parameters;
-    Int16 num_params;
+    Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        Int16 num_format_params;
+        Int16 num_format_params = 0;
         readBinaryBigEndian(num_format_params, in);
-        Int16 format_param;
+        Int16 format_param = 0;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
@@ -653,16 +768,16 @@ public:
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
         {
-            Int32 sz_param;
+            Int32 sz_param = 0;
             readBinaryBigEndian(sz_param, in);
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
         }
 
-        Int16 num_format_params_result;
+        Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
-        Int16 format_param_result;
+        Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
     }
@@ -698,12 +813,12 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
-    char describe;
+    char describe{};
     String function_name;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
@@ -720,11 +835,11 @@ class ExecuteQuery : FrontMessage
 {
 public:
     String portal_name;
-    Int32 max_rows;
+    Int32 max_rows{};
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
@@ -767,13 +882,16 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
+    /// 'S' for prepared statement, 'P' for portal
+    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
-        Int8 byte;
+        Int8 byte = 0;
         readBinaryBigEndian(byte, in);
+        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -786,9 +904,13 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
+    CloseQueryComplete() = default;
+
     void serialize(WriteBuffer & out) const override
     {
-        out.write('C');
+        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
+        /// the PostgreSQL message protocol.
+        out.write('3');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -808,7 +930,7 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz;
+        Int32 sz = 0;
         readBinaryBigEndian(sz, in);
     }
 
@@ -826,9 +948,9 @@ private:
     FormatCode format_code;
 
 public:
-    FieldDescription(const String & name_, TypeIndex type_index, FormatCode format_code_ = FormatCode::TEXT)
+    FieldDescription(const String & name_, const DataTypePtr & data_type, FormatCode format_code_ = FormatCode::TEXT)
     : name(name_)
-    , type_spec(convertTypeIndexToPostgresColumnTypeSpec(type_index))
+    , type_spec(convertDataTypeToPostgresColumnTypeSpec(data_type))
     , format_code(format_code_)
     {}
 
@@ -950,12 +1072,218 @@ public:
     }
 };
 
+class CopyDataQuery : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        readNullTerminated(query, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyInResponse : public BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('G');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<char>(0), out);
+        writeBinaryBigEndian(static_cast<Int16>(0), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_IN_RESPONSE;
+    }
+};
+
+class CopyOutResponse : public BackendMessage
+{
+    int num_columns;
+public:
+    explicit CopyOutResponse(int num_columns_ = 1)
+        : num_columns(num_columns_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('H');
+        writeBinaryBigEndian(size(), out);
+        writeBinaryBigEndian(static_cast<Int8>(FormatCode::TEXT), out);
+        writeBinaryBigEndian(static_cast<Int16>(num_columns), out);
+        for (int i = 0; i < num_columns; ++i)
+            writeBinaryBigEndian(static_cast<Int16>(FormatCode::TEXT), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4 + 1 + 2 + 2 * num_columns;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_OUT_RESPONSE;
+    }
+};
+
+class CopyInData : FrontMessage
+{
+public:
+    String query;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        query.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte = 0;
+            readBinary(byte, in);
+            query.push_back(byte);
+        }
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDone : FrontMessage
+{
+public:
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
+    }
+};
+
+class CopyOutData : public BackendMessage
+{
+    std::vector<char> data;
+public:
+    explicit CopyOutData(std::vector<char> data_)
+        : data(data_)
+    {
+    }
+
+    void serialize(WriteBuffer & out) const override
+    {
+        writeBinaryBigEndian('d', out);
+        writeBinaryBigEndian(size(), out);
+        out.write(data.data(), data.size());
+    }
+
+    Int32 size() const override
+    {
+        return 4 + static_cast<Int32>(data.size());
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyDataResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('d');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DATA;
+    }
+};
+
+class CopyCompletionResponse : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('c');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_DONE;
+    }
+};
+
+
+/**
+* CommandComplete message for PostgreSQL wire protocol
+* Reference: https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-COMMANDCOMPLETE
+*/
 class CommandComplete : BackendMessage
 {
 public:
-    enum Command {BEGIN = 0, COMMIT = 1, INSERT = 2, DELETE = 3, UPDATE = 4, SELECT = 5, MOVE = 6, FETCH = 7, COPY = 8, EXECUTE = 9};
+    enum Command
+    {
+        BEGIN = 0,
+        COMMIT = 1,
+        INSERT = 2,
+        DELETE = 3,
+        UPDATE = 4,
+        SELECT = 5,
+        MOVE = 6,
+        FETCH = 7,
+        COPY = 8,
+        PREPARE = 9,
+        CREATE_TABLE = 10,
+        CREATE_DATABASE = 11,
+        DROP_TABLE = 12,
+        DROP_DATABASE = 13,
+        ALTER_TABLE = 14,
+        TRUNCATE = 15,
+        USE = 16,
+        SET = 17
+    };
 private:
-    String enum_to_string[10] = {"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"};
+    String enum_to_string[18] =
+    {
+        "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
+        "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
+        "TRUNCATE", "USE", "SET"
+    };
 
     String value;
 
@@ -963,10 +1291,21 @@ public:
     CommandComplete(Command cmd_, Int32 rows_count_)
     {
         value = enum_to_string[cmd_];
-        String add = " ";
-        if (cmd_ == Command::INSERT)
-            add = " 0 ";
-        value += add + std::to_string(rows_count_);
+
+        // Commands that include row count according to PostgreSQL protocol
+        // Note: UPDATE and DELETE in ClickHouse always return 0 because ClickHouse uses
+        // lightweight deletes/updates that don't track affected rows in the same way as PostgreSQL
+        bool include_row_count = (cmd_ == Command::INSERT || cmd_ == Command::DELETE ||
+                                  cmd_ == Command::UPDATE || cmd_ == Command::SELECT ||
+                                  cmd_ == Command::MOVE || cmd_ == Command::FETCH || cmd_ == Command::COPY);
+
+        if (include_row_count)
+        {
+            String add = " ";
+            if (cmd_ == Command::INSERT)
+                add = " 0 ";  // OID (always 0 for ClickHouse tables)
+            value += add + std::to_string(rows_count_);
+        }
     }
 
     void serialize(WriteBuffer & out) const override
@@ -986,20 +1325,73 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    static String extractNormalizedPrefix(const String & query, size_t max_len)
+    {
+        String prefix;
+        prefix.reserve(max_len);
+
+        bool prev_was_space = true;
+
+        for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
+        {
+            if (std::isspace(query[i]))
+            {
+                if (!prev_was_space)
+                {
+                    prefix.push_back(' ');
+                    prev_was_space = true;
+                }
+            }
+            else
+            {
+                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prev_was_space = false;
+            }
+        }
+
+        return prefix;
+    }
+
     static Command classifyQuery(const String & query)
     {
-        std::vector<String> query_types({"BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "EXECUTE"});
-        for (size_t i = 0; i != query_types.size(); ++i)
-        {
-            String::const_iterator iter = std::search(
-                query.begin(),
-                query.end(),
-                query_types[i].begin(),
-                query_types[i].end(),
-                [](char a, char b){return std::toupper(a) == b;});
+        static const std::vector<std::pair<String, Command>> query_patterns = {
+            {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
+            {"CREATE TABLE", Command::CREATE_TABLE},
+            {"CREATE DATABASE", Command::CREATE_DATABASE},
+            {"DROP TABLE", Command::DROP_TABLE},
+            {"DROP DATABASE", Command::DROP_DATABASE},
+            {"ALTER TABLE", Command::ALTER_TABLE},
+            {"TRUNCATE", Command::TRUNCATE},
+            {"BEGIN", Command::BEGIN},
+            {"COMMIT", Command::COMMIT},
+            {"INSERT", Command::INSERT},
+            {"DELETE", Command::DELETE},
+            {"UPDATE", Command::UPDATE},
+            {"SELECT", Command::SELECT},
+            {"MOVE", Command::MOVE},
+            {"FETCH", Command::FETCH},
+            {"COPY", Command::COPY},
+            {"PREPARE", Command::PREPARE},
+            {"USE", Command::USE}, // ClickHouse-specific, not have in PostgreSQL
+            {"SET", Command::SET},
+        };
 
-            if (iter != query.end())
-                return static_cast<Command>(i);
+        // Calculate max pattern length from query_patterns
+        static const size_t MAX_PATTERN_LEN = []()
+        {
+            size_t max_len = 0;
+            for (const auto & [pattern, _] : query_patterns)
+                max_len = std::max(pattern.size(), max_len);
+            return max_len;
+        }();
+
+        String prefix = extractNormalizedPrefix(query, MAX_PATTERN_LEN);
+
+        for (const auto & [pattern, command] : query_patterns)
+        {
+            if (prefix.starts_with(pattern))
+                return command;
         }
 
         return Command::SELECT;
@@ -1082,6 +1474,156 @@ public:
     }
 };
 
+class ScrambleSHA256Auth : public AuthenticationMethod
+{
+    static size_t findPatternPosition(const String & key, const String & pattern)
+    {
+        size_t pos = key.size();
+        for (size_t i = 0; i + 1 < key.size(); ++i)
+        {
+            if (key.substr(i, 2) == pattern)
+            {
+                pos = i + 2;
+                break;
+            }
+        }
+        if (pos == key.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client response should contain nonce");
+
+        return pos;
+    }
+
+    static String parseResponse(const String & key, const String & pattern)
+    {
+        String result;
+        auto pos = findPatternPosition(key, pattern);
+
+        while (pos < key.size() && key[pos] != ',')
+        {
+            result.push_back(key[pos]);
+            ++pos;
+        }
+        return result;
+    }
+
+    static String parseClientNonce(const String & key)
+    {
+        return parseResponse(key, "r=");
+    }
+
+    static String parseProof(const String & key)
+    {
+        return parseResponse(key, "p=");
+    }
+
+    static String parseUsername(const String & key)
+    {
+        return parseResponse(key, "n=");
+    }
+
+    static size_t findProofPosition(const String & key)
+    {
+        return findPatternPosition(key, "p=");
+    }
+
+public:
+    static String generateNonce()
+    {
+        static constexpr size_t nonce_length = 16;
+
+        String scramble;
+        scramble.resize(nonce_length + 1, 0);
+        Poco::RandomInputStream generator;
+
+        for (size_t i = 0; i < nonce_length; ++i)
+        {
+            generator >> scramble[i];
+            scramble[i] %= 13;
+            scramble[i] += 'n';
+        }
+
+        return base64Encode(scramble);
+    }
+
+    /**
+     * This function implements the client-side logic for the SCRAM-SHA-256
+     * authentication protocol. It exchanges messages with the server to
+     * establish a secure connection.
+     *
+     * The function constructs the authentication message (auth_message) by
+     * concatenating the client-first-message-bare, the server-first-message,
+     * and the client-final-message-without-proof.  The messages exchanged with the server are:
+     * - Messaging::AuthenticationSASL: Initial SASL authentication request.
+     * - Messaging::AuthenticationSASLContinue:  SASL continue message.
+     * - Messaging::SASLResponse: Generic SASL response from the server.
+     *
+     * **SCRAM-SHA-256 Message Formats:**
+     *
+     *  - **Client First Message:** y,,n=<username>,r=<client_nonce>
+     *    - n: Attribute for the username.
+     *    - r: Attribute for the client-generated nonce.
+     *
+     *  - **Server First Message:** r=<client_nonce><server_nonce>,s=<salt>,i=<iterations>
+     *    - r: Attribute for the combined client and server nonces.
+     *    - s: Attribute for the salt.
+     *    - i: Attribute for the number of iterations.
+     *
+     *  - **Client Final Message:** c=<channel_binding>,r=<combined_nonce>,p=<client_proof>
+     *    - c: Attribute for channel binding data (often empty).
+     *    - r: Attribute for the combined client and server nonces.
+     *    - p: Attribute for the client's computed proof.
+     *
+     * The function retrieves the salt from the user's authentication methods.
+     * It then computes the client proof and uses it to authenticate the session.
+     */
+    void authenticate(
+        const String & user_name,
+        Session & session,
+        Messaging::MessageTransport & mt,
+        const Poco::Net::SocketAddress & address) override
+    {
+        static constexpr int num_iterations = 4096;
+
+        String auth_message;
+
+        mt.send(Messaging::AuthenticationSASL(), true);
+        auto rsp = mt.receive<Messaging::SASLInitialResponse>();
+
+        auto server_nonce = generateNonce();
+        auto client_nonce = parseClientNonce(rsp->sasl_mechanism);
+        auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
+        auto nonce = client_nonce + server_nonce;
+
+        String salt;
+        const auto& access_control = session.globalContext()->getAccessControl();
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    salt = auth_method.getSalt();
+                }
+            }
+        }
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
+        mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
+        auth_message += "," + sasl_continue_message;
+        auto rsp_continue = mt.receive<Messaging::SASLResponse>();
+        auto proof = parseProof(rsp_continue->sasl_mechanism);
+        auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
+        auth_message += "," + rsp_continue->sasl_mechanism.substr(0, proof_position - 3);
+
+        auto credentials = ScramSHA256Credentials(user_name, proof, auth_message, num_iterations);
+        session.authenticate(credentials, address);
+    }
+
+    AuthenticationType getType() const override
+    {
+        return AuthenticationType::SCRAM_SHA256_PASSWORD;
+    }
+};
+
 class AuthenticationManager
 {
 private:
@@ -1109,7 +1651,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.find(user_authentication_type) != type_to_method.end())
+                if (type_to_method.contains(user_authentication_type))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);
@@ -1158,34 +1700,60 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(ASTDeallocate * query)
+    void deleteStatement(const String & function_name)
     {
-        auto it = statements.find(query->function_name);
+        auto it = statements.find(function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
+    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
+    /// statement or portal is not an error — it is a silent no-op that still
+    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
+    /// from the extended-query `Close` handler so a stray `Close` does not
+    /// terminate the connection.
+    void tryDeleteStatement(const String & function_name)
+    {
+        statements.erase(function_name);
+    }
+
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        if (bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
+        /// We only support the unnamed portal (an empty `portal_name`).
+        /// Reject named portals explicitly: with a single bind slot we cannot
+        /// keep their state correct, and silently overwriting would let
+        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
+        if (!query->portal_name.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Named portals are not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->portal_name);
 
+        /// For the unnamed portal, a new `Bind` replaces the previous one
+        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
+        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
+        if (!bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
+
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
     }
 
-    void resetBindQuery(const String& function_name)
+    void resetBindQuery()
     {
-        statements.erase(function_name);
         bind_query.reset();
+    }
+
+    bool bindReferencesStatement(const String & function_name) const
+    {
+        return bind_query && bind_query->function_name == function_name;
     }
 
 private:

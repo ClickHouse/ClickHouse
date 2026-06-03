@@ -1,7 +1,5 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -26,6 +24,7 @@ public:
     StreamSet getStreamsForClient() override { return StreamSet{.in = input_stream, .out = output_stream, .err = output_stream}; }
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels) const;
     void closeServerDescriptors() override { pty_master.close(); }
+    void closeStdIn() override {}
     bool isPty() const override { return true; }
 
 private:
@@ -44,7 +43,10 @@ private:
 
         void close();
 
-        ~FileDescriptorWrapper() { close(); } // may throw, thus std::terminate
+        /// Destructor must not throw: a thrown ErrnoException during stack
+        /// unwinding (e.g. on session teardown for `/webterminal`) would call
+        /// `std::terminate` and bring the server down. Swallow and log instead.
+        ~FileDescriptorWrapper();
 
     private:
         int fd = -1;
@@ -62,5 +64,3 @@ private:
 };
 
 }
-
-#endif

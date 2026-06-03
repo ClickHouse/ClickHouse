@@ -1,8 +1,11 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -32,6 +35,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -42,18 +46,23 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
 }
 
+IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
+    : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
+{
+}
+
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getMaxThreadsForAvailableMemory(context->getSettingsRef()[Setting::max_threads], context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]))
 {
     /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
-    /// it's possible that new analyzer will be enabled in ::getQueryProcessingStage method
+    /// it's possible that the analyzer will be enabled in ::getQueryProcessingStage method
     /// of the underlying storage when all other parts of infrastructure are not ready for it
     /// (built with old analyzer).
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         LOG_TRACE(getLogger("IInterpreterUnionOrSelectQuery"),
-            "The new analyzer is enabled, but the old interpreter is used. It can be a bug, please report it. Will disable 'allow_experimental_analyzer' setting (for query: {})",
+            "The analyzer is enabled, but the old interpreter is used. It can be a bug, please report it. Will disable 'allow_experimental_analyzer' setting (for query: {})",
             query_ptr->formatForLogging());
         context->setSetting("allow_experimental_analyzer", false);
     }
@@ -182,7 +191,7 @@ void IInterpreterUnionOrSelectQuery::addAdditionalPostFilter(QueryPlan & plan) c
     if (!ast)
         return;
 
-    auto dag = makeAdditionalPostFilter(ast, context, plan.getCurrentHeader());
+    auto dag = makeAdditionalPostFilter(ast, context, *plan.getCurrentHeader());
     std::string filter_name = dag.getOutputs().back()->result_name;
     auto filter_step = std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), std::move(filter_name), true);

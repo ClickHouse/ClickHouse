@@ -8,17 +8,17 @@
 namespace BuzzHouse
 {
 
-class MD5Impl
+class MD5Impl // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `inputBuffer` is scratch space, filled by `file.read` before read
 {
 private:
     /// 8 KB buffer
-    static const constexpr size_t input_buffer_size = 8192;
+    static const constexpr size_t inputBufferSize = 8192;
 
     Poco::MD5Engine ctx;
-    uint8_t input_buffer[input_buffer_size];
+    uint8_t inputBuffer[inputBufferSize];
 
 public:
-    void hashFile(const String & file_path, Poco::DigestEngine::Digest & res);
+    void hashFile(const String & filePath, Poco::DigestEngine::Digest & res);
 };
 
 }

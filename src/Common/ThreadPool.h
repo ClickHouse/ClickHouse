@@ -5,22 +5,20 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-#include <queue>
 #include <list>
 #include <optional>
 #include <atomic>
 #include <stack>
 #include <random>
 
+#include <boost/core/noncopyable.hpp>
 #include <boost/heap/priority_queue.hpp>
 #include <pcg_random.hpp>
 
 #include <Poco/Event.h>
-#include <Common/ThreadStatus.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>
-#include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
 class JobWithPriority;
@@ -147,6 +145,8 @@ public:
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
+    size_t getMaxFreeThreads() const;
+    size_t getQueueSize() const;
 
     /// Adds a callback which is called in destructor after
     /// joining of all threads. The order of calling callbacks
@@ -253,6 +253,27 @@ public:
 };
 
 
+/// State of a ThreadFromGlobalPoolImpl, shared with the running thread.
+/// Non-templated so the worker entry point can live in the .cpp.
+struct ThreadFromGlobalPoolState
+{
+    /// Should be atomic() because of possible concurrent access between
+    /// assignment and joinable() check.
+    std::atomic<std::thread::id> thread_id;
+    Poco::Event event;
+};
+
+/// Worker entry point implementing ThreadFromGlobalPoolImpl's constructor body.
+/// Lives in the .cpp so that ThreadStatus, scope_guard and friends do not leak via this header.
+void startThreadFromGlobalPool(
+    std::shared_ptr<ThreadFromGlobalPoolState> state,
+    std::function<void()> func,
+    UInt64 global_profiler_real_time_period_ns,
+    UInt64 global_profiler_cpu_time_period_ns,
+    bool global_trace_collector_allowed,
+    bool propagate_opentelemetry_context);
+
+
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   *
@@ -267,52 +288,19 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
-        : state(std::make_shared<State>())
+        : state(std::make_shared<ThreadFromGlobalPoolState>())
     {
-        UInt64 global_profiler_real_time_period = GlobalThreadPool::instance().global_profiler_real_time_period_ns;
-        UInt64 global_profiler_cpu_time_period = GlobalThreadPool::instance().global_profiler_cpu_time_period_ns;
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
-        GlobalThreadPool::instance().scheduleOrThrow([
-            my_state = state,
-            global_profiler_real_time_period,
-            global_profiler_cpu_time_period,
-            my_func = std::forward<Function>(func),
-            my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
-        {
-            SCOPE_EXIT(
-                my_state->thread_id = std::thread::id();
-                my_state->event.set();
-            );
-
-            my_state->thread_id = std::this_thread::get_id();
-
-            /// This moves are needed to destroy function and arguments before exit.
-            /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
-            auto function = std::move(my_func);
-            auto arguments = std::move(my_args);
-
-            /// Thread status holds raw pointer on query context, thus it always must be destroyed
-            /// before sending signal that permits to join this thread.
-            DB::ThreadStatus thread_status;
-            if constexpr (global_trace_collector_allowed)
+        startThreadFromGlobalPool(
+            state,
+            [my_func = std::forward<Function>(func),
+             my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable
             {
-                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
-                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
-            }
-            else
-            {
-                UNUSED(global_profiler_real_time_period);
-                UNUSED(global_profiler_cpu_time_period);
-            }
-
-            std::apply(function, arguments);
-        },
-        {}, // default priority
-        0, // default wait_microseconds
-        propagate_opentelemetry_context
-        );
+                std::apply(my_func, my_args);
+            },
+            GlobalThreadPool::instance().global_profiler_real_time_period_ns,
+            GlobalThreadPool::instance().global_profiler_cpu_time_period_ns,
+            global_trace_collector_allowed,
+            propagate_opentelemetry_context);
     }
 
     ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
@@ -365,16 +353,7 @@ public:
     }
 
 protected:
-    struct State
-    {
-        /// Should be atomic() because of possible concurrent access between
-        /// assignment and joinable() check.
-        std::atomic<std::thread::id> thread_id;
-
-        /// The state used in this object and inside the thread job.
-        Poco::Event event;
-    };
-    std::shared_ptr<State> state;
+    std::shared_ptr<ThreadFromGlobalPoolState> state;
 
     /// Internally initialized() should be used over joinable(),
     /// since it is enough to know that the thread is initialized,

@@ -26,6 +26,7 @@ curl https://clickhouse.com/ | sh
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
+* [ClickHouse Theater](https://presentations.clickhouse.com/) contains presentations and videos about ClickHouse.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
@@ -34,10 +35,9 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release.
-If you are interested in sharing what you've built on ClickHouse, let us know.
+Join us for the [ClickHouse **26.5** Release Call](https://clickhouse.com/company/events/v26-5-community-release-call) on May 21, 2026.
 
-* [v25.2 Community Call](https://clickhouse.com/company/events/v25-2-community-release-call) - Feb 27
+Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ## Upcoming Events
 
@@ -47,49 +47,35 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Shanghai Meetup](https://www.huodongxing.com/event/3794544969111?td=3894807410019) - March 1, 2025
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/305792997) - March 4, 2025
-* [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/305916325) - March 5, 2025
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/306392262) - March 12, 2025
-* [Los Gatos Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306445660) - March 12, 2025
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306046697) - March 19, 2025
-* [Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/306253492/) - March 22, 2025
-* [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/306435122/) - March 24, 2025
-* [Budapest Meetup](https://www.meetup.com/clickhouse-hungary-user-group/events/306435234/) - March 25, 2025
-* [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/305882607) - March 25, 2025
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/306434754/) - March 26, 2025
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/305916369) - March 26, 2025
-* [Melbourne Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/306434771) - March 27, 2025
-* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/306439995) - March 27, 2025
-* [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/306414327/) - April 8, 2025
-* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
+* [Toronto Meetup](https://luma.com/d5sytpvo) - June 2nd, 2026
+* [ClickHouse Café @ Snowflake Summit](https://luma.com/clickh-0h6k) - June 3rd, 2026
+* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/314862596/) - June 9th, 2026
+* [LA Happy Hour](https://luma.com/clickh-tshu) - June 10th, 2026
+* [ClickHouse + Hex AI hackathon](https://luma.com/clickh-2ujv)- June 11th, 2026
+* [Meetup São Paulo](https://luma.com/clickh-87tk) - June 11th, 2026
+* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/314863232/) - June 11, 2026
+* [ClickHouse Cafe @ Data & AI Summit](https://luma.com/clickh-vrjd) - June 16th, 2026
+* [NY Happy Hour](https://luma.com/odgqf98e) - June 17th, 2026
+* [Seattle Iceberg Meetup](https://luma.com/vwt2i2rs) - June 25th, 2026
+* [AI Demo Night SF](https://luma.com/clickh-2crf) - July 1st, 2026
+* [Happy Hour Open Source de Montréal](https://luma.com/clickh-o8up) - July 9th, 2026
 
 Recent meetups
-* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/305917892/) - Feb 25, 2025
-* [Los Angeles Meetup (with DevOpsDays)](https://www.meetup.com/clickhouse-los-angeles-user-group/events/305952193) - Feb 20, 2025
-* [Wellington Meetup](https://www.meetup.com/clickhouse-wellington-user-group/events/305666164/) - Feb 20, 2025
-* [Auckland Meetup](https://www.meetup.com/clickhouse-auckland-meetup-group/events/305666103/) - Feb 19, 2025
-* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 10, 2025
-* [Bangalore Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/305497951/) - Feb 8, 2025
-* [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/305146729/) - Feb 5, 2025
-* [FOSDEM Dinner](https://clickhouse.com/company/events/202502-emea-brussels-fosdem-dinner) - Feb 1, 2025
-* [Mumbai Meetup](https://www.meetup.com/clickhouse-mumbai-user-group/events/305497320/) - Feb 1, 2025
-* [Zagreb Meetup](https://www.meetup.com/clickhouse-croatia-user-group/events/305455877/) - Jan 30, 2025
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/305126993/) - Jan 23, 2025
-
+* [AI Demo Night NY](https://luma.com/zi2360cm) - May 21st, 2026
+* [Chicago Meetup](https://luma.com/c5evgnbc) - May 19th, 2026
+* [Agentic AI Unplugged: Bengaluru Edition](https://luma.com/AgenticAI-BLR2026) - May 15th, 2026
+* [Long Beach Pycon Party](https://luma.com/hs289p7w) - May 15th, 2026
+* [ClickHouse + Cast AI Meetup (Singapore)](https://luma.com/awssummitsg26party) - May 6th, 2026
+* [Boston Meetup](https://luma.com/0f3asaol) - May 6th, 2026
 
 ## Recent Recordings
 
-* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v24.8 LTS Release Call**](https://www.youtube.com/watch?v=AeLmp2jc51k) All the features of 24.8 LTS, one convenient video! Watch it now!
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. 
 
- ## Interested in joining ClickHouse and making it your full-time job?
+## Interested in joining ClickHouse and making it your full-time job?
 
-We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics.
-Here, you will have an opportunity to solve some of the most cutting-edge technical challenges and have direct ownership of your work and vision.
-If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
+ClickHouse is a nice DBMS, and it's a good place to work.
 
 Check out our **current openings** here: https://clickhouse.com/company/careers
 
-Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse?
-Email careers@clickhouse.com!
+Email: careers@clickhouse.com!

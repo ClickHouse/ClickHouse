@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and GLOBAL
+  NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
+title: 'IN Operators'
+doc_type: 'reference'
 ---
-# IN Operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -9,7 +12,7 @@ The left side of the operator is either a single column or a tuple.
 
 Examples:
 
-``` sql
+```sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -20,19 +23,57 @@ Don't list too many values explicitly (i.e. millions). If a data set is large, 
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
-ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](../functions/type-conversion-functions.md#type_conversion_function-accurate-cast_or_null) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](../../sql-reference/syntax.md#null-literal).
+For historical compatibility, when the right side is a single `tuple` expression, it can be interpreted either as a set of values or as one tuple value, depending on the left side of the `IN` operator. If the left side is a scalar value, ClickHouse treats the elements of this single right-side `tuple` expression as separate `IN` values:
+
+```sql title="Query"
+SELECT
+    1 IN (tuple(1, 2)) AS one_in_tuple,
+    2 IN (tuple(1, 2)) AS two_in_tuple,
+    3 IN (tuple(1, 2)) AS three_in_tuple;
+```
+
+```text title="Response"
+┌─one_in_tuple─┬─two_in_tuple─┬─three_in_tuple─┐
+│            1 │            1 │              0 │
+└──────────────┴──────────────┴────────────────┘
+```
+
+This behaves like `SELECT 1 IN (1, 2)`. If the left side is also a tuple, the right side is interpreted as a set of tuple values:
+
+```sql title="Query"
+SELECT tuple(1, 2) IN (tuple(1, 2)) AS tuple_in_tuple;
+```
+
+```text title="Response"
+┌─tuple_in_tuple─┐
+│              1 │
+└────────────────┘
+```
+
+This special handling applies only when the right side is a single `tuple` expression. A scalar left side cannot be matched against a right side that contains multiple tuple values:
+
+```sql title="Query"
+SELECT 1 IN (tuple(1, 2), tuple(3, 4));
+```
+
+```text title="Response"
+Code: 43. DB::Exception: Unsupported types for IN. First argument type UInt8. Second argument type Tuple(Tuple(UInt8, UInt8), Tuple(UInt8, UInt8)). (ILLEGAL_TYPE_OF_ARGUMENT)
+```
+
+ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
+In this case, it converts the right side value to the type of the left side, as 
+if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side. 
+
+This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion 
+cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Example**
 
-Query:
-
-``` sql
+```sql title="Query"
 SELECT '1' IN (SELECT 1);
 ```
 
-Result:
-
-``` text
+```text title="Response"
 ┌─in('1', _subquery49)─┐
 │                    1 │
 └──────────────────────┘
@@ -46,7 +87,7 @@ The subquery may specify more than one column for filtering tuples.
 
 Example:
 
-``` sql
+```sql title="Query"
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -55,7 +96,7 @@ The columns to the left and right of the `IN` operator should have the same type
 The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-``` sql
+```sql title="Query"
 SELECT
     EventDate,
     avg(UserID IN
@@ -69,7 +110,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-``` text
+```text title="Response"
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -86,11 +127,11 @@ A subquery in the `IN` clause is always run just one time on a single server. Th
 
 ## NULL Processing {#null-processing}
 
-During request processing, the `IN` operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
+During request processing, the `IN` operator assumes that the result of an operation with [NULL](/operations/settings/formats#input_format_null_as_default) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
 
 Here is an example with the `t_null` table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -99,7 +140,7 @@ Here is an example with the `t_null` table:
 
 Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
 
-``` text
+```text
 ┌─x─┐
 │ 2 │
 └───┘
@@ -107,12 +148,12 @@ Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the follo
 
 You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
 
-``` sql
+```sql
 SELECT y IN (NULL, 3)
 FROM t_null
 ```
 
-``` text
+```text
 ┌─in(y, tuple(NULL, 3))─┐
 │                     0 │
 │                     1 │
@@ -131,6 +172,8 @@ When using the regular `IN`, the query is sent to remote servers, and each of th
 
 When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
 
+For `GLOBAL ... JOIN`, which side of the join is calculated as the subquery depends on the join kind: for `LEFT` and `INNER` joins, the right table is calculated; for `RIGHT` joins, the left table is calculated instead, since the right table is the preserved side and should be read from shards.
+
 For a non-distributed query, use the regular `IN` / `JOIN`.
 
 Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
@@ -141,13 +184,13 @@ For a query to the **distributed_table**, the query will be sent to all the remo
 
 For example, the query
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -155,7 +198,7 @@ and run on each of them in parallel, until it reaches the stage where intermedia
 
 Now let's examine a query with `IN`:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -163,7 +206,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 This query will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -173,19 +216,19 @@ This will work correctly and optimally if you are prepared for this case and hav
 
 To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 This query will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as:
 
-``` sql
+```sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -193,19 +236,19 @@ For example, if you have a cluster of 100 servers, executing the entire query wi
 
 In such cases, you should always use `GLOBAL IN` instead of `IN`. Let's look at how it works for the query:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The requestor server will run the subquery:
 
-``` sql
+```sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
@@ -223,15 +266,15 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 ### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
-You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is transferred during distributed queries. 
+You can use [`max_rows_in_set`](/operations/settings/settings#max_rows_in_set) and [`max_bytes_in_set`](/operations/settings/settings#max_bytes_in_set) to control how much data is transferred during distributed queries. 
 
 This is specially important if the `GLOBAL IN` query returns a large amount of data. Consider the following SQL:
 
 ```sql
-select * from table1 where col1 global in (select col1 from table2 where <some_predicate>)
+SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
  
-If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](../../operations/settings/query-complexity.md#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
+If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/operations/settings/settings#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
 ### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 

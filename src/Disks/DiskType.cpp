@@ -1,4 +1,4 @@
-#include "DiskType.h"
+#include <Disks/DiskType.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
 
@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 MetadataStorageType metadataTypeFromString(const String & type)
@@ -20,6 +21,10 @@ MetadataStorageType metadataTypeFromString(const String & type)
         return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
+    if (check_type == "keeper")
+        return MetadataStorageType::Keeper;
+    if (check_type == "memory")
+        return MetadataStorageType::Memory;
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
                     "MetadataStorageFactory: unknown metadata storage type: {}", type);
@@ -27,7 +32,7 @@ MetadataStorageType metadataTypeFromString(const String & type)
 
 bool DataSourceDescription::operator==(const DataSourceDescription & other) const
 {
-    return std::tie(type, object_storage_type, description, is_encrypted) == std::tie(other.type, other.object_storage_type, other.description, other.is_encrypted);
+    return std::tie(type, object_storage_type, description, is_encrypted, zookeeper_name) == std::tie(other.type, other.object_storage_type, other.description, other.is_encrypted, other.zookeeper_name);
 }
 
 bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
@@ -44,7 +49,7 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
         == std::tie(other.type, other.object_storage_type, other_description);
 }
 
-std::string DataSourceDescription::toString() const
+String DataSourceDescription::name() const
 {
     switch (type)
     {
@@ -68,8 +73,17 @@ std::string DataSourceDescription::toString() const
                     return "web";
                 case ObjectStorageType::None:
                     return "none";
+                case ObjectStorageType::Max:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected object storage type: Max");
             }
         }
     }
 }
+
+String DataSourceDescription::toString() const
+{
+    return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
+                       name(), description, is_encrypted, is_cached, zookeeper_name);
+}
+
 }

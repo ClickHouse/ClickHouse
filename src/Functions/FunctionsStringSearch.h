@@ -1,20 +1,21 @@
 #pragma once
 
+#include <type_traits>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
+#include <Interpreters/castColumn.h>
+#include <Common/likePatternToRegexp.h>
+
 
 namespace DB
 {
@@ -65,10 +66,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 enum class ExecutionErrorPolicy : uint8_t
@@ -83,10 +84,19 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
 
+/// Detects whether `Impl` is a LIKE-style search implementation that supports the ESCAPE clause.
+/// Uses a trait detection on `Impl::is_like` rather than a partial specialization on `MatchImpl`,
+/// so this header does not need to pull in the heavy `MatchImpl` machinery.
+template <typename T, typename = void>
+struct ImplIsLike : std::false_type {};
+
+template <typename T>
+struct ImplIsLike<T, std::void_t<decltype(T::is_like)>> : std::bool_constant<T::is_like> {};
+
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
          HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
-class FunctionsStringSearch : public IFunction
+class FunctionsStringSearch final : public IFunction
 {
 private:
     enum class ArgumentOrder : uint8_t
@@ -113,13 +123,13 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return Impl::supports_start_pos; }
+    bool isVariadic() const override { return Impl::supports_start_pos || ImplIsLike<Impl>::value; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
-        if (Impl::supports_start_pos)
+        if (Impl::supports_start_pos || ImplIsLike<Impl>::value)
             return 0;
         return 2;
     }
@@ -146,21 +156,33 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+                haystack_type->getName(), getName());
 
         if (!isString(needle_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+                needle_type->getName(), getName());
 
         if (arguments.size() >= 3)
         {
-            if (!isUInt(arguments[2]))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}",
-                    arguments[2]->getName(), getName());
+            if constexpr (ImplIsLike<Impl>::value)
+            {
+                /// 3rd argument for LIKE is the ESCAPE character (String)
+                if (!isString(arguments[2]))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of the ESCAPE argument of function {}",
+                        arguments[2]->getName(), getName());
+            }
+            else
+            {
+                if (!isUInt(arguments[2]))
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument of function {}",
+                        arguments[2]->getName(), getName());
+            }
         }
 
         auto return_type = std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
@@ -175,90 +197,69 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
 
-    template <typename EnumType>
-    static ColumnPtr genStringColumnFromEnumColumn(const ColumnWithTypeAndName & argument)
-    {
-        const auto * col = argument.column.get();
-        const auto * type = argument.type.get();
-
-        auto res = ColumnString::create();
-        res->reserve(col->size());
-        if constexpr (std::is_same_v<DataTypeEnum8, EnumType>)
-        {
-            const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(col);
-            /// convert const enum column to const string column
-            if (col_haystack_const)
-            {
-                const auto * enum_col = typeid_cast<const ColumnInt8 *>(&(col_haystack_const->getDataColumn()));
-                const auto * enum_type = typeid_cast<const DataTypeEnum8 *>(type);
-                if (!enum_type || !enum_col)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a const DataTypeEnum8, but the provided column type does not match.");
-
-                StringRef value = enum_type->getNameForValue(enum_col->getData()[0]);
-                res->insertData(value.data, value.size);
-
-                return ColumnConst::create(std::move(res), col_haystack_const->size());
-            }
-            const auto * enum_col = typeid_cast<const ColumnInt8 *>(col);
-            const auto * enum_type = typeid_cast<const DataTypeEnum8 *>(type);
-            if (!enum_col || !enum_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a DataTypeEnum8, but the provided column type does not match.");
-
-            const auto size = enum_col->size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                StringRef value = enum_type->getNameForValue(enum_col->getData()[i]);
-                res->insertData(value.data, value.size);
-            }
-        }
-        else if constexpr (std::is_same_v<DataTypeEnum16, EnumType>)
-        {
-            const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(col);
-            /// convert const enum column to const string column
-            if (col_haystack_const)
-            {
-                const auto * enum_col = typeid_cast<const ColumnInt16 *>(&(col_haystack_const->getDataColumn()));
-                const auto * enum_type = typeid_cast<const DataTypeEnum16 *>(type);
-                if (!enum_type || !enum_col)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a const DataTypeEnum16, but the provided column type does not match.");
-
-                StringRef value = enum_type->getNameForValue(enum_col->getData()[0]);
-                res->insertData(value.data, value.size);
-
-                return ColumnConst::create(std::move(res), col_haystack_const->size());
-            }
-            const auto * enum_col = typeid_cast<const ColumnInt16 *>(col);
-            const auto * enum_type = typeid_cast<const DataTypeEnum16 *>(type);
-            if (!enum_col || !enum_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a DataTypeEnum16, but the provided column type does not match.");
-
-            const auto size = enum_col->size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                StringRef value = enum_type->getNameForValue(enum_col->getData()[i]);
-                res->insertData(value.data, value.size);
-            }
-        }
-        return res;
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto & haystack_argument = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         ColumnPtr column_haystack = haystack_argument.column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
 
-        if (isEnum8(haystack_argument.type))
-            column_haystack = genStringColumnFromEnumColumn<DataTypeEnum8>(haystack_argument);
-        if (isEnum16(haystack_argument.type))
-            column_haystack = genStringColumnFromEnumColumn<DataTypeEnum16>(haystack_argument);
+        if (isEnum(haystack_argument.type))
+            column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
 
         ColumnPtr column_start_pos = nullptr;
-        if (arguments.size() >= 3)
-            column_start_pos = arguments[2].column;
+        ColumnPtr column_needle_rewritten;
+
+        if constexpr (ImplIsLike<Impl>::value)
+        {
+            /// Is there an ESCAPE argument? Rewrite the needle with escape character into one without escape character.
+            if (arguments.size() >= 3)
+            {
+                /// Extract escape character
+                const auto * col_escape = typeid_cast<const ColumnConst *>(arguments[2].column.get());
+                if (!col_escape)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "The ESCAPE argument of function {} must be constant",
+                        getName());
+                const String escape_str = col_escape->getValue<String>();
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        getName(), escape_str);
+                char escape_char = escape_str[0];
+
+                /// Rewrite the needle from custom escape to standard backslash escape
+                if (const auto * col_needle_const = typeid_cast<const ColumnConst *>(column_needle.get()))
+                {
+                    String rewritten_needle = likePatternWithCustomEscapeToLikePattern(col_needle_const->getValue<String>(), escape_char);
+                    auto rewritten_needle_col = ColumnString::create();
+                    rewritten_needle_col->insertData(rewritten_needle.data(), rewritten_needle.size());
+                    column_needle_rewritten = ColumnConst::create(std::move(rewritten_needle_col), col_needle_const->size());
+                }
+                else if (const auto * col_needle_nonconst = typeid_cast<const ColumnString *>(column_needle.get()))
+                {
+                    auto rewritten_needle_col = ColumnString::create();
+                    for (size_t i = 0; i < col_needle_nonconst->size(); ++i)
+                    {
+                        auto needle = col_needle_nonconst->getDataAt(i);
+                        String rewritten = likePatternWithCustomEscapeToLikePattern({needle.data(), needle.size()}, escape_char);
+                        rewritten_needle_col->insertData(rewritten.data(), rewritten.size());
+                    }
+                    column_needle_rewritten = std::move(rewritten_needle_col);
+                }
+            }
+        }
+        else
+        {
+            if (arguments.size() >= 3)
+                column_start_pos = arguments[2].column;
+        }
+
+        const ColumnPtr & effective_needle = column_needle_rewritten ? column_needle_rewritten : column_needle;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
-        const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
+        const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*effective_needle);
 
         using ResultType = typename Impl::ResultType;
         auto col_res = ColumnVector<ResultType>::create();
@@ -310,7 +311,7 @@ public:
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
         const ColumnFixedString * col_haystack_vector_fixed = checkAndGetColumn<ColumnFixedString>(&*column_haystack);
-        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
+        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*effective_needle);
 
         if (col_haystack_vector && col_needle_vector)
             Impl::vectorVector(

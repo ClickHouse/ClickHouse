@@ -7,7 +7,7 @@ namespace DB
 class Identifier;
 class TableNode;
 
-TableNode * resolveTable(const Identifier & identifier, const ContextPtr & context);
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
 
 }

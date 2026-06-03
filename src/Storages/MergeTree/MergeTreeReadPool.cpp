@@ -1,9 +1,9 @@
-#include "Storages/MergeTree/MergeTreeBlockReadUtils.h"
-#include "Storages/MergeTree/MergeTreeReadTask.h"
+#include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <base/range.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -39,26 +39,32 @@ MergeTreeReadPool::MergeTreeReadPool(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
+    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : MergeTreeReadPoolBase(
-        std::move(parts_),
-        std::move(mutations_snapshot_),
-        std::move(shared_virtual_fields_),
-        storage_snapshot_,
-        prewhere_info_,
-        actions_settings_,
-        reader_settings_,
-        column_names_,
-        settings_,
-        params_,
-        context_)
+          std::move(parts_),
+          std::move(mutations_snapshot_),
+          std::move(shared_virtual_fields_),
+          index_read_tasks_,
+          storage_snapshot_,
+          row_level_filter_,
+          prewhere_info_,
+          actions_settings_,
+          reader_settings_,
+          column_names_,
+          settings_,
+          params_,
+          context_)
+    , updater(std::move(updater_))
     , backoff_settings{context_->getSettingsRef()}
     , backoff_state{pool_settings.threads}
 {
@@ -67,7 +73,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    size_t part_idx;
+    size_t part_idx = 0;
     MarkRanges ranges_to_get_from_part;
 
     {
@@ -112,7 +118,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
         const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
-        size_t need_marks;
+        size_t need_marks = 0;
         if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
             need_marks = marks_in_part;
         else /// Get whole part to read if it is small enough.
@@ -156,7 +162,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
     }
 
     /// createTask() is costly and not needed guarded by mutex.
-    return createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task);
+    return createTask(per_part_infos[part_idx], std::move(ranges_to_get_from_part), previous_task, updater);
 }
 
 void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info)
@@ -185,7 +191,7 @@ void MergeTreeReadPool::profileFeedback(ReadBufferFromFileBase::ProfileInfo info
 
     ProfileEvents::increment(ProfileEvents::SlowRead);
     LOG_DEBUG(log, "Slow read, event №{}: read {} bytes in {} sec., {}/s.",
-        backoff_state.num_events, info.bytes_read, info.nanoseconds / 1e9,
+        backoff_state.num_events, info.bytes_read, static_cast<double>(info.nanoseconds) / 1e9,
         ReadableSize(throughput));
 
     if (backoff_state.num_events < backoff_settings.min_events)

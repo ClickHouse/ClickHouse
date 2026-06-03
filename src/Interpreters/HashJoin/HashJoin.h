@@ -6,8 +6,6 @@
 #include <variant>
 #include <vector>
 
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -112,7 +110,7 @@ class HashJoin : public IJoin
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
-        const Block & right_sample_block,
+        SharedHeader right_sample_block,
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
@@ -126,12 +124,12 @@ public:
 
     bool isCloneSupported() const override
     {
-        return !getTotals() && getTotalRowCount() == 0;
+        return getTotals().empty() && getTotalRowCount() == 0;
     }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
-        const Block &,
-        const Block & right_sample_block_) const override
+        SharedHeader,
+        SharedHeader right_sample_block_) const override
     {
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row, reserve_num, instance_id);
     }
@@ -140,9 +138,10 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
-    bool addBlockToJoin(ScatteredBlock & source_block_, bool check_limits);
+    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
 
     void checkTypesOfKeys(const Block & block) const override;
 
@@ -151,10 +150,10 @@ public:
     /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, ExtraBlockPtr & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
 
     /// Called directly from ConcurrentJoin::joinBlock
-    void joinBlock(ScatteredBlock & block, ScatteredBlock & remaining_block);
+    JoinResultPtr joinScatteredBlock(ScatteredBlock block);
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -182,7 +181,14 @@ public:
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+        size_t bucket_idx, size_t num_buckets) const override;
+
     void onBuildPhaseFinish() override;
+
+    bool hasPostBuildPhase() const override;
+    void runPostBuildPhase() override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -216,7 +222,15 @@ public:
         M(two_level_key_fixed_string)  \
         M(two_level_keys128)           \
         M(two_level_keys256)           \
-        M(two_level_hashed)
+        M(two_level_hashed)            \
+        M(range8_key32)                \
+        M(range16_key32)               \
+        M(range17_key32)               \
+        M(range18_key32)               \
+        M(range8_key64)                \
+        M(range16_key64)               \
+        M(range17_key64)               \
+        M(range18_key64)
 
     /// Used for reading from StorageJoin and applying joinGet function
     #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
@@ -273,18 +287,26 @@ public:
         std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
         std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<StringRef, Mapped>>              key_fixed_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
         std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
         std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
         std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
         std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<StringRef, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
+        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
         std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
         std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 18>>         range18_key32;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 8>>          range8_key64;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
+        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
 
         void create(Type which, size_t reserve)
         {
@@ -357,39 +379,68 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    using RawBlockPtr = const ScatteredBlock *;
+    struct ScatteredColumns
+    {
+        ColumnsInfo columns_info;
+        ScatteredBlock::Selector selector;
+
+        size_t allocatedBytes() const;
+    };
+
     struct NullMapHolder
     {
-        size_t allocatedBytes() const { return !column->empty() ? column->allocatedBytes() * block->rows() / column->size() : 0; }
-
-        RawBlockPtr block;
+        const ScatteredColumns * columns{};
         ColumnPtr column;
-    };
-    using BlockNullmapList = std::deque<NullMapHolder>;
+        size_t selector_rows = 0;
 
-    using ScatteredBlocksList = std::list<ScatteredBlock>;
+        NullMapHolder() = default;
+        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+            : columns(columns_), column(column_)
+        {
+            // we can cache the selector size at construction to make the holder robust
+            // even if columns are moved/cleared later
+            selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
+        }
+
+        size_t allocatedBytes() const;
+    };
+
+    using NullmapList = std::deque<NullMapHolder>;
+    using ScatteredColumnsList = std::list<ScatteredColumns>;
 
     struct RightTableData
     {
         Type type = Type::EMPTY;
-        bool empty = true;
 
+        /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
+        /// =>
+        /// tab1 join tab2 on t1.x = t2.x
+        /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredBlocksList blocks; /// Blocks of "right" table.
-        BlockNullmapList blocks_nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+        ScatteredColumnsList columns; /// Columns of "right" table.
+        NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
-        size_t blocks_allocated_size = 0;
-        size_t blocks_nullmaps_allocated_size = 0;
+        size_t allocated_size = 0;
+        size_t nullmaps_allocated_size = 0;
         /// Number of rows of right table to join
         size_t rows_to_join = 0;
         /// Number of keys of right table to join
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
+
+        /// For range types: the minimum key value and the range size from min_key to max_key.
+        struct KeyRange
+        {
+            UInt64 min_key = 0;
+            UInt64 size = 0;
+        };
+
+        KeyRange key_range;
 
         size_t avgPerKeyRows() const
         {
@@ -398,6 +449,11 @@ public:
             return rows_to_join / keys_to_join;
         }
     };
+
+    /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
+    /// we can switch from ALL to RightAny strictness for better performance.
+    bool all_values_unique = true;
+    bool all_join_was_promoted_to_right_any = false;
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
@@ -420,36 +476,48 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(const Block * block_ptr, size_t row_idx) const;
+    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
 
     void debugKeys() const;
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
 
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
+    void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    bool rightTableCanBeReranged() const override;
-    void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
+
+    bool hasNonJoinedRows();
+    void updateNonJoinedRowsStatus();
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
+    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
+
+    bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
+    bool enableSoftwarePrefetch() const { return enable_prefetch; }
+
+    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
+    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
 private:
     friend class NotJoinedHash;
-
     friend class JoinSource;
+    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
 
     std::shared_ptr<TableJoin> table_join;
-    const JoinKind kind;
-    const JoinStrictness strictness;
+    JoinKind kind;
+    JoinStrictness strictness;
+
+    bool has_non_joined_rows_checked = false;
+    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -488,12 +556,21 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    std::vector<std::pair<size_t, size_t>> additional_filter_required_rhs_pos;
+
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
+    size_t max_joined_block_bytes = 0;
+    bool joined_block_split_single_row = false;
+    bool enable_lazy_columns_replication = false;
+    bool enable_prefetch = true;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
+
+    /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
+    bool conversion_to_fixed_hash_map_attempted = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -509,7 +586,9 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
+    JoinResultPtr joinBlockImplCross(Block block) const;
+
+    bool preferUseMapsAll() const;
 
     bool empty() const;
 
@@ -519,8 +598,20 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    bool rightTableCanBeReranged() const;
+    void tryRerangeRightTableData();
+
     template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
+
+    bool canConvertToFixedHashMap() const;
+    void tryConvertToFixedHashMap();
+
+    template <bool is_signed, typename Key, typename MapsTemplate>
+    void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
+
+    void reinitUsedFlags();
+
     void doDebugAsserts() const;
 };
 }

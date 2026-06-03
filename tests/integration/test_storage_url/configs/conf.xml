@@ -1,4 +1,7 @@
 <clickhouse>
+    <access_control_improvements>
+        <enable_read_write_grants>1</enable_read_write_grants>
+    </access_control_improvements>
     <remote_servers>
         <test_cluster_one_shard_three_replicas_localhost>
             <shard>

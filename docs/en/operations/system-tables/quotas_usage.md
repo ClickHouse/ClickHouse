@@ -1,43 +1,54 @@
 ---
-description: "System table containing formation about quota usage by all users."
+description: 'System table containing formation about quota usage by all users.'
+keywords: ['system table', 'quotas_usage', 'quota']
 slug: /operations/system-tables/quotas_usage
-title: "system.quotas_usage"
-keywords: ["system table", "quotas_usage", "quota"]
+title: 'system.quotas_usage'
+doc_type: 'reference'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
+## Description {#description}
+
 Quota usage by all users.
 
-Columns:
-- `quota_name` ([String](../../sql-reference/data-types/string.md)) — Quota name.
-- `quota_key` ([String](../../sql-reference/data-types/string.md)) — Key value.
-- `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Quota usage for current user.
-- `start_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — Start time for calculating resource consumption.
-- `end_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — End time for calculating resource consumption.
-- `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Length of the time interval for calculating resource consumption, in seconds.
-- `queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of requests in this interval.
-- `max_queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of requests.
-- `query_selects` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of select requests in this interval.
-- `max_query_selects` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of select requests.
-- `query_inserts` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of insert requests in this interval.
-- `max_query_inserts` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of insert requests.
-- `errors` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The number of queries that threw an exception.
-- `max_errors` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of errors.
-- `result_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of rows given as a result.
-- `max_result_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum of source rows read from tables.
-- `result_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — RAM volume in bytes used to store a queries result.
-- `max_result_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum RAM volume used to store a queries result, in bytes.
-- `read_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md)))) — The total number of source rows read from tables for running the query on all remote servers.
-- `max_read_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum number of rows read from all tables and table functions participated in queries.
-- `read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of bytes read from all tables and table functions participated in queries.
-- `max_read_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum of bytes read from all tables and table functions.
-- `failed_sequential_authentications` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — The total count of sequential authentication failures. If the user entered the correct password before exceed `failed_sequential_authentications` threshold then the counter will be reset.
-- `max_failed_sequential_authentications` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — Maximum count of sequential authentication failures.
-- `execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/float.md))) — The total query execution time, in seconds (wall time).
-- `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/float.md))) — Maximum of query execution time.
+## Columns {#columns}
+
+<!--AUTOGENERATED_START-->
+- `quota_name` ([String](/sql-reference/data-types/string)) — Quota name.
+- `quota_key` ([String](/sql-reference/data-types/string)) — Key value.
+- `is_current` ([UInt8](/sql-reference/data-types/int-uint)) — Quota usage for current user.
+- `start_time` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — Start time for calculating resource consumption.
+- `end_time` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — End time for calculating resource consumption.
+- `duration` ([Nullable(UInt32)](/sql-reference/data-types/nullable)) — Length of the time interval for calculating resource consumption, in seconds.
+- `queries` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current number of executed queries.
+- `max_queries` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum allowed number of queries of all types allowed to be executed.
+- `query_selects` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current number of executed SELECT queries.
+- `max_query_selects` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum allowed number of SELECT queries allowed to be executed.
+- `query_inserts` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current number of executed INSERT queries.
+- `max_query_inserts` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum allowed number of INSERT queries allowed to be executed.
+- `errors` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current number of queries resulted in an error.
+- `max_errors` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of queries resulted in an error allowed within the specified period of time.
+- `result_rows` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current total number of rows in the result set of all queries within the current period of time.
+- `max_result_rows` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum total number of rows in the result set of all queries allowed within the specified period of time.
+- `result_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current total number of bytes in the result set of all queries within the current period of time.
+- `max_result_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum total number of bytes in the result set of all queries allowed within the specified period of time.
+- `read_rows` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current total number of rows read during execution of all queries within the current period of time.
+- `max_read_rows` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of rows to read during execution of all queries allowed within the specified period of time.
+- `read_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current total number of bytes read during execution of all queries within the current period of time.
+- `max_read_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of bytes to read during execution of all queries allowed within the specified period of time.
+- `execution_time` ([Nullable(Float64)](/sql-reference/data-types/nullable)) — The current total amount of time (in nanoseconds) spent to execute queries within the current period of time
+- `max_execution_time` ([Nullable(Float64)](/sql-reference/data-types/nullable)) — The maximum amount of time (in nanoseconds) allowed for all queries to execute within the specified period of time
+- `written_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current total number of bytes written during execution of all queries within the current period of time.
+- `max_written_bytes` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of bytes to written during execution of all queries allowed within the specified period of time.
+- `failed_sequential_authentications` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current number of consecutive authentication failures within the current period of time.
+- `max_failed_sequential_authentications` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of consecutive authentication failures allowed within the specified period of time.
+- `queries_per_normalized_hash` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The current maximum number of executions of any single normalized query within the current period of time.
+- `max_queries_per_normalized_hash` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — The maximum number of executions of any single normalized query allowed within the specified period of time.
+<!--AUTOGENERATED_END-->
 
 ## See Also {#see-also}
 
-- [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+- [SHOW QUOTA](/sql-reference/statements/show#show-quota))

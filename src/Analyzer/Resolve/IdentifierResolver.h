@@ -38,6 +38,7 @@ public:
 
     static QueryTreeNodePtr convertJoinedColumnTypeToNullIfNeeded(
         const QueryTreeNodePtr & resolved_identifier,
+        DataTypePtr result_type,
         const JoinKind & join_kind,
         std::optional<JoinTableSide> resolved_side,
         IdentifierResolveScope & scope);
@@ -45,6 +46,10 @@ public:
     /// Resolve identifier functions
 
     static bool tryBindIdentifierToAliases(
+        const IdentifierLookup & identifier_lookup,
+        const IdentifierResolveScope & scope);
+
+    static bool tryBindIdentifierToJoinUsingColumn(
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
@@ -61,6 +66,10 @@ public:
     static bool tryBindIdentifierToArrayJoinExpressions(
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
+
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
@@ -96,7 +105,7 @@ private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierFromStorage(
-        const Identifier & identifier,
+        const IdentifierLookup & identifier_lookup,
         const QueryTreeNodePtr & table_expression_node,
         const AnalysisTableExpressionData & table_expression_data,
         IdentifierResolveScope & scope,

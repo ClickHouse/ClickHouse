@@ -193,8 +193,23 @@ def test_insert_quorum_with_drop_partition(started_cluster, add_new_data):
             second.query(f"SELECT * FROM {table_name}")
         )
     else:
-        assert TSV("") == TSV(zero.query(f"SELECT * FROM {table_name}"))
-        assert TSV("") == TSV(second.query(f"SELECT * FROM {table_name}"))
+        # Use select_sequential_consistency=0 because after DROP PARTITION the /quorum/last_part
+        # node is cleaned, but there's a race condition where updateQuorum could re-add the entry
+        # if it was retrying due to a concurrent modification.
+        # Since we're just checking that the partition is empty (not reading consistent data),
+        # we don't need sequential consistency here.
+        assert TSV("") == TSV(
+            zero.query(
+                f"SELECT * FROM {table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
+        assert TSV("") == TSV(
+            second.query(
+                f"SELECT * FROM {table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
 
     zero.query(f"DROP TABLE IF EXISTS {table_name} ON CLUSTER cluster")
 
@@ -276,8 +291,23 @@ def test_insert_quorum_with_move_partition(started_cluster, add_new_data):
             second.query(f"SELECT * FROM {source_table_name}")
         )
     else:
-        assert TSV("") == TSV(zero.query(f"SELECT * FROM {source_table_name}"))
-        assert TSV("") == TSV(second.query(f"SELECT * FROM {source_table_name}"))
+        # Use select_sequential_consistency=0 because after MOVE PARTITION the /quorum/last_part
+        # node is cleaned, but there's a race condition where updateQuorum could re-add the entry
+        # if it was retrying due to a concurrent modification.
+        # Since we're just checking that the partition is empty (not reading consistent data),
+        # we don't need sequential consistency here.
+        assert TSV("") == TSV(
+            zero.query(
+                f"SELECT * FROM {source_table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
+        assert TSV("") == TSV(
+            second.query(
+                f"SELECT * FROM {source_table_name}",
+                settings={"select_sequential_consistency": 0},
+            )
+        )
 
     zero.query(f"DROP TABLE IF EXISTS {source_table_name} ON CLUSTER cluster")
     zero.query(f"DROP TABLE IF EXISTS {destination_table_name} ON CLUSTER cluster")
@@ -379,11 +409,25 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
             )
         )
 
+        zk = cluster.get_kazoo_client("zoo1")
+
+        # Ensure that part had been committed
+        retries = 0
+        while True:
+            if zk.exists(
+                f"/clickhouse/tables/{table_name}/replicas/zero/parts/all_0_0_0"
+            ):
+                break
+            print("replica still did not create all_0_0_0")
+            time.sleep(1)
+            retries += 1
+            if retries == 120:
+                raise Exception("Can not wait for all_0_0_0 part")
+
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(zero)
 
             retries = 0
-            zk = cluster.get_kazoo_client("zoo1")
             while True:
                 if (
                     zk.exists(
@@ -412,7 +456,7 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
 
             zero.query("SYSTEM ENABLE FAILPOINT finish_clean_quorum_failed_parts")
             clean_quorum_fail_parts_future = executor.submit(
-                lambda: first.query(
+                lambda: zero.query(
                     "SYSTEM WAIT FAILPOINT finish_clean_quorum_failed_parts",
                     timeout=300,
                 )

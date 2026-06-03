@@ -1,21 +1,24 @@
 ---
-slug: /sql-reference/statements/create/user
+description: 'Documentation for User'
+sidebar_label: 'USER'
 sidebar_position: 39
-sidebar_label: USER
-title: "CREATE USER"
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
+doc_type: 'reference'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
 
 Syntax:
 
-``` sql
+```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime] 
     [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [VALID UNTIL datetime]
     [IN access_storage_type]
+    [ROLE role [,...]]
     [DEFAULT ROLE role [,...]]
     [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
@@ -122,13 +125,20 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
     ```
 
-    The length of the password is limited to 72 characters with this method. The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
+    The length of the password is limited to 72 characters with this method. 
+    The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
 
     ```xml
     <bcrypt_workfactor>12</bcrypt_workfactor>
     ```
 
     The work factor must be between 4 and 31, with a default value of 12.
+
+   :::warning
+   For applications with high-frequency authentication,
+   consider alternative authentication methods due to
+   bcrypt's computational overhead at higher work factors.
+   :::
 
 6. The type of the password can also be omitted:
 
@@ -164,7 +174,7 @@ User host is a host from which a connection to ClickHouse server could be establ
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'template'` — Allows you to use the [LIKE](../../../sql-reference/functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+- `HOST LIKE 'template'` — Allows you to use the [LIKE](/sql-reference/functions/string-search-functions#like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax following the username. Examples:
 
@@ -178,16 +188,20 @@ ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technica
 
 ## VALID UNTIL Clause {#valid-until-clause}
 
-Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
+Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime, where `[timezone]` must be a numeric offset such as `+09:00` or one of `UTC`, `GMT`, `Z`, `MSK`, `MSD`; named IANA zones like `Asia/Tokyo` are not recognized (see the note below). By default, this parameter equals `'infinity'`.
 The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
 
 Examples:
 
 - `CREATE USER name1 VALID UNTIL '2025-01-01'`
 - `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+- `CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 +09:00'`
 - `CREATE USER name1 VALID UNTIL 'infinity'`
-- ```CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 `Asia/Tokyo`'```
-- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01''`
+- `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'`
+
+:::note
+The datetime string is parsed by `parseDateTimeBestEffort`, which only recognizes the timezone tokens `UTC`, `GMT`, `Z`, `MSK`, `MSD`, and numeric offsets such as `+09:00` or `-05:00`. Named IANA timezones like `Asia/Tokyo` or `Europe/London` are not supported, and a fixed offset is not equivalent to an IANA zone for regions that observe daylight saving time, so you must compute the correct offset for the specific date you are encoding.
+:::
 
 ## GRANTEES Clause {#grantees-clause}
 
@@ -204,34 +218,39 @@ You can exclude any user or role by using the `EXCEPT` expression. For example, 
 
 Create the user account `mira` protected by the password `qwerty`:
 
-``` sql
+```sql
 CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty';
 ```
 
 `mira` should start client app at the host where the ClickHouse server runs.
 
-Create the user account `john`, assign roles to it and make this roles default:
+Create the user account `john` and assign roles:
 
-``` sql
-CREATE USER john DEFAULT ROLE role1, role2;
+```sql
+CREATE USER john ROLE role1, role2;
 ```
 
-Create the user account `john` and make all his future roles default:
+Create the user account `john`, assign roles and make some of them default:
 
-``` sql
-CREATE USER john DEFAULT ROLE ALL;
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE role1;
 ```
 
-When some role is assigned to `john` in the future, it will become default automatically.
+or
 
-Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
-
-``` sql
-CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2;
+```sql
+CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 ```
 
 Create the user account `john` and allow him to grant his privileges to the user with `jack` account:
 
-``` sql
+```sql
 CREATE USER john GRANTEES jack;
+```
+
+Use a query parameter to create the user account `john`:
+
+```sql
+SET param_user=john;
+CREATE USER {user:Identifier};
 ```

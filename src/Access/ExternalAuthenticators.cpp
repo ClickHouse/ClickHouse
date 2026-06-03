@@ -6,6 +6,8 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
+#include <Interpreters/ClientInfo.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -79,6 +81,7 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
     const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
+    const bool has_follow_referrals = config.has(ldap_server_config + ".follow_referrals");
 
     if (!has_host)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'host' entry");
@@ -190,13 +193,16 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         if (port > 65535)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad value for 'port' entry");
 
-        params.port = port;
+        params.port = static_cast<UInt16>(port);
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
 
     if (has_search_limit)
         params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
+
+    if (has_follow_referrals)
+        params.follow_referrals = config.getBool(ldap_server_config + ".follow_referrals");
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
@@ -250,6 +256,14 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     http_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
     http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
     http_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+
+    Strings forward_headers;
+    config.keys(prefix + ".forward_headers", forward_headers);
+    for (const auto & header : forward_headers)
+    {
+        String name = config.getString(prefix + ".forward_headers." + header);
+        http_auth_params.forward_headers.push_back(name);
+    }
 
     return http_auth_params;
 }
@@ -548,12 +562,12 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
-    const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
+    const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
 {
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword());
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));

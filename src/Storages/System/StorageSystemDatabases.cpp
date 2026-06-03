@@ -2,12 +2,12 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -16,6 +16,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+}
+
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
@@ -27,7 +33,8 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"metadata_path", std::make_shared<DataTypeString>(), "Metadata path."},
         {"uuid", std::make_shared<DataTypeUUID>(), "Database UUID."},
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
-        {"comment", std::make_shared<DataTypeString>(), "Database comment."}
+        {"comment", std::make_shared<DataTypeString>(), "Database comment."},
+        {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
     };
 
     description.setAliases({
@@ -43,7 +50,7 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     while (true)
     {
         String name = database->getDatabaseName();
-        guard = DatabaseCatalog::instance().getDDLGuard(name, "");
+        guard = DatabaseCatalog::instance().getDDLGuard(name, "", nullptr);
 
         /// Ensure that the database was not renamed before we acquired the lock
         auto locked_database = DatabaseCatalog::instance().tryGetDatabase(name);
@@ -112,13 +119,15 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    /// Remote databases are always shown in system.databases regardless of show_remote_databases_in_system_tables.
+    /// Listing a database name is purely local metadata and never requires expensive calls to an external service.
+    /// The setting only guards operations like system.tables / system.columns that enumerate a database's contents.
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)
     {
-        auto database_name = filtered_databases_column->getDataAt(i).toString();
+        auto database_name = filtered_databases_column->getDataAt(i);
 
         if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
@@ -126,7 +135,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue; /// filter out the internal database for temporary tables in system.databases, asynchronous metric "NumberOfDatabases" behaves the same way
 
-        const auto & database = databases.at(database_name);
+        auto database_it = databases.find(database_name);
+        if (database_it == databases.end())
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", database_name);
+        const auto & database = database_it->second;
 
         size_t src_index = 0;
         size_t res_index = 0;
@@ -144,6 +156,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(getEngineFull(context, database));
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->getDatabaseComment());
+        if (columns_mask[src_index++])
+            res_columns[res_index++]->insert(database->isExternal());
    }
 }
 

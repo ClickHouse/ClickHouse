@@ -1,13 +1,14 @@
 ---
-slug: /engines/table-functions/executable
+description: 'The `executable` table function creates a table based on the output
+  of a user-defined function (UDF) that you define in a script that outputs rows to
+  **stdout**.'
+keywords: ['udf', 'user defined function', 'clickhouse', 'executable', 'table', 'function']
+sidebar_label: 'executable'
 sidebar_position: 50
-sidebar_label:  executable
-keywords: [udf, user defined function, clickhouse, executable, table, function]
-title: "executable"
-description: "The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**."
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
 ---
-
-# executable Table Function for UDFs
 
 The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**. The executable script is stored in the `users_scripts` directory and can read data from any source. Make sure your ClickHouse server has all the required packages to run the executable script. For example, if it is a Python script, ensure that the server has the necessary Python packages installed.
 

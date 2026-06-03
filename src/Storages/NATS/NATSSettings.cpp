@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 namespace DB
 {
 
@@ -18,13 +20,14 @@ namespace ErrorCodes
 
 #define NATS_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
+    DECLARE(String, nats_stream, "", "Stream name for NATS JetStream", 0) \
+    DECLARE(String, nats_consumer_name, "", "Name of a durable pull consumer for NATS JetStream.", 0) \
     DECLARE(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     DECLARE(String, nats_format, "", "The message format.", 0) \
     DECLARE(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \
     DECLARE(UInt64, nats_num_consumers, 1, "The number of consumer channels per table.", 0) \
     DECLARE(String, nats_queue_group, "", "Name for queue group of NATS subscribers.", 0) \
     DECLARE(Bool, nats_secure, false, "Use SSL connection", 0) \
-    DECLARE(UInt64, nats_max_reconnect, 5, "Maximum amount of reconnection attempts.", 0) \
     DECLARE(UInt64, nats_reconnect_wait, 2000, "Amount of time in milliseconds to sleep between each reconnect attempt.", 0) \
     DECLARE(String, nats_server_list, "", "Server list for connection", 0) \
     DECLARE(UInt64, nats_skip_broken_messages, 0, "Skip at least this number of broken messages from NATS per block", 0) \
@@ -40,27 +43,15 @@ namespace ErrorCodes
 
 #define OBSOLETE_NATS_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, nats_row_delimiter, '\0') \
+    MAKE_OBSOLETE(M, UInt64, nats_max_reconnect, 5) \
 
 #define LIST_OF_NATS_SETTINGS(M, ALIAS)   \
     NATS_RELATED_SETTINGS(M, ALIAS)       \
     OBSOLETE_NATS_SETTINGS(M, ALIAS)      \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
-
-struct NATSSettingsImpl : public BaseSettings<NATSSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) NATSSettings##TYPE NAME = &NATSSettingsImpl ::NAME;
-
-namespace NATSSetting
-{
-LIST_OF_NATS_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {
@@ -70,9 +61,7 @@ NATSSettings::NATSSettings(const NATSSettings & settings) : impl(std::make_uniqu
 {
 }
 
-NATSSettings::NATSSettings(NATSSettings && settings) noexcept : impl(std::make_unique<NATSSettingsImpl>(std::move(*settings.impl)))
-{
-}
+NATSSettings::NATSSettings(NATSSettings && settings) noexcept = default;
 
 NATSSettings::~NATSSettings() = default;
 
@@ -95,7 +84,7 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
