@@ -6,7 +6,6 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 
 #include <memory>
@@ -168,15 +167,18 @@ using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
 
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
+/// The caller is responsible for preparing the cursor vector (resolving search tokens
+/// to cursors and deduplicating if necessary).
 void lazyUnionPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows);
 
 /// Intersection (AND) of posting lists: set output[row] = 1 only if the row appears in ALL posting lists.
+/// The caller is responsible for preparing the cursor vector (resolving search tokens
+/// to cursors and deduplicating if necessary).
 ///
 /// Adaptive algorithm selection based on posting list density:
 ///   - n == 1:  direct linear scan (degenerate case, same as union).
@@ -187,8 +189,7 @@ void lazyUnionPostingLists(
 ///     cursor leads and others advance forward.
 void lazyIntersectPostingLists(
     IColumn & column,
-    const PostingListCursorMap & postings,
-    const VectorWithMemoryTracking<String> & search_tokens,
+    const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
