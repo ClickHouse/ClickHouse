@@ -32,9 +32,9 @@ struct SingleStatisticsDescription
     SingleStatisticsDescription() = delete;
     SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_);
 
-    SingleStatisticsDescription(const SingleStatisticsDescription & other) { *this = other; }
+    SingleStatisticsDescription(const SingleStatisticsDescription & other) : type{} { *this = other; }
     SingleStatisticsDescription & operator=(const SingleStatisticsDescription & other);
-    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept { *this = std::move(other); }
+    SingleStatisticsDescription(SingleStatisticsDescription && other) noexcept : type{} { *this = std::move(other); }
     SingleStatisticsDescription & operator=(SingleStatisticsDescription && other) noexcept;
 
     bool operator==(const SingleStatisticsDescription & other) const;

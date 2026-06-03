@@ -73,8 +73,8 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     if (version == StatisticsFileVersion::V1)
     {
         /// V1 format: min and max were stored as Float64
-        Float64 min_val;
-        Float64 max_val;
+        Float64 min_val = 0;
+        Float64 max_val = 0;
         readFloatBinary(min_val, buf);
         readFloatBinary(max_val, buf);
         min = min_val;

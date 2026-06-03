@@ -47,7 +47,7 @@ static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V4;
 
 struct KeeperResponseForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     Coordination::ZooKeeperResponsePtr response;
     Coordination::ZooKeeperRequestPtr request = nullptr;
 };
@@ -56,7 +56,7 @@ using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
 struct KeeperRequestForSession
 {
-    int64_t session_id;
+    int64_t session_id{};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
     int64_t zxid{0};
@@ -76,5 +76,14 @@ void moveFileBetweenDisks(
     std::function<void()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
+
+/// Callback invoked by KeeperDispatcher to deliver responses to clients.
+/// Must be safe for concurrent invocation: setResponse (from responseThread) and
+/// finishSession (from dead session cleaner) may invoke copies of the same callback
+/// concurrently for the same session.
+/// Returns true if the response was retained in some kind of queue and KeeperDispatcher::onResponseDeallocated will be called for it later.
+/// It is valid to always return false - that just makes the queue bloat prevention less effective;
+/// if you do return true, you *must* call KeeperDispatcher::onResponseDeallocated later.
+using ZooKeeperResponseCallback = std::function<bool(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 }
