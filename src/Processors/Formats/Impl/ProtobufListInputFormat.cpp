@@ -105,7 +105,7 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
     size_t num_rows = 0;
     while (!reader->eof() && num_rows < max_block_size)
     {
-        int tag;
+        int tag = 0;
         reader->readFieldNumber(tag);
         reader->startNestedMessage();
         reader->endNestedMessage();
@@ -137,6 +137,7 @@ NamesAndTypesList ProtobufListSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerInputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -163,6 +164,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
         });
 }
 
+void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerProtobufListSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("ProtobufList", [](const FormatSettings & settings)
@@ -178,6 +180,8 @@ void registerProtobufListSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatProtobufList(FormatFactory &);
+void registerProtobufListSchemaReader(FormatFactory &);
 void registerInputFormatProtobufList(FormatFactory &) {}
 void registerProtobufListSchemaReader(FormatFactory &) {}
 }
