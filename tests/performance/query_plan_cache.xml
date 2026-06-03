@@ -1,0 +1,135 @@
+<test>
+    <!-- Measures the planning/analyzer overhead removed by query plan cache hits.
+         The query reads a tiny local MergeTree table and evaluates a wide expression list,
+         so repeated runs spend a noticeable share of time in query interpretation rather
+         than data processing. The performance runner prewarms each query before measured
+         runs; for the cache-enabled query this populates the plan cache and measured runs
+         exercise validated pre-analysis hits. -->
+
+    <create_query>
+        CREATE TABLE query_plan_cache_perf
+        (
+            id UInt64,
+            s String,
+            d Date
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO query_plan_cache_perf VALUES (1, 'ClickHouse query plan cache benchmark', '2024-01-01')
+    </fill_query>
+
+    <query tag="cache_disabled"><![CDATA[
+        SELECT
+            id,
+            id + 1 AS id_1,
+            id + 2 AS id_2,
+            id + 3 AS id_3,
+            id + 4 AS id_4,
+            id + 5 AS id_5,
+            id + 6 AS id_6,
+            id + 7 AS id_7,
+            id + 8 AS id_8,
+            id + 9 AS id_9,
+            id + 10 AS id_10,
+            id + 11 AS id_11,
+            id + 12 AS id_12,
+            id + 13 AS id_13,
+            id + 14 AS id_14,
+            id + 15 AS id_15,
+            id + 16 AS id_16,
+            id + 17 AS id_17,
+            id + 18 AS id_18,
+            id + 19 AS id_19,
+            id + 20 AS id_20,
+            id + 21 AS id_21,
+            id + 22 AS id_22,
+            id + 23 AS id_23,
+            id + 24 AS id_24,
+            id + 25 AS id_25,
+            id + 26 AS id_26,
+            id + 27 AS id_27,
+            id + 28 AS id_28,
+            id + 29 AS id_29,
+            id + 30 AS id_30,
+            concat(s, ':', toString(id + 1)) AS s_1,
+            concat(s, ':', toString(id + 2)) AS s_2,
+            concat(s, ':', toString(id + 3)) AS s_3,
+            concat(s, ':', toString(id + 4)) AS s_4,
+            concat(s, ':', toString(id + 5)) AS s_5,
+            concat(s, ':', toString(id + 6)) AS s_6,
+            concat(s, ':', toString(id + 7)) AS s_7,
+            concat(s, ':', toString(id + 8)) AS s_8,
+            concat(s, ':', toString(id + 9)) AS s_9,
+            concat(s, ':', toString(id + 10)) AS s_10,
+            toYear(d) AS y,
+            toMonth(d) AS m,
+            toDayOfMonth(d) AS dom
+        FROM query_plan_cache_perf
+        WHERE id = 1
+        FORMAT Null
+        SETTINGS
+            allow_experimental_analyzer = 1,
+            max_threads = 1
+    ]]></query>
+
+    <query tag="cache_enabled"><![CDATA[
+        SELECT
+            id,
+            id + 1 AS id_1,
+            id + 2 AS id_2,
+            id + 3 AS id_3,
+            id + 4 AS id_4,
+            id + 5 AS id_5,
+            id + 6 AS id_6,
+            id + 7 AS id_7,
+            id + 8 AS id_8,
+            id + 9 AS id_9,
+            id + 10 AS id_10,
+            id + 11 AS id_11,
+            id + 12 AS id_12,
+            id + 13 AS id_13,
+            id + 14 AS id_14,
+            id + 15 AS id_15,
+            id + 16 AS id_16,
+            id + 17 AS id_17,
+            id + 18 AS id_18,
+            id + 19 AS id_19,
+            id + 20 AS id_20,
+            id + 21 AS id_21,
+            id + 22 AS id_22,
+            id + 23 AS id_23,
+            id + 24 AS id_24,
+            id + 25 AS id_25,
+            id + 26 AS id_26,
+            id + 27 AS id_27,
+            id + 28 AS id_28,
+            id + 29 AS id_29,
+            id + 30 AS id_30,
+            concat(s, ':', toString(id + 1)) AS s_1,
+            concat(s, ':', toString(id + 2)) AS s_2,
+            concat(s, ':', toString(id + 3)) AS s_3,
+            concat(s, ':', toString(id + 4)) AS s_4,
+            concat(s, ':', toString(id + 5)) AS s_5,
+            concat(s, ':', toString(id + 6)) AS s_6,
+            concat(s, ':', toString(id + 7)) AS s_7,
+            concat(s, ':', toString(id + 8)) AS s_8,
+            concat(s, ':', toString(id + 9)) AS s_9,
+            concat(s, ':', toString(id + 10)) AS s_10,
+            toYear(d) AS y,
+            toMonth(d) AS m,
+            toDayOfMonth(d) AS dom
+        FROM query_plan_cache_perf
+        WHERE id = 1
+        FORMAT Null
+        SETTINGS
+            allow_experimental_analyzer = 1,
+            allow_experimental_query_plan_cache = 1,
+            enable_query_plan_cache = 1,
+            max_threads = 1
+    ]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS query_plan_cache_perf</drop_query>
+</test>

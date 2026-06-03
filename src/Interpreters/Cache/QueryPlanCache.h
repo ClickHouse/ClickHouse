@@ -68,6 +68,28 @@ struct QueryPlanCacheKey
     bool operator==(const QueryPlanCacheKey & other) const;
 };
 
+/// Information collected before query analysis. It is safe to use for cache lookup,
+/// but a found entry still needs dependency validation before execution.
+struct QueryPlanCacheLookupContext
+{
+    QueryPlanCacheKey key;
+    StorageID storage_id = StorageID::createEmpty();
+};
+
+/// Dependencies that must still match on a cache hit. This intentionally duplicates
+/// part of the key so that lookup and validation stay separate contracts.
+struct QueryPlanCacheDependencyFingerprint
+{
+    StorageID storage_id = StorageID::createEmpty();
+    std::map<String, Int64> table_metadata_versions;
+    IASTHash row_policy_hash{};
+    UInt64 row_policy_names_hash = 0;
+    UInt64 semantic_settings_hash = 0;
+    Names selected_columns;
+
+    bool operator==(const QueryPlanCacheDependencyFingerprint & other) const;
+};
+
 /// A serialized query plan stored in the cache.
 struct QueryPlanCacheEntry
 {
@@ -84,6 +106,10 @@ struct QueryPlanCacheEntry
     /// Row policy names applied when the plan was originally built.
     /// Persisted so that cache-hit paths can propagate them to system.query_log.
     std::set<String> used_row_policies;
+
+    /// Planner/storage dependencies captured when the entry was created.
+    /// They are revalidated on every hit before the serialized plan is materialized.
+    QueryPlanCacheDependencyFingerprint dependencies;
 
     /// User who inserted this entry. Stamped by `QueryPlanCache::set` so that the
     /// eviction callback can decrement the right per-user accounting bucket.
@@ -113,6 +139,10 @@ struct QueryPlanCacheEntryWeight
             weight += col.size();
         for (const auto & policy : entry.used_row_policies)
             weight += policy.size();
+        for (const auto & [table, _] : entry.dependencies.table_metadata_versions)
+            weight += table.size();
+        for (const auto & col : entry.dependencies.selected_columns)
+            weight += col.size();
         return weight;
     }
 };

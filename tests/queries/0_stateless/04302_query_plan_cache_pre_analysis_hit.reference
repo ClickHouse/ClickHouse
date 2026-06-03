@@ -1,0 +1,5 @@
+qpc_pre_analysis_basic_first	0	0	1	0
+qpc_pre_analysis_basic_second	1	0	1	0
+qpc_pre_analysis_policy_hit	1	0	1	1
+qpc_pre_analysis_policy_seed	0	0	1	0
+qpc_pre_analysis_policy_validation_miss	0	1	1	1

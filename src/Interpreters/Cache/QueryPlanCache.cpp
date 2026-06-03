@@ -67,6 +67,16 @@ bool QueryPlanCacheKey::operator==(const QueryPlanCacheKey & other) const
         && current_user_roles == other.current_user_roles;
 }
 
+bool QueryPlanCacheDependencyFingerprint::operator==(const QueryPlanCacheDependencyFingerprint & other) const
+{
+    return storage_id.uuid == other.storage_id.uuid
+        && table_metadata_versions == other.table_metadata_versions
+        && row_policy_hash == other.row_policy_hash
+        && row_policy_names_hash == other.row_policy_names_hash
+        && semantic_settings_hash == other.semantic_settings_hash
+        && selected_columns == other.selected_columns;
+}
+
 size_t QueryPlanCacheKeyHasher::operator()(const QueryPlanCacheKey & key) const
 {
     SipHash hash;

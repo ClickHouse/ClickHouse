@@ -62,7 +62,7 @@ ORDER BY event_time_microseconds;
 
 -- Test 4: Non-deterministic exclusion
 -- The queries reference `t_plan_cache` so they pass the single-table eligibility check
--- inside tryBuildQueryPlanCacheKey; they should then be rejected by
+-- inside tryBuildPreAnalysisQueryPlanCacheLookup; they should then be rejected by
 -- astContainsNonDeterministicFunctions, leaving QueryPlanCacheHits/Misses untouched.
 SYSTEM DROP QUERY PLAN CACHE;
 SELECT now() FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test4_now' FORMAT Null;
