@@ -31,8 +31,12 @@ private:
     void prepareReader();
     std::vector<String> getTablesNames();
 
-    SQLitePtr db;
+    /// Destruction order matters and is the reverse of the declaration order: the prepared
+    /// statement must be finalized first, then the connection closed (closing it may still read
+    /// through the VFS), and only then the underlying file released. So declare them as
+    /// file_reader, db, stmt.
     std::shared_ptr<arrow::io::RandomAccessFile> file_reader;
+    SQLitePtr db;
     std::shared_ptr<sqlite3_stmt> stmt;
     String table_name;
     const FormatSettings format_settings;
