@@ -9923,6 +9923,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
+    std::set<String> frozen_disk_names;
+    std::mutex frozen_disks_mutex;
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_FREEZE_PART);
 
@@ -9935,7 +9937,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex, &frozen_disk_names, &frozen_disks_mutex]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
@@ -9967,6 +9969,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
                 part->is_frozen.store(true, std::memory_order_relaxed);
                 {
+                    std::lock_guard lock(frozen_disks_mutex);
+                    frozen_disk_names.insert(part->getDataPartStorage().getDiskName());
+                }
+                {
                     std::lock_guard lock(result_mutex);
                     result.push_back(PartitionCommandResultInfo{
                         .command_type = "FREEZE PART",
@@ -9984,6 +9990,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the
     /// mapping alongside the frozen parts to resolve non-identity IDs.
+    /// Write `column_ids.json` next to the frozen parts on EACH disk that
+    /// produced a frozen part -- multi-disk policies can have parts under
+    /// any of the policy's disks, and a snapshot of just one disk's shadow
+    /// tree would be missing the mapping for parts on the others.
     if (column_ids_mapping_snapshot && !result.empty())
     {
         const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;
@@ -9991,12 +10001,13 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         {
             if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
                 continue;
+            if (!frozen_disk_names.contains(disk->getName()))
+                continue;
 
             disk->createDirectories(fs::path(column_ids_in_freeze).parent_path());
             auto buf = disk->writeFile(column_ids_in_freeze, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
             column_ids_mapping_snapshot->serialize(*buf);
             buf->finalize();
-            break;
         }
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-parallel-replicas
 # Regression: when `column_ids.json` is missing an entry for a column that
 # still exists in metadata, the table must refuse to load with a clear
 # `CORRUPTED_DATA` error rather than silently rebuilding the mapping and

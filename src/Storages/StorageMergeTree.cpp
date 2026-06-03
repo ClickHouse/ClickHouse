@@ -130,6 +130,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
+    extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
@@ -544,7 +545,15 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
                 bool changes_prefix = (old_parent != new_parent);
                 bool physical_has_dot = !phys_child.empty();
 
-                if (is_nested && changes_prefix && !physical_has_dot)
+                /// When `share_nested_offsets` is off, dotted columns are
+                /// independent and don't share an offsets stream, so the
+                /// flattened-Nested rename restrictions don't apply.
+                /// `AlterCommands::validate` already disables the cross-parent
+                /// Nested rule in that mode; mirror that here.
+                bool nested_offsets_shared =
+                    effective_new_settings[MergeTreeSetting::share_nested_offsets];
+
+                if (nested_offsets_shared && is_nested && changes_prefix && !physical_has_dot)
                 {
                     throw Exception(
                         ErrorCodes::NOT_IMPLEMENTED,
@@ -567,7 +576,7 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
                 /// logical parents read/write through one offsets stream.
                 /// Require all siblings sharing this physical prefix to be
                 /// renamed to the same new parent in the same ALTER.
-                if (is_nested && changes_prefix && physical_has_dot)
+                if (nested_offsets_shared && is_nested && changes_prefix && physical_has_dot)
                 {
                     const String old_logical_prefix = old_parent + ".";
                     const String new_logical_prefix = new_parent + ".";
@@ -636,12 +645,15 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
     /// expanded into `n.x`, `n.y` in `new_col_names`.  The dropped
     /// name "n" itself won't appear in `new_col_names` -- we must also
     /// check for children with the "n." prefix.
+    /// Whole-column DROPs only: skip `CLEAR COLUMN` and partition-scoped
+    /// `DROP COLUMN ... IN PARTITION` since they don't remove the column from
+    /// metadata and shouldn't trip the DROP+re-ADD rejection below.
     std::set<String> explicitly_dropped;
     for (const auto & command : commands)
     {
         if (command.ignore)
             continue;
-        if (command.type == AlterCommand::DROP_COLUMN)
+        if (command.type == AlterCommand::DROP_COLUMN && !command.clear && !command.partition)
             explicitly_dropped.insert(command.column_name);
     }
     for (const auto & dropped_name : explicitly_dropped)
@@ -661,12 +673,36 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
         }
     }
 
+    /// Same crash-safety hole arises when a RENAME frees the target name and
+    /// an ADD COLUMN re-uses it in the same ALTER:
+    ///   RENAME COLUMN b TO old_b, ADD COLUMN b ...
+    /// `AlterCommands::validate` accepts this because validation is
+    /// order-aware (after the rename, `b` is free).  The column-ID planner
+    /// would otherwise leave the new `b` without a fresh ID -- once
+    /// `finalizeColumnIdRenames` removes the old `b -> b` entry, the mapping
+    /// has no entry for the new `b` and reads fall back to physical name `b`,
+    /// which is the dropped column's bytes.
+    std::set<String> rename_target_freed;
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.type != AlterCommand::RENAME_COLUMN)
+            continue;
+        rename_target_freed.insert(command.column_name);
+    }
+    for (const auto & command : commands)
+    {
+        if (command.ignore || command.type != AlterCommand::ADD_COLUMN)
+            continue;
+        if (rename_target_freed.contains(command.column_name))
+            plan.force_mutation_columns.insert(command.column_name);
+    }
+
     if (!plan.force_mutation_columns.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "ALTER on column-IDs table: DROP COLUMN + re-ADD COLUMN of the same "
-            "name ('{}') in a single ALTER cannot be made crash-safe.  Split "
-            "into two separate ALTER statements (first DROP, then ADD); each is "
-            "fully durable.",
+            "ALTER on column-IDs table: DROP/RENAME of '{}' followed by ADD COLUMN "
+            "of the same name in a single ALTER cannot be made crash-safe.  Split "
+            "into two separate ALTER statements (the destructive op first, then "
+            "the ADD); each is fully durable.",
             fmt::join(plan.force_mutation_columns, "', '"));
 
     /// Group newly added columns by Nested parent so flattened siblings
@@ -808,11 +844,29 @@ void StorageMergeTree::alter(
 
     auto pn_plan = prepareColumnIdMappingForAlter(commands, old_metadata, new_metadata);
 
-    if (pn_plan.column_ids_active && !hasColumnIdMapping()
+    /// Gate on the experimental flag in two cases:
+    ///   (a) this ALTER activates the mapping (has add/drop/rename commands),
+    ///   (b) settings-only ALTER persists the column-IDs serialization knobs
+    ///       without other commands -- a later INSERT would then bring the
+    ///       mapping live without the user ever opting into the experimental
+    ///       flag.  Validate both at the time of the settings change.
+    if (!hasColumnIdMapping()
         && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Column IDs require setting `allow_experimental_column_ids = 1`");
+    {
+        bool activates_now = pn_plan.column_ids_active;
+
+        MergeTreeSettings effective_after_alter(*getSettings());
+        if (new_metadata.settings_changes)
+            effective_after_alter.applyChanges(new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
+        bool persists_column_id_settings =
+            effective_after_alter[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            && effective_after_alter[MergeTreeSetting::activate_column_ids_for_existing_tables];
+
+        if (activates_now || persists_column_id_settings)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs require setting `allow_experimental_column_ids = 1`");
+    }
 
     auto maybe_mutation_commands = commands.getMutationCommands(
         old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,

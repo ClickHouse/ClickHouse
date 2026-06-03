@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-parallel-replicas
 # Regression for the BACKUP / RESTORE / FREEZE path: with column IDs active
 # any column that has a non-identity column_id (DROP + same-name ADD, RENAME
 # off the original logical name, ...) lives on disk under a numeric ID.  The

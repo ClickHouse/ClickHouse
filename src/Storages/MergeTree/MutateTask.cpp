@@ -589,12 +589,24 @@ static void addRenamedColumnToColumnsSubstreams(
     const ColumnsSubstreams & old_columns_substreams,
     const String & new_name,
     const String & old_name,
-    size_t old_position)
+    size_t old_position,
+    bool has_column_ids)
 {
     new_columns_substreams.addColumn(new_name);
     const auto & old_substreams = old_columns_substreams.getColumnSubstreams(old_position);
     for (const auto & substream : old_substreams)
-        new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
+    {
+        /// For column-IDs parts the substream names are physical IDs (e.g. "1"
+        /// or "5.size0"), independent of the logical column name.  The legacy
+        /// rename function rewrites the prefix from old_name to new_name; that
+        /// would either no-op or throw LOGICAL_ERROR when the substream
+        /// doesn't start with the old logical prefix.  Keep the substream
+        /// name as-is and just associate it with the new logical column key.
+        if (has_column_ids)
+            new_columns_substreams.addSubstreamToLastColumn(substream);
+        else
+            new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
+    }
 }
 
 static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
@@ -643,6 +655,7 @@ getColumnsForNewDataPart(
     bool deleted_mask_updated = false;
     bool affects_all_columns = false;
     bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
+    bool has_column_ids = source_part->storage.getActiveColumnIdMapping() != nullptr;
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -831,7 +844,7 @@ getColumnsForNewDataPart(
                         it->type = source_col->second;
 
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
+                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first), has_column_ids);
 
                         ++it;
                     }
@@ -876,7 +889,7 @@ getColumnsForNewDataPart(
                         it->type = maybe_name_and_type->type;
 
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));
+                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from), has_column_ids);
                     }
                     else
                     {

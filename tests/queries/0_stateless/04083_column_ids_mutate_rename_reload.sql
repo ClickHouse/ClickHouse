@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Regression test: mutation on a Wide part with a non-identity column_id,
 -- followed by RENAME and server restart, must not silently drop the column.
 --

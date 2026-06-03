@@ -10,12 +10,27 @@ namespace ErrorCodes
 }
 
 std::vector<size_t> getSubcolumnsDeserializationOrder(
-    const String & column_name,
+    const String & column_id_in_storage,
+    const String & logical_name_in_storage,
     const std::vector<ISerialization::SubstreamData> & subcolumns_data,
     const std::vector<String> & substreams_in_serialization_order,
     ISerialization::EnumerateStreamsSettings & enumerate_settings,
     const ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
+    /// Choose the file-name resolver: when a logical name is provided we go
+    /// through `getFileNameForStreamByColumnId` so shared Nested offset
+    /// streams are detected from the logical Nested parent (e.g. column ID
+    /// "1" with logical "n.x" must resolve its offsets stream by `n`).
+    /// Otherwise fall back to the logical-name resolver.
+    auto resolve_substream_name = [&](const ISerialization::SubstreamPath & path,
+                                      const ISerialization::StreamFileNameSettings & settings) -> String
+    {
+        if (!logical_name_in_storage.empty())
+            return ISerialization::getFileNameForStreamByColumnId(
+                column_id_in_storage, logical_name_in_storage, path, settings);
+        return ISerialization::getFileNameForStream(column_id_in_storage, path, settings);
+    };
+
     /// Create map (substream) -> (pos in serialization order).
     std::unordered_map<std::string_view, size_t> substream_to_pos;
     substream_to_pos.reserve(substreams_in_serialization_order.size());
@@ -34,7 +49,7 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
             if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                 return;
 
-            String substream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+            String substream_name = resolve_substream_name(substream_path, stream_file_name_settings);
             auto it = substream_to_pos.find(substream_name);
             if (it == substream_to_pos.end())
             {
@@ -42,12 +57,12 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
                 auto stream_file_name_settings_copy = stream_file_name_settings;
                 if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings_copy))
                 {
-                    substream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings_copy);
+                    substream_name = resolve_substream_name(substream_path, stream_file_name_settings_copy);
                     it = substream_to_pos.find(substream_name);
                 }
 
                 if (it == substream_to_pos.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column_name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected substream {} for column {}", substream_name, column_id_in_storage);
             }
 
             substreams_positions.push_back(it->second);

@@ -84,16 +84,28 @@ void MergeTreeReaderCompact::fillColumnPositions()
 
         /// Stale-slot guard for column-IDs tables.  After a DROP COLUMN b /
         /// ADD COLUMN b cycle (across two ALTERs), the table mapping points
-        /// `b` to a fresh column ID, but in-memory part objects keep their
-        /// original column at logical name "b" with the OLD column ID.
-        /// Reading by logical name would hand back the old bytes through the
-        /// new column.  Reject the slot when the part's column ID at that
-        /// position no longer matches what the current mapping expects.
+        /// `b` to a fresh column ID, but in-memory part objects can still
+        /// have the original column at logical name "b".  Reading by
+        /// logical name would hand back the old bytes through the new
+        /// column.  Reset the slot when the part has an explicit column_id
+        /// that disagrees.
+        ///
+        /// Known gap: pre-activation parts where `part_col.column_id` is
+        /// empty are NOT covered here.  A symmetric files-existence check
+        /// against the requested ID would over-fire on normal compact
+        /// reads where `columns.txt` persists logical names but the
+        /// in-memory mapping still points to a column ID (write path does
+        /// not populate column_id on every part).  Pre-activation
+        /// DROP+ADD-same-name is acknowledged technical debt for the
+        /// experimental column-IDs feature; the two-ALTER path is the
+        /// supported workflow and the wide-reader has its own check.
         if (position.has_value() && !column_to_read.column_id.empty())
         {
-            auto part_col = part_columns.getColumn(GetColumnsOptions::All, column_to_read.getNameInStorage());
-            if (!part_col.column_id.empty() && part_col.column_id != column_to_read.column_id)
-                position.reset();
+            if (auto part_col = part_columns.tryGetColumn(GetColumnsOptions::All, column_to_read.getNameInStorage()))
+            {
+                if (!part_col->column_id.empty() && part_col->column_id != column_to_read.column_id)
+                    position.reset();
+            }
         }
 
         if (position.has_value() && column_to_read.isSubcolumn())
@@ -407,14 +419,18 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
-        String name_for_substreams = column;
+        String column_id_for_substreams = column;
+        String logical_name_for_substreams;
         if (!subcolumns_indexes.empty())
         {
             const auto & first_col = columns_to_read[subcolumns_indexes.front()];
             if (!first_col.column_id.empty())
-                name_for_substreams = first_col.getColumnIdInStorage();
+            {
+                column_id_for_substreams = first_col.getColumnIdInStorage();
+                logical_name_for_substreams = first_col.getNameInStorage();
+            }
         }
-        auto order = getSubcolumnsDeserializationOrder(name_for_substreams, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto order = getSubcolumnsDeserializationOrder(column_id_for_substreams, logical_name_for_substreams, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
             deserialization_order.push_back(subcolumn_data_index_to_subcolumn_index[i]);
