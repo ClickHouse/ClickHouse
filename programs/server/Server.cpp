@@ -2058,7 +2058,7 @@ try
         stateless_worker_endpoint_ptr.reset();
     });
 
-#ifdef OS_LINUX
+    #ifdef OS_LINUX
     ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
     std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
     if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
@@ -2087,10 +2087,10 @@ try
             exchange_server_ptr.reset();
         }
     });
-#else
+    #else
     if (config().getUInt("distributed_query.streaming_exchange_port", 0))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
-#endif
+    #endif
 
     /// Set up caches.
 
