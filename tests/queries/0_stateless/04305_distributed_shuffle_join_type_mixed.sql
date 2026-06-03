@@ -15,6 +15,15 @@ INSERT INTO t_shuffle_join_right SELECT (number % 100) - 50, number * 2 FROM num
 SELECT '-- Local';
 SELECT count() FROM t_shuffle_join_left AS l JOIN t_shuffle_join_right AS r ON l.k = r.k;
 
+SELECT '-- Distributed plan';
+EXPLAIN SELECT count() FROM t_shuffle_join_left AS l JOIN t_shuffle_join_right AS r ON l.k = r.k
+SETTINGS
+    make_distributed_plan = 1,
+    enable_parallel_replicas = 0,
+    distributed_plan_execute_locally = 1,
+    distributed_plan_max_rows_to_broadcast = 0,
+    enable_join_runtime_filters = 0;
+
 SELECT '-- Distributed';
 SELECT count() FROM t_shuffle_join_left AS l JOIN t_shuffle_join_right AS r ON l.k = r.k
 SETTINGS
