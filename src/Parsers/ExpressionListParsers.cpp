@@ -3215,7 +3215,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
-    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      12, 2)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3613,9 +3613,9 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
         if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
         {
-            /// Fold pending operators with priority >= 12 (same as AT TIME ZONE) so that
-            /// e.g. 'ts + interval AT LOCAL' gives ts + toTimeZone(interval, ...), matching PostgreSQL.
-            constexpr int at_local_priority = 12;
+            /// Fold pending operators with priority >= 13 (AT TIME ZONE priority) so that
+            /// e.g. 'a * ts AT LOCAL' gives a * toTimeZone(ts, ...), matching PostgreSQL.
+            constexpr int at_local_priority = 13;
             while (layers.back()->previousPriority() >= at_local_priority)
             {
                 Operator prev_op;

@@ -42,6 +42,7 @@ SELECT INTERVAL 1 HOUR + TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/D
 SELECT formatQuery($$SELECT dt AT TIME ZONE 'UTC' = dt2$$);          -- toTimeZone(dt, 'UTC') = dt2 (binds tighter than '=')
 SELECT formatQuery($$SELECT dt AT TIME ZONE 'A' AT TIME ZONE 'B'$$); -- toTimeZone(toTimeZone(dt, 'A'), 'B') (chained, left-assoc)
 SELECT formatQuery($$SELECT t AT TIME ZONE tz FROM x$$);             -- toTimeZone(t, tz) (column operands)
+SELECT formatQuery($$SELECT a * ts AT TIME ZONE 'UTC'$$);            -- a * toTimeZone(ts, 'UTC') (AT binds tighter than *)
 
 -- error paths
 SELECT 'x' AT TIME ZONE 'UTC';   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

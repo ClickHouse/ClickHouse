@@ -10,4 +10,5 @@
 SELECT toTimeZone(dt, \'UTC\') = dt2
 SELECT toTimeZone(toTimeZone(dt, \'A\'), \'B\')
 SELECT toTimeZone(t, tz)\nFROM x
+SELECT a * toTimeZone(ts, \'UTC\')
 1	0

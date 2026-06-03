@@ -405,7 +405,7 @@ The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `Dat
 Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
 :::
 
-`AT TIME ZONE` has operator precedence 12 (same as `*`/`/`/`%`, above `+`/`-`), matching PostgreSQL. This means `ts + interval AT TIME ZONE 'tz'` binds as `ts + (interval AT TIME ZONE 'tz')`. To convert after arithmetic, use explicit parentheses:
+`AT TIME ZONE` has operator precedence 13 (above `*`/`/`/`%` at 12, and above `+`/`-` at 11), matching PostgreSQL. This means `a * ts AT TIME ZONE 'tz'` binds as `a * (ts AT TIME ZONE 'tz')`, and `ts + interval AT TIME ZONE 'tz'` binds as `ts + (interval AT TIME ZONE 'tz')`. To apply timezone conversion after arithmetic, use explicit parentheses:
 
 ```sql
 -- Explicit parens required to add first, then convert timezone
