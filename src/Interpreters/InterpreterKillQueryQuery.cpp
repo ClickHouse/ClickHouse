@@ -486,6 +486,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
     return required_access;
 }
 
+void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
