@@ -5,6 +5,7 @@
 -- expected top-K is unchanged while the ANN path is exercised.
 
 SET enable_analyzer = 1;
+SET allow_experimental_scann_index = 1;
 SET vector_search_with_rescoring = 1;
 
 SELECT '1. L2Distance';

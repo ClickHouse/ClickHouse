@@ -1340,6 +1340,21 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
+bool AlterCommands::hasScannVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type != "vector_similarity" || !index.arguments)
+            continue;
+        const auto * args = typeid_cast<const ASTExpressionList *>(index.arguments.get());
+        if (args && !args->children.empty())
+            if (const auto * lit = typeid_cast<const ASTLiteral *>(args->children[0].get()))
+                if (lit->value.safeGet<String>() == "scann")
+                    return true;
+    }
+    return false;
+}
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)

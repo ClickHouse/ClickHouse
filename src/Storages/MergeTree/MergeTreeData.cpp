@@ -1,3 +1,4 @@
+#include "config.h"
 #include <DataTypes/DataTypeString.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -209,6 +210,7 @@ namespace Setting
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool allow_experimental_scann_index;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
     extern const SettingsBool apply_mutations_on_fly;
@@ -971,6 +973,14 @@ void MergeTreeData::checkProperties(
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
+
+#if USE_SCANN
+    if (!attach && local_context && AlterCommands::hasScannVectorSimilarityIndex(new_metadata)
+        && !local_context->getSettingsRef()[Setting::allow_experimental_scann_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "vector_similarity index with method 'scann' is experimental. "
+            "Set allow_experimental_scann_index = 1 to use it.");
+#endif
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -4420,6 +4430,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     ///     INSERT INTO tab SELECT number, [toFloat32(number), 0.] FROM numbers(10000);
     ///     WITH [1., 0.] AS reference_vec SELECT id, L2Distance(vec, reference_vec) FROM tab PREWHERE toLowCardinality(10) ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 100;
     /// As a workaround, force enabled adaptive index granularity for now (it is the default anyways).
+#if USE_SCANN
+    if (AlterCommands::hasScannVectorSimilarityIndex(new_metadata)
+        && !settings[Setting::allow_experimental_scann_index])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "vector_similarity index with method 'scann' is experimental. "
+            "Set allow_experimental_scann_index = 1 to use it.");
+#endif
+
     if (AlterCommands::hasVectorSimilarityIndex(new_metadata) && (*getSettings())[MergeTreeSetting::index_granularity_bytes] == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
