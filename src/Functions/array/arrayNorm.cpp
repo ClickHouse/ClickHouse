@@ -144,10 +144,10 @@ struct LinfNorm
 /// ~150 elements that interrupts the hardware prefetcher's stream. Batching all rows into one call keeps
 /// the load stream continuous across row boundaries, which matters for the bandwidth-bound `Float64` paths.
 MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
+    MULTITARGET_FUNCTION_HEADER(template <typename Kernel, typename ResultType, typename ArgumentType> static void NO_SANITIZE_UNDEFINED NO_INLINE),
     normBatchImpl,
     MULTITARGET_FUNCTION_BODY((
-        const ResultType * __restrict data,
+        const ArgumentType * __restrict data,
         const ColumnArray::Offset * __restrict offsets,
         ResultType * __restrict result_data,
         size_t input_rows_count,
@@ -158,21 +158,21 @@ MULTITARGET_FUNCTION_X86_V4(
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const size_t count = offsets[row] - prev;
-            const ResultType * __restrict row_data = data + prev;
+            const ArgumentType * __restrict row_data = data + prev;
 
             ResultType partial_results[unroll_count]{};
             size_t i = 0;
             const size_t unrolled_end = count / unroll_count * unroll_count;
             for (; i < unrolled_end; i += unroll_count)
                 for (size_t s = 0; s < unroll_count; ++s)
-                    partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], row_data[i + s], params);
+                    partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], static_cast<ResultType>(row_data[i + s]), params);
 
             ResultType result = 0;
             for (auto & partial_result : partial_results)
                 result = Kernel::template combine<ResultType>(result, partial_result, params);
 
             for (; i < count; ++i)
-                result = Kernel::template accumulate<ResultType>(result, row_data[i], params);
+                result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(row_data[i]), params);
 
             result_data[row] = Kernel::finalize(result, params);
             prev = offsets[row];
@@ -290,46 +290,16 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        if constexpr (std::is_same_v<ResultType, ArgumentType>
-            && (std::is_same_v<ResultType, Float32> || std::is_same_v<ResultType, Float64>))
-        {
-            /// SIMD-optimized path for same-type floating point: the entire row loop is handled in a single
-            /// multitarget call, runtime-dispatched to AVX-512 when available, else the baseline variant.
-            /// This keeps the load stream continuous across rows (see `normBatchImpl`).
+        /// The entire row loop is handled in a single multitarget call (runtime-dispatched to AVX-512 when
+        /// available, else the baseline variant), keeping the load stream continuous across rows. The kernel
+        /// widens each element to `ResultType` internally, so `BFloat16` (-> Float32) and integers (-> Float64)
+        /// take the same vectorized path as `Float32`/`Float64` (see `normBatchImpl`).
 #if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::x86_64_v4))
-                normBatchImpl_x86_64_v4<Kernel, ResultType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
-            else
-#endif
-                normBatchImpl<Kernel, ResultType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
-        }
+        if (isArchSupported(TargetArch::x86_64_v4))
+            normBatchImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         else
-        {
-            /// Scalar path for widened types (integers cast up to Float64, BFloat16 cast to Float32).
-            ColumnArray::Offset prev = 0;
-            for (size_t row = 0; row < input_rows_count; ++row)
-            {
-                const auto off = offsets[row];
-                const size_t array_size = off - prev;
-
-                static constexpr size_t VEC_SIZE = 4;
-                ResultType results[VEC_SIZE] = {0};
-                size_t i = 0;
-                for (; i + VEC_SIZE < array_size; i += VEC_SIZE)
-                    for (size_t s = 0; s < VEC_SIZE; ++s)
-                        results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + i + s]), kernel_params);
-
-                ResultType result = 0;
-                for (const auto & other_state : results)
-                    result = Kernel::template combine<ResultType>(result, other_state, kernel_params);
-
-                for (; i < array_size; ++i)
-                    result = Kernel::template accumulate<ResultType>(result, static_cast<ResultType>(data[prev + i]), kernel_params);
-
-                result_data[row] = Kernel::finalize(result, kernel_params);
-                prev = off;
-            }
-        }
+#endif
+            normBatchImpl<Kernel, ResultType, ArgumentType>(data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
         return result_col;
     }
 
