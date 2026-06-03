@@ -40,9 +40,16 @@ private:
     bool no_more_keys = false;
     /// Whether at least one surviving row was ever observed by `execute`.
     /// `finalize` consults this to distinguish "no rows remain for this rule
-    /// on this part" from "watermark was never calculated" — see issue
+    /// on this part" from "watermark was never calculated" - see issue
     /// #105647 for the empty-part-loops-forever case.
     bool any_surviving_row_seen = false;
+    /// Whether at least one surviving row with a non-zero TTL watermark passed
+    /// this rule's WHERE filter.
+    bool any_surviving_nonzero_ttl_seen = false;
+    /// TTL info for surviving rows whose watermark is expired after GROUP BY
+    /// has been applied. Used only when no future rows remain for this rule,
+    /// so the part keeps its finished TTL range for selector range extension.
+    TTLInfo expired_ttl_info;
 };
 
 }

@@ -172,13 +172,14 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
     block = header.cloneWithColumns(std::move(result_columns));
 
-    /// Recalculate TTL info from every surviving row of the resulting block.
-    /// This must run for every block — including blocks that contain only
-    /// pass-through (not-yet-expired) rows — because such rows still need to
-    /// contribute to `new_ttl_info.max`. Gating on a "did anything aggregate
-    /// this block" flag would leave `new_ttl_info.max` stuck at an earlier
-    /// block's expired value and let `finalize` persist `ttl_finished = true`
-    /// while future rows still live in the part (issue #105647).
+    /// Recalculate unfinished TTL info from not-yet-expired surviving rows of
+    /// the resulting block. This must run for every block, including blocks
+    /// that contain only pass-through rows, because such rows still need to
+    /// contribute to `new_ttl_info.max`. Already-consumed expired aggregate
+    /// rows must not contribute to the unfinished range: after `TTL ... GROUP
+    /// BY` applies to them, persisting their expired watermark as an unfinished
+    /// `min` would let `TTLRowDeleteMergeSelector` schedule identical merges
+    /// until some later future row expires (issue #105647).
     auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
     auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
     for (size_t i = 0; i < block.rows(); ++i)
@@ -186,7 +187,17 @@ void TTLAggregationAlgorithm::execute(Block & block)
         any_surviving_row_seen = true;
         bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
         if (where_filter_passed)
-            new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
+        {
+            time_t ttl = getTimestampByIndex(ttl_column_after_aggregation.get(), i);
+            if (!ttl)
+                continue;
+
+            any_surviving_nonzero_ttl_seen = true;
+            if (!isTTLExpired(ttl))
+                new_ttl_info.update(ttl);
+            else
+                expired_ttl_info.update(ttl);
+        }
     }
 }
 
@@ -278,36 +289,45 @@ void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) con
     /// `new_ttl_info.max` so the persisted state reflects the actual rows
     /// surviving in the merged part.
     ///
-    /// Three cases for what to persist:
+    /// Four cases for what to persist:
     ///
-    ///  (1) `new_ttl_info.max != 0` — at least one surviving row contributed
-    ///      a fresh watermark. Persist `new_ttl_info`, computing `finished`
-    ///      from the watermark.
+    ///  (1) `new_ttl_info.max != 0` - at least one not-yet-expired surviving
+    ///      row contributed a fresh watermark. Persist `new_ttl_info`,
+    ///      computing `finished` from the watermark.
     ///
-    ///  (2) `new_ttl_info.max == 0` and `execute` observed no surviving rows
-    ///      at all (`!any_surviving_row_seen`, e.g., a sibling `TTL ... DELETE`
-    ///      removed every row while `remove_empty_parts = 0` keeps the empty
-    ///      part around, or `execute` was only ever called with empty
-    ///      blocks). The `GROUP BY` rule has no more inputs on this part, so
-    ///      persist a finished zero entry — otherwise the old non-finished,
-    ///      still-expired entry would survive and `TTLPartDropMergeSelector`
-    ///      would re-pick the empty part on every scheduler tick (also issue
-    ///      #105647). We track this via `any_surviving_row_seen` rather than
-    ///      `data_part->rows_count` because `rows_count` is set by
-    ///      `MergedBlockOutputStream::finalizePart` AFTER the TTL pipeline
-    ///      runs, so it is still zero at this point.
+    ///  (2) `new_ttl_info.max == 0`, no future rows remain, and at least one
+    ///      surviving row had a non-zero expired TTL watermark. Persist that
+    ///      expired range as finished. The finished flag keeps the part from
+    ///      being selected as a TTL center again, while retaining the range
+    ///      lets TTL selectors include it as a neighbor of an unfinished part.
     ///
-    ///  (3) `new_ttl_info.max == 0` but `any_surviving_row_seen` is true —
-    ///      rows survived but none updated the watermark (e.g., the TTL
-    ///      expression evaluated to null/0 for every surviving row, or the
-    ///      `WHERE` filter rejected all of them in the recalc loop). Fall
-    ///      back to `old_ttl_info` to preserve the per-part watermark across
-    ///      the merge.
+    ///  (3) `new_ttl_info.max == 0` and no rows survived. The `GROUP BY` rule
+    ///      has no more inputs on this part, so persist a finished zero entry;
+    ///      otherwise the old non-finished, still-expired entry would survive
+    ///      and the TTL selectors could re-pick the part on every scheduler
+    ///      tick (also issue #105647). We track row survival via
+    ///      `any_surviving_row_seen` rather than `data_part->rows_count`
+    ///      because `rows_count` is set by `MergedBlockOutputStream::finalizePart`
+    ///      after the TTL pipeline runs, so it is still zero at this point.
+    ///
+    ///  (4) `new_ttl_info.max == 0`, rows survived, but no surviving row had
+    ///      a non-zero TTL watermark that passed the `WHERE` filter. Fall back
+    ///      to `old_ttl_info` to preserve the per-part watermark across the
+    ///      merge.
     TTLInfo info_to_write = new_ttl_info;
     info_to_write.ttl_finished = isTTLExpired(info_to_write.max);
 
     if (info_to_write.max != 0)
     {
+        data_part->ttl_infos.group_by_ttl[description.result_column] = info_to_write;
+        data_part->ttl_infos.updatePartMinMaxTTL(info_to_write.min, info_to_write.max);
+        return;
+    }
+
+    if (any_surviving_nonzero_ttl_seen)
+    {
+        info_to_write = expired_ttl_info;
+        info_to_write.ttl_finished = true;
         data_part->ttl_infos.group_by_ttl[description.result_column] = info_to_write;
         data_part->ttl_infos.updatePartMinMaxTTL(info_to_write.min, info_to_write.max);
         return;

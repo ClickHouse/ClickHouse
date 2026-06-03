@@ -14,10 +14,13 @@
 -- the previously-future rows never get aggregated when their TTL finally
 -- expires.
 --
--- The fix moves the `ttl_finished` decision into
--- `TTLAggregationAlgorithm::finalize`, which runs once per merged part
--- after every block has been processed, and recomputes the flag from the
--- final `new_ttl_info.max`.
+-- The first fix moved the `ttl_finished` decision into
+-- `TTLAggregationAlgorithm::finalize`, which runs once per merged part after
+-- every block has been processed, and recomputes the flag from the final
+-- `new_ttl_info.max`. A later follow-up also has to keep the `min` watermark
+-- on the next not-yet-expired row: the expired aggregate row has already been
+-- consumed by this merge and must not make `TTLRowDeleteMergeSelector` rerun
+-- the same TTL merge before the future rows mature.
 
 DROP TABLE IF EXISTS t_ttl_group_by_mixed_blocks;
 
@@ -28,16 +31,18 @@ CREATE TABLE t_ttl_group_by_mixed_blocks
     `value` UInt32
 )
 ENGINE = MergeTree
-ORDER BY (key)
-TTL ts + INTERVAL 5 SECOND GROUP BY key SET value = sum(value)
+ORDER BY (key, ts)
+TTL ts + INTERVAL 5 SECOND GROUP BY key SET ts = min(ts), value = sum(value)
 SETTINGS min_bytes_for_wide_part = 0, merge_with_ttl_timeout = 0;
 
--- One part with both already-expired and not-yet-expired rows.
--- 20000 expired keys (year 2000) + 20000 future keys (now + 1 HOUR).
--- With `merge_max_block_size = 8192` the merge runs across multiple blocks.
+-- One part with the same GROUP BY key containing both already-expired and
+-- not-yet-expired rows. With `merge_max_block_size = 8192` the merge runs
+-- across multiple blocks, so the expired aggregate row and the future
+-- pass-through rows are produced by the same TTL rule but not necessarily by
+-- the same input block.
 INSERT INTO t_ttl_group_by_mixed_blocks
 SELECT
-    number AS key,
+    1 AS key,
     if(number < 20000,
        toDateTime('2000-01-01 00:00:00') + INTERVAL number SECOND,
        now() + INTERVAL 1 HOUR) AS ts,
@@ -47,15 +52,39 @@ FROM numbers(40000);
 -- TTL merge aggregates the expired keys and leaves the future ones alone.
 OPTIMIZE TABLE t_ttl_group_by_mixed_blocks FINAL;
 
--- The post-merge `group_by_ttl[k].max` must reflect the surviving future
--- rows (`now() + 1 HOUR + 5 SECOND`), not just the aggregated past rows.
--- Before the fix this is a year-2000 timestamp; with the fix it is in the
--- future. Equivalently, the `finished` flag (not exposed in system.parts)
--- must be false — a future `max` forces it false in the new `finalize`.
-SELECT toDateTime(arrayElement(group_by_ttl_info.max, 1)) > now() AS group_by_max_is_future
+-- The post-merge `group_by_ttl[k]` watermarks must reflect the surviving
+-- future rows (`now() + 1 HOUR + 5 SECOND`), not the consumed aggregate row.
+-- Before the fix, `max` was a year-2000 timestamp; before the follow-up for
+-- discussion_r3350860754, `min` was still a year-2000 timestamp.
+SELECT
+    toDateTime(arrayElement(group_by_ttl_info.min, 1)) > now() AS group_by_min_is_future,
+    toDateTime(arrayElement(group_by_ttl_info.max, 1)) > now() AS group_by_max_is_future
 FROM system.parts
 WHERE database = currentDatabase()
   AND table = 't_ttl_group_by_mixed_blocks'
   AND active;
+
+SYSTEM FLUSH LOGS part_log;
+CREATE TEMPORARY TABLE snap AS
+SELECT count() AS n
+FROM system.part_log
+WHERE database = currentDatabase()
+  AND table = 't_ttl_group_by_mixed_blocks'
+  AND event_type = 'MergeParts'
+  AND merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge');
+
+SELECT sleep(3) FORMAT Null;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT
+    (
+        SELECT count()
+        FROM system.part_log
+        WHERE database = currentDatabase()
+          AND table = 't_ttl_group_by_mixed_blocks'
+          AND event_type = 'MergeParts'
+          AND merge_reason IN ('TTLDropMerge', 'TTLDeleteMerge')
+    ) - (SELECT n FROM snap) AS spurious_ttl_merges_before_future_boundary;
 
 DROP TABLE t_ttl_group_by_mixed_blocks;
