@@ -383,11 +383,20 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     if (num_vectors == 0)
         return;
 
+    constexpr size_t MIN_VECTORS = 1000;
     if (serialized_partitioner_proto.empty() || serialized_codebook_proto.empty())
+    {
+        /// buildIndex skips index construction for granules with fewer than MIN_VECTORS
+        /// vectors and leaves all artifact fields empty. After DETACH/ATTACH or restart,
+        /// treat the same condition (num_vectors < MIN_VECTORS + empty artifacts) as the
+        /// identical no-index fallback so the part remains readable.
+        if (num_vectors < MIN_VECTORS)
+            return;
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ScaNN index restore failed: serialized artifacts are missing for {} vectors. "
             "The index may have been built with an older version; drop and recreate it.",
             num_vectors);
+    }
 
     research_scann::SingleMachineFactoryOptions opts;
 

@@ -214,6 +214,20 @@ SELECT count() FROM (
     SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
     SETTINGS use_skip_indexes = 0
 );
+-- Regression: small parts (< MIN_VECTORS) serialize with empty artifacts. After
+-- DETACH/ATTACH buildIndexFromSerialized must treat this as the same no-index fallback
+-- rather than throwing "serialized artifacts are missing".
+DETACH TABLE tab_scann_fallback SYNC;
+ATTACH TABLE tab_scann_fallback;
+SELECT count() FROM (
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id FROM tab_scann_fallback ORDER BY L2Distance(vec, reference_vec) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
 DROP TABLE tab_scann_fallback;
 
 SELECT '5. invalid distance function';
