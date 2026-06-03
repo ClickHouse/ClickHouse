@@ -126,6 +126,26 @@ class RandomRestarter(ChaosThread):
                 self._stop_graceful()
             self._start_and_wait()
 
+    def _run(self) -> None:
+        logging.info(
+            "%s started (interval: %.0f-%.0fs)",
+            self.NAME,
+            self._min_interval,
+            self._max_interval,
+        )
+        while not self._stop_event.is_set():
+            delay = random.uniform(self._min_interval, self._max_interval)
+            if self._stop_event.wait(delay):
+                break
+            if self._stop_event.is_set():
+                break
+            try:
+                self._loop_body()
+            except Exception as e:
+                self._recovery_failures += 1
+                logging.error("%s: cycle failed: %s", self.NAME, e)
+        logging.info("%s stopped", self.NAME)
+
     def stop(self) -> None:
         if self._thread is None:
             return
@@ -311,13 +331,17 @@ class RandomMinIORestarter(RandomRestarter):
         )
         for _ in range(30):
             ret = subprocess.run(
-                "pgrep -f 'minio server'",
-                shell=True,
+                ["pgrep", "-f", "minio server"],
                 capture_output=True,
             )
             if ret.returncode != 0:
-                break
+                return
             time.sleep(1)
+        logging.warning(
+            "%s: MinIO still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
 
     def _start_and_wait(self) -> None:
         self._wait_port_free(self.MINIO_PORT)
@@ -381,13 +405,17 @@ class RandomAzuriteRestarter(RandomRestarter):
         )
         for _ in range(30):
             ret = subprocess.run(
-                "pgrep -f 'azurite-rs'",
-                shell=True,
+                ["pgrep", "-f", "azurite-rs"],
                 capture_output=True,
             )
             if ret.returncode != 0:
-                break
+                return
             time.sleep(1)
+        logging.warning(
+            "%s: Azurite still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
 
     def _start_and_wait(self) -> None:
         self._wait_port_free(self.AZURITE_PORT)
@@ -449,13 +477,17 @@ class RandomRedpandaRestarter(RandomRestarter):
         subprocess.run("pkill -f '/opt/redpanda/'", shell=True, capture_output=True)
         for _ in range(30):
             ret = subprocess.run(
-                "pgrep -f '/opt/redpanda/'",
-                shell=True,
+                ["pgrep", "-f", "/opt/redpanda/"],
                 capture_output=True,
             )
             if ret.returncode != 0:
-                break
+                return
             time.sleep(1)
+        logging.warning(
+            "%s: Redpanda still alive after grace period, escalating to SIGKILL",
+            self.NAME,
+        )
+        self._stop_hard()
 
     def _start_and_wait(self) -> None:
         self._wait_port_free(self.KAFKA_PORT)
@@ -772,7 +804,9 @@ def run_func_test(
             command = commands[i]
             logging.info("Run func tests '%s'", command)
             # pylint:disable-next=consider-using-with
-            pipes.append(Popen(command, shell=True, stdout=op, stderr=op))
+            pipes.append(
+                Popen(command, shell=True, stdout=op, stderr=op, start_new_session=True)
+            )
             time.sleep(0.5)
 
     logging.info("Will wait functests to finish")
