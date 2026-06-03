@@ -290,6 +290,15 @@ def test_metric_values_and_stability(started_cluster):
                 # Loose magnitude gate against the recorded baseline.
                 _check_bands(name, state, mode, st, cost_per_mib)
 
+    # The cost-per-byte KPI is also exposed as an async metric (interval delta) for
+    # realtime instance graphs. After a full run it is registered and non-negative.
+    async_val = node.query(
+        "SELECT value FROM system.asynchronous_metrics "
+        "WHERE metric = 'ReaderExecutorModeledCostMsPerRequestedMiB'"
+    ).strip()
+    assert async_val != "", "ReaderExecutorModeledCostMsPerRequestedMiB async metric not registered"
+    assert float(async_val) >= 0.0, f"async cost-per-MiB metric is negative: {async_val}"
+
     banner = "\n=== ReaderExecutor real-load metric (state x pattern x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
     print(banner)

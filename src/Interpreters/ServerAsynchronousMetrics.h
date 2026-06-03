@@ -47,6 +47,11 @@ private:
     DetachedPartsStats detached_parts_stats{};
     MutationStats mutation_stats{};
 
+    /// Previous instance-wide ReaderExecutor counters, for the cost-per-requested-byte
+    /// async metric (interval delta -> realtime read-path efficiency).
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
     void updateMutationAndDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
