@@ -20,6 +20,7 @@ SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 

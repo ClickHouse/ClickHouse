@@ -99,7 +99,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
             size_t range_begin = 0;
             size_t range_end = 0;
-            char point;
+            char point = 0;
             ReadBufferFromString buf_range(buffer);
             buf_range >> range_begin >> point >> point >> range_end;
 

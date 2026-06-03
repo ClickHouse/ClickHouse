@@ -184,6 +184,8 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
     // so even if we decide to use the plan with parallel replicas, we will substitute it in place of the original plan and then build sets.
     optimization_settings.build_sets = false;
+    // CTEs materialization should be done in the original plan, but not in the plan with parallel replicas.
+    optimization_settings.materialize_ctes = false;
     // If the parallel replicas plan will be chosen, the index analysis result will be reused from the single-replica plan.
     optimization_settings.query_plan_optimize_primary_key = false;
     // Depends on PK optimizations that we don't perform here
@@ -217,6 +219,20 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         replacement_map.emplace(node.get(), std::move(replacement_table_expression));
     }
     query_tree = query_tree->cloneAndReplace(replacement_map);
+}
+
+static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
+{
+    for (const auto & node : extractAllTableReferences(query_tree))
+    {
+        const auto & table_node = node->as<TableNode &>();
+        if (auto modifiers = table_node.getTableExpressionModifiers(); modifiers && modifiers->hasStream())
+        {
+            context->setSetting("output_format_pretty_squash_consecutive_ms", Field{UInt64{0}});
+            context->setSetting("output_format_pretty_squash_max_wait_ms", Field{UInt64{0}});
+            return;
+        }
+    }
 }
 
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
@@ -261,6 +277,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -282,6 +299,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            select_options = select_query_options_,
            column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -296,6 +314,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
@@ -384,12 +403,7 @@ void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & 
     planner.addStorageLimits(storage_limits);
 }
 
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
-{
-    for (const auto & used_row_policy : planner.getUsedRowPolicies())
-        elem.used_row_policies.emplace(used_row_policy);
-}
-
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
