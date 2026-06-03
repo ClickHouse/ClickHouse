@@ -53,13 +53,15 @@ Required parameters:
 
 - `elasticsearch_url` - The base URL of the Elasticsearch cluster, for example `http://elasticsearch:9200`.
 - `elasticsearch_index` - The Elasticsearch index or index pattern to read.
-- `elasticsearch_cursor_field` - A sortable field used as the ascending `search_after` cursor.
+- `elasticsearch_cursor_field` - A sortable field used as the first ascending `search_after` cursor component.
 
 The same values can also be specified through settings as `elasticsearch_url`, `elasticsearch_index`, and `elasticsearch_cursor_field`.
 
 ## Description {#description}
 
 `ElasticsearchQueue` polls Elasticsearch with `_search` requests. Each request is sorted by `elasticsearch_cursor_field` and optionally by `elasticsearch_tiebreaker_field`. The `sort` value from the last document in a successfully inserted batch is saved as the checkpoint and used as `search_after` in the next request.
+
+The complete sort tuple must be unique and stable for every document that can be consumed. If `elasticsearch_cursor_field` is not unique, set `elasticsearch_tiebreaker_field` to a second sortable field that makes the tuple unique. For example, use `updated_at, event_id` rather than only `updated_at` when multiple documents can have the same timestamp.
 
 When a `MATERIALIZED VIEW` is attached, the engine starts collecting data in the background:
 
@@ -304,8 +306,8 @@ FROM events_queue;
 |---|---:|---|
 | `elasticsearch_url` | `''` | Base URL of Elasticsearch. |
 | `elasticsearch_index` | `''` | Index or index pattern. |
-| `elasticsearch_cursor_field` | `''` | Ascending field used for `search_after`. |
-| `elasticsearch_tiebreaker_field` | `''` | Optional second ascending sort field for deterministic ordering. |
+| `elasticsearch_cursor_field` | `''` | First ascending field used for `search_after`. |
+| `elasticsearch_tiebreaker_field` | `''` | Optional second ascending sort field used to make the `search_after` tuple unique. |
 | `elasticsearch_query` | `''` | Optional Elasticsearch JSON request body. The engine overwrites `size`, `sort`, `pit`, and `search_after`. |
 | `elasticsearch_auth_type` | `'auto'` | Authentication mode. Supported values are `auto`, `none`, `basic`, `api_key`, and `bearer`. |
 | `elasticsearch_user` | `''` | User for HTTP basic authentication. |
@@ -327,6 +329,6 @@ FROM events_queue;
 
 - `ElasticsearchQueue` is an ingestion engine, not a general-purpose Elasticsearch query engine.
 - Direct `SELECT` is rejected while materialized views are attached.
-- `elasticsearch_cursor_field` must be sortable and monotonic for the intended ingestion order.
+- The complete `search_after` sort tuple must be sortable, stable, and unique. If `elasticsearch_cursor_field` is not unique, configure `elasticsearch_tiebreaker_field`.
 - Updates or deletes in Elasticsearch after a document was already consumed are not replayed into ClickHouse.
 - The engine does not deduplicate rows written to the destination table. Use an appropriate destination table design if idempotency is required.

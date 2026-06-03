@@ -17,6 +17,8 @@ public:
         size_t max_block_size_,
         bool commit_in_suffix_);
 
+    ~ElasticsearchQueueSource() override;
+
     String getName() const override { return storage.getName(); }
 
     Chunk generate() override;
@@ -26,6 +28,8 @@ public:
     bool isStalled() const { return stalled; }
 
 private:
+    void releaseKeeperLock();
+
     StorageElasticsearchQueue & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;

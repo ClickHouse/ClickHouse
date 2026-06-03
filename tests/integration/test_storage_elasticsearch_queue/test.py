@@ -19,12 +19,15 @@ node1 = cluster.add_instance(
     with_elasticsearch=True,
     with_zookeeper=True,
     with_remote_database_disk=False,
+    stay_alive=True,
+    cpu_limit=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_elasticsearch=True,
     with_zookeeper=True,
     with_remote_database_disk=False,
+    cpu_limit=False,
 )
 
 
@@ -65,6 +68,7 @@ def put_elasticsearch_documents(index, rows):
             "mappings": {
                 "properties": {
                     "seq": {"type": "long"},
+                    "tie": {"type": "long"},
                     "message": {"type": "keyword"},
                 }
             }
@@ -74,9 +78,11 @@ def put_elasticsearch_documents(index, rows):
     response.raise_for_status()
 
     body = []
-    for row in rows:
-        body.append(json.dumps({"index": {"_index": index, "_id": str(row["seq"])}}))
-        body.append(json.dumps(row))
+    for position, row in enumerate(rows):
+        source = dict(row)
+        document_id = str(source.pop("_id", position))
+        body.append(json.dumps({"index": {"_index": index, "_id": document_id}}))
+        body.append(json.dumps(source))
 
     response = requests.post(
         f"{elasticsearch_url()}/_bulk",
@@ -227,6 +233,63 @@ def test_direct_select_is_rejected_while_materialized_view_is_attached(started_c
         )
 
     assert "attached materialized views" in str(exc.value)
+
+
+def test_local_checkpoint_is_loaded_after_restart(started_cluster, database):
+    index = f"restart_{database}"
+    put_elasticsearch_documents(index, [{"seq": i, "message": f"value-{i}"} for i in range(1, 4)])
+
+    create_target_and_queue(node1, database, index, "")
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT seq FROM {database}.dst ORDER BY seq",
+        "1\n2\n3\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
+
+    node1.restart_clickhouse()
+
+    put_elasticsearch_documents(index, [{"seq": i, "message": f"value-{i}"} for i in range(1, 6)])
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT seq, count() FROM {database}.dst GROUP BY seq ORDER BY seq",
+        "1\t1\n2\t1\n3\t1\n4\t1\n5\t1\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
+
+
+def test_tiebreaker_prevents_duplicate_cursor_skip_across_batch_boundary(started_cluster, database):
+    index = f"tiebreaker_{database}"
+    put_elasticsearch_documents(
+        index,
+        [
+            {"_id": "1", "seq": 1, "tie": 1, "message": "value-1"},
+            {"_id": "2", "seq": 1, "tie": 2, "message": "value-2"},
+            {"_id": "3", "seq": 1, "tie": 3, "message": "value-3"},
+            {"_id": "4", "seq": 2, "tie": 1, "message": "value-4"},
+        ],
+    )
+
+    create_target_and_queue(
+        node1,
+        database,
+        index,
+        """
+            , elasticsearch_tiebreaker_field = 'tie'
+        """,
+    )
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT message FROM {database}.dst ORDER BY message",
+        "value-1\nvalue-2\nvalue-3\nvalue-4\n",
+        retry_count=80,
+        sleep_time=0.5,
+    )
 
 
 def test_experimental_setting_is_required(started_cluster, database):

@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Stringifier.h>
@@ -91,6 +92,11 @@ ElasticsearchQueueSource::ElasticsearchQueueSource(
 {
 }
 
+ElasticsearchQueueSource::~ElasticsearchQueueSource()
+{
+    releaseKeeperLock();
+}
+
 Chunk ElasticsearchQueueSource::generate()
 {
     if (is_finished)
@@ -141,9 +147,18 @@ void ElasticsearchQueueSource::commit()
         return;
 
     storage.commit(checkpoint, checkpoint_lock, checkpoint_zookeeper);
+    releaseKeeperLock();
+    committed = true;
+}
+
+void ElasticsearchQueueSource::releaseKeeperLock()
+{
+    if (!checkpoint_lock && !checkpoint_zookeeper)
+        return;
+
+    auto component_guard = Coordination::setCurrentComponent("ElasticsearchQueueSource::releaseKeeperLock");
     checkpoint_lock.reset();
     checkpoint_zookeeper.reset();
-    committed = true;
 }
 
 }

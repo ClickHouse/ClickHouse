@@ -27,6 +27,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 #include <Poco/Dynamic/Var.h>
@@ -183,7 +184,7 @@ namespace
         if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
             return current_pit_id;
 
-        auto root = parsed.extract<Poco::JSON::Object::Ptr>();
+        const auto & root = parsed.extract<Poco::JSON::Object::Ptr>();
         if (root->has("pit_id"))
             return root->getValue<String>("pit_id");
 
@@ -254,7 +255,7 @@ StorageElasticsearchQueue::StorageElasticsearchQueue(
     , index(getContext()->getMacros()->expand((*settings)[ElasticsearchQueueSetting::elasticsearch_index].value, macros_info))
     , cursor_field(getContext()->getMacros()->expand((*settings)[ElasticsearchQueueSetting::elasticsearch_cursor_field].value, macros_info))
     , tiebreaker_field(getContext()->getMacros()->expand((*settings)[ElasticsearchQueueSetting::elasticsearch_tiebreaker_field].value, macros_info))
-    , query_body(getContext()->getMacros()->expand((*settings)[ElasticsearchQueueSetting::elasticsearch_query].value, macros_info))
+    , query_body((*settings)[ElasticsearchQueueSetting::elasticsearch_query].value)
     , user(getContext()->getMacros()->expand((*settings)[ElasticsearchQueueSetting::elasticsearch_user].value, macros_info))
     , password((*settings)[ElasticsearchQueueSetting::elasticsearch_password].value)
     , api_key((*settings)[ElasticsearchQueueSetting::elasticsearch_api_key].value)
@@ -283,7 +284,9 @@ StorageElasticsearchQueue::StorageElasticsearchQueue(
     if (!keeper_path.empty())
         initializeKeeperCheckpoint();
 
-    if (mode <= LoadingStrictnessLevel::ATTACH)
+    /// Server startup attaches existing tables with `FORCE_ATTACH`. The local checkpoint must still be restored there
+    /// to avoid replaying already committed `Elasticsearch` documents after a restart.
+    if (mode <= LoadingStrictnessLevel::ATTACH || isLoadingFromExistingMetadata(mode))
         loadCheckpoint();
 
     auto background_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
@@ -442,6 +445,7 @@ zkutil::ZooKeeperPtr StorageElasticsearchQueue::getZooKeeper() const
 
 void StorageElasticsearchQueue::initializeKeeperCheckpoint() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageElasticsearchQueue::initializeKeeperCheckpoint");
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(keeper_path);
     zookeeper->createIfNotExists(keeper_path, "");
@@ -450,6 +454,7 @@ void StorageElasticsearchQueue::initializeKeeperCheckpoint() const
 
 String StorageElasticsearchQueue::loadKeeperCheckpoint() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageElasticsearchQueue::loadKeeperCheckpoint");
     initializeKeeperCheckpoint();
 
     String keeper_checkpoint;
@@ -459,12 +464,14 @@ String StorageElasticsearchQueue::loadKeeperCheckpoint() const
 
 void StorageElasticsearchQueue::storeKeeperCheckpoint(const String & new_checkpoint, const zkutil::ZooKeeperPtr & zookeeper) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageElasticsearchQueue::storeKeeperCheckpoint");
     auto keeper = zookeeper ? zookeeper : getZooKeeper();
     keeper->createOrUpdate(getKeeperCheckpointPath(), new_checkpoint, zkutil::CreateMode::Persistent);
 }
 
 std::pair<zkutil::ZooKeeperPtr, zkutil::EphemeralNodeHolder::Ptr> StorageElasticsearchQueue::tryAcquireKeeperCheckpointLock() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageElasticsearchQueue::tryAcquireKeeperCheckpointLock");
     initializeKeeperCheckpoint();
     auto zookeeper = getZooKeeper();
     auto lock_holder = zkutil::EphemeralNodeHolder::tryCreate(getKeeperLockPath(), *zookeeper, getStorageID().getNameForLogs());
@@ -624,7 +631,7 @@ String StorageElasticsearchQueue::openPointInTime() const
     if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch point-in-time response must be a JSON object");
 
-    auto root = parsed.extract<Poco::JSON::Object::Ptr>();
+    const auto & root = parsed.extract<Poco::JSON::Object::Ptr>();
     if (!root->has("id"))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch point-in-time response does not contain 'id'");
 
@@ -755,7 +762,7 @@ StorageElasticsearchQueue::Batch StorageElasticsearchQueue::pollBatch(size_t max
     if (parsed.type() != typeid(Poco::JSON::Object::Ptr))
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch response must be a JSON object");
 
-    auto root = parsed.extract<Poco::JSON::Object::Ptr>();
+    const auto & root = parsed.extract<Poco::JSON::Object::Ptr>();
     auto hits_object = root->getObject("hits");
     if (!hits_object)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Elasticsearch response does not contain 'hits' object");
@@ -763,6 +770,7 @@ StorageElasticsearchQueue::Batch StorageElasticsearchQueue::pollBatch(size_t max
     auto hits = hits_object->getArray("hits");
     if (!hits || hits->size() == 0)
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageElasticsearchQueue::pollBatch");
         result.checkpoint_lock.reset();
         result.checkpoint_zookeeper.reset();
         return result;
