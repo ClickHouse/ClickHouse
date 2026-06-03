@@ -22,7 +22,7 @@ This query will not improve performance of the system and you should not execute
 The basic syntax of the query is as follows:
 
 ```sql
-CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
+CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [REMOTE] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
 ```
 
 - `table_name`: Specifies the name of the table that you want to check.
@@ -155,6 +155,49 @@ SETTINGS check_query_single_value_result = 0
 │ db1      │ t1       │ all_7_38_2  │         1 │         │
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
+```
+
+## Remote Storage Validation {#remote-storage-validation}
+
+For tables stored on remote disks (S3, GCS, Azure Blob Storage), the standard `CHECK TABLE` reads every data file and verifies checksums end-to-end. This is thorough but expensive — it downloads all data from remote storage.
+
+The `REMOTE` keyword provides a lightweight alternative: instead of reading all data, it issues a single HEAD request per part to verify that the backing objects exist on remote storage. This is useful for:
+
+- **Disaster recovery** — after restoring a cluster from EBS snapshots that reference cross-region-replicated S3 data, quickly identify parts whose S3 objects have not been replicated yet.
+- **Operational health checks** — verify remote storage accessibility without the I/O cost of full checksum validation.
+
+### Syntax {#remote-syntax}
+
+```sql
+CHECK TABLE table_name [PARTITION partition_expression | PART part_name] REMOTE [FORMAT format] [SETTINGS ...]
+```
+
+### Behavior {#remote-behavior}
+
+- For parts on **remote disks**: checks whether `checksums.txt` exists on the remote storage (one HEAD request per part).
+- For parts on **local disks**: returns `is_passed = 1` with message `Skipped: not on remote disk.`.
+- Works with both `MergeTree` and `ReplicatedMergeTree` engines.
+
+### Example {#remote-example}
+
+```sql title="Query"
+CHECK TABLE events REMOTE
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text title="Response"
+┌─part_path──────────┬─is_passed─┬─message──────────────────────────────────────┐
+│ 202406_1_100_5     │         1 │                                              │
+│ 202406_101_200_3   │         1 │                                              │
+│ 202405_1_50_2      │         0 │ Remote object not found for file: checksums… │
+└────────────────────┴───────────┴──────────────────────────────────────────────┘
+```
+
+Parts that fail the remote check can then be detached:
+
+```sql
+ALTER TABLE events DETACH PART '202405_1_50_2';
 ```
 
 ## If the Data Is Corrupted {#if-the-data-is-corrupted}

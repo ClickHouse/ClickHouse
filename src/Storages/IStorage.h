@@ -608,9 +608,15 @@ public:
     struct DataValidationTasksBase
     {
         /// Number of entries left to check.
-        /// It decreases after each call to checkDataNext().
+        /// It decreases after each call to `checkDataNext`.
         virtual size_t size() const = 0;
         virtual ~DataValidationTasksBase() = default;
+
+        /// When true, `checkDataNext` performs a lightweight remote storage
+        /// accessibility check (e.g. HEAD request per part) instead of full
+        /// checksum verification. Useful for quickly detecting parts whose
+        /// backing objects are missing on S3/GCS/Azure.
+        bool remote = false;
     };
 
     using DataValidationTasksPtr = std::shared_ptr<DataValidationTasksBase>;

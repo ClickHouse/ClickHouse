@@ -106,12 +106,14 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
-    TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
+    TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context, bool remote_ = false)
         : table(DatabaseCatalog::instance().getTable(table_id, context))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
         chassert(context);
         context->checkAccess(AccessType::CHECK, table_id);
+        if (check_data_tasks)
+            check_data_tasks->remote = remote_;
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
@@ -423,7 +425,7 @@ BlockIO InterpreterCheckQuery::execute()
         /// matching the scoping precedence of `SHOW CREATE TABLE` and
         /// `DESCRIBE TABLE` introduced in #100966.
         auto table_id = context->resolveStorageID(*check_query);
-        auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context);
+        auto table_check_task = std::make_shared<TableCheckTask>(table_id, check_query->getPartitionOrPartitionID(), context, check_query->remote);
         worker_source = std::make_shared<TableCheckSource>(table_check_task, log);
         worker_source->addTotalRowsApprox(table_check_task->size());
     }

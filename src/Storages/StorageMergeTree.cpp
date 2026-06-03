@@ -2909,6 +2909,38 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
     auto local_context = data_validation_tasks->context;
     if (auto part = data_validation_tasks->next())
     {
+        /// REMOTE mode: lightweight existence check on remote storage.
+        /// Instead of reading all data and computing checksums, we verify
+        /// that one representative file per part is accessible on remote
+        /// storage (e.g. S3 HEAD request). This detects parts whose
+        /// backing objects have not been replicated yet.
+        if (check_task_list->remote)
+        {
+            try
+            {
+                const auto & storage = part->getDataPartStorage();
+
+                if (!storage.isStoredOnRemoteDisk())
+                    return CheckResult(part->name, true, "Skipped: not on remote disk.");
+
+                /// Pick one representative file to check. Prefer checksums.txt
+                /// as it is always present and is a single small object.
+                static constexpr auto probe_file = "checksums.txt";
+                if (storage.existsFile(probe_file))
+                    return CheckResult(part->name, true, "");
+
+                return CheckResult(part->name, false, "Remote object not found for file: " + String(probe_file));
+            }
+            catch (...)
+            {
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
+                return CheckResult(part->name, false, "Remote check failed: " + getCurrentExceptionMessage(false));
+            }
+        }
+
+        /// Full check mode (default): read all data and verify checksums.
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         static constexpr auto checksums_path = "checksums.txt";
         bool noop;

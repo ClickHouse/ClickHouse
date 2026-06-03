@@ -32,6 +32,7 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_check_table(Keyword::CHECK_TABLE);
     ParserKeyword s_partition(Keyword::PARTITION);
     ParserKeyword s_part(Keyword::PART);
+    ParserKeyword s_remote(Keyword::REMOTE);
     ParserToken s_dot(TokenType::Dot);
 
     ParserPartition partition_parser;
@@ -61,6 +62,9 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
             return false;
         query->part_name = ast_literal->value.safeGet<String>();
     }
+
+    if (s_remote.ignore(pos, expected))
+        query->remote = true;
 
     if (query->database)
         query->children.push_back(query->database);
