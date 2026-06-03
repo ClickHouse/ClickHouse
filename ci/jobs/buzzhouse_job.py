@@ -94,6 +94,9 @@ def main():
             "icebergs3",
             "icebergazure",
             "iceberglocal",
+            "paimons3",
+            "paimonazure",
+            "paimonlocal",
             "merge",
             "distributed",
             "dictionary",
@@ -221,6 +224,7 @@ def main():
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
+        "enable_time_settings": random.randint(1, 5) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": random.randint(1, 10) == 1,
