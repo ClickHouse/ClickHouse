@@ -23,8 +23,8 @@ class IDataPartStorage;
 /// Output: `unique_key_index.sst`, a single-file RocksDB SST containing
 /// `(encoded_key -> row_number_be32)` entries with an embedded ~1% FPR
 /// bloom filter (`NewBloomFilterPolicy(10)`). Atomic write: stages to
-/// `unique_key_index.sst.tmp`, renames on `finalizeToStorage`. Crash
-/// residue is swept by the part lifecycle code at ATTACH.
+/// `unique_key_index.sst.tmp`, renames on `finalizeToStorage`. The dtor
+/// best-effort removes a leftover `.tmp` on early drop.
 ///
 /// Streaming `addEncoded` requires strictly-increasing encoded-key
 /// order (RocksDB `SstFileWriter::Put` invariant). Static helpers below
@@ -32,8 +32,8 @@ class IDataPartStorage;
 class SSTIndexWriter
 {
 public:
-    static constexpr const char * FILE_NAME = "unique_key_index.sst";
-    static constexpr const char * TMP_FILE_NAME = "unique_key_index.sst.tmp";
+    static const char * const FILE_NAME;
+    static const char * const TMP_FILE_NAME;
 
     /// Bloom filter bits-per-key. 10 → ~1% FPR.
     static constexpr double BLOOM_BITS_PER_KEY = 10.0;
@@ -58,10 +58,10 @@ public:
         const IColumn::Permutation * permutation,
         size_t max_encoded_size);
 
-    /// Streaming entry-point: keys MUST arrive in strictly-increasing
-    /// encoded-key order. `finalizeToStorage` must be called exactly
-    /// once on a successful build; dropping a non-finalized writer
-    /// cancels the write (no rename; `.tmp` swept at ATTACH).
+    /// Caller must call `finish()` (or `finalizeToStorage`, which does it
+    /// internally) before drop. Dropping without finishing leaks the
+    /// underlying RocksDB writer state; the dtor only best-effort removes
+    /// the `.tmp`.
     explicit SSTIndexWriter(IDataPartStorage & part_storage);
     ~SSTIndexWriter();
 
@@ -76,6 +76,11 @@ public:
     /// Finalize the SST and atomic-rename into place. Empty input → no
     /// SST file produced; returns 0.
     UInt64 finalizeToStorage();
+
+    /// Close the underlying RocksDB writer. Throws on real Finish failure;
+    /// `InvalidArgument` (zero-`Put` case) is treated as success.
+    /// Idempotent.
+    void finish();
 
 private:
     struct Impl;

@@ -7,6 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/transformEndianness.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 
@@ -22,54 +23,48 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
 
-void appendUIntBE8(UInt8 v, String & out)
+/// Order-preserving big-endian byte append. Reuses ClickHouse's
+/// `transformEndianness` so integer / wide-integer / float byte-swap shares
+/// the same primitive as the rest of the IO stack.
+template <typename T>
+void appendBigEndian(T v, String & out)
 {
-    out.push_back(static_cast<char>(v));
+    transformEndianness<std::endian::big>(v);
+    out.append(reinterpret_cast<const char *>(&v), sizeof(v));
 }
 
-void appendUIntBE16(UInt16 v, String & out)
+/// Signed: flip the sign bit on the MSB byte, then big-endian.
+template <typename Signed>
+void appendSignedBigEndian(Signed v, String & out)
 {
-    UInt16 be = __builtin_bswap16(v);
-    out.append(reinterpret_cast<const char *>(&be), sizeof(be));
+    using Unsigned = std::make_unsigned_t<Signed>;
+    static constexpr Unsigned sign_bit = Unsigned{1} << (sizeof(Unsigned) * 8 - 1);
+    appendBigEndian(static_cast<Unsigned>(static_cast<Unsigned>(v) ^ sign_bit), out);
 }
 
-void appendUIntBE32(UInt32 v, String & out)
+/// Wide signed (Int128 / Int256): flip the top bit of the most-significant
+/// limb in the unsigned representation, then big-endian. `make_unsigned_t`
+/// returns the wrong type for `wide::integer<N, int>`, so the unsigned
+/// counterpart is passed in explicitly.
+void appendWideSignedBigEndian(const Int128 & v, String & out)
 {
-    UInt32 be = __builtin_bswap32(v);
-    out.append(reinterpret_cast<const char *>(&be), sizeof(be));
+    UInt128 u = static_cast<UInt128>(v);
+    u.items[UInt128::_impl::big(0)] ^= 0x8000000000000000ULL;
+    appendBigEndian(u, out);
 }
 
-void appendUIntBE64(UInt64 v, String & out)
+void appendWideSignedBigEndian(const Int256 & v, String & out)
 {
-    UInt64 be = __builtin_bswap64(v);
-    out.append(reinterpret_cast<const char *>(&be), sizeof(be));
-}
-
-/// Signed: flip the sign bit, then big-endian.
-void appendIntBE8(Int8 v, String & out)
-{
-    appendUIntBE8(static_cast<UInt8>(static_cast<UInt8>(v) ^ static_cast<UInt8>(0x80)), out);
-}
-
-void appendIntBE16(Int16 v, String & out)
-{
-    appendUIntBE16(static_cast<UInt16>(static_cast<UInt16>(v) ^ static_cast<UInt16>(0x8000)), out);
-}
-
-void appendIntBE32(Int32 v, String & out)
-{
-    appendUIntBE32(static_cast<UInt32>(v) ^ static_cast<UInt32>(0x80000000U), out);
-}
-
-void appendIntBE64(Int64 v, String & out)
-{
-    appendUIntBE64(static_cast<UInt64>(v) ^ static_cast<UInt64>(0x8000000000000000ULL), out);
+    UInt256 u = static_cast<UInt256>(v);
+    u.items[UInt256::_impl::big(0)] ^= 0x8000000000000000ULL;
+    appendBigEndian(u, out);
 }
 
 /// IEEE-754 total-order: invert all bits when sign bit is set, else flip
@@ -81,7 +76,7 @@ void appendFloat32(Float32 v, String & out)
     UInt32 bits = std::bit_cast<UInt32>(v);
     if (std::isnan(v))
     {
-        appendUIntBE32(0xFFFFFFFFU, out);
+        appendBigEndian<UInt32>(0xFFFFFFFFU, out);
         return;
     }
     if (bits == 0x80000000U)
@@ -90,7 +85,7 @@ void appendFloat32(Float32 v, String & out)
         bits = ~bits;
     else
         bits ^= 0x80000000U;
-    appendUIntBE32(bits, out);
+    appendBigEndian(bits, out);
 }
 
 void appendFloat64(Float64 v, String & out)
@@ -98,7 +93,7 @@ void appendFloat64(Float64 v, String & out)
     UInt64 bits = std::bit_cast<UInt64>(v);
     if (std::isnan(v))
     {
-        appendUIntBE64(0xFFFFFFFFFFFFFFFFULL, out);
+        appendBigEndian<UInt64>(0xFFFFFFFFFFFFFFFFULL, out);
         return;
     }
     if (bits == 0x8000000000000000ULL)
@@ -107,41 +102,7 @@ void appendFloat64(Float64 v, String & out)
         bits = ~bits;
     else
         bits ^= 0x8000000000000000ULL;
-    appendUIntBE64(bits, out);
-}
-
-/// Wide integer: emit limbs most-significant-first via `_impl::big(i)`,
-/// each big-endian. Signed variants flip the top bit of the MSB limb.
-template <typename T>
-void appendWideUIntBE(const T & v, String & out)
-{
-    using Impl = typename T::_impl;
-    for (unsigned i = 0; i < T::_impl::item_count; ++i)
-        appendUIntBE64(v.items[Impl::big(i)], out);
-}
-
-void appendUInt128BE(const UInt128 & v, String & out)
-{
-    appendWideUIntBE(v, out);
-}
-
-void appendInt128BE(const Int128 & v, String & out)
-{
-    UInt128 u = static_cast<UInt128>(v);
-    u.items[UInt128::_impl::big(0)] ^= 0x8000000000000000ULL;
-    appendWideUIntBE(u, out);
-}
-
-void appendUInt256BE(const UInt256 & v, String & out)
-{
-    appendWideUIntBE(v, out);
-}
-
-void appendInt256BE(const Int256 & v, String & out)
-{
-    UInt256 u = static_cast<UInt256>(v);
-    u.items[UInt256::_impl::big(0)] ^= 0x8000000000000000ULL;
-    appendWideUIntBE(u, out);
+    appendBigEndian(bits, out);
 }
 
 /// String escape: `'\0'` → `'\0\x01'`; terminate with `'\0\x00'`.
@@ -187,31 +148,31 @@ void encodeOneNonNullable(const IColumn & column, size_t row, String & out)
     switch (column.getDataType())
     {
         case TypeIndex::UInt8:
-            appendUIntBE8(static_cast<const ColumnUInt8 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt8 &>(column).getData()[row], out);
             return;
         case TypeIndex::UInt16:
         case TypeIndex::Date:
-            appendUIntBE16(static_cast<const ColumnUInt16 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt16 &>(column).getData()[row], out);
             return;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
-            appendUIntBE32(static_cast<const ColumnUInt32 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt32 &>(column).getData()[row], out);
             return;
         case TypeIndex::UInt64:
-            appendUIntBE64(static_cast<const ColumnUInt64 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt64 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int8:
-            appendIntBE8(static_cast<const ColumnInt8 &>(column).getData()[row], out);
+            appendSignedBigEndian(static_cast<const ColumnInt8 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int16:
-            appendIntBE16(static_cast<const ColumnInt16 &>(column).getData()[row], out);
+            appendSignedBigEndian(static_cast<const ColumnInt16 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int32:
         case TypeIndex::Date32:
-            appendIntBE32(static_cast<const ColumnInt32 &>(column).getData()[row], out);
+            appendSignedBigEndian(static_cast<const ColumnInt32 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int64:
-            appendIntBE64(static_cast<const ColumnInt64 &>(column).getData()[row], out);
+            appendSignedBigEndian(static_cast<const ColumnInt64 &>(column).getData()[row], out);
             return;
         case TypeIndex::Float32:
             appendFloat32(static_cast<const ColumnFloat32 &>(column).getData()[row], out);
@@ -233,34 +194,34 @@ void encodeOneNonNullable(const IColumn & column, size_t row, String & out)
             return;
         }
         case TypeIndex::UUID:
-            appendUInt128BE(static_cast<const ColumnUUID &>(column).getData()[row].toUnderType(), out);
+            appendBigEndian(static_cast<const ColumnUUID &>(column).getData()[row].toUnderType(), out);
             return;
         case TypeIndex::UInt128:
-            appendUInt128BE(static_cast<const ColumnUInt128 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt128 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int128:
-            appendInt128BE(static_cast<const ColumnInt128 &>(column).getData()[row], out);
+            appendWideSignedBigEndian(static_cast<const ColumnInt128 &>(column).getData()[row], out);
             return;
         case TypeIndex::UInt256:
-            appendUInt256BE(static_cast<const ColumnUInt256 &>(column).getData()[row], out);
+            appendBigEndian(static_cast<const ColumnUInt256 &>(column).getData()[row], out);
             return;
         case TypeIndex::Int256:
-            appendInt256BE(static_cast<const ColumnInt256 &>(column).getData()[row], out);
+            appendWideSignedBigEndian(static_cast<const ColumnInt256 &>(column).getData()[row], out);
             return;
         case TypeIndex::Decimal32:
-            appendIntBE32(static_cast<const ColumnDecimal<Decimal32> &>(column).getData()[row].value, out);
+            appendSignedBigEndian(static_cast<const ColumnDecimal<Decimal32> &>(column).getData()[row].value, out);
             return;
         case TypeIndex::Decimal64:
-            appendIntBE64(static_cast<const ColumnDecimal<Decimal64> &>(column).getData()[row].value, out);
+            appendSignedBigEndian(static_cast<const ColumnDecimal<Decimal64> &>(column).getData()[row].value, out);
             return;
         case TypeIndex::Decimal128:
-            appendInt128BE(static_cast<const ColumnDecimal<Decimal128> &>(column).getData()[row].value, out);
+            appendWideSignedBigEndian(static_cast<const ColumnDecimal<Decimal128> &>(column).getData()[row].value, out);
             return;
         case TypeIndex::Decimal256:
-            appendInt256BE(static_cast<const ColumnDecimal<Decimal256> &>(column).getData()[row].value, out);
+            appendWideSignedBigEndian(static_cast<const ColumnDecimal<Decimal256> &>(column).getData()[row].value, out);
             return;
         case TypeIndex::DateTime64:
-            appendIntBE64(static_cast<const ColumnDecimal<DateTime64> &>(column).getData()[row].value, out);
+            appendSignedBigEndian(static_cast<const ColumnDecimal<DateTime64> &>(column).getData()[row].value, out);
             return;
         default:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -372,38 +333,38 @@ bool dispatchNonNullableColumnWise(
     {
         case TypeIndex::UInt8:
             appendVectorColumn(static_cast<const ColumnUInt8 &>(column), null_map, permutation, num_rows, out,
-                [](UInt8 v, String & dst) { appendUIntBE8(v, dst); });
+                [](UInt8 v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::UInt16:
         case TypeIndex::Date:
             appendVectorColumn(static_cast<const ColumnUInt16 &>(column), null_map, permutation, num_rows, out,
-                [](UInt16 v, String & dst) { appendUIntBE16(v, dst); });
+                [](UInt16 v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
             appendVectorColumn(static_cast<const ColumnUInt32 &>(column), null_map, permutation, num_rows, out,
-                [](UInt32 v, String & dst) { appendUIntBE32(v, dst); });
+                [](UInt32 v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::UInt64:
             appendVectorColumn(static_cast<const ColumnUInt64 &>(column), null_map, permutation, num_rows, out,
-                [](UInt64 v, String & dst) { appendUIntBE64(v, dst); });
+                [](UInt64 v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::Int8:
             appendVectorColumn(static_cast<const ColumnInt8 &>(column), null_map, permutation, num_rows, out,
-                [](Int8 v, String & dst) { appendIntBE8(v, dst); });
+                [](Int8 v, String & dst) { appendSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::Int16:
             appendVectorColumn(static_cast<const ColumnInt16 &>(column), null_map, permutation, num_rows, out,
-                [](Int16 v, String & dst) { appendIntBE16(v, dst); });
+                [](Int16 v, String & dst) { appendSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::Int32:
         case TypeIndex::Date32:
             appendVectorColumn(static_cast<const ColumnInt32 &>(column), null_map, permutation, num_rows, out,
-                [](Int32 v, String & dst) { appendIntBE32(v, dst); });
+                [](Int32 v, String & dst) { appendSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::Int64:
             appendVectorColumn(static_cast<const ColumnInt64 &>(column), null_map, permutation, num_rows, out,
-                [](Int64 v, String & dst) { appendIntBE64(v, dst); });
+                [](Int64 v, String & dst) { appendSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::Float32:
             appendVectorColumn(static_cast<const ColumnFloat32 &>(column), null_map, permutation, num_rows, out,
@@ -421,43 +382,43 @@ bool dispatchNonNullableColumnWise(
             return true;
         case TypeIndex::UUID:
             appendVectorColumn(static_cast<const ColumnUUID &>(column), null_map, permutation, num_rows, out,
-                [](const UUID & v, String & dst) { appendUInt128BE(v.toUnderType(), dst); });
+                [](const UUID & v, String & dst) { appendBigEndian(v.toUnderType(), dst); });
             return true;
         case TypeIndex::UInt128:
             appendVectorColumn(static_cast<const ColumnUInt128 &>(column), null_map, permutation, num_rows, out,
-                [](const UInt128 & v, String & dst) { appendUInt128BE(v, dst); });
+                [](const UInt128 & v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::Int128:
             appendVectorColumn(static_cast<const ColumnInt128 &>(column), null_map, permutation, num_rows, out,
-                [](const Int128 & v, String & dst) { appendInt128BE(v, dst); });
+                [](const Int128 & v, String & dst) { appendWideSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::UInt256:
             appendVectorColumn(static_cast<const ColumnUInt256 &>(column), null_map, permutation, num_rows, out,
-                [](const UInt256 & v, String & dst) { appendUInt256BE(v, dst); });
+                [](const UInt256 & v, String & dst) { appendBigEndian(v, dst); });
             return true;
         case TypeIndex::Int256:
             appendVectorColumn(static_cast<const ColumnInt256 &>(column), null_map, permutation, num_rows, out,
-                [](const Int256 & v, String & dst) { appendInt256BE(v, dst); });
+                [](const Int256 & v, String & dst) { appendWideSignedBigEndian(v, dst); });
             return true;
         case TypeIndex::Decimal32:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal32> &>(column), null_map, permutation, num_rows, out,
-                [](const Decimal32 & v, String & dst) { appendIntBE32(v.value, dst); });
+                [](const Decimal32 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
             return true;
         case TypeIndex::Decimal64:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal64> &>(column), null_map, permutation, num_rows, out,
-                [](const Decimal64 & v, String & dst) { appendIntBE64(v.value, dst); });
+                [](const Decimal64 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
             return true;
         case TypeIndex::Decimal128:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal128> &>(column), null_map, permutation, num_rows, out,
-                [](const Decimal128 & v, String & dst) { appendInt128BE(v.value, dst); });
+                [](const Decimal128 & v, String & dst) { appendWideSignedBigEndian(v.value, dst); });
             return true;
         case TypeIndex::Decimal256:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal256> &>(column), null_map, permutation, num_rows, out,
-                [](const Decimal256 & v, String & dst) { appendInt256BE(v.value, dst); });
+                [](const Decimal256 & v, String & dst) { appendWideSignedBigEndian(v.value, dst); });
             return true;
         case TypeIndex::DateTime64:
             appendVectorColumn(static_cast<const ColumnDecimal<DateTime64> &>(column), null_map, permutation, num_rows, out,
-                [](const DateTime64 & v, String & dst) { appendIntBE64(v.value, dst); });
+                [](const DateTime64 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
             return true;
         default:
             return false;
@@ -480,40 +441,14 @@ void encodeBlock(
         return;
 
     const size_t num_rows = columns.front()->size();
-    /// All columns must have the same row count; the loops below index every
-    /// column up to `num_rows` (`null_map[src]`, `data[src]`, `getDataAt(src)`).
+    /// Block invariant: equal-length columns. Permutation is trusted.
     for (size_t c = 1; c < columns.size(); ++c)
     {
         const size_t sz = columns[c]->size();
         if (sz != num_rows)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "UNIQUE KEY encoding: column[{}] size {} != column[0] size {}",
                             c, sz, num_rows);
-    }
-    if (permutation && permutation->size() != num_rows)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "UNIQUE KEY encoding: permutation size {} != block rows {}",
-                        permutation->size(), num_rows);
-
-    /// Permutation entries are used as direct row indices below
-    /// (`null_map[src]`, `data[src]`, `getDataAt(src)`); a malformed entry would
-    /// be an out-of-bounds access. Validate as a true permutation of [0, n):
-    /// every value in range and no duplicates.
-    if (permutation && num_rows > 0)
-    {
-        std::vector<bool> seen(num_rows);
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            const size_t v = (*permutation)[i];
-            if (v >= num_rows)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "UNIQUE KEY encoding: permutation[{}]={} out of range (num_rows={})",
-                                i, v, num_rows);
-            if (seen[v])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "UNIQUE KEY encoding: permutation has duplicate value {}", v);
-            seen[v] = true;
-        }
     }
 
     out.resize(num_rows);

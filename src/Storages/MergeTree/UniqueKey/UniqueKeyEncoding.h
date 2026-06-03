@@ -32,6 +32,8 @@ namespace DB::UniqueKeyEncoding
 /// if non-null, drives iteration order so `out[i]` is the encoded form
 /// of row `(*permutation)[i]`. Throws BAD_ARGUMENTS if any encoded row
 /// exceeds `max_size`; `out` is left in an indeterminate state on throw.
+/// Misuse (mismatched column sizes or an invalid permutation) raises
+/// LOGICAL_ERROR.
 void encodeBlock(
     const Columns & columns,
     const IColumn::Permutation * permutation,

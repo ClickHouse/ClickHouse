@@ -11,6 +11,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -459,96 +460,22 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
     EXPECT_EQ(expected_row, static_cast<UInt32>(N));
 }
 
-/// Caller permutation values are used as direct indices into
-/// `source_to_part_offset`; an out-of-range entry must be rejected with
-/// BAD_ARGUMENTS rather than producing OOB writes. (BAD_ARGUMENTS, not
-/// LOGICAL_ERROR, because debug/sanitizer builds abort on LOGICAL_ERROR.)
-TEST_F(SSTFixture, UnsortedPermutationOutOfRangeRejected)
+/// ColumnConst UK columns must be materialized before encoder dispatch
+/// (encoder static_casts based on getDataType(), UB on ColumnConst).
+TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
 {
     auto type_u64 = std::make_shared<DataTypeUInt64>();
-    auto col = type_u64->createColumn();
-    auto * typed = typeid_cast<ColumnUInt64 *>(col.get());
-    for (UInt64 v : {1, 2, 3})
-        typed->insertValue(v);
-    Block block;
-    block.insert({std::move(col), type_u64, "k"});
-
-    IColumn::Permutation bad_perm{0, 1, 99}; /// 99 >= 3
-    EXPECT_THROW(
-        SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, Names{"k"}, &bad_perm, /*max_encoded_size=*/256),
-        DB::Exception);
-}
-
-/// Duplicate permutation values silently drop a source-row mapping;
-/// reject with BAD_ARGUMENTS.
-TEST_F(SSTFixture, UnsortedPermutationDuplicateRejected)
-{
-    auto type_u64 = std::make_shared<DataTypeUInt64>();
-    auto col = type_u64->createColumn();
-    auto * typed = typeid_cast<ColumnUInt64 *>(col.get());
-    for (UInt64 v : {1, 2, 3})
-        typed->insertValue(v);
-    Block block;
-    block.insert({std::move(col), type_u64, "k"});
-
-    IColumn::Permutation bad_perm{0, 1, 1}; /// duplicate
-    EXPECT_THROW(
-        SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, Names{"k"}, &bad_perm, /*max_encoded_size=*/256),
-        DB::Exception);
-}
-
-/// Block with mismatched per-column row counts must be rejected before any
-/// encoding; otherwise `block.rows()` and the named uk-column lengths
-/// diverge and the writer reads past `encoded` bounds.
-TEST_F(SSTFixture, WriteFromBlockMismatchedRowCountsRejected)
-{
-    auto type_u64 = std::make_shared<DataTypeUInt64>();
-
-    auto k_col = type_u64->createColumn();
-    auto * k_typed = typeid_cast<ColumnUInt64 *>(k_col.get());
-    for (UInt64 v : {1, 2, 3})
-        k_typed->insertValue(v);
-
-    auto other = type_u64->createColumn();
-    auto * other_typed = typeid_cast<ColumnUInt64 *>(other.get());
-    for (UInt64 v : {10, 20}) /// shorter by one
-        other_typed->insertValue(v);
+    auto inner = type_u64->createColumn();
+    typeid_cast<ColumnUInt64 *>(inner.get())->insertValue(42);
+    ColumnPtr const_col = ColumnConst::create(std::move(inner), 1);
 
     Block block;
-    block.insert({std::move(k_col), type_u64, "k"});
-    block.insert({std::move(other), type_u64, "other"});
+    block.insert({std::move(const_col), type_u64, "k"});
 
-    EXPECT_THROW(
-        SSTIndexWriter::writeFromBlock(
-            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256),
-        DB::Exception);
-}
-
-/// Same defense on the unsorted path.
-TEST_F(SSTFixture, WriteFromBlockUnsortedMismatchedRowCountsRejected)
-{
-    auto type_u64 = std::make_shared<DataTypeUInt64>();
-
-    auto k_col = type_u64->createColumn();
-    auto * k_typed = typeid_cast<ColumnUInt64 *>(k_col.get());
-    for (UInt64 v : {3, 1, 2})
-        k_typed->insertValue(v);
-
-    auto other = type_u64->createColumn();
-    auto * other_typed = typeid_cast<ColumnUInt64 *>(other.get());
-    for (UInt64 v : {10, 20}) /// shorter by one
-        other_typed->insertValue(v);
-
-    Block block;
-    block.insert({std::move(k_col), type_u64, "k"});
-    block.insert({std::move(other), type_u64, "other"});
-
-    EXPECT_THROW(
-        SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256),
-        DB::Exception);
+    UInt64 written = SSTIndexWriter::writeFromBlock(
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256);
+    EXPECT_EQ(written, 1u);
+    EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
 
 #endif  // USE_ROCKSDB

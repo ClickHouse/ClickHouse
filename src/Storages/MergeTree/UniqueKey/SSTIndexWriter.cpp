@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 
+#include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -44,6 +45,9 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int LIMIT_EXCEEDED;
 }
+
+const char * const SSTIndexWriter::FILE_NAME = "unique_key_index.sst";
+const char * const SSTIndexWriter::TMP_FILE_NAME = "unique_key_index.sst.tmp";
 
 #if USE_ROCKSDB
 
@@ -124,29 +128,36 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_)
 #endif
 }
 
+void SSTIndexWriter::finish()
+{
+#if USE_ROCKSDB
+    if (!impl || !impl->opened)
+        return;
+    rocksdb::ExternalSstFileInfo info;
+    auto status = impl->writer.Finish(&info);
+    impl->opened = false;
+    if (status.ok())
+        return;
+    /// Zero-`Put` → RocksDB returns InvalidArgument; benign cleanup.
+    /// After any successful Put, the same code is a real Finish failure.
+    if (status.IsInvalidArgument() && entries_added == 0)
+        return;
+    throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
+        "SSTIndexWriter::finish: SstFileWriter::Finish failed at {}: {}",
+        impl->tmp_full_path, status.ToString());
+#endif
+}
+
 SSTIndexWriter::~SSTIndexWriter()
 {
 #if USE_ROCKSDB
-    if (impl && impl->opened && !finalized)
+    /// Covers all non-finalized exits, including manual `finish()` without
+    /// the matching `finalizeToStorage` rename and `replaceFile` throwing
+    /// mid-`finalizeToStorage`.
+    if (impl && !finalized)
     {
-        try
-        {
-            rocksdb::ExternalSstFileInfo info;
-            (void)impl->writer.Finish(&info);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        try
-        {
-            part_storage.removeFileIfExists(TMP_FILE_NAME);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        try { part_storage.removeFileIfExists(TMP_FILE_NAME); }
+        catch (...) { tryLogCurrentException(__PRETTY_FUNCTION__); }
     }
 #endif
 }
@@ -185,32 +196,26 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     if (!impl->opened)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::finalizeToStorage on closed writer");
 
-    /// Empty SST: RocksDB Finish() returns InvalidArgument; treat as no-op.
+    try
+    {
+        finish();
+    }
+    catch (...)
+    {
+        part_storage.removeFileIfExists(TMP_FILE_NAME);
+        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
+            impl->lifetime_watch.elapsedMicroseconds());
+        throw;
+    }
+
     if (entries_added == 0)
     {
-        rocksdb::ExternalSstFileInfo info;
-        (void)impl->writer.Finish(&info);
-        impl->opened = false;
         finalized = true;
         part_storage.removeFileIfExists(TMP_FILE_NAME);
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         LOG_DEBUG(getWriterLogger(), "Finalized empty SST (no .sst produced) at {}", impl->tmp_full_path);
         return 0;
-    }
-
-    rocksdb::ExternalSstFileInfo info;
-    auto status = impl->writer.Finish(&info);
-    impl->opened = false;
-
-    if (!status.ok())
-    {
-        part_storage.removeFileIfExists(TMP_FILE_NAME);
-        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
-            impl->lifetime_watch.elapsedMicroseconds());
-        throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
-            "SSTIndexWriter: failed to finalize SST '{}': {}",
-            impl->tmp_full_path, status.ToString());
     }
 
     part_storage.replaceFile(TMP_FILE_NAME, FILE_NAME);
@@ -235,18 +240,20 @@ UInt64 SSTIndexWriter::writeFromBlock(
     size_t max_encoded_size)
 {
 #if USE_ROCKSDB
-    if (unique_key_column_names.empty() || block.rows() == 0)
+    if (unique_key_column_names.empty())
         return 0;
 
-    /// Reject malformed blocks (mismatched per-column row counts) up front;
-    /// `block.rows()` reports only the first column, but the loop below
-    /// consumes `encoded[i]` derived from named UK columns.
+    /// Reject malformed blocks before the empty-block fast path —
+    /// `block.rows()` reports only the first column's size.
     block.checkNumberOfRows();
+    if (block.rows() == 0)
+        return 0;
 
+    /// ColumnConst lies about dynamic type; materialize before encoder dispatch.
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
     for (const auto & name : unique_key_column_names)
-        uk_columns.push_back(block.getByName(name).column);
+        uk_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst());
 
     const size_t num_rows = block.rows();
     if (permutation && permutation->size() != num_rows)
@@ -258,8 +265,6 @@ UInt64 SSTIndexWriter::writeFromBlock(
             "SSTIndexWriter::writeFromBlock: part has {} rows, exceeds UInt32 row-number capacity",
             num_rows);
 
-    /// Column-wise encode amortizes typeid_cast over rows. row_number is
-    /// the row's `_part_offset` in the permuted, final-stored part = `i`.
     std::vector<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, permutation, max_encoded_size, encoded);
 
@@ -283,12 +288,13 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     size_t max_encoded_size)
 {
 #if USE_ROCKSDB
-    if (unique_key_column_names.empty() || block.rows() == 0)
+    if (unique_key_column_names.empty())
         return 0;
 
-    /// Reject malformed blocks before any encoding work; the SortDescription
-    /// path and named-uk-column lookup below both assume uniform row counts.
+    /// See writeFromBlock — same ordering rationale.
     block.checkNumberOfRows();
+    if (block.rows() == 0)
+        return 0;
 
     const size_t num_rows = block.rows();
     if (permutation && permutation->size() != num_rows)
@@ -300,32 +306,10 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
             "SSTIndexWriter::writeFromBlockUnsorted: part has {} rows, exceeds UInt32 row-number capacity",
             num_rows);
 
-    /// Caller's permutation entries are used as direct indices into
-    /// `source_to_part_offset` below; validate as a true permutation of
-    /// [0, num_rows): every value in range and no duplicates. Throws
-    /// BAD_ARGUMENTS so it surfaces as a recoverable error instead of the
-    /// debug-build abort path that LOGICAL_ERROR triggers.
-    if (permutation && num_rows > 0)
-    {
-        std::vector<bool> seen(num_rows);
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            const size_t v = (*permutation)[i];
-            if (v >= num_rows)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "SSTIndexWriter::writeFromBlockUnsorted: permutation[{}]={} out of range (num_rows={})",
-                    i, v, num_rows);
-            if (seen[v])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "SSTIndexWriter::writeFromBlockUnsorted: permutation has duplicate value {}", v);
-            seen[v] = true;
-        }
-    }
-
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
     for (const auto & name : unique_key_column_names)
-        uk_columns.push_back(block.getByName(name).column);
+        uk_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst());
 
     /// nulls_direction=1 matches the encoder: NULL flag 0x01 sorts after
     /// non-NULL 0x00, and Float NaN-as-0xFF sorts after non-NaN.

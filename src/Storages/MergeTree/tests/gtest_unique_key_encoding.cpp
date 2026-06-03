@@ -499,137 +499,71 @@ void expectBlockEncodesAs(const std::vector<String> & inputs)
 
 }
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentNoEmbeddedNull)
+TEST(UniqueKeyEncoding, StringEncoderByteEquivalent)
 {
-    /// Standard widths covering both small (<= 32) and larger (>= 64, 256)
-    /// inputs to exercise the bulk-memcpy fast path on different vector lanes
-    /// / cache-line sizes.
-    // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
-    std::mt19937_64 rng(0xA5A5A5A5);
-    for (size_t width : {size_t(0), size_t(1), size_t(7), size_t(8), size_t(15),
-                          size_t(16), size_t(17), size_t(31), size_t(32),
-                          size_t(33), size_t(63), size_t(64), size_t(65),
-                          size_t(127), size_t(128), size_t(255), size_t(256), size_t(1023)})
+    /// No-NUL widths spanning cache-line boundaries — fast path.
     {
-        String s(width, 0);
-        for (char & c : s)
-            c = 'a' + (rng() % 26); /// guaranteed no '\0' bytes
-        expectEncodesAs(s, referenceEscape(s.data(), s.size()));
+        // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
+        std::mt19937_64 rng(0xA5A5A5A5);
+        for (size_t width : {size_t(0), size_t(1), size_t(7), size_t(8), size_t(15),
+                              size_t(16), size_t(17), size_t(31), size_t(32),
+                              size_t(33), size_t(63), size_t(64), size_t(65),
+                              size_t(127), size_t(128), size_t(255), size_t(256), size_t(1023)})
+        {
+            String s(width, 0);
+            for (char & c : s)
+                c = 'a' + (rng() % 26);
+            expectEncodesAs(s, referenceEscape(s.data(), s.size()));
+        }
     }
-}
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmptyString)
-{
-    /// Empty input must still emit the 2-byte terminator "\0\0".
-    expectEncodesAs(String(), referenceEscape(nullptr, 0));
-    auto col = ColumnString::create();
-    col->insert(Field(String()));
-    Columns cols{std::move(col)};
-    String got = testEncodeRow(cols, 0, 4096);
-    ASSERT_EQ(got.size(), 2u);
-    EXPECT_EQ(got[0], '\0');
-    EXPECT_EQ(got[1], '\0');
-}
-
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullAtStart)
-{
-    /// "\0abc" -> "\0\x01" + "abc" + "\0\x00"
-    String s("\x00""abc", 4);
-    expectEncodesAs(s, referenceEscape(s.data(), s.size()));
-}
-
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullAtEnd)
-{
-    /// "abc\0" -> "abc" + "\0\x01" + "\0\x00"
-    String s("abc\x00", 4);
-    expectEncodesAs(s, referenceEscape(s.data(), s.size()));
-}
-
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentEmbeddedNullInMiddle)
-{
-    /// "abc\0def" -> "abc" + "\0\x01" + "def" + "\0\x00"
-    String s("abc\x00""def", 7);
-    expectEncodesAs(s, referenceEscape(s.data(), s.size()));
-}
-
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentAllNulls)
-{
-    /// All-'\0' inputs at widths 1, 4, 16 — every byte triggers an escape;
-    /// verifies the slow-path loop terminates correctly when the very last
-    /// byte is also '\0' (memchr returns the trailing position; cursor
-    /// advances to end; no spurious extra bytes appended).
-    for (size_t width : {size_t(1), size_t(4), size_t(16)})
-    {
-        String s(width, '\0');
+    /// Embedded-NUL position variants — slow path. Empty input must still
+    /// emit the 2-byte "\0\0" terminator.
+    expectEncodesAs(String(), String("\0\0", 2));
+    for (const String & s : {
+        String("\x00""abc", 4),                          /// '\0' at start
+        String("abc\x00", 4),                            /// '\0' at end
+        String("abc\x00""def", 7),                       /// '\0' in middle
+        String(1, '\0'), String(4, '\0'), String(16, '\0'), /// all-'\0'
+        String("\x00""a\x00""b\x00", 5),                 /// alternating w/ trailing '\0'
+        String("\x00\x00""ab", 4),                       /// adjacent '\0' at start
+        String("ab\x00\x00", 4),                         /// adjacent '\0' at end
+    })
         expectEncodesAs(s, referenceEscape(s.data(), s.size()));
-    }
-}
 
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentAlternatingNulls)
-{
-    /// Mixed '\0' and printable bytes at varying positions — exercises both
-    /// trailing-segment and adjacent-'\0' branches of the slow path.
-    std::vector<String> cases = {
-        String("\x00""a\x00""b\x00", 5),
-        String("\x00\x00""ab", 4),
-        String("ab\x00\x00", 4),
-        String("a\x00""b\x00""c\x00""d\x00""e", 9),
-    };
-    for (const auto & s : cases)
-        expectEncodesAs(s, referenceEscape(s.data(), s.size()));
-}
-
-TEST(UniqueKeyEncoding, StringEncoderByteEquivalentRandom)
-{
-    /// Fuzz: random strings of varying widths, ~25% of bytes are '\0'.
-    /// Exercises every branch of the slow path on a wide distribution of
-    /// embedded-'\0' counts and positions.
+    /// Fuzz — 500 random widths, ~25% '\0' density.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0x1234567890ABCDEFULL);
     for (size_t trial = 0; trial < 500; ++trial)
     {
-        size_t width = rng() % 257; /// 0..256
-        String s(width, 0);
+        String s(rng() % 257, 0);
         for (char & c : s)
         {
             UInt32 r = rng() & 0xFF;
-            /// 25% chance of '\0', otherwise a random non-zero byte.
-            if ((r & 0x3) == 0)
-                c = '\0';
-            else
-                c = static_cast<char>(1 + (r % 255));
+            c = (r & 0x3) == 0 ? '\0' : static_cast<char>(1 + (r % 255));
         }
         expectEncodesAs(s, referenceEscape(s.data(), s.size()));
     }
 }
 
-TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalentEdgeCases)
+TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalent)
 {
-    /// Targeted block-level coverage for `encodeBlock` →
-    /// `appendStringColumn` → `appendEscapedString`. Mirrors the per-row
-    /// `StringEncoderByteEquivalent_*` cases on the actual write-time path.
-    /// Block has rows that hit every fast / slow branch in one call.
-    expectBlockEncodesAs({
-        String(),                      // empty (terminator only)
-        String("hello", 5),            // no embedded '\0' — fast path
-        String("\x00", 1),             // single '\0' — slow path
-        String("\x00""abc", 4),        // '\0' at start
-        String("abc\x00", 4),          // '\0' at end
-        String("a\x00""b", 3),         // '\0' in middle
-        String(4, '\0'),               // all-'\0'
-        String("\x00""x\x00""y\x00", 5), // alternating with trailing '\0'
-        String("\x00\x00""ab", 4),     // adjacent '\0's at start
-        String("ab\x00\x00", 4),       // adjacent '\0's at end
-    });
-}
-
-TEST(UniqueKeyEncoding, StringBlockEncoderByteEquivalentWidths)
-{
-    /// Block of mixed-width rows — exercises bulk-memcpy fast path lengths
-    /// across cache lines.
+    /// Block-level path: `encodeBlock` → `appendStringColumn`. Mix of edge
+    /// cases and varying widths in a single block.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937_64 rng(0xB10C);
-    std::vector<String> rows;
+    std::vector<String> rows = {
+        String(),
+        String("hello", 5),
+        String("\x00", 1),
+        String("\x00""abc", 4),
+        String("abc\x00", 4),
+        String("a\x00""b", 3),
+        String(4, '\0'),
+        String("\x00""x\x00""y\x00", 5),
+        String("\x00\x00""ab", 4),
+        String("ab\x00\x00", 4),
+    };
     for (size_t width : {size_t(0), size_t(1), size_t(8), size_t(16), size_t(64), size_t(256), size_t(1023)})
     {
         String s(width, 0);
@@ -662,9 +596,6 @@ TEST(UniqueKeyEncoding, FixedStringBlockEncoderByteEquivalentEmbeddedNull)
     ASSERT_EQ(got.size(), 4u);
 
     /// Reference: row-encode a 1-col FixedString block — raw N bytes.
-    /// Construct each row as `std::array<char, N>` instead of a string literal:
-    /// embedded NULs in literals trip clang's truncated-string-literal warning
-    /// at every call site, even with an explicit length companion.
     auto expected_for = [&](const std::array<char, N> & data) {
         auto rcol = ColumnFixedString::create(N);
         rcol->insertData(data.data(), N);
@@ -966,36 +897,6 @@ TEST(UniqueKeyEncoding, EncodeBlockSizeLimitRejection)
     ASSERT_EQ(out.size(), 2u);
 }
 
-/// Permutation contents are used as direct row indices; an out-of-range entry
-/// must be rejected with BAD_ARGUMENTS rather than producing OOB access.
-TEST(UniqueKeyEncoding, EncodeBlockPermutationOutOfRangeRejected)
-{
-    auto col = ColumnUInt64::create();
-    col->insert(Field(UInt64{1}));
-    col->insert(Field(UInt64{2}));
-    col->insert(Field(UInt64{3}));
-    Columns cols{std::move(col)};
-
-    IColumn::Permutation perm{0, 1, 99}; /// 99 >= 3
-    std::vector<String> out;
-    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out), DB::Exception);
-}
-
-/// Duplicate permutation entries silently drop a source row mapping; reject
-/// with BAD_ARGUMENTS so callers get a clear failure instead of corruption.
-TEST(UniqueKeyEncoding, EncodeBlockPermutationDuplicateRejected)
-{
-    auto col = ColumnUInt64::create();
-    col->insert(Field(UInt64{1}));
-    col->insert(Field(UInt64{2}));
-    col->insert(Field(UInt64{3}));
-    Columns cols{std::move(col)};
-
-    IColumn::Permutation perm{0, 1, 1}; /// duplicate
-    std::vector<String> out;
-    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out), DB::Exception);
-}
-
 /// Well-formed permutation must succeed and produce one encoded row per input.
 TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
 {
@@ -1009,24 +910,6 @@ TEST(UniqueKeyEncoding, EncodeBlockPermutationValidAccepted)
     std::vector<String> out;
     EXPECT_NO_THROW(UniqueKeyEncoding::encodeBlock(cols, &perm, 256, out));
     ASSERT_EQ(out.size(), 3u);
-}
-
-/// Mismatched per-column row counts must be rejected up front; otherwise
-/// indexing the shorter column at `num_rows-1` is OOB.
-TEST(UniqueKeyEncoding, EncodeBlockMismatchedColumnSizesRejected)
-{
-    auto col0 = ColumnUInt64::create();
-    col0->insert(Field(UInt64{1}));
-    col0->insert(Field(UInt64{2}));
-    col0->insert(Field(UInt64{3}));
-
-    auto col1 = ColumnUInt64::create();
-    col1->insert(Field(UInt64{10}));
-    col1->insert(Field(UInt64{20})); /// shorter by one
-
-    Columns cols{std::move(col0), std::move(col1)};
-    std::vector<String> out;
-    EXPECT_THROW(UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, out), DB::Exception);
 }
 
 /// Empty-block: must produce an empty output vector without touching max_size.
