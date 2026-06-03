@@ -56,6 +56,7 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 }
 
 
+void registerOutputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -63,7 +64,8 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<BinaryRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, format_settings);
         });

@@ -4,9 +4,8 @@ sidebar_label: 'jdbc'
 sidebar_position: 100
 slug: /sql-reference/table-functions/jdbc
 title: 'jdbc'
+doc_type: 'reference'
 ---
-
-# jdbc Table Function
 
 :::note
 clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 

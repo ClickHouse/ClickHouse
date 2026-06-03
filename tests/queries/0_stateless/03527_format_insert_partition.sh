@@ -17,7 +17,7 @@ FROM TestTable
 LIMIT 10;
 "
 
-$CLICKHOUSE_FORMAT --query "$QUERY" --hilite
+$CLICKHOUSE_FORMAT --query "$QUERY" --hilite --show_secrets
 
-$CLICKHOUSE_FORMAT --query "$QUERY" --highlight
+$CLICKHOUSE_FORMAT --query "$QUERY" --highlight --show_secrets
 

@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
     /// JSONArrayLength(json)
-    class FunctionJSONArrayLength : public IFunction
+    class FunctionJSONArrayLength final : public IFunction
     {
     public:
         static constexpr auto name = "JSONArrayLength";
@@ -77,8 +77,7 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                auto str_ref = col->getDataAt(i);
-                std::string_view str_view(str_ref.data, str_ref.size);
+                auto str_view = col->getDataAt(i);
                 bool ok = parser.parse(std::move(str_view), element);
                 if (!ok || !element.isArray())
                 {
@@ -100,10 +99,36 @@ namespace
 
 REGISTER_FUNCTION(JSONArrayLength)
 {
-    factory.registerFunction<FunctionJSONArrayLength>(FunctionDocumentation{
-        .description="Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.",
-        .category = FunctionDocumentation::Category::JSON
-    });
+    /// JSONArrayLength documentation
+    FunctionDocumentation::Description description = R"(
+Returns the number of elements in the outermost JSON array.
+The function returns `NULL` if input JSON string is invalid.
+    )";
+    FunctionDocumentation::Syntax syntax = "JSONArrayLength(json)";
+    FunctionDocumentation::Arguments arguments = {
+        {"json", "String with valid JSON.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of array elements if `json` is a valid JSON array string, otherwise returns `NULL`.", {"Nullable(UInt64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]');
+        )",
+        R"(
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionJSONArrayLength>(documentation);
 
     /// For Spark compatibility.
     factory.registerAlias("JSON_ARRAY_LENGTH", "JSONArrayLength", FunctionFactory::Case::Insensitive);

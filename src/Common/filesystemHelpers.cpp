@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 
@@ -44,7 +45,7 @@ namespace ErrorCodes
 
 struct statvfs getStatVFS(String path)
 {
-    struct statvfs fs;
+    struct statvfs fs{};
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
@@ -73,11 +74,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    return std::make_unique<Poco::TemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -86,7 +87,7 @@ std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folde
 String getBlockDeviceId([[maybe_unused]] const String & path)
 {
 #if defined(OS_LINUX)
-    struct stat sb;
+    struct stat sb{};
     if (lstat(path.c_str(), &sb))
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot lstat {}", path);
     WriteBufferFromOwnString ss;
@@ -101,7 +102,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
 {
 #if defined(OS_LINUX)
-    struct stat sb;
+    struct stat sb{};
     if (lstat(path.c_str(), &sb))
         return {};
     WriteBufferFromOwnString ss;
@@ -125,11 +126,11 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         if (!std::filesystem::exists(path))
             return BlockDeviceType::UNKNOWN;
         ReadBufferFromFile in(path);
-        int rotational;
+        int rotational = 0;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return BlockDeviceType::UNKNOWN;
     }
@@ -148,11 +149,11 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
     {
         const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/read_ahead_kb"};
         ReadBufferFromFile in(path);
-        int read_ahead_kb;
+        int read_ahead_kb = 0;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return static_cast<UInt64>(-1);
     }
@@ -171,7 +172,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 
     const auto get_device_id = [](const std::filesystem::path & p)
     {
-        struct stat st;
+        struct stat st{};
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
         return st.st_dev;
@@ -202,7 +203,7 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot open /etc/mtab to get name of filesystem");
-    mntent fs_info;
+    mntent fs_info{};
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
     std::vector<char> buf(buf_size);
     while (getmntent_r(mounted_filesystems, &fs_info, buf.data(), buf_size) && fs_info.mnt_dir != mount_point)
@@ -218,9 +219,18 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
-    String absolute_path = std::filesystem::weakly_canonical(path);
-    String absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::relative(path, prefix_path);
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
@@ -230,11 +240,19 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
 
-    String absolute_path = std::filesystem::absolute(path);
-    absolute_path = fs::path(absolute_path).lexically_normal(); /// Normalize path.
-    String absolute_prefix_path = std::filesystem::absolute(prefix_path);
-    absolute_prefix_path = fs::path(absolute_prefix_path).lexically_normal(); /// Normalize path.
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
+
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)
@@ -255,7 +273,7 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 {
-    struct stat buf;
+    struct stat buf{};
     int res = fstat(fd, &buf);
     if (-1 == res)
     {
@@ -267,7 +285,7 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 
 Int64 getINodeNumberFromPath(const String & path)
 {
-    struct stat file_stat;
+    struct stat file_stat{};
     if (stat(path.data(), &file_stat))
     {
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
@@ -346,7 +364,7 @@ bool canExecute(const std::string & path)
 
 time_t getModificationTime(const std::string & path)
 {
-    struct stat st;
+    struct stat st{};
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
     std::error_code m_ec(errno, std::generic_category());
@@ -355,7 +373,7 @@ time_t getModificationTime(const std::string & path)
 
 time_t getChangeTime(const std::string & path)
 {
-    struct stat st;
+    struct stat st{};
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
     std::error_code m_ec(errno, std::generic_category());
@@ -369,7 +387,7 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
 
 void setModificationTime(const std::string & path, time_t time)
 {
-    struct utimbuf tb;
+    struct utimbuf tb{};
     tb.actime  = time;
     tb.modtime = time;
     if (utime(path.c_str(), &tb) != 0)

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
+    const UnorderedMapWithMemoryTracking<std::string_view, Float64> time_unit_to_float =
     {
         {"years", 365 * 24 * 3600},
         {"year", 365 * 24 * 3600},
@@ -101,7 +102,7 @@ namespace
      * The length of years and months (and even days in presence of time adjustments) are rough:
      * year is just 365 days, month is 30.5 days, day is 86400 seconds, similarly to what formatReadableTimeDelta is doing.
      */
-    class FunctionParseTimeDelta : public IFunction
+    class FunctionParseTimeDelta final : public IFunction
     {
     public:
         static constexpr auto name = "parseTimeDelta";
@@ -313,7 +314,59 @@ namespace
 
 REGISTER_FUNCTION(ParseTimeDelta)
 {
-    factory.registerFunction<FunctionParseTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Parse a sequence of numbers followed by something resembling a time unit.
+
+The time delta string uses these time unit specifications:
+- `years`, `year`, `yr`, `y`
+- `months`, `month`, `mo`
+- `weeks`, `week`, `w`
+- `days`, `day`, `d`
+- `hours`, `hour`, `hr`, `h`
+- `minutes`, `minute`, `min`, `m`
+- `seconds`, `second`, `sec`, `s`
+- `milliseconds`, `millisecond`, `millisec`, `ms`
+- `microseconds`, `microsecond`, `microsec`, `μs`, `µs`, `us`
+- `nanoseconds`, `nanosecond`, `nanosec`, `ns`
+
+Multiple time units can be combined with separators (space, `;`, `-`, `+`, `,`, `:`).
+
+The length of years and months are approximations: year is 365 days, month is 30.5 days.
+    )";
+    FunctionDocumentation::Syntax syntax = "parseTimeDelta(timestr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"timestr", "A sequence of numbers followed by something resembling a time unit.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"The number of seconds.", {"Float64"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Usage example",
+            R"(
+SELECT parseTimeDelta('11s+22min')
+            )",
+            R"(
+┌─parseTimeDelta('11s+22min')─┐
+│                        1331 │
+└─────────────────────────────┘
+            )"
+        },
+        {
+            "Complex time units",
+            R"(
+SELECT parseTimeDelta('1yr2mo')
+            )",
+            R"(
+┌─parseTimeDelta('1yr2mo')─┐
+│                 36806400 │
+└──────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionParseTimeDelta>(documentation);
 }
 
 }

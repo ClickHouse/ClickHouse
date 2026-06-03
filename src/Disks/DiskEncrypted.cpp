@@ -2,6 +2,7 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <IO/ReadPipeline.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -68,7 +69,7 @@ namespace
             if ((config_key == "key") || config_key.starts_with("key["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = toString(config.getString(key_path));
+                key.plain = config.getString(key_path);
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -76,7 +77,7 @@ namespace
             else if ((config_key == "key_hex") || config_key.starts_with("key_hex["))
             {
                 String key_path = config_prefix + "." + config_key;
-                key.plain = unhexKey(toString(config.getString(key_path)));
+                key.plain = unhexKey(config.getString(key_path));
                 String key_id_path = key_path + "[@id]";
                 if (config.has(key_id_path))
                     key_id = config.getUInt64(key_id_path);
@@ -151,12 +152,12 @@ namespace
 
         if (config.has(key_path))
         {
-            String current_key = toString(config.getString(key_path));
+            String current_key = config.getString(key_path);
             return check_current_key_found(current_key);
         }
         if (config.has(key_hex_path))
         {
-            String current_key = unhexKey(toString(config.getString(key_hex_path)));
+            String current_key = unhexKey(config.getString(key_hex_path));
             return check_current_key_found(current_key);
         }
         if (config.has(key_id_path))
@@ -350,6 +351,14 @@ ReservationPtr DiskEncrypted::reserve(UInt64 bytes)
     return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
 }
 
+ReservationPtr DiskEncrypted::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    auto reservation = delegate->reserve(bytes, constraints);
+    if (!reservation)
+        return {};
+    return std::make_unique<DiskEncryptedReservation>(std::static_pointer_cast<DiskEncrypted>(shared_from_this()), std::move(reservation));
+}
+
 
 void DiskEncrypted::copyDirectoryContent(
     const String & from_dir,
@@ -416,30 +425,26 @@ void DiskEncrypted::copyFile(
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
+void DiskEncrypted::prepareRead(
     const String & path,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    ReadPipeline & pipeline) const
 {
     if (read_hint && *read_hint > 0)
         read_hint = *read_hint + FileEncryption::Header::kSize;
 
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
-    if (buffer->eof())
-    {
-        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
-        /// There is no header so we just return `ReadBufferFromString("")`.
-        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
-    }
+    delegate->prepareRead(wrapped_path, settings, read_hint, pipeline);
+
     auto encryption_settings = current_settings.get();
-    FileEncryption::Header header = readHeader(*buffer);
-    String key = encryption_settings->findKeyByFingerprint(header.key_fingerprint, path);
-    return std::make_unique<ReadBufferFromEncryptedFile>(path, settings.local_fs_buffer_size, std::move(buffer), key, header);
+    pipeline.needDecryption(
+        path,
+        settings.local_fs_settings.buffer_size,
+        [encryption_settings](UInt128 key_fingerprint, const String & path_for_logs) -> String
+        {
+            return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
+        });
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -508,6 +513,7 @@ void DiskEncrypted::applyNewSettings(
     IDisk::applyNewSettings(config, context, config_prefix, disk_map);
 }
 
+void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check);
 void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
 {
     auto creator = [global_skip_access_check](

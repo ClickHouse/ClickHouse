@@ -105,12 +105,14 @@ void JSONCompactEachRowWithProgressRowOutputFormat::finalizeImpl()
     }
 }
 
+void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompactEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings)
+            const FormatSettings & _format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
@@ -122,7 +124,8 @@ void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings)
+            const FormatSettings & _format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;

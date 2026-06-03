@@ -1,12 +1,12 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -15,12 +15,19 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 
 #include <memory>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
@@ -32,13 +39,9 @@ struct IPartitionStrategy;
  * such as StorageS3, StorageAzure, StorageHDFS.
  * Works with an object of IObjectStorage class.
  */
-class StorageObjectStorage : public IStorage
+class StorageObjectStorage : public IStorage, public IBackgroundOperation
 {
 public:
-    using ObjectInfo = RelativePathWithMetadata;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
-
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -54,6 +57,7 @@ public:
         bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
@@ -81,15 +85,29 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void drop() override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool isObjectStorage() const override { return true; }
+
+    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool prefersLargeBlocks() const override;
 
@@ -120,12 +138,60 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
+
+    bool optimize(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ASTPtr & /*partition*/,
+        bool /*final*/,
+        bool /*deduplicate*/,
+        const Names & /* deduplicate_by_columns */,
+        bool /*cleanup*/,
+        ContextPtr context) override;
+
+    bool supportsDelete() const override;
+
+    bool supportsParallelInsert() const override;
+
+    void mutate(const MutationCommands &, ContextPtr) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
+
+    Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
+
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    ObjectStoragePtr getObjectStorage() const
+    {
+        return object_storage;
+    }
+
+    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const
+    {
+        return configuration;
+    }
+
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & /*assignee*/) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "scheduleDataMovingJob is not implemented for object storage");
+    }
+
+    void startup() override;
+    void shutdown(bool is_drop) override;
+
+    Int32 getBiasBackoffSeconds() const override
+    {
+        return configuration->getBiasBackoffSeconds();
+    }
 
 protected:
     /// Get path sample for hive partitioning implementation.
@@ -149,17 +215,18 @@ protected:
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
-    /// Whether we need to call `configuration->update()`
-    /// (e.g. refresh configuration) on each read() method call.
-    bool update_configuration_on_read_write = true;
+    bool supports_prewhere = false;
+    bool supports_tuple_elements = false;
+    bool is_table_function = false;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-    ColumnsDescription file_columns;
+    NamesAndTypesList file_columns;
 
     LoggerPtr log;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
+    BackgroundJobsAssignee background_operations_assignee;
 };
 
 }

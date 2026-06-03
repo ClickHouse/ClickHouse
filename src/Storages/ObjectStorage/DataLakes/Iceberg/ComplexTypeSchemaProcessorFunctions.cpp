@@ -23,6 +23,9 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 }
 
+namespace Iceberg
+{
+
 class IcebergDeletingOperation : public IcebergChangeSchemaOperation
 {
 public:
@@ -703,7 +706,7 @@ void ExecutableEvolutionFunction::pushNewNode(
     }
 }
 
-std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+static std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type)
@@ -713,7 +716,7 @@ std::shared_ptr<ReorderingTransform> makeReorderingTransform(
     return transform;
 }
 
-std::shared_ptr<DeletingTransform> makeDeletingTransform(
+static std::shared_ptr<DeletingTransform> makeDeletingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     const std::vector<size_t> & initial_permutation,
     DataTypePtr old_type,
@@ -725,7 +728,7 @@ std::shared_ptr<DeletingTransform> makeDeletingTransform(
 }
 
 
-std::shared_ptr<AddingTransform> makeAddingTransform(
+static std::shared_ptr<AddingTransform> makeAddingTransform(
     const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
     DataTypePtr type,
     DataTypePtr old_type,
@@ -864,4 +867,5 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             transforms.push_back(transform);
 }
 
+}
 }

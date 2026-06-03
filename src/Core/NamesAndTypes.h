@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
 
 #include <initializer_list>
@@ -12,7 +13,6 @@
 namespace DB
 {
 
-class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
@@ -39,6 +39,10 @@ public:
     bool operator==(const NameAndTypePair & rhs) const;
 
     String dump() const;
+
+    /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
+    /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
+    void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
 
     String name;
     DataTypePtr type;

@@ -12,6 +12,7 @@ class SinkToStorage : public ExceptionKeepingTransform
 {
 /// PartitionedSink owns nested sinks.
 friend class PartitionedSink;
+friend class DeltaLakePartitionedSink;
 
 public:
     explicit SinkToStorage(SharedHeader header);
@@ -36,7 +37,7 @@ private:
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 
-class NullSinkToStorage : public SinkToStorage
+class NullSinkToStorage final : public SinkToStorage
 {
 public:
     using SinkToStorage::SinkToStorage;

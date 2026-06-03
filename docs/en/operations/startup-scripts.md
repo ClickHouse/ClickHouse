@@ -4,16 +4,15 @@ description: 'Guide to configuring and using SQL startup scripts in ClickHouse f
 sidebar_label: 'Startup scripts'
 slug: /operations/startup-scripts
 title: 'Startup scripts'
+doc_type: 'guide'
 ---
-
-# Startup scripts
 
 ClickHouse can run arbitrary SQL queries from the server configuration during startup. This can be useful for migrations or automatic schema creation.
 
 ```xml
 <clickhouse>
     <startup_scripts>
-        <throw_on_error>false<throw_on_error>
+        <throw_on_error>false</throw_on_error>
         <scripts>
             <query>CREATE ROLE OR REPLACE test_role</query>
         </scripts>

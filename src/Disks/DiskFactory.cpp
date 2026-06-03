@@ -48,4 +48,8 @@ DiskPtr DiskFactory::create(
     return disk_creator(name, config, config_prefix, context, map, attach, custom_disk);
 }
 
+void DiskFactory::clearRegistry()
+{
+    registry.clear();
+}
 }

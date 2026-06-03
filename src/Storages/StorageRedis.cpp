@@ -3,11 +3,13 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
@@ -30,6 +32,9 @@
 #include <Common/parseAddress.h>
 #include <Common/JSONBuilder.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+
 namespace DB
 {
 
@@ -40,7 +45,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -105,7 +110,7 @@ public:
             return {};
 
         RedisArray scan_keys;
-        RedisIterator next_iterator;
+        RedisIterator next_iterator = 0;
 
         std::tie(next_iterator, scan_keys) = storage.scan(iterator == -1 ? 0 : iterator, pattern, max_block_size);
         iterator = next_iterator;
@@ -142,14 +147,14 @@ private:
     FieldVector::const_iterator it;
 
     /// For full scan
-    RedisIterator iterator;
+    RedisIterator iterator{};
     String pattern;
 
     const size_t max_block_size;
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
@@ -209,14 +214,22 @@ StorageRedis::StorageRedis(
     ContextPtr context_,
     const StorageInMemoryMetadata & storage_metadata,
     const String & primary_key_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , configuration(configuration_)
     , log(getLogger("StorageRedis"))
     , primary_key(primary_key_)
 {
     pool = std::make_shared<RedisPool>(configuration.pool_size);
-    setInMemoryMetadata(storage_metadata);
+    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
+}
+
+VirtualColumnsDescription StorageRedis::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 class ReadFromRedis : public SourceStepWithFilter
@@ -254,7 +267,7 @@ private:
     bool all_scan = true;
 };
 
-void StorageRedis::read(
+void StorageRedis::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -300,8 +313,8 @@ void ReadFromRedis::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t num_threads = std::min<size_t>(num_streams, keys->size());
         num_threads = std::min<size_t>(num_threads, storage.configuration.pool_size);
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
+        chassert(num_keys <= std::numeric_limits<uint32_t>::max());
+        chassert(num_threads <= std::numeric_limits<uint32_t>::max());
 
         for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
         {
@@ -328,7 +341,7 @@ void ReadFromRedis::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromRedis::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -351,15 +364,14 @@ void ReadFromRedis::describeActions(JSONBuilder::JSONMap & map) const
 
 namespace
 {
-    //  host:port, db_index, password, pool_size
-    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context)
+    RedisConfiguration getRedisConfiguration(ASTs & engine_args, ContextPtr context, const StorageID & table_id)
     {
         RedisConfiguration configuration;
 
         if (engine_args.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad arguments count when creating Redis table engine");
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, &table_id))
         {
             validateNamedCollection(
                 *named_collection,
@@ -402,7 +414,7 @@ namespace
 
     StoragePtr createStorageRedis(const StorageFactory::Arguments & args)
     {
-        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext());
+        auto configuration = getRedisConfiguration(args.engine_args, args.getLocalContext(), args.table_id);
 
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
@@ -412,7 +424,7 @@ namespace
         if (!args.storage_def->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageRedis must require one column in primary key");
 
-        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+        auto primary_key_desc = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
         auto primary_key_names = primary_key_desc.expression->getRequiredColumns();
 
         if (primary_key_names.size() != 1)
@@ -434,7 +446,7 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
     MutableColumns columns = sample_block.cloneEmptyColumns();
@@ -534,7 +546,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
     return ret;
 }
 
-Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
@@ -549,7 +561,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArra
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr()->getSampleBlock();
+    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
 }
 
 SinkToStoragePtr StorageRedis::write(
@@ -566,7 +578,7 @@ void StorageRedis::truncate(const ASTPtr & query, const StorageMetadataPtr &, Co
     auto connection = getRedisConnection(pool, configuration);
 
     auto * truncate_query = query->as<ASTDropQuery>();
-    assert(truncate_query != nullptr);
+    chassert(truncate_query != nullptr);
 
     RedisCommand cmd_flush_db("FLUSHDB");
     if (!truncate_query->sync)
@@ -596,9 +608,10 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     if (commands.empty())
         return;
 
-    assert(commands.size() == 1);
+    chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
 
@@ -608,7 +621,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         settings.return_all_columns = true;
         settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
 
@@ -638,15 +651,16 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
         return;
     }
 
-    assert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    chassert(commands.front().type == MutationCommand::Type::UPDATE);
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
     settings.return_all_columns = true;
     settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -661,6 +675,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 }
 
 /// TODO support ttl
+void registerStorageRedis(StorageFactory & factory);
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

@@ -147,8 +147,8 @@ struct IdentifierResolveScope
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
     ScopeAliases global_with_aliases;
 
-    /// Table column name to column node. Valid only during table ALIAS columns resolve.
-    ColumnNameToColumnNodeMap column_name_to_column_node;
+    /// Valid only during table ALIAS columns resolve.
+    AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
@@ -183,6 +183,7 @@ struct IdentifierResolveScope
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
+    bool allow_resolve_from_using = true;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -197,14 +198,6 @@ struct IdentifierResolveScope
 
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
-
-    struct ResolvedFunctionsCache
-    {
-        FunctionOverloadResolverPtr resolver;
-        FunctionBasePtr function_base;
-    };
-
-    std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     [[maybe_unused]] const IdentifierResolveScope * getNearestQueryScope() const;
 

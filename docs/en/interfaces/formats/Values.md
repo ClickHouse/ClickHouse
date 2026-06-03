@@ -6,6 +6,7 @@ keywords: ['Values']
 output_format: true
 slug: /interfaces/formats/Values
 title: 'Values'
+doc_type: 'guide'
 ---
 
 | Input | Output | Alias |
@@ -19,7 +20,7 @@ The `Values` format prints every row in brackets.
 - Rows are separated by commas without a comma after the last row. 
 - The values inside the brackets are also comma-separated. 
 - Numbers are output in a decimal format without quotes. 
-- Arrays are output in square brackets. 
+- Arrays are output in `[]`.
 - Strings, dates, and dates with times are output in quotes. 
 - Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
 

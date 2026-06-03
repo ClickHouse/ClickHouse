@@ -93,12 +93,14 @@ void SQLInsertRowOutputFormat::resetFormatterImpl()
     rows_in_line = 0;
 }
 
+void registerOutputFormatSQLInsert(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory)
 {
     factory.registerOutputFormat("SQLInsert", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<SQLInsertRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

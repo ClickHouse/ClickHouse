@@ -21,17 +21,19 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
     if (!column.isNullAt(row_num))
     {
         auto value = column.getDataAt(row_num);
-        out.write(value.data, value.size);
+        out.write(value.data(), value.size());
     }
 }
 
 
+void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerOutputFormat("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
     });

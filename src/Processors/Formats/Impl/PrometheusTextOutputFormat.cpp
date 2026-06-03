@@ -343,12 +343,14 @@ void PrometheusTextOutputFormat::finalizeImpl()
     flushCurrentMetric();
 }
 
+void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory)
 {
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

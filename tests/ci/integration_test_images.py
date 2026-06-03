@@ -1,1 +1,0 @@
-../../ci/jobs/scripts/integration_test_images.py

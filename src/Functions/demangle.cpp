@@ -1,3 +1,5 @@
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 #include <base/demangle.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,14 +16,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
-class FunctionDemangle : public IFunction
+class FunctionDemangle final : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
@@ -48,15 +48,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"symbol", &isString, nullptr, "String"}
+        };
 
-        const auto & type = arguments[0].type;
-
-        if (!WhichDataType(type.get()).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be String. "
-                "Found {} instead.", getName(), type->getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -78,15 +74,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAt(i);
-            auto demangled = tryDemangle(source.data);
+            String source{column_concrete->getDataAt(i)};
+            auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
                 result_column->insertData(demangled.get(), strlen(demangled.get()));
             }
             else
             {
-                result_column->insertData(source.data, source.size);
+                result_column->insertData(source.data(), source.size());
             }
         }
 
@@ -100,7 +96,7 @@ REGISTER_FUNCTION(Demangle)
 {
     FunctionDocumentation::Description description = R"(
 Converts a symbol to a C++ function name.
-The symbol is usually returned by function [`addressToSymbol`](../../sql-reference/functions/introspection.md#addresstosymbol).
+The symbol is usually returned by function `addressToSymbol`.
     )";
     FunctionDocumentation::Syntax syntax = "demangle(symbol)";
     FunctionDocumentation::Arguments arguments = {
@@ -157,8 +153,8 @@ Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const
-DB::Aggregator::executeOnBlock(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn> > >, unsigned long, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
-DB::Aggregator::executeOnBlock(DB::Block const&, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
+DB::Aggregator::executeOnBlock(...)
+DB::Aggregator::executeOnBlock(DB::Block const&, ...)
 DB::Aggregator::execute(std::shared_ptr<DB::IBlockInputStream> const&, DB::AggregatedDataVariants&)
 DB::AggregatingBlockInputStream::readImpl()
 DB::IBlockInputStream::read()
@@ -179,7 +175,7 @@ clone
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDemangle>(documentation);
 }

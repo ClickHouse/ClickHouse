@@ -3,27 +3,21 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
 #include <Common/IThrottler.h>
+#include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <unordered_set>
-
-
-namespace Poco
-{
-    class Logger;
-}
 
 
 template <class T>
@@ -43,6 +37,15 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+struct Settings;
+enum class ThreadName : uint8_t;
+
+/// Apply memory-profiler / fault-injection / soft-limit related query settings to a `MemoryTracker`.
+/// Query-level sample settings (`memory_profiler_*`) are pushed only when they were actually changed
+/// from their default — otherwise the tracker is left at `sample_probability == -1` so that
+/// `getResolvedSampleConfig` transparently falls through to `total_memory_tracker_sample_probability`.
+void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings);
+
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -66,10 +69,10 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ThreadGroup
 {
 public:
-    ThreadGroup();
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -79,6 +82,8 @@ public:
     const ContextWeakPtr global_context;
 
     const FatalErrorCallback fatal_error_callback;
+
+    const Int32 os_threads_nice_value;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
@@ -117,16 +122,19 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    static ThreadGroupPtr createForBackgroundProcess(ContextPtr storage_context);
+    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
+    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
-    static ThreadGroupPtr createForMaterializedView();
+    static ThreadGroupPtr createForMaterializedView(ContextPtr context);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
-    UInt64 getThreadsTotalElapsedMs() const;
+    UInt64 getGroupElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread(UInt64 elapsed_thread_counter_ms);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
@@ -143,48 +151,11 @@ private:
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
-    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
+    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
+    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
+
+    static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
-
-/**
- * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
- *
- * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
- *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
- *           ...
- *       });
- */
-class ThreadGroupSwitcher : private boost::noncopyable
-{
-public:
-    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
-    /// allow_existing_group:
-    ///  * If false, asserts that the thread is not already attached to a different group.
-    ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and restores it in destructor.
-    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
-    ~ThreadGroupSwitcher();
-
-private:
-    ThreadStatus * prev_thread = nullptr;
-    ThreadGroupPtr prev_thread_group;
-    ThreadGroupPtr thread_group;
-};
-
-
-/**
- * We use **constinit** here to tell the compiler the current_thread variable is initialized.
- * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
- * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
- * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
- * See also:
- * - https://en.cppreference.com/w/cpp/language/constinit
- * - https://github.com/ClickHouse/ClickHouse/pull/40078
- */
-extern thread_local constinit ThreadStatus * current_thread;
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
@@ -197,8 +168,6 @@ class ThreadStatus : public boost::noncopyable
 public:
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     const UInt64 thread_id = 0;
-    /// Also called "nice" value. If it was changed to non-zero (when attaching query) - will be reset to zero when query is detached.
-    Int32 os_thread_priority = 0;
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
@@ -208,7 +177,7 @@ public:
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
-    Int64 untracked_memory = 0;
+    UntrackedMemoryCounter untracked_memory;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
@@ -242,6 +211,8 @@ protected:
     bool performance_counters_finalized = false;
 
     String query_id;
+
+    [[maybe_unused]] bool jemalloc_profiler_enabled = false;
 
     struct TimePoint
     {
@@ -284,7 +255,7 @@ public:
     void clearQueryId() noexcept;
     const String & getQueryId() const;
 
-    ContextPtr getQueryContext() const;
+    ContextPtr tryGetQueryContext() const;
     ContextPtr getGlobalContext() const;
 
     /// Attaches slave thread to existing thread group
@@ -332,6 +303,17 @@ public:
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
 
+    double getEffectiveSampleProbability(UInt64 size) const
+    {
+        if (sample_probability <= 0)
+            return 0;
+        if (sample_min_allocation_size && size < sample_min_allocation_size)
+            return 0;
+        if (sample_max_allocation_size && size > sample_max_allocation_size)
+            return 0;
+        return sample_probability;
+    }
+
 private:
     void applyGlobalSettings();
     void applyQuerySettings();
@@ -345,6 +327,11 @@ private:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
     void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
+
+    /// Cached sample probability resolved from MemoryTracker hierarchy to avoid parent traversal on every allocation
+    double sample_probability = 0;
+    UInt64 sample_min_allocation_size = 0;
+    UInt64 sample_max_allocation_size = 0;
 };
 
 /**
@@ -356,7 +343,8 @@ public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
     static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
-    static bool isMainThread() { return main_thread == current_thread; }
+
+    static void reset() { is_initialized.clear(std::memory_order_relaxed); }
 
     ~MainThreadStatus();
 

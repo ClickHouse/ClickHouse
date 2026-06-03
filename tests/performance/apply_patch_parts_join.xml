@@ -18,6 +18,12 @@
 
     <fill_query>SYSTEM STOP MERGES test_lwu_join</fill_query>
 
+    <!-- Single-threaded INSERT and UPDATE with a block-size that fits each
+         whole patch keep the patch part layout deterministic across runs.
+         Without this, parallel threads race into the patch builder, the
+         split boundary varies, and point-lookup queries below read a
+         varying number of patch granules, producing 18-30% noise on
+         queries #4 to #7. -->
     <fill_query>INSERT INTO test_lwu_join
         SELECT
             number,
@@ -25,14 +31,14 @@
             rand(),
             randomPrintableASCII(8),
             randomPrintableASCII(8),
-        FROM numbers_mt(20000000) SETTINGS max_insert_threads=8
+        FROM numbers_mt(20000000) SETTINGS max_insert_threads=1
     </fill_query>
 
-    <fill_query>UPDATE test_lwu_join SET uint_1p = rand() WHERE id % 100 = 0</fill_query>
-    <fill_query>UPDATE test_lwu_join SET uint_10p = rand() WHERE id % 10 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_join SET uint_1p = rand() WHERE id % 100 = 0 SETTINGS max_threads=1, max_insert_block_size=3000000, min_insert_block_size_rows=3000000</fill_query>
+    <fill_query>UPDATE test_lwu_join SET uint_10p = rand() WHERE id % 10 = 0 SETTINGS max_threads=1, max_insert_block_size=3000000, min_insert_block_size_rows=3000000</fill_query>
 
-    <fill_query>UPDATE test_lwu_join SET str_1p = randomPrintableASCII(8) WHERE id % 100 = 0</fill_query>
-    <fill_query>UPDATE test_lwu_join SET str_10p = randomPrintableASCII(8) WHERE id % 10 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_join SET str_1p = randomPrintableASCII(8) WHERE id % 100 = 0 SETTINGS max_threads=1, max_insert_block_size=3000000, min_insert_block_size_rows=3000000</fill_query>
+    <fill_query>UPDATE test_lwu_join SET str_10p = randomPrintableASCII(8) WHERE id % 10 = 0 SETTINGS max_threads=1, max_insert_block_size=3000000, min_insert_block_size_rows=3000000</fill_query>
 
     <fill_query>SYSTEM START MERGES test_lwu_join</fill_query>
     <fill_query>OPTIMIZE TABLE test_lwu_join PARTITION ID 'all' FINAL</fill_query>
@@ -41,6 +47,11 @@
     <query>SELECT count() FROM test_lwu_join WHERE NOT ignore(uint_10p)</query>
     <query>SELECT count() FROM test_lwu_join WHERE NOT ignore(str_1p)</query>
     <query>SELECT count() FROM test_lwu_join WHERE NOT ignore(str_10p)</query>
+
+    <query>SELECT uint_1p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT uint_10p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT str_1p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT str_10p FROM test_lwu_join WHERE id = 5000000</query>
 
     <drop_query>DROP TABLE IF EXISTS test_lwu_join</drop_query>
 </test>

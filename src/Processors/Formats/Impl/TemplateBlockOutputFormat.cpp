@@ -197,12 +197,14 @@ void TemplateBlockOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+void registerOutputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory & factory)
 {
     factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         ParsedTemplateFormatString resultset_format;
         auto idx_resultset_by_name = [&](const String & partName)

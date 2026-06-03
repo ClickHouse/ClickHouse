@@ -112,7 +112,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         num_rows, columns[col]->size());
 
                 encodeDataType(types[col], out);
-                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = types[col]->getDefaultSerialization();
                 NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
@@ -140,7 +140,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
     const SerializationFlags & flags,
     const ContextPtr & context)
 {
-    UInt64 num_sets;
+    UInt64 num_sets = 0;
     readVarUInt(num_sets, in);
 
     QueryPlanAndSets res;
@@ -159,7 +159,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", hash.low64, hash.high64);
 
-        UInt8 kind;
+        UInt8 kind = 0;
         readVarUInt(kind, in);
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
@@ -169,8 +169,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
         {
-            UInt64 num_columns;
-            UInt64 num_rows;
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
 
@@ -180,9 +180,9 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             for (size_t col = 0; col < num_columns; ++col)
             {
                 auto type = decodeDataType(in);
-                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = type->getDefaultSerialization();
                 ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, {}, num_rows, 0);
+                NativeReader::readData(*serialization, column, in, {}, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }

@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -35,7 +37,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -46,6 +47,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
 
@@ -53,6 +55,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -64,8 +67,10 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -74,6 +79,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -82,14 +88,14 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
+static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
     auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode = match_mode, context](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -98,6 +104,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
+            context,
             true);
     };
 
@@ -168,7 +175,7 @@ static void enforceAggregationInOrder(
     }
 }
 
-static String formattedAST(const ASTPtr & ast)
+static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
 {
     if (!ast)
         return {};
@@ -176,6 +183,8 @@ static String formattedAST(const ASTPtr & ast)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
         /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+    if (!enable_analyzer)
+        ast_format_settings.collapse_identical_nodes_to_aliases = true;
     ast->format(buf, ast_format_settings);
     return buf.str();
 }
@@ -193,7 +202,8 @@ ReadFromRemote::ReadFromRemote(
     LoggerPtr log_,
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    const String & cluster_name_)
+    const String & cluster_name_,
+    UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
@@ -207,6 +217,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
 
@@ -220,7 +231,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
+static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
@@ -230,12 +241,12 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
-static ASTPtr tryBuildAdditionalFilterAST(
+ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    const ContextPtr & context)
+    ContextMutablePtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -257,7 +268,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
-        /// Labmdas are not supported (converting back to AST is complicated).
+        /// Lambdas are not supported (converting back to AST is complicated).
         /// We have two cases here cause function with no capture can be constant-folded.
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
@@ -284,10 +295,10 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
         if (node->column && isColumnConst(*node->column))
         {
-            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
+            auto literal = make_intrusive<ASTLiteral>((*node->column)[0]);
             /// Need to enforce type of the literal, because some type is not comparable to its native type
             /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            auto casted_literal = makeASTFunction("_CAST", literal, make_intrusive<ASTLiteral>(node->result_type->getName()));
             node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
@@ -314,7 +325,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
                 /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
                 /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
-                res = std::make_shared<ASTIdentifier>(node->result_name);
+                res = make_intrusive<ASTIdentifier>(node->result_name);
             }
             else
             {
@@ -366,7 +377,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
         /// and() with 1 arg is not allowed. Make it AND(condition, 1)
         if (is_function_and && arguments.size() == 1)
-            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+            arguments.push_back(make_intrusive<ASTLiteral>(Field(1)));
 
         /// Support for GLOBAL IN.
         if (external_tables && isNameOfGlobalInFunction(func_name))
@@ -382,7 +393,22 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
                     set_from_subquery && set_from_subquery->getSourceAST())
                 {
-                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+                    /// If the set has already been built without explicit elements
+                    /// (e.g. use_index_for_in_with_subqueries_max_values was exceeded),
+                    /// we cannot populate an external table from it. Skip this GLOBAL IN
+                    /// predicate — the distributed filter will simply omit it.
+                    if (auto existing_set = set_from_subquery->get();
+                        existing_set && !existing_set->hasExplicitSetElements())
+                    {
+                        continue;
+                    }
+
+                    auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+
+                    /// Support running optimization multiple times
+                    auto source_ast = set_from_subquery->getSourceAST();
+                    if (auto * table_identifier = source_ast->as<ASTTableIdentifier>())
+                        temporary_table_name = table_identifier->name();
 
                     auto & external_table = (*external_tables)[temporary_table_name];
                     if (!external_table)
@@ -392,8 +418,17 @@ static ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
-                        NamesAndTypesList columns = header->getNamesAndTypesList();
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
+                        /// The subquery may produce columns with duplicate names
+                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
+                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
+                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
+                        /// the same step. Column matching when the temporary table is populated and
+                        /// when it is later used by the remote shard's `IN` operator is by position,
+                        /// so renaming the columns is safe.
+                        Block header_with_unique_names = *header;
+                        makeUniqueColumnNamesInBlock(header_with_unique_names);
+                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -404,9 +439,12 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
                         external_table = external_storage_holder.getTable();
                         set_from_subquery->setExternalTable(external_table);
+
+                        context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
-                    node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                    node_to_ast[second_arg] = make_intrusive<ASTIdentifier>(temporary_table_name);
+                    arguments[1] = node_to_ast[second_arg];
                 }
             }
         }
@@ -420,7 +458,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
 static void addFilters(
     Tables * external_tables,
-    const ContextMutablePtr & context,
+    ContextMutablePtr & context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
@@ -457,14 +495,55 @@ static void addFilters(
     if (table_expressions.size() != 1)
         return;
 
-    const auto * table_node = table_expressions.front()->as<TableNode>();
-    if (!table_node)
-        return;
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
+    /// Supported cases:
+    ///   - TableNode (a real table)
+    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
+    ///   - QueryNode wrapping any of the above (one level of subquery)
+    StorageSnapshotPtr table_snapshot;
+    ASTPtr table_identifier_ast;
+    String table_alias;
+
+    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    {
+        if (const auto * tn = expr->as<TableNode>())
+        {
+            table_snapshot = tn->getStorageSnapshot();
+            table_identifier_ast = tn->toASTIdentifier();
+            table_alias = tn->getAlias();
+            return true;
+        }
+        if (const auto * tfn = expr->as<TableFunctionNode>())
+        {
+            table_snapshot = tfn->getStorageSnapshot();
+            /// Table functions don't have a stable database/table identifier - we only
+            /// need the alias on the receiving side so `setColumnShortName` can strip it.
+            table_identifier_ast = nullptr;
+            table_alias = tfn->getAlias();
+            return true;
+        }
+        return false;
+    };
+
+    if (!extract_from_expression(table_expressions.front()))
+    {
+        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+        if (!inner_query_node)
+            return;
+
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
+        /// Case with JOIN is not supported so far.
+        if (table_expressions.size() != 1)
+            return;
+
+        if (!extract_from_expression(table_expressions.front()))
+            return;
+    }
 
     TableWithColumnNamesAndTypes table_with_columns(
-        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
-        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_node->getAlias();
+        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
+        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_alias;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
@@ -493,6 +572,28 @@ void ReadFromRemote::addLazyPipe(
 
     std::shared_ptr<const ActionsDAG> pushed_down_filters = filter_actions_dag;
 
+    /// Override cluster_for_parallel_replicas to match the distributed table's cluster,
+    /// same as addPipe() does. Without this, the _shard_num scalar from the distributed
+    /// execution can mismatch the parallel replicas cluster shard count, causing a crash
+    /// in prepareClusterForParallelReplicas (STID 5066).
+    if (context->canUseTaskBasedParallelReplicas())
+    {
+        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
+        {
+            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+            if (cluster_for_parallel_replicas != cluster_name)
+                LOG_INFO(
+                    log,
+                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
+                    "used: {}",
+                    cluster_for_parallel_replicas,
+                    cluster_name);
+        }
+
+        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+        context->setSetting("cluster_for_parallel_replicas", cluster_name);
+    }
+
     const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
     const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
     if (!storage)
@@ -501,7 +602,8 @@ void ReadFromRemote::addLazyPipe(
     }
 
     auto lazily_create_stream = [
-            my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
+            my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
@@ -573,7 +675,7 @@ void ReadFromRemote::addLazyPipe(
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
@@ -596,13 +698,16 @@ void ReadFromRemote::addLazyPipe(
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        bool enable_analyzer = current_settings[Setting::allow_experimental_analyzer];
+        String query_string = formattedAST(query, enable_analyzer);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
+            my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
+        remote_query_executor->setDistributedFanout(my_distributed_fanout);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -612,7 +717,7 @@ void ReadFromRemote::addLazyPipe(
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *out_header, context);
 }
 
 void ReadFromRemote::addPipe(
@@ -652,6 +757,8 @@ void ReadFromRemote::addPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
@@ -669,7 +776,7 @@ void ReadFromRemote::addPipe(
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
 
-            const String query_string = formattedAST(query);
+            const String query_string = formattedAST(query, enable_analyzer);
 
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
@@ -693,13 +800,15 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
+            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
+            addConvertingActions(pipes.back(), *output_header, context);
         }
     }
     else
@@ -707,12 +816,22 @@ void ReadFromRemote::addPipe(
         if (filter_actions_dag)
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(shard.query, enable_analyzer);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
+            shard.shard_info.pool,
+            query_string,
+            shard.header,
+            context,
+            throttler,
+            scalars,
+            external_tables,
+            stage_to_use,
+            shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setDistributedFanout(shards.size());
+        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
@@ -734,7 +853,7 @@ void ReadFromRemote::addPipe(
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-        addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+        addConvertingActions(pipes.back(), *out_header, context);
     }
 }
 
@@ -769,11 +888,27 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
 static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 {
-    auto explain_settings = std::make_shared<ASTSetQuery>();
+    auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
-    explain_settings->changes =  options.toSettingsChanges();
+    explain_settings->changes = options.toSettingsChanges();
 
-    auto explain_query = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
+    auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
+    explain_query->setExplainedQuery(query);
+    explain_query->setSettings(explain_settings);
+
+    return explain_query;
+}
+
+static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_repeated_processor_chains, ASTPtr query)
+{
+    auto explain_settings = make_intrusive<ASTSetQuery>();
+    explain_settings->is_standalone = false;
+    explain_settings->changes.emplace_back("header", int(header));
+    explain_settings->changes.emplace_back("distributed", int(distributed));
+    if (compact_repeated_processor_chains)
+        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
+
+    auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
     explain_query->setSettings(explain_settings);
 
@@ -782,7 +917,7 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 
 static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes)
 {
-    String prefix(settings.offset + settings.indent, settings.indent_char);
+    String prefix(settings.offset + settings.base_indent, settings.indent_char);
     for (auto & pipe : pipes)
     {
         QueryPipeline pipeline(std::move(pipe));
@@ -798,7 +933,7 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
             size_t num_rows = col->size();
 
             for (size_t row = 0; row < num_rows; ++row)
-                settings.out << prefix << col->getDataAt(row).toView() << '\n';
+                settings.out << prefix << col->getDataAt(row) << '\n';
         }
     }
 }
@@ -812,7 +947,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
     {
         if (shard.query_plan)
         {
-            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
         }
         else
         {
@@ -820,6 +955,31 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
             shard_copy.header = header;
             shard_copy.query = makeExplain(options, shard.query);
         }
+    }
+
+    formatExplain(settings, addPipes(used_shards, header));
+}
+
+void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool distributed)
+{
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+    ClusterProxy::SelectStreamFactory::Shards used_shards;
+
+    for (const auto & shard : shards)
+    {
+        if (shard.query_plan)
+            /// A serialized query plan is not suitable for building a pipeline locally
+            /// (e.g. ReadFromTableFunctionStep does not implement initializePipeline).
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN PIPELINE distributed=1 is not supported with serialize_query_plan=1");
+
+        auto & shard_copy = used_shards.emplace_back(shard);
+        shard_copy.header = header;
+        shard_copy.query = makeExplainPipeline(
+            settings.write_header,
+            distributed,
+            settings.compact_repeated_processor_chains,
+            shard.query);
     }
 
     formatExplain(settings, addPipes(used_shards, header));
@@ -837,6 +997,8 @@ bool ReadFromRemote::hasSerializedPlan() const
 
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
+    const QueryTreeNodePtr & query_tree_,
+    const PlannerContextPtr & planner_context_,
     ClusterPtr cluster_,
     const StorageID & storage_id_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
@@ -850,10 +1012,13 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : ISourceStep(std::move(header_))
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
+    std::shared_ptr<const QueryPlan> query_plan_)
+    : SourceStepWithFilterBase(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
+    , query_tree(query_tree_)
+    , planner_context(planner_context_)
     , storage_id(storage_id_)
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
@@ -866,6 +1031,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
     , connection_pool_with_failover(connection_pool_with_failover_)
+    , query_plan(std::move(query_plan_))
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -880,8 +1046,9 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description));
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast, enable_analyzer), fmt::join(replicas, ", "));
+    setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
@@ -896,6 +1063,9 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
+        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+
     Pipes pipes = addPipes(query_ast, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
@@ -980,13 +1150,11 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
-    String query_string = formattedAST(ast);
+    String query_string = formattedAST(ast, enable_analyzer);
 
-    if (ast->as<ASTExplainQuery>() == nullptr)
-        assert(stage != QueryProcessingStage::Complete);
-
-    assert(output_header);
+    chassert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -996,25 +1164,48 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         throttler,
         scalars,
         external_tables,
-        stage,
+        query_plan ? QueryProcessingStage::QueryPlan : stage,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
-        connection_pool_with_failover);
+        connection_pool_with_failover,
+        query_plan);
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
+    remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
-    addConvertingActions(pipe, *out_header);
+    addConvertingActions(pipe, *out_header, context);
     return pipe;
 }
 
 void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplain(options, query_ast);
-    formatExplain(settings, addPipes(explain_query, header));
+    if (query_plan)
+    {
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
+    }
+    else
+    {
+        auto explain_query = makeExplain(options, query_ast);
+        formatExplain(settings, addPipes(explain_query, header));
+    }
 }
 
+void ReadFromParallelRemoteReplicasStep::describeDistributedPipeline(FormatSettings & settings, bool distributed)
+{
+    if (query_plan)
+        /// A serialized query plan is not suitable for building a pipeline locally
+        /// (e.g. ReadFromTableFunctionStep does not implement initializePipeline).
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN PIPELINE distributed=1 is not supported with serialize_query_plan=1");
+
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+
+    auto explain_query = makeExplainPipeline(settings.write_header, distributed, settings.compact_repeated_processor_chains, query_ast);
+    formatExplain(settings, addPipes(explain_query, header));
+}
 }

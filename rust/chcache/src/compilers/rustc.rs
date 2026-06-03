@@ -1,9 +1,12 @@
 use blake3::Hasher;
 use log::trace;
+use std::cell::Cell;
 use std::error::Error;
 use std::fs::{self};
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tokio::time::Instant;
 
 use crate::{
     compilers::clang::ClangLike,
@@ -11,16 +14,18 @@ use crate::{
 };
 
 pub struct RustC {
-    compiler_path: String,
+    compiler_path: PathBuf,
 
     args: Vec<String>,
     out_dir: String,
+
+    elapsed_compile_time_ms: Cell<Duration>,
 }
 
 impl CompilerMeta for RustC {
     const NAME: &'static str = "rustc";
 
-    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler> {
+    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler> {
         let out_dir = args
             .iter()
             .position(|x| x == "--out-dir")
@@ -28,9 +33,11 @@ impl CompilerMeta for RustC {
             .unwrap_or(String::new());
 
         Box::new(RustC {
-            compiler_path,
+            compiler_path: compiler_path.to_path_buf(),
             args,
             out_dir,
+
+            elapsed_compile_time_ms: Cell::new(Duration::ZERO),
         })
     }
 }
@@ -142,10 +149,21 @@ impl Compiler for RustC {
         let mut clang_linker_version: Option<String> = None;
         if let Some(index) = stripped_args.iter().position(|x| x.contains("linker=")) {
             let linker = stripped_args[index].replace("linker=", "");
-            assert!(!linker.is_empty());
-            assert!(linker.ends_with("clang") || linker.ends_with("clang++"));
+            let linker = PathBuf::from(&linker);
 
-            clang_linker_version = Some(ClangLike::compiler_version(linker));
+            let linker_binary_name = linker
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            assert!(linker.is_file());
+            assert!(
+                linker_binary_name.starts_with("clang")
+                    || linker_binary_name.starts_with("clang++")
+            );
+
+            clang_linker_version = Some(ClangLike::compiler_version(linker.as_path()));
             stripped_args.remove(index);
         }
 
@@ -165,7 +183,7 @@ impl Compiler for RustC {
     }
 
     fn version(&self) -> String {
-        trace!("Using compiler: {}", self.compiler_path);
+        trace!("Using compiler: {}", self.compiler_path.display());
 
         let compiler_version = std::process::Command::new(self.compiler_path.clone())
             .arg("-V")
@@ -214,10 +232,14 @@ impl Compiler for RustC {
     }
 
     fn compile(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        let start_time = Instant::now();
+
         let output = std::process::Command::new(self.compiler_path.clone())
             .args(&self.args)
             .output()
             .unwrap();
+
+        self.elapsed_compile_time_ms.set(start_time.elapsed());
 
         if !output.status.success() {
             println!("{}", String::from_utf8_lossy(&output.stdout));
@@ -255,5 +277,13 @@ impl Compiler for RustC {
         drop(archive);
 
         Ok(buffer)
+    }
+
+    fn get_args(&self) -> Vec<String> {
+        self.args.to_vec()
+    }
+
+    fn get_compile_duration(&self) -> u128 {
+        self.elapsed_compile_time_ms.get().as_millis()
     }
 }

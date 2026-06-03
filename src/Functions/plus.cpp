@@ -1,9 +1,23 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
+}
+
+FormatSettings::DateTimeOverflowBehavior getDateTimeOverflowBehavior(ContextPtr context)
+{
+    if (context)
+        return context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
+    return default_date_time_overflow_behavior;
+}
 
 template <typename A, typename B>
 struct PlusImpl
@@ -55,6 +69,9 @@ Calculates the sum of two values `x` and `y`. Alias: `x + y` (operator).
 It is possible to add an integer and a date or date with time. The former
 operation increments the number of days in the date, the latter operation
 increments the number of seconds in the date with time.
+It is also possible to add a date and a time. Adding a `Date` and a `Time`
+produces a `DateTime`. Adding a `Date` and a `Time64`, or a `Date32` and
+a `Time` or `Time64`, produces a `DateTime64`.
     )";
     FunctionDocumentation::Syntax syntax = "plus(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Left hand operand."};
@@ -63,10 +80,11 @@ increments the number of seconds in the date with time.
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the sum of x and y"};
     FunctionDocumentation::Example example1 = {"Adding two numbers", "SELECT plus(5,5)", "10"};
     FunctionDocumentation::Example example2 = {"Adding an integer and a date", "SELECT plus(toDate('2025-01-01'),5)", "2025-01-06"};
-    FunctionDocumentation::Examples examples = {example1, example2};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation::Example example3 = {"Adding a date and time", "SELECT toDate('2025-01-01') + CAST('14:30:25', 'Time')", "2025-01-01 14:30:25"};
+    FunctionDocumentation::Examples examples = {example1, example2, example3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPlus>(documentation);
 }

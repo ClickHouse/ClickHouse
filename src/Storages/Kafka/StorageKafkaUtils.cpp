@@ -2,6 +2,7 @@
 
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -79,6 +80,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
@@ -94,6 +96,7 @@ namespace ErrorCodes
 }
 
 
+void registerStorageKafka(StorageFactory & factory);
 void registerStorageKafka(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args) -> std::shared_ptr<IStorage>
@@ -104,7 +107,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -219,6 +222,14 @@ void registerStorageKafka(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
+
+        constexpr size_t MAX_SKIP_BYTES = 255;
+        if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
+                           (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
+        }
         NamesAndTypesList supported_columns;
         for (const auto & column : args.columns)
         {
@@ -251,10 +262,11 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path || !has_replica_name)
             throw Exception(
-        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
+                ErrorCodes::BAD_ARGUMENTS,
+                "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
-        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
@@ -528,49 +540,81 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
+bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
 }
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "");
-    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "");
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "");
-    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "");
-    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
-    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_topic", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_key", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_offset", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_partition", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_timestamp_ms", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(3)), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
+}
+
+PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write)
+{
+    PayloadSplit split;
+    split.format_column_indices.reserve(header.columns());
+
+    auto is_string_array = [](const DataTypePtr & type)
+    {
+        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        return array_type && isString(array_type->getNestedType());
+    };
+
+    /// Headers are mapped only when both `_headers.name` and `_headers.value` are present
+    /// with `Array(String)` type — see `KafkaProducer::KafkaProducer`. Excluding them
+    /// independently would silently drop one-sided header columns from the payload.
+    bool map_headers = false;
+    if (map_virtual_columns_on_write
+        && header.has("_headers.name") && header.has("_headers.value"))
+    {
+        map_headers = is_string_array(header.getByName("_headers.name").type)
+            && is_string_array(header.getByName("_headers.value").type);
+    }
+
+    auto is_mapped_to_metadata = [&](const ColumnWithTypeAndName & column)
+    {
+        /// Keep type checks in sync with `KafkaProducer::KafkaProducer`. Columns whose type
+        /// does not match are left in the payload rather than being silently dropped.
+        if (column.name == "_key")
+            return isString(column.type);
+        if (column.name == "_timestamp")
+            return isDateTime(column.type);
+        if (column.name == "_headers.name" || column.name == "_headers.value")
+            return map_headers;
+        return false;
+    };
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & column = header.getByPosition(i);
+
+        if (map_virtual_columns_on_write && is_mapped_to_metadata(column))
+            continue;
+
+        split.format_header.insert(column);
+        split.format_column_indices.push_back(i);
+    }
+
+    return split;
 }
 }
 }

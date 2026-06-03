@@ -80,6 +80,7 @@ void CustomSeparatedRowOutputFormat::writeField(const IColumn & column, const IS
     serializeFieldByEscapingRule(column, serialization, out, row_num, escaping_rule, format_settings);
 }
 
+void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -87,7 +88,8 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & settings)
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
         {
             return std::make_shared<CustomSeparatedRowOutputFormat>(std::make_shared<const Block>(sample), buf, settings, with_names, with_types);
         });

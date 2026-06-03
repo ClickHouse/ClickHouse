@@ -10,7 +10,7 @@ namespace DB
 
 ASTPtr ASTShowColumnsQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowColumnsQuery>(*this);
+    auto res = make_intrusive<ASTShowColumnsQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;
@@ -35,7 +35,7 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
         ostr
 
             << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE")
+            << (case_insensitive_like ? " ILIKE " : " LIKE ")
             << quoteString(like);
     }
 

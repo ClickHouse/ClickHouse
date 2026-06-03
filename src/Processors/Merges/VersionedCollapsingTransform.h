@@ -21,6 +21,7 @@ public:
         SortDescription description_, const String & sign_column_,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform(
@@ -31,6 +32,7 @@ public:
             sign_column_,
             max_block_size_rows,
             max_block_size_bytes,
+            max_dynamic_subcolumns_,
             out_row_sources_buf_,
             use_average_block_sizes)
     {

@@ -1,1 +1,0 @@
-`registration_dttm` Nullable(Int64), `id` Nullable(Int32), `first_name` Nullable(String), `last_name` Nullable(String), `email` Nullable(String), `gender` Nullable(String), `ip_address` Nullable(String), `cc` Nullable(String), `country` Nullable(String), `birthdate` Nullable(String), `salary` Nullable(Float64), `title` Nullable(String), `comments` Nullable(String)

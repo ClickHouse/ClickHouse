@@ -1,7 +1,7 @@
 #include <Dictionaries/PolygonDictionaryUtils.h>
 
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/ThreadPool.h>
-
 #include <Common/logger_useful.h>
 
 #include <algorithm>
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-FinalCell::FinalCell(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> &, const Box &, bool is_last_covered_):
+FinalCell::FinalCell(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> &, const Box &, bool is_last_covered_):
 polygon_ids(polygon_ids_)
 {
     if (is_last_covered_)
@@ -31,25 +31,30 @@ const FinalCell * FinalCell::find(Coord, Coord) const
     return this;
 }
 
+size_t FinalCell::getBytesAllocated() const
+{
+    return sizeof(*this) + polygon_ids.capacity() * sizeof(size_t);
+}
+
 inline void shift(Point & point, Coord val)
 {
     point.x(point.x() + val);
     point.y(point.y() + val);
 }
 
-FinalCellWithSlabs::FinalCellWithSlabs(const std::vector<size_t> & polygon_ids_, const std::vector<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
+FinalCellWithSlabs::FinalCellWithSlabs(const VectorWithMemoryTracking<size_t> & polygon_ids_, const VectorWithMemoryTracking<Polygon> & polygons_, const Box & box_, bool is_last_covered_)
 {
     auto extended = box_;
     shift(extended.min_corner(), -GridRoot<FinalCellWithSlabs>::kEps);
     shift(extended.max_corner(), GridRoot<FinalCellWithSlabs>::kEps);
     Polygon tmp_poly;
     bg::convert(extended, tmp_poly);
-    std::vector<Polygon> intersections;
+    VectorWithMemoryTracking<Polygon> intersections;
     if (is_last_covered_)
         first_covered = polygon_ids_.back();
     for (size_t i = 0; i + is_last_covered_ < polygon_ids_.size(); ++i)
     {
-        std::vector<Polygon> intersection;
+        VectorWithMemoryTracking<Polygon> intersection;
         bg::intersection(tmp_poly, polygons_[polygon_ids_[i]], intersection);
         for (auto & polygon : intersection)
             intersections.emplace_back(std::move(polygon));
@@ -65,17 +70,38 @@ const FinalCellWithSlabs * FinalCellWithSlabs::find(Coord, Coord) const
     return this;
 }
 
+size_t FinalCellWithSlabs::getBytesAllocated() const
+{
+    return sizeof(*this) + index.getBytesAllocated() + corresponding_ids.capacity() * sizeof(size_t);
+}
+
 SlabsPolygonIndex::SlabsPolygonIndex(
-    const std::vector<Polygon> & polygons)
+    const VectorWithMemoryTracking<Polygon> & polygons)
     : log(getLogger("SlabsPolygonIndex")),
       sorted_x(uniqueX(polygons))
 {
     indexBuild(polygons);
 }
 
-std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polygons)
+size_t SlabsPolygonIndex::getBytesAllocated() const
 {
-    std::vector<Coord> all_x;
+    size_t total = sorted_x.capacity() * sizeof(Coord)
+                 + all_edges.capacity() * sizeof(Edge)
+                 + edges_index_tree.capacity() * sizeof(VectorWithMemoryTracking<EdgeLine>);
+    for (const auto & node : edges_index_tree)
+        total += node.capacity() * sizeof(EdgeLine);
+    return total;
+}
+
+VectorWithMemoryTracking<Coord> SlabsPolygonIndex::uniqueX(const VectorWithMemoryTracking<Polygon> & polygons)
+{
+    size_t total_points = 0;
+    for (const auto & poly : polygons)
+        total_points += bg::num_points(poly);
+
+    VectorWithMemoryTracking<Coord> all_x;
+    all_x.reserve(total_points);
+
     for (const auto & poly : polygons)
     {
         for (const auto & point : poly.outer())
@@ -93,7 +119,7 @@ std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polyg
     return all_x;
 }
 
-void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
+void SlabsPolygonIndex::indexBuild(const VectorWithMemoryTracking<Polygon> & polygons)
 {
     for (size_t i = 0; i < polygons.size(); ++i)
     {
@@ -116,7 +142,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     {
         return Edge::compareByRightPoint(a, b);
     };
-    std::set<Edge, decltype(cmp)> interesting_edges(cmp);
+    SetWithMemoryTracking<Edge, decltype(cmp)> interesting_edges(cmp);
 
     /** Size of index (number of different x coordinates) */
     size_t n = 0;
@@ -124,11 +150,10 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     {
         n = sorted_x.size() - 1;
     }
-    edges_index_tree.resize(2 * n);
 
     /** Map of interesting edge ids to the index of left x, the index of right x */
-    std::vector<size_t> edge_left(m, n);
-    std::vector<size_t> edge_right(m, n);
+    VectorWithMemoryTracking<size_t> edge_left(m, n);
+    VectorWithMemoryTracking<size_t> edge_right(m, n);
 
     size_t edges_it = 0;
     for (size_t l = 0, r = 1; r < sorted_x.size(); ++l, ++r)
@@ -150,6 +175,8 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             edge_left[all_edges[edges_it].edge_id] = l;
         }
     }
+
+    edges_index_tree.resize(2 * n);
 
     for (size_t i = 0; i != all_edges.size(); ++i)
     {
@@ -275,7 +302,7 @@ bool SlabsPolygonIndex::find(const Point & point, size_t & id) const
       * This vector will contain polygon ids of all crosses. Smallest id with odd number of
       * occurrences is the answer.
       */
-    std::vector<size_t> intersections;
+    VectorWithMemoryTracking<size_t> intersections;
     intersections.reserve(10);
 
     /** Find position of the slab with binary search by sorted_x */

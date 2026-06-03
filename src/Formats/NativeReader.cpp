@@ -90,14 +90,29 @@ void NativeReader::readData(
     ReadBuffer & istr,
     const FormatSettings * format_settings,
     size_t rows,
-    double avg_value_size_hint)
+    const NameAndTypePair * name_and_type,
+    ValueSizeMap * avg_value_size_hints_)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-    settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
     settings.format_settings = format_settings;
+
+    if (name_and_type != nullptr && avg_value_size_hints_ != nullptr)
+    {
+        settings.get_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path) -> double
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
+            return (*avg_value_size_hints_)[stream_name];
+        };
+
+        settings.update_avg_value_size_hint_callback = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
+        {
+            auto stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, {});
+            IDataType::updateAvgValueSizeHint(column_, (*avg_value_size_hints_)[stream_name]);
+        };
+    }
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
@@ -137,7 +152,7 @@ Block NativeReader::read()
 
     /// Additional information about the block.
     if (server_revision > 0)
-        res.info.read(istr);
+        res.info.read(istr, server_revision);
 
     /// Dimensions
     size_t columns = 0;
@@ -148,9 +163,9 @@ Block NativeReader::read()
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
 
-        if (columns > 1'000'000uz)
+        if (columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
-        if (rows > 1'000'000'000'000uz)
+        if (rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
@@ -192,34 +207,14 @@ Block NativeReader::read()
 
         SerializationPtr serialization;
         ColumnPtr read_column;
-        const ColumnLazy * column_lazy = nullptr;
-        bool skip_reading = false;
 
-        if (const auto * tmp_header_column = header.findByName(column.name))
-            column_lazy = checkAndGetColumn<ColumnLazy>(tmp_header_column->column.get());
-
-        if (column_lazy)
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            if (!column_lazy->getColumns().empty())
-            {
-                serialization = column_lazy->getDefaultSerialization();
-                const auto & tmp_columns = column_lazy->getColumns();
+            /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
+            /// in-memory state, it should be able to handle all possible serialization variants.
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
-                auto new_column = ColumnTuple::create(tmp_columns)->cloneEmpty();
-                new_column->reserve(rows);
-                read_column = std::move(new_column);
-            }
-            else
-            {
-                read_column = ColumnLazy::create(rows);
-                skip_reading = true;
-            }
-        }
-        else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-        {
-            auto info = column.type->createSerializationInfo({});
-
-            UInt8 has_custom;
+            UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
                 info->deserializeFromKindsBinary(istr);
@@ -246,11 +241,11 @@ Block NativeReader::read()
         }
 
         /// If no rows, nothing to read.
-        if (!skip_reading && rows)
+        if (rows)
         {
-            double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
             const auto * format = format_settings ? &*format_settings : nullptr;
-            readData(*serialization, read_column, istr, format, rows, avg_value_size_hint);
+            NameAndTypePair name_and_type = {column.name, column.type};
+            readData(*serialization, read_column, istr, format, rows, &name_and_type, &avg_value_size_hints);
         }
 
         column.column = std::move(read_column);
@@ -265,19 +260,18 @@ Block NativeReader::read()
                 if (format_settings && format_settings->null_as_default)
                     insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
 
-                if (!skip_reading && column_lazy)
-                {
-                    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.column.get()))
-                        column.column = ColumnLazy::create(column_tuple->getColumns());
-                    else
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} and data type {} found while reading data in Native format",
-                                        column.name,
-                                        column.column->getDataType());
-                }
-
                 if (!header_column.type->equals(*column.type))
                 {
-                    if (format_settings && format_settings->native.allow_types_conversion)
+                    /// In the event of the same aggregate function but of a different variant (e.g. Window vs Aggregate),
+                    /// we should try to convert and read, since the difference in `Window` vs `Aggregate` is not a
+                    /// user-facing type difference but rather an internal implementation detail.
+                    /// This can happen when external sort spills blocks to disk: the header carries the Window variant from the query plan,
+                    /// but `NativeReader` deserializes the type name and resolves it via `AggregateFunctionFactory`, which always produces the
+                    /// Aggregation variant.
+                    const auto * header_agg_type = typeid_cast<const DataTypeAggregateFunction *>(header_column.type.get());
+                    bool convertible_agg_variant = header_agg_type && header_agg_type->equalsIgnoringVariant(*column.type);
+
+                    if ((format_settings && format_settings->native.allow_types_conversion) || convertible_agg_variant)
                     {
                         try
                         {
@@ -352,24 +346,9 @@ Block NativeReader::read()
     }
 
     if (res.rows() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Row count mismatch after deserialization, got: {}, expected: {}", res.rows(), rows);
 
     return res;
-}
-
-void NativeReader::updateAvgValueSizeHints(const Block & block)
-{
-    auto rows = block.rows();
-    if (rows < 10)
-        return;
-
-    avg_value_size_hints.resize_fill(block.columns(), 0);
-
-    for (auto idx : collections::range(0, block.columns()))
-    {
-        auto & avg_value_size_hint = avg_value_size_hints[idx];
-        IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
-    }
 }
 
 }

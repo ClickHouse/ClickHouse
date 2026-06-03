@@ -34,7 +34,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace MergeTreeSetting
@@ -48,7 +49,7 @@ namespace MergeTreeSetting
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
-class MergeTreeSequentialSource : public ISource
+class MergeTreeSequentialSource final : public ISource
 {
 public:
     MergeTreeSequentialSource(
@@ -85,6 +86,7 @@ private:
 
     MergeTreeReadTask::Readers readers;
     MergeTreeReadersChain readers_chain;
+    PatchJoinCachePtr patch_join_cache;
 
     /// Should read using direct IO
     bool read_with_direct_io;
@@ -131,23 +133,30 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
-    size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
-    RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
+    if (!read_task_info->patch_parts.empty())
+    {
+        size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
+        RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
 
-    ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
-    ranges_in_patch_parts.optimize();
-    patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
+        ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
+        ranges_in_patch_parts.optimize();
+
+        patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
+        patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
+        patch_join_cache->init(ranges_in_patch_parts);
+    }
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
-        read_settings.direct_io_threshold = 1;
+        read_settings.local_fs_settings.direct_io_threshold = 1;
 
     /// Configure throttling
     switch (type)
@@ -162,17 +171,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-        .can_read_part_without_marks = true,
-    };
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
-        .reader_settings = reader_settings,
+        .patch_join_cache = patch_join_cache.get(),
+        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
         .storage_snapshot = storage_snapshot,
     };
 
@@ -186,7 +189,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);
@@ -336,7 +339,7 @@ Pipe createMergeTreeSequentialSource(
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);

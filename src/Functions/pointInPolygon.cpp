@@ -106,7 +106,7 @@ UInt128 sipHash128(const MultiPolygon & multi_polygon)
 }
 
 template <typename PointInConstPolygonImpl, typename PointInConstMultiPolygonImpl>
-class FunctionPointInPolygon : public IFunction
+class FunctionPointInPolygon final : public IFunction
 {
 public:
     static inline const char * name = "pointInPolygon";
@@ -842,7 +842,7 @@ Checks whether the point belongs to the polygon on the plane.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>(documentation);
 }
 

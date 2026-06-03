@@ -93,8 +93,11 @@ ISource::Status RemoteSource::prepare()
     if (is_async_state)
         return Status::Async;
 
-    if (executor_finished)
+    if (query_executor->isFinished())
+    {
+        getPort().finish();
         return Status::Finished;
+    }
 
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
@@ -126,7 +129,6 @@ void RemoteSource::work()
     if (need_drain)
     {
         query_executor->finish();
-        executor_finished = true;
         return;
     }
 
@@ -226,6 +228,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
         info->is_overflows = block.info.is_overflows;
+        info->out_of_order_buckets = block.info.out_of_order_buckets;
         chunk.getChunkInfos().add(std::move(info));
     }
 
@@ -246,10 +249,10 @@ void RemoteSource::onCancel() noexcept
 
 void RemoteSource::onUpdatePorts()
 {
+    if (isCancelled())
+        return;
     if (getPort().isFinished())
-    {
         query_executor->finish();
-    }
 }
 
 

@@ -8,6 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace CurrentMetrics
@@ -59,7 +60,7 @@ IDatabase::~IDatabase()
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
 }
 
-void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/)
+void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/, ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
 }
@@ -182,7 +183,8 @@ void IDatabase::renameTable(
 void IDatabase::alterTable(
     ContextPtr /*context*/,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /*metadata*/)
+    const StorageInMemoryMetadata & /*metadata*/,
+    const bool /*validate_new_create_query*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
 }
@@ -204,7 +206,7 @@ void IDatabase::stopReplication()
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread", getEngineName());
 }
 
-BlockIO IDatabase::tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags) /// NOLINT
+BlockIO IDatabase::tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags, DDLGuardPtr && /*database_guard*/) /// NOLINT
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not have replicated DDL queue", getEngineName());
 }

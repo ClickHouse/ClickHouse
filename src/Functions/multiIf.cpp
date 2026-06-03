@@ -1,3 +1,4 @@
+#include <Functions/multiIf.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +30,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -61,12 +62,11 @@ public:
     {
         const auto & settings = context_->getSettingsRef();
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::allow_experimental_variant_type], settings[Setting::use_variant_as_common_type]);
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
-        , allow_experimental_variant_type(allow_experimental_variant_type_)
         , use_variant_as_common_type(use_variant_as_common_type_)
     {}
 
@@ -117,7 +117,7 @@ public:
 
         for_conditions([&](const DataTypePtr & arg)
         {
-            const IDataType * nested_type;
+            const IDataType * nested_type = nullptr;
             if (arg->isNullable())
             {
                 if (arg->onlyNull())
@@ -144,7 +144,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (allow_experimental_variant_type && use_variant_as_common_type)
+        if (use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -168,7 +168,7 @@ public:
         *  depending on values of conditions.
         */
 
-        std::vector<Instruction> instructions;
+        VectorWithMemoryTracking<Instruction> instructions;
         instructions.reserve(arguments.size() / 2 + 1);
 
         Columns converted_columns_holder;
@@ -325,7 +325,7 @@ public:
 
 private:
 
-    static void executeInstructions(std::vector<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
+    static void executeInstructions(VectorWithMemoryTracking<Instruction> & instructions, size_t rows, const MutableColumnPtr & res)
     {
         for (size_t i = 0; i < rows; ++i)
         {
@@ -361,9 +361,9 @@ private:
 
     /// We should read source from which instruction on each row?
     template <typename S>
-    static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
+    static NO_INLINE void calculateInserts(const VectorWithMemoryTracking<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
+        for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
         {
             const auto & instruction = instructions[i];
             if (instruction.condition_always_true)
@@ -403,7 +403,7 @@ private:
 
     template <typename T, typename S, bool nullable_result = false>
     static NO_INLINE void executeInstructionsColumnar(
-        const std::vector<Instruction> & instructions,
+        const VectorWithMemoryTracking<Instruction> & instructions,
         size_t rows,
         PaddedPODArray<T> & res_data,
         PaddedPODArray<UInt8> * res_null_map = nullptr)
@@ -420,8 +420,8 @@ private:
             res_null_map->resize_exact(rows);
         }
 
-        std::vector<const T *> data_cols(instructions.size(), nullptr);
-        std::vector<const UInt8 *> null_map_cols(instructions.size(), nullptr);
+        VectorWithMemoryTracking<const T *> data_cols(instructions.size(), nullptr);
+        VectorWithMemoryTracking<const UInt8 *> null_map_cols(instructions.size(), nullptr);
         for (size_t i = 0; i < instructions.size(); ++i)
         {
             const auto & instruction = instructions[i];
@@ -530,7 +530,6 @@ private:
     }
 
     const bool allow_execute_multiif_columnar;
-    const bool allow_experimental_variant_type;
     const bool use_variant_as_common_type;
 };
 
@@ -587,7 +586,7 @@ FROM LEFT_RIGHT;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiIf>(documentation);
 
@@ -596,9 +595,9 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
 }
 
 }

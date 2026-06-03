@@ -107,12 +107,14 @@ void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()
     }
 }
 
+void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings)
+            const FormatSettings & _format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = false;
@@ -123,7 +125,8 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings)
+            const FormatSettings & _format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
     {
         FormatSettings settings = _format_settings;
         settings.json.serialize_as_strings = true;
