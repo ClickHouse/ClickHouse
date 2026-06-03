@@ -433,11 +433,38 @@ class RandomQueryKiller(ChaosThread):
         except Exception as e:
             logging.debug("Random client killer got exception (expected): %s", e)
 
+    def _kill_random_mutation(self) -> None:
+        try:
+            result = check_output(
+                "clickhouse client -q \""
+                "SELECT mutation_id, database, table "
+                "FROM system.mutations "
+                "WHERE NOT is_done AND NOT is_killed "
+                "ORDER BY rand() LIMIT 1\" 2>/dev/null",
+                shell=True,
+                timeout=5,
+            )
+            line = result.decode("utf-8").strip()
+            if line:
+                mutation_id, db, table = line.split("\t")
+                logging.info("Killing random mutation: %s on %s.%s", mutation_id, db, table)
+                call(
+                    f"clickhouse client -q \"KILL MUTATION WHERE database = '{db}' "
+                    f"AND table = '{table}' AND mutation_id = '{mutation_id}'\" 2>/dev/null",
+                    shell=True,
+                    timeout=5,
+                )
+        except Exception as e:
+            logging.debug("Random mutation killer got exception (expected): %s", e)
+
     def _loop_body(self) -> None:
-        if random.random() < 0.7:
+        r = random.random()
+        if r < 0.6:
             self._kill_random_query()
-        else:
+        elif r < 0.8:
             self._kill_random_client()
+        else:
+            self._kill_random_mutation()
 
 
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
