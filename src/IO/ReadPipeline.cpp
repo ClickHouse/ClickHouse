@@ -393,7 +393,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         settings.reader_executor_window_size,
         min_bytes_for_seek,
         settings.reader_executor_block_size,
-        std::move(log_file_path));
+        std::move(log_file_path),
+        settings.reader_executor_max_tail_for_drain);
 
     if (prefetch_pool)
         executor->setPrefetchPool(prefetch_pool);

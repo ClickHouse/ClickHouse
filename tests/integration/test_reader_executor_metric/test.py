@@ -95,22 +95,22 @@ LOADS = {
 # The deterministic unit grid remains the tight value gate; update a row when an
 # executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (99, 127), "I": (57, 73), "O": (107, 155), "cost/MiB": (33.9, 43.1)},
-    ("sequential", "cold", "stateless"): {"R": (171, 219), "O": (91, 147), "cost/MiB": (42.2, 53.8)},
-    ("sequential", "fragmented", "live"): {"R": (43, 64), "I": (27, 35), "O": (28, 83), "cost/MiB": (15.2, 19.4)},
-    ("sequential", "fragmented", "stateless"): {"R": (81, 112), "O": (1, 77), "cost/MiB": (19.2, 24.5)},
-    ("selective", "cold", "live"): {"R": (17, 23), "I": (12, 16), "O": (100, 129), "cost/MiB": (126.8, 161.4)},
-    ("selective", "cold", "stateless"): {"R": (54, 70), "O": (58, 75), "cost/MiB": (134.4, 171.0)},
-    ("selective", "fragmented", "live"): {"R": (10, 14), "I": (10, 14), "O": (0, 1), "cost/MiB": (27.9, 35.5)},
+    ("sequential", "cold", "live"): {"R": (96, 124), "I": (49, 77), "O": (101, 166), "cost/MiB": (33.5, 42.6)},
+    ("sequential", "cold", "stateless"): {"R": (171, 219), "O": (91, 146), "cost/MiB": (42.2, 53.7)},
+    ("sequential", "fragmented", "live"): {"R": (39, 63), "I": (27, 38), "O": (32, 86), "cost/MiB": (15.0, 19.0)},
+    ("sequential", "fragmented", "stateless"): {"R": (74, 110), "O": (25, 65), "cost/MiB": (19.0, 24.2)},
+    ("selective", "cold", "live"): {"R": (29, 39), "I": (24, 32), "O": (58, 75), "cost/MiB": (112.4, 143.1)},
+    ("selective", "cold", "stateless"): {"R": (52, 68), "O": (58, 75), "cost/MiB": (132.5, 168.6)},
+    ("selective", "fragmented", "live"): {"R": (10, 14), "I": (10, 14), "O": (0, 1), "cost/MiB": (27.7, 35.2)},
     ("selective", "fragmented", "stateless"): {"R": (21, 27), "O": (0, 1), "cost/MiB": (37.3, 47.5)},
-    ("aggregation", "cold", "live"): {"R": (157, 201), "I": (9, 17), "O": (49, 81), "cost/MiB": (39.6, 50.3)},
-    ("aggregation", "cold", "stateless"): {"R": (267, 341), "O": (49, 81), "cost/MiB": (52.4, 66.7)},
-    ("aggregation", "fragmented", "live"): {"R": (48, 79), "I": (13, 29), "O": (10, 65), "cost/MiB": (15.3, 19.5)},
-    ("aggregation", "fragmented", "stateless"): {"R": (98, 136), "O": (0, 49), "cost/MiB": (20.3, 25.8)},
-    ("prewhere", "cold", "live"): {"R": (30, 44), "I": (9, 17), "O": (38, 50), "cost/MiB": (25.8, 32.9)},
-    ("prewhere", "cold", "stateless"): {"R": (205, 263), "O": (33, 47), "cost/MiB": (48.4, 61.6)},
-    ("prewhere", "fragmented", "live"): {"R": (18, 32), "I": (7, 11), "O": (7, 10), "cost/MiB": (11.6, 14.8)},
-    ("prewhere", "fragmented", "stateless"): {"R": (108, 138), "O": (7, 11), "cost/MiB": (23.3, 29.7)},
+    ("aggregation", "cold", "live"): {"R": (156, 200), "I": (1, 19), "O": (33, 110), "cost/MiB": (39.7, 50.5)},
+    ("aggregation", "cold", "stateless"): {"R": (264, 338), "O": (37, 79), "cost/MiB": (51.5, 65.6)},
+    ("aggregation", "fragmented", "live"): {"R": (52, 73), "I": (17, 25), "O": (36, 54), "cost/MiB": (15.5, 19.8)},
+    ("aggregation", "fragmented", "stateless"): {"R": (104, 134), "O": (0, 41), "cost/MiB": (20.3, 25.8)},
+    ("prewhere", "cold", "live"): {"R": (22, 48), "I": (8, 19), "O": (29, 61), "cost/MiB": (25.8, 32.9)},
+    ("prewhere", "cold", "stateless"): {"R": (210, 268), "O": (29, 55), "cost/MiB": (49.1, 62.4)},
+    ("prewhere", "fragmented", "live"): {"R": (14, 35), "I": (7, 11), "O": (7, 10), "cost/MiB": (11.5, 14.7)},
+    ("prewhere", "fragmented", "stateless"): {"R": (106, 137), "O": (7, 11), "cost/MiB": (23.0, 29.3)},
 }
 
 

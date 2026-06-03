@@ -89,13 +89,14 @@ namespace
 /// preserved, incl. min_bytes_for_seek). R/I/Wc/Rc are COUNTS -> match production;
 /// over-read bytes are measured at the compressed scale, so costMs() multiplies them
 /// by COMPRESSION to report the real-load cost. Production: segment 32 MiB,
-/// alignment 4 MiB, window 8 MiB, block 1 MiB, min_bytes_for_seek 8 MiB.
+/// alignment 4 MiB, window 8 MiB, block 1 MiB, min_bytes_for_seek 2 MiB, drain 1 MiB.
 constexpr size_t COMPRESSION = 1024;
 constexpr size_t SEGMENT            = (32u << 20) / COMPRESSION;   /// 32 KiB
 constexpr size_t ALIGNMENT          = (4u << 20) / COMPRESSION;    ///  4 KiB
 constexpr size_t WINDOW             = (8u << 20) / COMPRESSION;    ///  8 KiB
 constexpr size_t BLOCK              = (1u << 20) / COMPRESSION;    ///  1 KiB
-constexpr size_t MIN_BYTES_FOR_SEEK = (8u << 20) / COMPRESSION;    ///  8 KiB
+constexpr size_t MIN_BYTES_FOR_SEEK = (2u << 20) / COMPRESSION;    ///  2 KiB (bridge bound)
+constexpr size_t MAX_TAIL_FOR_DRAIN = (1u << 20) / COMPRESSION;    ///  1 KiB (drain bound)
 constexpr size_t N_SEGMENTS         = 32;
 constexpr size_t FILE_SIZE          = N_SEGMENTS * SEGMENT;        ///  1 MiB
 
@@ -367,7 +368,8 @@ public:
         else
             caches.push_back(makeDiskProvider(fc));
         auto src = std::make_shared<MemBoundedSource>(data);
-        ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK, BLOCK);
+        ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK,
+                                BLOCK, /*log_file_path=*/{}, /*max_tail_for_drain=*/MAX_TAIL_FOR_DRAIN);
         executor.setBufferLimit(std::make_shared<SourceBufferLimit>(buffer_slots));
 
         size_t total = 0;
@@ -577,15 +579,15 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
 }
 
-/// Cold scan broken by small cached holes, each <= MIN_BYTES_FOR_SEEK. The live
-/// connection skips ("ignores") each hole on the open GET instead of reopening,
-/// so the whole scan stays ONE connection: R=1, I=0, and the skipped holes show
-/// up as over-read (re-read from source and discarded). Without the bridge each
-/// hole would break the connection -> R=n_holes+1, I=n_holes (the Checkerboard
-/// mechanism, here below the seek threshold so it is bridged instead).
+/// Cold scan broken by alignment-sized FileCache holes. Each hole (4 MiB / 4 KiB
+/// compressed) is ABOVE the tuned 2 MiB bridge bound, so it is NOT bridged: the
+/// connection breaks at each hole (R = n_holes+1, I = n_holes) with no over-read.
+/// That is the cost-correct outcome - bridging a 4 MiB hole would re-read more than
+/// the reopen it saves. Contrast `PageCacheGaps`, whose 1 MiB holes are below the
+/// bound and bridge cost-positively.
 TEST_F(ReaderExecutorMetric, SmallCachedGaps)
 {
-    const size_t hole = ALIGNMENT;          /// 4 KiB cached hole (<= 8 KiB seek threshold)
+    const size_t hole = ALIGNMENT;          /// 4 KiB cached hole (> the 2 KiB bridge bound)
     const size_t stride = 4 * SEGMENT;      /// one hole per 128 KiB of otherwise-cold data
     ReadList warm;
     for (size_t off = SEGMENT; off + hole <= FILE_SIZE; off += stride)
@@ -593,11 +595,10 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
     const size_t n_holes = warm.size();
     auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
 
-    EXPECT_EQ(live.requests, 1u) << "live: one connection bridges every sub-threshold cached hole";
-    EXPECT_EQ(live.incomplete, 0u) << "no connection abandoned at a cached hole";
-    EXPECT_GT(live.over_read, 0u) << "the skipped cached holes are re-read from source as over-read";
-    EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each bridged gap is <= the seek threshold";
-    EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";
+    EXPECT_EQ(live.requests, n_holes + 1) << "live: each above-bound hole breaks the connection (no bridge)";
+    EXPECT_EQ(live.incomplete, n_holes) << "each broken connection is abandoned before its far bound (tail too big to drain)";
+    EXPECT_EQ(live.over_read, 0u) << "no bridging -> no re-read over-read";
+    EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window";
 }
 
 /// PageCache is block-granular and in-memory, so a cached hole can be a single

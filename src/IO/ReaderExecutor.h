@@ -45,7 +45,16 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
-    static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 8 * 1024 * 1024; /// 8 MiB
+    /// Gap bound for the live-connection bridge / seek-keep and `mergeRanges`: a
+    /// forward gap up to this is skipped on the open GET instead of reopening.
+    /// Set near the bandwidth/request cost breakeven (~1.75 MiB) so bridging is
+    /// cost-positive; larger gaps reopen.
+    static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
+    /// Drain bound: a live connection dropped within this of its right bound is
+    /// read out to the bound first, so it completes and returns to the pool
+    /// reusable instead of counting an incomplete connection. ~ the I-weight /
+    /// bandwidth breakeven (0.25 MiB), rounded up.
+    static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
     static constexpr size_t ROPE_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per Rope node
 
     ReaderExecutor(
@@ -55,7 +64,8 @@ public:
         size_t window_size = DEFAULT_WINDOW_SIZE,
         size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK,
         size_t block_size = ROPE_BLOCK_SIZE,
-        String log_file_path = {});
+        String log_file_path = {},
+        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN);
 
     /// Destructor must be out-of-line because LiveBuffer holds unique_ptr<ReadBufferFromFileBase>.
     ~ReaderExecutor();
@@ -197,6 +207,12 @@ private:
     /// the source request is saved. Returns bytes skipped (< `gap` only at EOF).
     size_t skipLiveBufferForward(size_t gap);
 
+    /// Before dropping the live connection away from its bound, if only a small
+    /// tail (<= `max_tail_for_drain`) remains, read it out so the connection
+    /// completes and returns to the pool reusable instead of counting an
+    /// incomplete connection. No-op when there is no bound or the tail is larger.
+    void maybeDrainLiveTail();
+
     /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ `block_size`.
     /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
     /// listed offset so the resulting `OwnedRopeBuffer` allocations don't straddle those points.
@@ -292,6 +308,8 @@ private:
     size_t window_size;
     size_t min_bytes_for_seek;
     size_t block_size;
+    /// Drain bound for `maybeDrainLiveTail` (constructor-supplied, like the others).
+    size_t max_tail_for_drain;
     size_t position = 0;
 
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;

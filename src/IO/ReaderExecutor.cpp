@@ -176,7 +176,8 @@ ReaderExecutor::ReaderExecutor(
     size_t window_size_,
     size_t min_bytes_for_seek_,
     size_t block_size_,
-    String log_file_path_)
+    String log_file_path_,
+    size_t max_tail_for_drain_)
     : source(std::move(source_))
     , stored_objects(objects)
     , caches(std::move(caches_))
@@ -184,6 +185,7 @@ ReaderExecutor::ReaderExecutor(
     , window_size(window_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , block_size(block_size_)
+    , max_tail_for_drain(max_tail_for_drain_)
 {
     if (window_size == 0 || block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -533,6 +535,27 @@ void ReaderExecutor::accountLiveBufferDrop(bool at_eof)
         drained = live_buffer->current_position >= *live_buffer->read_until;
     if (!drained)
         ++stats.incomplete_connections;
+}
+
+void ReaderExecutor::maybeDrainLiveTail()
+{
+    /// Called just before dropping a live connection that is not at its bound. If
+    /// only a small tail remains, read it out so the connection completes and is
+    /// returned to the pool reusable (no incomplete connection) rather than reset.
+    /// The drained bytes cross the wire - charged as over-read. Worth it only for a
+    /// tail below the I-weight/bandwidth breakeven; bounded by `max_tail_for_drain`.
+    if (!live_buffer || !live_buffer->read_until)
+        return;
+    const size_t bound = *live_buffer->read_until;
+    if (live_buffer->current_position >= bound)
+        return; /// already drained; releaseLiveBufferAtBound covers this
+    const size_t tail = bound - live_buffer->current_position;
+    if (tail > max_tail_for_drain)
+        return;
+    const size_t skipped = skipLiveBufferForward(tail);
+    stats.bytes_from_source += skipped;
+    stats.over_read_bytes += skipped;
+    live_buffer->current_position += skipped;
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -1017,6 +1040,7 @@ void ReaderExecutor::seek(size_t new_position)
         {
             LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
                 live_buffer->slot.objectPath(), live_buffer->current_position);
+            maybeDrainLiveTail();
             accountLiveBufferDrop(/*at_eof=*/false);
             live_buffer.reset();
             inflight_segment_pin.reset();
@@ -1197,6 +1221,7 @@ Rope ReaderExecutor::readFromSource(
     {
         LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
             live_buffer->slot.objectPath(), live_buffer->current_position, object.remote_path, offset);
+        maybeDrainLiveTail();
         accountLiveBufferDrop(/*at_eof=*/false);
         live_buffer.reset();
         inflight_segment_pin.reset();
@@ -1582,6 +1607,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
             && (!live_buffer->read_until || next_local <= *live_buffer->read_until);
         if (!bridgeable)
         {
+            maybeDrainLiveTail();
             accountLiveBufferDrop(/*at_eof=*/false);
             live_buffer.reset();
         }
@@ -1643,7 +1669,7 @@ std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t st
     /// spam `system.reader_executor_log`.
     auto t = std::make_unique<ReaderExecutor>(
         source, stored_objects, caches,
-        window_size, min_bytes_for_seek, block_size, log_file_path);
+        window_size, min_bytes_for_seek, block_size, log_file_path, max_tail_for_drain);
 
     t->buffer_limit = buffer_limit;
 

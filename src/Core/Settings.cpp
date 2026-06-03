@@ -761,8 +761,10 @@ Use the `ReaderExecutor`-based read pipeline instead of the matryoshka `ReadBuff
 Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_executor`) at normal memory pressure.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, 1048576, R"(
 Rope-node / block size for the experimental `ReaderExecutor`; also the window used for live and local reads.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 8388608, R"(
-Minimum gap between miss ranges before the `ReaderExecutor` issues a separate source read instead of merging.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
+Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
+Drain bound for the experimental `ReaderExecutor`: a live source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_use_live_connections, true, R"(
 Reuse a bounded live source connection across windows in the experimental `ReaderExecutor`. When disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
