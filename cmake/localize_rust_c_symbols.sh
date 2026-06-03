@@ -12,15 +12,22 @@
 # our own implementations instead.  All other symbols (Rust-mangled, crate
 # FFI, etc.) are left untouched.
 #
-# Usage: localize_rust_c_symbols.sh <library.a> <objcopy>
+# Usage: localize_rust_c_symbols.sh <library.a> <ar> <objcopy> <nm>
+#
+# The ar/objcopy/nm tools must come from a compatible LLVM toolchain
+# (e.g. llvm-ar, llvm-objcopy, llvm-nm).  CMake resolves them via
+# ch_find_program and passes the full paths so this script never has to
+# search $PATH or infer one tool's name from another.
 
 set -eu
 
-LIB_PATH="$1"
-OBJCOPY="$2"
+LIB_PATH="${1:-}"
+AR="${2:-}"
+OBJCOPY="${3:-}"
+NM="${4:-}"
 
-if [ -z "$LIB_PATH" ] || [ -z "$OBJCOPY" ]; then
-    echo "Usage: $0 <library.a> <objcopy>" >&2
+if [ -z "$LIB_PATH" ] || [ -z "$AR" ] || [ -z "$OBJCOPY" ] || [ -z "$NM" ]; then
+    echo "Usage: $0 <library.a> <ar> <objcopy> <nm>" >&2
     exit 1
 fi
 
@@ -80,22 +87,17 @@ WORK_DIR=""
 cleanup() { rm -f "$TMPFILE"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; true; }
 trap cleanup EXIT
 
-if ! command -v llvm-nm >/dev/null 2>&1; then
-    echo "Error: llvm-nm not found in PATH (required for Rust C-symbol localization)" >&2
-    exit 1
-fi
-
-# Get all global defined symbols from the library. llvm-nm may print per-member errors for non-ELF archive
+# Get all global defined symbols from the library. nm may print per-member errors for non-ELF archive
 # members (e.g. debug metadata objects) - those are non-fatal as long as at least one ELF member is read.
 # A truly broken/missing archive produces empty output and is caught below.
-llvm-nm "$LIB_PATH" 2>/dev/null \
+"$NM" "$LIB_PATH" 2>/dev/null \
     | grep -E '^[0-9a-f]+ [TDBCWV] ' \
     | awk '{print $3}' \
     | sort -u \
     > "$TMPFILE" || true
 
 if [ ! -s "$TMPFILE" ]; then
-    echo "Error: llvm-nm produced no symbols for $LIB_PATH; cannot localize Rust C symbols" >&2
+    echo "Error: $NM produced no symbols for $LIB_PATH; cannot localize Rust C symbols" >&2
     exit 1
 fi
 
@@ -113,16 +115,6 @@ if [ -n "$LOCALIZE_FLAGS" ]; then
     # that cause llvm-objcopy to fail.  In that case, fall back to extracting
     # individual members, processing only valid ELF objects, and repacking.
     if ! $OBJCOPY $LOCALIZE_FLAGS "$LIB_PATH" 2>/dev/null; then
-        # Substitute only inside the basename so a directory containing `objcopy`
-        # is not rewritten and a versioned name like `llvm-objcopy-21` still maps
-        # to `llvm-ar-21`.
-        OBJCOPY_NAME="${OBJCOPY##*/}"
-        AR_NAME="${OBJCOPY_NAME/objcopy/ar}"
-        if [ "$OBJCOPY_NAME" = "$OBJCOPY" ]; then
-            AR="$AR_NAME"
-        else
-            AR="${OBJCOPY%/*}/$AR_NAME"
-        fi
         WORK_DIR=$(mktemp -d)
 
         (cd "$WORK_DIR" && "$AR" x "$LIB_PATH")

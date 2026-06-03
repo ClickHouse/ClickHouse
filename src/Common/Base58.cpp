@@ -107,7 +107,7 @@ inline uint32_t b58_bswap32(uint32_t x)
 
 inline uint32_t b58_load_u32_be(const uint8_t * p)
 {
-    uint32_t v;
+    uint32_t v = 0;
     memcpy(&v, p, 4);
     return b58_bswap32(v);
 }
