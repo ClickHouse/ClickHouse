@@ -17,3 +17,8 @@ SELECT toStartOfMicrosecond(toDateTime64('2026-05-20 10:11:12.456789123', 9, 'UT
 
 -- Negative non-extreme inputs still round toward negative infinity.
 SELECT toStartOfSecond(toDateTime64(-123.456, 3, 'UTC'));
+
+-- Negative pre-epoch inputs with sub-second truncation must normalize by the
+-- dropped unit, not by a full second. For -123.456789 the result is -123.457000.
+SELECT toStartOfMillisecond(toDateTime64(-123.456789, 6, 'UTC'));
+SELECT toStartOfMicrosecond(toDateTime64(-123.456789123, 9, 'UTC'));

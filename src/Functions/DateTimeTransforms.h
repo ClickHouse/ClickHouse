@@ -1014,7 +1014,7 @@ struct ToStartOfMillisecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000;
 
         /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
         return static_cast<DateTime64>(static_cast<UInt64>(datetime64) - static_cast<UInt64>(droppable_part_with_sign));
@@ -1037,7 +1037,7 @@ struct ToStartOfMillisecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000;
 
         /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
         return static_cast<Time64>(static_cast<UInt64>(time64) - static_cast<UInt64>(droppable_part_with_sign));
@@ -1086,7 +1086,7 @@ struct ToStartOfMicrosecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(datetime64, scale_multiplier / 1000000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000000;
 
         /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
         return static_cast<DateTime64>(static_cast<UInt64>(datetime64) - static_cast<UInt64>(droppable_part_with_sign));
@@ -1110,7 +1110,7 @@ struct ToStartOfMicrosecondImpl
             = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000000);
 
         if (droppable_part_with_sign < 0)
-            droppable_part_with_sign += scale_multiplier;
+            droppable_part_with_sign += scale_multiplier / 1000000;
 
         /// Use unsigned arithmetic to avoid signed overflow UB for inputs near `INT64_MIN`.
         return static_cast<Time64>(static_cast<UInt64>(time64) - static_cast<UInt64>(droppable_part_with_sign));
