@@ -212,12 +212,19 @@ class RandomServerRestarter(RandomRestarter):
 
     def _stop_graceful(self) -> None:
         logging.info("%s: graceful stop via clickhouse stop", self.NAME)
-        subprocess.run(
-            "clickhouse stop --max-tries 60",
+        ret = subprocess.run(
+            "clickhouse stop --do-not-kill --max-tries 60",
             shell=True,
             capture_output=True,
             timeout=90,
         )
+        if ret.returncode != 0:
+            logging.warning(
+                "%s: graceful stop failed (rc=%d), falling back to SIGKILL",
+                self.NAME,
+                ret.returncode,
+            )
+            self._stop_hard()
 
     def _start_and_wait(self) -> None:
         self._wait_port_free(9000)
@@ -263,7 +270,7 @@ class RandomMinIORestarter(RandomRestarter):
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
-                    "mc ls clickminio/test",
+                    "/mc ls clickminio/test",
                     shell=True,
                     capture_output=True,
                     timeout=5,
@@ -304,7 +311,7 @@ class RandomMinIORestarter(RandomRestarter):
 
         logging.info("%s: starting MinIO", self.NAME)
         subprocess.Popen(
-            f"nohup minio server --address :{self.MINIO_PORT} {self._minio_data_dir} "
+            f"nohup /minio server --address :{self.MINIO_PORT} {self._minio_data_dir} "
             ">/dev/null 2>&1 &",
             shell=True,
         )
@@ -1033,7 +1040,14 @@ def main():
     if not args.no_random_query_killer and not args.upgrade_check:
         chaos_threads.append(RandomQueryKiller(interval=3.0))
     if not args.no_random_azurite_restart and not args.upgrade_check:
-        chaos_threads.append(RandomAzuriteRestarter(min_interval=120.0, max_interval=300.0))
+        # Azurite runs --in-memory; a restart wipes all blobs. When Azure is
+        # the default MergeTree storage policy, ClickHouse metadata would
+        # reference objects that vanished with the process — testing data loss,
+        # not retry/reconnect. Only enable when blobs are ephemeral test data.
+        if os.environ.get("USE_AZURE_STORAGE_FOR_MERGE_TREE") == "1":
+            logging.info("Skipping RandomAzuriteRestarter: Azure is the MergeTree storage backend")
+        else:
+            chaos_threads.append(RandomAzuriteRestarter(min_interval=120.0, max_interval=300.0))
     if not args.no_random_minio_restart and not args.upgrade_check and args.minio_data_dir:
         chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=120.0, max_interval=300.0))
     if not args.no_random_redpanda_restart and not args.upgrade_check:
