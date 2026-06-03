@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 
@@ -163,7 +164,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
-    bool allow_to_use_not_exact_filter;
+    bool allow_to_use_not_exact_filter = false;
     readBinary(allow_to_use_not_exact_filter, ctx.in);
 
     const UInt64 exact_values_limit = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit];
@@ -219,6 +220,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     }
 }
 
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("BuildRuntimeFilter", BuildRuntimeFilterStep::deserialize);
