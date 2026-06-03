@@ -12,13 +12,7 @@
 namespace DB
 {
 
-#if defined(OS_LINUX)
-/// Silk::FiberLocal implements the thread-local storage abstraction
-/// for both plain threads and silk fibers.
-Silk::FiberLocal<ThreadStatus *, Silk::CurrentThreadSlot> current_thread;
-#else
 thread_local ThreadStatus constinit * current_thread = nullptr;
-#endif
 
 namespace ErrorCodes
 {

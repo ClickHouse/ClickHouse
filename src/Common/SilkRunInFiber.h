@@ -2,12 +2,14 @@
 
 #if defined(OS_LINUX)
 
+#include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
 
 #include <silk/fibers/fiber.h>
 #include <silk/fibers/future.h>
 
+#include <mutex>
 #include <type_traits>
 #include <utility>
 
@@ -22,6 +24,8 @@ struct FiberParams
 {
     DB::ThreadGroupPtr thread_group;
     F func;
+
+    DB::ThreadStatus * saved_current_thread;
 };
 
 template <typename F>
@@ -33,12 +37,25 @@ int fiberMain(FiberParams<F> * params) noexcept
     return 0;
 }
 
+template <typename F>
+inline void onFiberResumeSuspend(silk::Fiber * fiber) noexcept
+{
+    auto params = static_cast<FiberParams<F> *>(silk::FiberScheduler::getFiberParameters(fiber));
+    std::swap(params->saved_current_thread, DB::current_thread);
+}
+
 }
 
 template <typename F>
 [[nodiscard]] int RunInFiber(F && func, DB::ThreadGroupPtr thread_group, silk::FiberFuture & future)
 {
     using Func = std::decay_t<F>;
+    static silk::FiberScheduler::Options options =
+    {
+        .fiberResume = &onFiberResumeSuspend<F>,
+        .fiberSuspend = &onFiberResumeSuspend<F>,
+    };
+
     return silk::FiberScheduler::run(
         &detail::fiberMain<Func>,
         detail::FiberParams<Func>
@@ -46,7 +63,9 @@ template <typename F>
             .thread_group = std::move(thread_group),
             .func = std::forward<F>(func),
         },
-        &future);
+        &future,
+        options
+    );
 }
 
 template <typename F>
