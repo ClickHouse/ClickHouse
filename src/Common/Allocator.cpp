@@ -75,7 +75,7 @@ void * allocImpl(size_t size, size_t alignment)
 {
     auto trace = CurrentMemoryTracker::alloc(size);
 
-    void * buf;
+    void * buf = nullptr;
     if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
     {
         if constexpr (clear_memory)
@@ -141,7 +141,7 @@ void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 
 
 template <bool clear_memory_, bool populate>
-void Allocator<clear_memory_, populate>::free(void * buf, size_t size)
+void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /* alignment */)
 {
     try
     {

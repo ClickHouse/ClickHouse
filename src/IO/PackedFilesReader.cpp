@@ -31,7 +31,7 @@ PackedFilesReader::PackedFilesReader(
 
 PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
 {
-    UInt8 version;
+    UInt8 version = 0;
     readIntBinary(version, in);
 
     if (version > PackedFilesIO::VERSION)
@@ -39,13 +39,13 @@ PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
             "Unknown format ({}) of packed data", std::to_string(version));
 
     PackedFilesIO::Index index;
-    size_t num_files;
+    size_t num_files = 0;
     readIntBinary(num_files, in);
 
     for (size_t i = 0; i < num_files; ++i)
     {
         String file_name;
-        PackedFilesIO::FileOffset offset;
+        PackedFilesIO::FileOffset offset{};
 
         readStringBinary(file_name, in);
         readIntBinary(offset.offset, in);
@@ -80,9 +80,9 @@ Names PackedFilesReader::getFileNames() const
 
 static ReadSettings patchSettings(ReadSettings settings)
 {
-    settings.direct_io_threshold = 0;
-    if (settings.local_fs_method == LocalFSReadMethod::mmap)
-        settings.local_fs_method = LocalFSReadMethod::pread;
+    settings.local_fs_settings.direct_io_threshold = 0;
+    if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
+        settings.local_fs_settings.method = LocalFSReadMethod::pread;
     return settings;
 }
 
