@@ -293,86 +293,81 @@ public:
         return std::make_shared<DiskCacheProvider>(fc, cache_settings, /*query_id_=*/"q");
     }
 
-    /// One consumer pass over [0, file_size) on a fresh executor sharing `fc`.
-    /// The metric is read entirely from the test's thread-group ProfileEvents (the
-    /// fixture's QueryScope) — no inspection API on the executor; the same counters
-    /// production reads. The executor flushes its counters to the thread group, so
-    /// the deltas are taken across the executor's lifetime.
-    CostVector runRound(
+    /// Source-buffer slot budget for the executor: >0 -> the live path (a reusable
+    /// connection across windows); 0 -> no budget, every read is a short-lived
+    /// one-shot connection (the stateless path).
+    size_t buffer_slots = 10;
+
+    /// A list of reads, each (offset, optional size); a nullopt size reads to the end
+    /// of the file (FILE_SIZE - offset).
+    using ReadList = std::vector<std::pair<size_t, std::optional<size_t>>>;
+
+    /// Run `reads` on a fresh executor sharing `fc`. One read is a sequential pass;
+    /// several model one reader seeking between mark ranges. Geometry (window, block,
+    /// min_bytes_for_seek, file size) comes from the shared constants; `buffer_slots`
+    /// selects the live (>0) vs stateless (0) source path.
+    void executeReads(
         const std::shared_ptr<FileCache> & fc,
         const std::unordered_map<String, String> & data,
         const StoredObjects & objects,
-        size_t file_size, size_t window, size_t block,
-        size_t read_offset = 0, std::optional<size_t> read_size = std::nullopt)
+        const ReadList & reads)
     {
-        const size_t want = read_size.value_or(file_size - read_offset);
-        CostVector m;
-        size_t bytes_read = 0;
+        size_t want_total = 0;
+        for (const auto & rd : reads)
+            want_total += rd.second.value_or(FILE_SIZE - rd.first);
+
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(makeDiskProvider(fc));
+        auto src = std::make_shared<MemBoundedSource>(data);
+        ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK, BLOCK);
+        executor.setBufferLimit(std::make_shared<SourceBufferLimit>(buffer_slots));
+
+        size_t total = 0;
+        for (const auto & rd : reads)
         {
-            MetricScope scope(m);
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-            caches.push_back(makeDiskProvider(fc));
-
-            auto src = std::make_shared<MemBoundedSource>(data);
-            ReaderExecutor executor(src, objects, std::move(caches), window, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK, block);
-            executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
-            if (read_offset > 0)
-                executor.seek(read_offset);
-            executor.setReadExtent(read_offset + want);
-
-            while (true)
+            const size_t offset = rd.first;
+            const size_t want = rd.second.value_or(FILE_SIZE - offset);
+            if (executor.getPosition() != offset)
+                executor.seek(offset);
+            executor.setReadExtent(offset + want);
+            size_t got = 0;
+            while (got < want)
             {
                 auto rope = executor.readNextWindow();
                 if (rope.empty())
                     break;
-                bytes_read += rope.range().size;
+                got += rope.range().size;
             }
+            total += got;
         }
-        EXPECT_EQ(bytes_read, want);
-        return m;
+        EXPECT_EQ(total, want_total);
     }
 
-    /// Several seek+read operations on ONE executor (random access), accumulating
-    /// the metric across all of them — models one reader seeking between mark ranges.
-    /// `reads` is a list of (offset, size).
-    CostVector runReads(
+    /// Initialise the cache state by reading (and thus caching) `ranges`. Not measured
+    /// — only populates `fc` before a measured read pattern.
+    void warmCache(
         const std::shared_ptr<FileCache> & fc,
         const std::unordered_map<String, String> & data,
         const StoredObjects & objects,
-        size_t window, size_t block,
-        const std::vector<std::pair<size_t, size_t>> & reads)
+        const ReadList & ranges)
     {
-        size_t total = 0;
-        size_t want = 0;
-        for (const auto & rd : reads)
-            want += rd.second;
+        executeReads(fc, data, objects, ranges);
+    }
 
+    /// Perform a read pattern and return the executor's metric for it, read from the
+    /// test's thread-group ProfileEvents (the same counters production reads). The
+    /// executor flushes its counters in its destructor, inside the MetricScope.
+    CostVector measure(
+        const std::shared_ptr<FileCache> & fc,
+        const std::unordered_map<String, String> & data,
+        const StoredObjects & objects,
+        const ReadList & reads)
+    {
         CostVector m;
         {
             MetricScope scope(m);
-            VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-            caches.push_back(makeDiskProvider(fc));
-
-            auto src = std::make_shared<MemBoundedSource>(data);
-            ReaderExecutor executor(src, objects, std::move(caches), window, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK, block);
-            executor.setBufferLimit(std::make_shared<SourceBufferLimit>(10));
-
-            for (const auto & rd : reads)
-            {
-                executor.seek(rd.first);
-                executor.setReadExtent(rd.first + rd.second);
-                size_t got = 0;
-                while (got < rd.second)
-                {
-                    auto rope = executor.readNextWindow();
-                    if (rope.empty())
-                        break;
-                    got += rope.range().size;
-                }
-                total += got;
-            }
+            executeReads(fc, data, objects, reads);
         }
-        EXPECT_EQ(total, want);
         return m;
     }
 
@@ -394,8 +389,8 @@ TEST_F(ReaderExecutorMetric, ColdSequential)
 
     auto fc = makeFileCache("cold_seq", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
-    const CostVector r2 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
+    const CostVector r2 = measure(fc, data, objects, {{0, std::nullopt}});
 
     std::cout << "[ColdSequential] round1: " << r1.str() << "\n"
               << "[ColdSequential] round2: " << r2.str() << "\n"
@@ -432,10 +427,10 @@ TEST_F(ReaderExecutorMetric, CheckerboardLive)
 
     /// Warm even segments; odd segments stay cold -> hit/miss/... on the scan.
     for (size_t s = 0; s < N_SEGMENTS; s += 2)
-        runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK, /*read_offset=*/s * SEGMENT, /*read_size=*/SEGMENT);
+        warmCache(fc, data, objects, {{s * SEGMENT, SEGMENT}});
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);   /// the checkerboard scan
-    const CostVector r2 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);   /// now fully warm
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});   /// the checkerboard scan
+    const CostVector r2 = measure(fc, data, objects, {{0, std::nullopt}});   /// now fully warm
 
     std::cout << "[CheckerboardLive] round1: " << r1.str() << "\n"
               << "[CheckerboardLive] round2: " << r2.str() << "\n";
@@ -464,7 +459,7 @@ TEST_F(ReaderExecutorMetric, MidSegmentOverRead)
     auto fc = makeFileCache("midseg", SEGMENT, ALIGNMENT, /*max_size=*/16u << 20);
 
     const size_t read_off = SEGMENT - BLOCK;   /// 31 KiB into the first 32 KiB segment
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK, read_off, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{read_off, BLOCK}});
 
     std::cout << "[MidSegmentOverRead] " << r1.str()
               << "  (read_off=" << read_off << " ALIGNMENT=" << ALIGNMENT
@@ -488,9 +483,9 @@ TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
     objects.emplace_back("obj", "", FILE_SIZE);
 
     auto fc = makeFileCache("prefix_hit", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK, /*read_offset=*/0, /*read_size=*/half);  /// warm [0, half)
+    warmCache(fc, data, objects, {{0, half}});  /// warm [0, half)
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
     std::cout << "[PrefixHitSuffixMiss] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, 1u) << "the contiguous cold suffix is one streamed GET";
@@ -513,9 +508,9 @@ TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
     objects.emplace_back("obj", "", FILE_SIZE);
 
     auto fc = makeFileCache("suffix_hit", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK, /*read_offset=*/half, /*read_size=*/half);  /// warm [half, end)
+    warmCache(fc, data, objects, {{half, half}});  /// warm [half, end)
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
     std::cout << "[SuffixHitPrefixMiss] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, 1u) << "the contiguous cold prefix is one streamed GET";
@@ -535,11 +530,10 @@ TEST_F(ReaderExecutorMetric, InteriorHole)
     objects.emplace_back("obj", "", FILE_SIZE);
 
     auto fc = makeFileCache("interior_hole", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK, /*read_offset=*/0, /*read_size=*/hole * SEGMENT);
-    runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK,
-             /*read_offset=*/(hole + 1) * SEGMENT, /*read_size=*/FILE_SIZE - (hole + 1) * SEGMENT);
+    warmCache(fc, data, objects, {{0, hole * SEGMENT},
+                                  {(hole + 1) * SEGMENT, FILE_SIZE - (hole + 1) * SEGMENT}});
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
     std::cout << "[InteriorHole] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, 1u);
@@ -565,11 +559,11 @@ TEST_F(ReaderExecutorMetric, RandomScattered)
 
     auto fc = makeFileCache("random_scattered", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
 
-    std::vector<std::pair<size_t, size_t>> reads;
+    ReadList reads;
     for (size_t i = 0; i < n_points; ++i)
         reads.emplace_back(i * SEGMENT + off_in_seg, point);
 
-    const CostVector r1 = runReads(fc, data, objects, WINDOW, BLOCK, reads);
+    const CostVector r1 = measure(fc, data, objects, reads);
     std::cout << "[RandomScattered] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, n_points) << "one GET per scattered point (seeks break reuse)";
@@ -595,11 +589,11 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
 
     auto fc = makeFileCache("random_runs", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
 
-    std::vector<std::pair<size_t, size_t>> reads;
+    ReadList reads;
     for (size_t i = 0; i < n_runs; ++i)
         reads.emplace_back(i * SEGMENT + off_in_seg, run);
 
-    const CostVector r1 = runReads(fc, data, objects, WINDOW, BLOCK, reads);
+    const CostVector r1 = measure(fc, data, objects, reads);
     std::cout << "[RandomPartialSequences] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, n_runs) << "one streamed GET per run";
@@ -622,19 +616,19 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 
     /// Warm every segment except 4 scattered cold ones (each followed by a warm segment).
     const std::vector<size_t> cold = {6, 13, 20, 27};
+    ReadList warm_ranges;
     size_t prev = 0;
     for (size_t c : cold)
     {
         if (c > prev)
-            runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK,
-                     /*read_offset=*/prev * SEGMENT, /*read_size=*/(c - prev) * SEGMENT);
+            warm_ranges.emplace_back(prev * SEGMENT, (c - prev) * SEGMENT);
         prev = c + 1;
     }
     if (prev < N_SEGMENTS)
-        runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK,
-                 /*read_offset=*/prev * SEGMENT, /*read_size=*/(N_SEGMENTS - prev) * SEGMENT);
+        warm_ranges.emplace_back(prev * SEGMENT, (N_SEGMENTS - prev) * SEGMENT);
+    warmCache(fc, data, objects, warm_ranges);
 
-    const CostVector r1 = runRound(fc, data, objects, FILE_SIZE, WINDOW, BLOCK);
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
     std::cout << "[SparseScatteredCold] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, cold.size()) << "one GET per cold segment";
@@ -655,14 +649,66 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
 
     auto fc = makeFileCache("reverse_seq", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
 
-    std::vector<std::pair<size_t, size_t>> reads;
+    ReadList reads;
     for (size_t s = N_SEGMENTS; s-- > 0;)
         reads.emplace_back(s * SEGMENT, SEGMENT);
 
-    const CostVector r1 = runReads(fc, data, objects, WINDOW, BLOCK, reads);
+    const CostVector r1 = measure(fc, data, objects, reads);
     std::cout << "[ReverseSequential] " << r1.str() << "\n";
 
     EXPECT_EQ(r1.requests, N_SEGMENTS) << "one GET per chunk - backward seeks defeat forward streaming (vs 1 for forward cold)";
     EXPECT_EQ(r1.incomplete, 0u) << "each extent-bounded chunk drains cleanly";
     EXPECT_EQ(r1.over_read, 0u) << "segment-aligned chunks, no prefix over-read";
+}
+
+/// Live path (slot budget) vs no-budget path on the SAME contiguous cold scan. The
+/// live path streams the whole scan on ONE reused connection (R=1); with no budget
+/// every window is a fresh short-lived one-shot connection (R = one per window), i.e.
+/// the connection-pool churn that exhausting `max_remote_read_connections` produces.
+/// Both stay bounded on a known-size source, so neither leaves an incomplete (I=0).
+TEST_F(ReaderExecutorMetric, LiveVsStatelessConnections)
+{
+    const String content = makePattern(FILE_SIZE);
+    const std::unordered_map<String, String> data{{"obj", content}};
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    buffer_slots = 10;  // live: budget for a reusable connection
+    auto fc_live = makeFileCache("live", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+    const CostVector live = measure(fc_live, data, objects, {{0, std::nullopt}});
+
+    buffer_slots = 0;   // no budget: every read is a short-lived one-shot connection
+    auto fc_sl = makeFileCache("stateless", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+    const CostVector stateless = measure(fc_sl, data, objects, {{0, std::nullopt}});
+
+    std::cout << "[LiveVsStateless] live:      " << live.str() << "\n"
+              << "[LiveVsStateless] stateless: " << stateless.str() << "\n";
+
+    EXPECT_EQ(live.requests, 1u) << "live path streams the contiguous cold scan on one reused connection";
+    EXPECT_GT(stateless.requests, live.requests) << "no-budget path opens one short-lived connection per window";
+    EXPECT_EQ(live.incomplete, 0u);
+    EXPECT_EQ(stateless.incomplete, 0u) << "bounded reads on a known-size source never leave an incomplete connection";
+}
+
+/// The checkerboard from CheckerboardLive but with NO connection budget: each cold run
+/// is short-lived one-shot reads, so there is no reused connection to abandon at a
+/// cached gap -> I=0 (vs CheckerboardLive's I=15). The cost shifts entirely into the
+/// request count - the live-vs-stateless trade-off (reuse + possible incomplete vs
+/// no reuse + connection churn).
+TEST_F(ReaderExecutorMetric, CheckerboardStateless)
+{
+    const String content = makePattern(FILE_SIZE);
+    const std::unordered_map<String, String> data{{"obj", content}};
+    StoredObjects objects;
+    objects.emplace_back("obj", "", FILE_SIZE);
+
+    auto fc = makeFileCache("checkerboard_sl", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+    for (size_t s = 0; s < N_SEGMENTS; s += 2)  // warm even segments (default budget)
+        warmCache(fc, data, objects, {{s * SEGMENT, SEGMENT}});
+
+    buffer_slots = 0;  // no budget for the measured checkerboard scan
+    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
+    std::cout << "[CheckerboardStateless] " << r1.str() << "\n";
+
+    EXPECT_EQ(r1.incomplete, 0u) << "no reused connection to abandon at a cached gap -> no incomplete connections";
 }
