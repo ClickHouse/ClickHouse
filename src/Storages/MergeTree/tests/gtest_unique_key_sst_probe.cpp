@@ -456,7 +456,7 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     ColumnPtr const_col = ColumnConst::create(std::move(inner), 1);
 
     Block block;
-    block.insert({std::move(const_col), type_u64, "k"});
+    block.insert({const_col, type_u64, "k"});
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
         *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
