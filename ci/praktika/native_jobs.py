@@ -2,6 +2,7 @@ import dataclasses
 import hashlib
 import json
 import platform
+import shlex
 import sys
 import traceback
 from pathlib import Path
@@ -445,6 +446,22 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     f"the following files:\n{changed}",
                 )
 
+        # The branch name comes from the PR event and is attacker-controlled for fork
+        # PRs. Git accepts ref names such as `foo$(id)`, so interpolating it into the
+        # push command below - where the GitHub App token is in scope - would allow a
+        # fork PR to execute arbitrary shell. Validate it as a real ref before use, and
+        # additionally quote it (and the repository) as data in the command itself.
+        if not Shell.check(
+            f"git check-ref-format {shlex.quote('refs/heads/' + branch)}",
+            verbose=True,
+        ):
+            return _result(
+                Result.Status.FAIL,
+                f"Workflows are outdated and the branch name is not a valid git ref - "
+                f"regenerate ('{Settings.PYTHON_INTERPRETER} -m praktika yaml'), commit "
+                f"and push the following files:\n{changed}",
+            )
+
         head_sha = info.sha
         # The head branch lives in the head repository, which is the fork for fork PRs
         # and the base repository (== fork_name here) for internal PRs.
@@ -485,11 +502,19 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             # by a fresh CI run. The token is read from the gh auth session and kept out
             # of the logs (verbose=False), and the inherited http extraheader is cleared
             # so the tokenized URL is the one that authenticates.
+            # `repo` and `branch` are attacker-controlled on fork PRs, so pass them as
+            # shell-quoted data. The token expands at runtime, so its literal `${token}`
+            # is kept outside the f-string and the URL is assembled by concatenation.
+            repo_url = (
+                "https://x-access-token:${token}@github.com/"
+                + shlex.quote(repo)
+                + ".git"
+            )
+            refspec = shlex.quote(f"{new_commit}:refs/heads/{branch}")
             push_cmd = (
                 'token="$(gh auth token)" && '
                 "git -c http.https://github.com/.extraheader= push "
-                f'"https://x-access-token:${{token}}@github.com/{repo}.git" '
-                f'"{new_commit}:refs/heads/{branch}"'
+                f"{repo_url} {refspec}"
             )
             pushed = Shell.check(push_cmd, verbose=False)
 
