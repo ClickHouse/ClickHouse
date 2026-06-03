@@ -25,14 +25,14 @@ ${CLICKHOUSE_LOCAL} --query "
 rm -f "$DB_FILE"
 
 echo "--- read a database created directly by the sqlite3 CLI, selecting a table by name ---"
-sqlite3 "$DB_FILE" 'CREATE TABLE animals(name TEXT, legs INTEGER); INSERT INTO animals VALUES (''cat'', 4), (''spider'', 8);'
-sqlite3 "$DB_FILE" 'CREATE TABLE colors(value TEXT); INSERT INTO colors VALUES (''red''), (''green'');'
+sqlite3 "$DB_FILE" "CREATE TABLE animals(name TEXT, legs INTEGER); INSERT INTO animals VALUES ('cat', 4), ('spider', 8);"
+sqlite3 "$DB_FILE" "CREATE TABLE colors(value TEXT); INSERT INTO colors VALUES ('red'), ('green');"
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT * FROM file('${DB_FILE}', SQLite, 'name String, legs UInt8') ORDER BY name
     SETTINGS input_format_sqlite_table_name = 'animals'"
 
-echo "--- writing to a non-file (a pipe) is not supported ---"
-${CLICKHOUSE_LOCAL} --query "SELECT 1 AS x FORMAT SQLite" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+echo "--- writing to a non-file is not supported ---"
+${CLICKHOUSE_LOCAL} --query "SELECT 1 AS x FORMAT SQLite" 2>&1 | grep -o "NOT_IMPLEMENTED" | head -n 1
 
 rm -f "$DB_FILE"

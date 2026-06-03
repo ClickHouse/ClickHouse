@@ -1,0 +1,18 @@
+--- write a SQLite database with the SQLite output format ---
+--- the produced file is a real SQLite database (read it with the sqlite3 CLI) ---
+0|0|
+1|1|1
+2|2|
+3|3|3
+4|4|
+--- read it back with the SQLite input format (round trip, including NULLs) ---
+0	0	\N
+1	1	1
+2	2	\N
+3	3	3
+4	4	\N
+--- read a database created directly by the sqlite3 CLI, selecting a table by name ---
+cat	4
+spider	8
+--- writing to a non-file is not supported ---
+NOT_IMPLEMENTED

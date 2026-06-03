@@ -95,7 +95,10 @@ void SQLiteOutputFormat::writePrefix()
             columns_definition += ", ";
             placeholders += ", ";
         }
-        columns_definition += quoteSQLiteIdentifier(names_and_types[i].name) + " " + names_and_types[i].type->getName();
+        /// Declare the column without a type. SQLite is dynamically typed, and ClickHouse type
+        /// names (such as `Nullable(UInt64)`) are not valid SQLite type names anyway. Without a
+        /// declared type the column has no affinity, so the values we bind as text are stored as is.
+        columns_definition += quoteSQLiteIdentifier(names_and_types[i].name);
         placeholders += "?";
         serializations.emplace_back(names_and_types[i].type->getDefaultSerialization());
     }
