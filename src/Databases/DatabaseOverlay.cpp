@@ -709,6 +709,7 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
     }
 }
 
+void registerDatabaseOverlay(DatabaseFactory & factory);
 void registerDatabaseOverlay(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
