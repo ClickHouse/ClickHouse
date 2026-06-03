@@ -33,6 +33,7 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -384,7 +385,7 @@ void triggerWatchCallback(
 {
     ProfileEvents::increment(watchTriggeredProfileEvent(event_or_callback.getKind()));
 
-    const auto start_time = std::chrono::steady_clock::now();
+    DB::ProfileEventTimeIncrement<DB::Microseconds> watch_callback_duration(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds);
     try
     {
         event_or_callback.invoke(response);
@@ -394,11 +395,9 @@ void triggerWatchCallback(
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackErrors);
         if (log)
             tryLogCurrentException(log);
+        else
+            tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - start_time).count();
-    ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds, elapsed_us);
 }
 
 }
