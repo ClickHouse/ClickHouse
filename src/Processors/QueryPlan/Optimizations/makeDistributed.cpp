@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/BroadcastExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 
@@ -135,6 +136,43 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         auto get_node_name = [](const auto * e) { return e->result_name; };
         auto join_keys_a = std::ranges::to<Names>(key_dags->first.keys | std::views::transform(get_node_name));
         auto join_keys_b = std::ranges::to<Names>(key_dags->second.keys | std::views::transform(get_node_name));
+
+        /// For mismatched key types, hash both sides at their common supertype so matching
+        /// rows colocate. The cast is internal to scatter; output rows keep their types.
+        chassert(key_dags->first.keys.size() == key_dags->second.keys.size());
+        DataTypes hash_cast_types_a;
+        DataTypes hash_cast_types_b;
+        bool any_cast_needed = false;
+        for (size_t i = 0; i < key_dags->first.keys.size(); ++i)
+        {
+            const auto & left_type = key_dags->first.keys[i]->result_type;
+            const auto & right_type = key_dags->second.keys[i]->result_type;
+            if (left_type->equals(*right_type))
+            {
+                hash_cast_types_a.push_back(nullptr);
+                hash_cast_types_b.push_back(nullptr);
+                continue;
+            }
+
+            DataTypePtr common_type;
+            try
+            {
+                common_type = getLeastSupertype(DataTypes{left_type, right_type});
+            }
+            catch (const Exception &)
+            {
+                return;
+            }
+            hash_cast_types_a.push_back(common_type);
+            hash_cast_types_b.push_back(common_type);
+            any_cast_needed = true;
+        }
+        if (!any_cast_needed)
+        {
+            hash_cast_types_a.clear();
+            hash_cast_types_b.clear();
+        }
+
         if (!isPassthroughActions(key_dags->first.actions_dag))
             makeExpressionNodeOnTopOf(*source_a, std::move(key_dags->first.actions_dag), nodes, makeDescription("Calculate left join keys"));
         if (!isPassthroughActions(key_dags->second.actions_dag))
@@ -142,12 +180,12 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
         /// Add scatter exchange step above read from left source
         exchange_scatter_a_node = &nodes.emplace_back();
-        exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count);
+        exchange_scatter_a_node->step = std::make_unique<ScatterExchangeStep>(source_a->step->getOutputHeader(), join_keys_a, bucket_count, hash_cast_types_a);
         exchange_scatter_a_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_a, ", ")), optimization_settings.max_step_description_length);
 
         /// Add scatter exchange step above read from right source
         exchange_scatter_b_node = &nodes.emplace_back();
-        exchange_scatter_b_node->step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count);
+        exchange_scatter_b_node->step = std::make_unique<ScatterExchangeStep>(source_b->step->getOutputHeader(), join_keys_b, bucket_count, hash_cast_types_b);
         exchange_scatter_b_node->step->setStepDescription(fmt::format("by hash([{}])", fmt::join(join_keys_b, ", ")), optimization_settings.max_step_description_length);
     }
 
@@ -436,7 +474,7 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
         return;
 
     auto shuffle_step = std::make_unique<ShuffleExchangeStep>(node->children[0]->step->getOutputHeader(), scatter_step->getKeys(),
-        gather_step->getSourceBucketCount(), scatter_step->getResultBucketCount());
+        gather_step->getSourceBucketCount(), scatter_step->getResultBucketCount(), scatter_step->getHashCastTypes());
     shuffle_step->setStepDescription(*scatter_step);
     node->step = std::move(shuffle_step);
     node->children = std::move(node->children[0]->children);

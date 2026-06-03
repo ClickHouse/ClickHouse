@@ -18,7 +18,7 @@ std::pair<QueryPlanStepPtr, QueryPlanStepPtr> ScatterExchangeStep::createSinkAnd
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ScatterExchangeStep should have one source shard, got {}", source_shards.size());
 
     size_t num_buckets = getResultBucketCount();
-    auto sink = std::make_unique<ShuffleSendStep>(input_headers.front(), exchange_id, key_names, num_buckets);
+    auto sink = std::make_unique<ShuffleSendStep>(input_headers.front(), exchange_id, key_names, num_buckets, hash_cast_types);
 
     auto source = std::make_unique<ShuffleReceiveStep>(output_header, exchange_id, source_shards);
 

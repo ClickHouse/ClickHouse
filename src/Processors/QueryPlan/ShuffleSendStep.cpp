@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -32,7 +33,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
             key_columns.push_back(stream_header->getPositionByName(key_name));
 
         pipeline.resize(1);
-        auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns);
+        auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns, hash_cast_types);
         pipeline.addTransform(scatter);
     }
 
@@ -80,6 +81,10 @@ void ShuffleSendStep::serialize(Serialization & ctx) const
     writeStringBinary(exchange_id, ctx.out);
     serializeNames(key_names, ctx.out);
     writeVarUInt(num_buckets, ctx.out);
+
+    writeVarUInt(hash_cast_types.size(), ctx.out);
+    for (const auto & type : hash_cast_types)
+        writeStringBinary(type ? type->getName() : "", ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & ctx)
@@ -93,7 +98,18 @@ std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & c
     size_t num_buckets = 0;
     readVarUInt(num_buckets, ctx.in);
 
-    return std::make_unique<ShuffleSendStep>(ctx.input_headers.front(), exchange_id, std::move(key_names), num_buckets);
+    size_t hash_cast_count = 0;
+    readVarUInt(hash_cast_count, ctx.in);
+    DataTypes hash_cast_types;
+    hash_cast_types.reserve(hash_cast_count);
+    for (size_t i = 0; i < hash_cast_count; ++i)
+    {
+        String type_name;
+        readStringBinary(type_name, ctx.in);
+        hash_cast_types.push_back(type_name.empty() ? nullptr : DataTypeFactory::instance().get(type_name));
+    }
+
+    return std::make_unique<ShuffleSendStep>(ctx.input_headers.front(), exchange_id, std::move(key_names), num_buckets, std::move(hash_cast_types));
 }
 
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
