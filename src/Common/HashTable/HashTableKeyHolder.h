@@ -76,7 +76,7 @@ struct ArenaKeyHolder
     std::string_view key;
     Arena & pool;
     /// When key is not held by any external instance, then it is held by this unique_ptr.
-    std::unique_ptr<char[]> holder;
+    std::unique_ptr<char[]> holder{};
 
     ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
         : key(key_)
@@ -100,7 +100,6 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     // The clearable hash table doesn't use zero storage and
     // distinguishes empty keys by using cell version, not the value itself.
     // So, when an empty std::string_view is inserted in ClearableHashSet we'll get here key of zero size.
-    // assert(holder.key.size > 0);
     holder.key = std::string_view{holder.pool.insert(holder.key.data(), holder.key.size()), holder.key.size()};
 }
 
