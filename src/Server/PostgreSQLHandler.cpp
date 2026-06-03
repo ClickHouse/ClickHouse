@@ -261,8 +261,8 @@ void PostgreSQLHandler::run()
 
 bool PostgreSQLHandler::startup()
 {
-    Int32 payload_size;
-    Int32 info;
+    Int32 payload_size = 0;
+    Int32 info = 0;
     establishSecureConnection(payload_size, info);
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
@@ -900,7 +900,13 @@ void PostgreSQLHandler::processCloseQuery()
             /// fail with `Execute without prior Bind`.
             if (prepared_statements_manager.bindReferencesStatement(query->function_name))
                 prepared_statements_manager.resetBindQuery();
-            prepared_statements_manager.deleteStatement(query->function_name);
+            /// Per the PostgreSQL wire protocol, `Close` on a non-existent
+            /// prepared statement is not an error — it is a silent no-op that
+            /// still responds with `CloseComplete`. Using the throwing
+            /// `deleteStatement` here would propagate `BAD_ARGUMENTS` out of
+            /// the surrounding `try` block, send an `ErrorResponse`, and drop
+            /// the connection on a stray `Close`.
+            prepared_statements_manager.tryDeleteStatement(query->function_name);
         }
         else if (query->close_target == 'P')
         {
