@@ -1,0 +1,15 @@
+h04305_a	\N	exact	/test_04305/a	['GET']	query	SELECT 1 AS x
+/test_04305/a
+SELECT 1
+SHOW DATABASES
+SELECT 1 FORMAT JSONEachRow	CREATE HANDLER h04305_fmt URL \'/test_04305/fmt\' METHODS (GET) TYPE query AS SELECT 1 FORMAT JSONEachRow
+h04305_b	my_proto	prefix	/test_04305/b/	['GET','POST']	query
+['GET','POST','PUT','DELETE']
+h04305_c	regexp	/test_04305/c/(?P<id>[0-9]+)
+2
+h04305_post_a	['POST']
+/test_04305/a	['GET']	SELECT 42 AS y
+prefix	/test_04305/a_new	SELECT 42 AS y
+['GET','POST','PUT','DELETE']
+3
+0
