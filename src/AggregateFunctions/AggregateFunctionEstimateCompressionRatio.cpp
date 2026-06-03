@@ -206,18 +206,17 @@ public:
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
 
-        /// Persist finalized sizes so the next add()/resetBuffersIfNeeded() cycle
+        /// Persist finalized sizes so the next add()/resetCalculatorIfNeeded() cycle
         /// preserves all previously accumulated data. Without this, window functions
         /// with growing frames (e.g. UNBOUNDED PRECEDING AND CURRENT ROW) lose all
         /// prior data when the buffer is recreated after finalization.
         data(place).merged_uncompressed_size = uncompressed_size;
         data(place).merged_compressed_size = compressed_size;
 
-        /// Reset buffers so that a repeated insertResultInto without an
+        /// Reset the calculator so that a repeated insertResultInto without an
         /// intervening add (unchanged window frame) does not re-count the
         /// already-persisted finalized bytes.
-        data(place).compressed_buf.reset();
-        data(place).null_buf.reset();
+        data(place).calculator.reset();
 
         Float64 ratio = 0;
         if (compressed_size > 0)
