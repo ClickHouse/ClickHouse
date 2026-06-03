@@ -8,14 +8,14 @@
 -- lacks this check — it evaluates via dry-run where FunctionIn returns zeros for
 -- not-ready sets, producing a concrete FALSE that triggers ANTI conversion.
 
-DROP TABLE IF EXISTS t1_04094;
-DROP TABLE IF EXISTS t2_04094;
+DROP TABLE IF EXISTS t1_04305;
+DROP TABLE IF EXISTS t2_04305;
 
-CREATE TABLE t1_04094 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
-CREATE TABLE t2_04094 (a UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t1_04305 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t2_04305 (a UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
 
-INSERT INTO t1_04094 VALUES (1, 10), (2, 20), (3, 30);
-INSERT INTO t2_04094 VALUES (1, 100), (2, 200);
+INSERT INTO t1_04305 VALUES (1, 10), (2, 20), (3, 30);
+INSERT INTO t2_04305 VALUES (1, 100), (2, 200);
 
 -- Case 1: The filter toUInt64(1 IN (SELECT number FROM numbers(10))) > 0 is
 -- always TRUE at runtime. With the bug, FunctionIn dry_run returns 0 for the
@@ -23,8 +23,8 @@ INSERT INTO t2_04094 VALUES (1, 100), (2, 200);
 -- incorrectly converts ANY LEFT JOIN to ANTI JOIN — dropping all matched rows.
 -- Expected: all 3 rows (matched a=1,2 + unmatched a=3).
 SELECT a, b, c
-FROM t1_04094
-ANY LEFT JOIN t2_04094 USING (a)
+FROM t1_04305
+ANY LEFT JOIN t2_04305 USING (a)
 WHERE toUInt64(1 IN (SELECT number FROM numbers(10))) > 0
 ORDER BY a
 SETTINGS query_plan_filter_push_down = 0;
@@ -32,8 +32,8 @@ SETTINGS query_plan_filter_push_down = 0;
 -- Case 2: Same bug, but with globalIn — the set might not be ready even
 -- in the subquery pipeline stage. Same incorrect ANTI conversion expected.
 SELECT a, b, c
-FROM t1_04094
-ANY LEFT JOIN t2_04094 USING (a)
+FROM t1_04305
+ANY LEFT JOIN t2_04305 USING (a)
 WHERE toUInt64(1 GLOBAL IN (SELECT number FROM numbers(10))) > 0
 ORDER BY a
 SETTINGS query_plan_filter_push_down = 0;
@@ -42,11 +42,11 @@ SETTINGS query_plan_filter_push_down = 0;
 -- is FALSE, and no rows should be returned. This verifies the optimization
 -- doesn't break the NOT IN path.
 SELECT a, b, c
-FROM t1_04094
-ANY LEFT JOIN t2_04094 USING (a)
+FROM t1_04305
+ANY LEFT JOIN t2_04305 USING (a)
 WHERE toUInt64(1 NOT IN (SELECT number FROM numbers(10))) > 0
 ORDER BY a
 SETTINGS query_plan_filter_push_down = 0;
 
-DROP TABLE t1_04094;
-DROP TABLE t2_04094;
+DROP TABLE t1_04305;
+DROP TABLE t2_04305;
