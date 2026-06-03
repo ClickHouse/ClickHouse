@@ -84,8 +84,6 @@ public:
     bool runPostBuildPhase() override { return join->runPostBuildPhase(); }
     void onPostBuildPhaseFinish() override { join->onPostBuildPhaseFinish(); }
 
-    void setEnableLazyColumnsIndexing(bool value) override { join->setEnableLazyColumnsIndexing(value); }
-
 private:
     JoinPtr join;
     SizeLimits limits;

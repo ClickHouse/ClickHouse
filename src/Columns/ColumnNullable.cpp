@@ -228,7 +228,7 @@ std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n, const ICo
 
 void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    UInt8 val;
+    UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
     getNullMapData().push_back(val);
@@ -241,7 +241,7 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
 
 void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 val;
+    UInt8 val = 0;
     readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)

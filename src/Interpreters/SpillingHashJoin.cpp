@@ -284,14 +284,6 @@ void SpillingHashJoin::onPostBuildPhaseFinish()
         chosen_join->onPostBuildPhaseFinish();
 }
 
-void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
-{
-    if (hash_join)
-        hash_join->setEnableLazyColumnsIndexing(value);
-    if (concurrent_join)
-        concurrent_join->setEnableLazyColumnsIndexing(value);
-}
-
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 {
     if (concurrent_join)
