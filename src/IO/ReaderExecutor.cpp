@@ -204,9 +204,11 @@ ReaderExecutor::ReaderExecutor(
 
 ReaderExecutor::~ReaderExecutor()
 {
-    /// Cleanup, not a seek-away: `UNNEEDED` is not logged (matches legacy).
-    discardPrefetch(FilesystemPrefetchState::UNNEEDED);
-    drainAbandonedPrefetches(/*wait_finished=*/true);
+    /// Cleanup, not a seek-away: `UNNEEDED` is not logged (matches legacy). The
+    /// destructor-only variant never allocates (it waits for a cancelled-queued
+    /// prefetch inline instead of stashing it in `abandoned_prefetches`), so it
+    /// cannot throw `bad_alloc` from this `noexcept` destructor.
+    discardPrefetchForDestruction();
     CurrentMetrics::sub(CurrentMetrics::ReaderExecutorActive);
 
     /// A transient `readBigAt` executor rolls its stats into the parent via
@@ -317,7 +319,18 @@ ReaderExecutor::~ReaderExecutor()
         elem.prefetch_issued_cache_bytes = stats.prefetch_issued_cache_bytes;
         elem.prefetch_wasted_source_bytes = stats.prefetch_wasted_source_bytes;
         elem.prefetch_wasted_cache_bytes = stats.prefetch_wasted_cache_bytes;
-        reader_executor_log->add(std::move(elem));
+
+        /// `SystemLogQueue::push_back` allocates and can throw; this is a `noexcept`
+        /// destructor (often unwinding from another exception), so suppress and log
+        /// rather than `std::terminate`. The log row is best-effort observability.
+        try
+        {
+            reader_executor_log->add(std::move(elem));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to emit reader_executor_log row", LogsLevel::debug);
+        }
     }
 }
 
@@ -707,6 +720,43 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
     /// `UNNEEDED`, which the legacy path never logs — skip it too.
     if (reason != FilesystemPrefetchState::UNNEEDED)
         emitPrefetchLog(reason, static_cast<Int64>(prefetch_range.size));
+}
+
+void ReaderExecutor::discardPrefetchForDestruction()
+{
+    /// Destructor-only `discardPrefetch(UNNEEDED)`: it must not allocate, because a
+    /// throw from this `noexcept` destructor (often while unwinding from another
+    /// exception) calls `std::terminate`. The normal `discardPrefetch` stashes a
+    /// cancelled-but-queued handle in `abandoned_prefetches` so a *later* drain can
+    /// join the worker — but its `push_back` can throw `bad_alloc`. Here there is no
+    /// "later", so we just wait for the worker inline (no stash, no allocation).
+    /// `UNNEEDED` is not logged (matches `discardPrefetch` / legacy).
+    if (prefetch_handle)
+    {
+        auto local_handle = std::move(prefetch_handle);
+        const bool cancelled_before_run = local_handle->tryCancel();
+        if (!cancelled_before_run)
+            ++stats.prefetch_discarded_running;
+        try
+        {
+            std::ignore = local_handle->get(); /// blocks until the worker finishes
+            if (!cancelled_before_run)
+            {
+                stats.prefetch_wasted_source_bytes
+                    += stats.prefetch_issued_source_bytes - prefetch_issued_source_at_submit;
+                stats.prefetch_wasted_cache_bytes
+                    += stats.prefetch_issued_cache_bytes - prefetch_issued_cache_at_submit;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Prefetch discarded at destruction threw", LogsLevel::debug);
+        }
+    }
+
+    /// Join prefetches abandoned by earlier (non-destructor) discards. This only
+    /// erases and `get()`s already-stashed handles — it does not allocate.
+    drainAbandonedPrefetches(/*wait_finished=*/true);
 }
 
 void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)

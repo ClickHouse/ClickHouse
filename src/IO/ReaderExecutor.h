@@ -227,6 +227,12 @@ private:
     /// destructor (the latter is never logged, matching the legacy path).
     void discardPrefetch(FilesystemPrefetchState reason);
 
+    /// Destructor-only `discardPrefetch(UNNEEDED)` that never allocates: it waits
+    /// for a cancelled-but-queued prefetch inline instead of stashing it in
+    /// `abandoned_prefetches` (whose `push_back` could throw from the `noexcept`
+    /// destructor and `std::terminate`).
+    void discardPrefetchForDestruction();
+
     /// Append one row to `system.filesystem_read_prefetches_log` for the
     /// in-flight prefetch (described by `prefetch_range` / `prefetch_submit_time`
     /// / `prefetch_execution_watch`). No-op without a sink or for `UNNEEDED`.
