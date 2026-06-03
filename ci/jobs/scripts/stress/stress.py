@@ -1039,15 +1039,13 @@ def main():
     chaos_threads: List[ChaosThread] = []
     if not args.no_random_query_killer and not args.upgrade_check:
         chaos_threads.append(RandomQueryKiller(interval=3.0))
+    # Azurite runs --in-memory; a restart wipes all blobs. Any table or
+    # object that references Azure storage (MergeTree default policy, explicit
+    # Azure disks, table functions) loses its data — testing data loss, not
+    # retry/reconnect resilience. Disabled until Azurite runs with persistent
+    # storage.
     if not args.no_random_azurite_restart and not args.upgrade_check:
-        # Azurite runs --in-memory; a restart wipes all blobs. When Azure is
-        # the default MergeTree storage policy, ClickHouse metadata would
-        # reference objects that vanished with the process — testing data loss,
-        # not retry/reconnect. Only enable when blobs are ephemeral test data.
-        if os.environ.get("USE_AZURE_STORAGE_FOR_MERGE_TREE") == "1":
-            logging.info("Skipping RandomAzuriteRestarter: Azure is the MergeTree storage backend")
-        else:
-            chaos_threads.append(RandomAzuriteRestarter(min_interval=120.0, max_interval=300.0))
+        logging.info("Skipping RandomAzuriteRestarter: Azurite --in-memory restart wipes all blobs")
     if not args.no_random_minio_restart and not args.upgrade_check and args.minio_data_dir:
         chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=120.0, max_interval=300.0))
     if not args.no_random_redpanda_restart and not args.upgrade_check:
