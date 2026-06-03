@@ -57,6 +57,13 @@ private:
     const UInt8 data_bytes_size;
 };
 
+/// Chimp does not store the exact number of leading zero bits of the XORed value.
+/// Instead it quantizes it to one of eight buckets {0, 8, 12, 16, 18, 20, 22, 24},
+/// which can be encoded in only BIT_LENGTH = 3 bits. The arrays below implement the
+/// mapping in both directions:
+///   round[n]                    - the quantized (rounded-down) number of leading zeros for an actual count of n;
+///   binaryRepresentation[n]     - the 3-bit code (0..7) written to the stream for an actual count of n;
+///   reverseBinaryRepresentation - the quantized number of leading zeros for a given 3-bit code, used while decoding.
 namespace LeadingZero
 {
     // bit length for leading zero binary representation
@@ -163,19 +170,13 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     const UInt32 items_count = source_size / sizeof(T);
 
     static constexpr Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
+    /// std::vector value-initializes its elements, so the ring buffer of previously seen values starts zeroed.
     std::vector<T> stored_values(NO_PREVIOUS_VALUES);
-    for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
-    {
-        stored_values[i] = 0;
-    }
     static constexpr Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     static constexpr Int16 THRESHOLD = 6 + LOG_NO_PREVIOUS_VALUES;
     static constexpr int ARRAY_SIZE = 1 << (THRESHOLD + 1);
+    /// Maps the hash of the least significant bits of a value to the index of the most recent value with that hash.
     std::vector<int> indices(ARRAY_SIZE);
-    for (int i = 0; i < ARRAY_SIZE; i++)
-    {
-        indices[i] = 0;
-    }
     static const Int16 setLsb = ARRAY_SIZE - 1;
 
     unalignedStoreLittleEndian<UInt32>(dest, items_count);
@@ -291,11 +292,8 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
     static const Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
     static const Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     int current_index = 0;
+    /// std::vector value-initializes its elements, so the ring buffer of previously seen values starts zeroed.
     std::vector<T> stored_values(NO_PREVIOUS_VALUES);
-    for (int i = 0; i < NO_PREVIOUS_VALUES; i++)
-    {
-        stored_values[i] = 0;
-    }
 
     const char * const source_end = source + source_size;
 
