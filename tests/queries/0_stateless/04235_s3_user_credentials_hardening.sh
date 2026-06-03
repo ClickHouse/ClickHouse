@@ -25,6 +25,7 @@ NC_NOSIGN="s3_nosign_${DB}"
 NC_ENV_OFF="s3_env_off_${DB}"
 NC_BACKUP_ROLE="s3_backup_role_${DB}"
 NC_BACKUP_ENV="s3_backup_env_${DB}"
+NC_BACKUP_NO_OVERRIDE="s3_backup_no_override_${DB}"
 NC_GCP_OAUTH="s3_gcp_oauth_${DB}"
 
 TABLE="s3_hardening_${DB}"
@@ -45,6 +46,7 @@ cleanup() {
         DROP NAMED COLLECTION IF EXISTS ${NC_ENV_OFF};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ROLE};
         DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_ENV};
+        DROP NAMED COLLECTION IF EXISTS ${NC_BACKUP_NO_OVERRIDE};
         DROP NAMED COLLECTION IF EXISTS ${NC_GCP_OAUTH};
     " > /dev/null
 }
@@ -443,6 +445,22 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -q "
     BACKUP TABLE ${TABLE} TO S3(${NC_BACKUP_ENV})
     -- { serverError ACCESS_DENIED }
+"
+
+# `BACKUP ... TO S3(named_collection, url = ...)` must respect named-collection
+# override rules; otherwise a user could redirect operator credentials to a
+# different destination.
+$CLICKHOUSE_CLIENT -m -q "
+    CREATE NAMED COLLECTION ${NC_BACKUP_NO_OVERRIDE} AS
+        url = 'http://localhost:11111/test/${DB}_backup5/' NOT OVERRIDABLE,
+        access_key_id = 'k',
+        secret_access_key = 's';
+"
+
+$CLICKHOUSE_CLIENT -q "
+    BACKUP TABLE ${TABLE}
+    TO S3(${NC_BACKUP_NO_OVERRIDE}, url = 'http://localhost:11111/test/${DB}_backup6/')
+    -- { serverError BAD_ARGUMENTS }
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE};"

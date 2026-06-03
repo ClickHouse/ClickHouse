@@ -1,6 +1,7 @@
 #include <Backups/BackupInfo.h>
 
 #include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
@@ -15,6 +16,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_named_collection_override_by_default;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -174,8 +180,13 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     {
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
+        const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
         for (const auto & [key, value] : params_from_query)
+        {
+            if (!mutable_collection->isOverridable(key, allow_override_by_default))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
             mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
+        }
         collection = std::move(mutable_collection);
     }
 
