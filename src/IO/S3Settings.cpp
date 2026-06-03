@@ -5,12 +5,18 @@
 #include <Interpreters/Context.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
+#include <Poco/Exception.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace Setting
 {
     extern const SettingsBool s3_validate_request_settings;
@@ -60,10 +66,31 @@ bool pathStartsWithBoundary(const String & path, const String & prefix)
 
 bool endpointMatches(const Poco::URI & endpoint, const String & endpoint_prefix)
 {
-    Poco::URI prefix(endpoint_prefix);
+    Poco::URI prefix;
+    try
+    {
+        prefix = Poco::URI(endpoint_prefix);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `S3` endpoint configuration URL: {}", e.message());
+    }
+
     return endpoint.getScheme() == prefix.getScheme()
         && endpoint.getAuthority() == prefix.getAuthority()
         && pathStartsWithBoundary(endpoint.getPath(), prefix.getPath());
+}
+
+Poco::URI parseS3EndpointURL(const String & endpoint)
+{
+    try
+    {
+        return Poco::URI(endpoint);
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid `S3` endpoint URL: {}", e.message());
+    }
 }
 
 }
@@ -186,7 +213,7 @@ std::optional<S3Settings> S3SettingsByEndpoint::getSettings(
     bool ignore_user) const
 {
     std::lock_guard lock(mutex);
-    Poco::URI endpoint_uri(endpoint);
+    Poco::URI endpoint_uri = parseS3EndpointURL(endpoint);
 
     const S3Settings * matched_settings = nullptr;
     size_t matched_prefix_size = 0;
@@ -214,7 +241,7 @@ std::optional<String> S3SettingsByEndpoint::getMatchedEndpoint(
     bool ignore_user) const
 {
     std::lock_guard lock(mutex);
-    Poco::URI endpoint_uri(endpoint);
+    Poco::URI endpoint_uri = parseS3EndpointURL(endpoint);
 
     const String * matched_endpoint = nullptr;
     size_t matched_prefix_size = 0;
