@@ -26,8 +26,8 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
 
 # The failpoint strips datalake_table_state from the snapshot reaching the read step,
 # deterministically reproducing the concurrent-commit race. Without the fix each read
-# throws LOGICAL_ERROR "Can't extract iceberg table state"; with the fix the read step
-# re-fetches the state once for every pipeline consumer, so both queries succeed.
+# throws an exception "Can't extract iceberg table state"; with the fix read pins one
+# consistent snapshot before reading, so both queries succeed.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT datalake_simulate_missing_table_state"
 
 # iterate path.

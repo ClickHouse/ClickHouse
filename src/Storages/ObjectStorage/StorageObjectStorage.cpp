@@ -491,6 +491,34 @@ void StorageObjectStorage::read(
         }
     });
 
+    /// The read pipeline needs a single, internally consistent metadata snapshot: the requested
+    /// columns (prepareReadingFromFormat below), the field-id mapping used to list/read files, and
+    /// the read-in-order sorting key must all come from the SAME data lake snapshot. Normally
+    /// updateExternalDynamicMetadataIfExists pins datalake_table_state during analysis, but a
+    /// concurrent commit (TOCTOU between setInMemoryMetadata and getInMemoryMetadataPtr) can leave
+    /// it unset here. Pin one coherent snapshot now, before prepareReadingFromFormat, so every
+    /// consumer observes the same state. Mirrors updateExternalDynamicMetadataIfExists.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+        && !storage_snapshot->metadata->datalake_table_state.has_value())
+    {
+        if (auto state = configuration->getTableStateSnapshot(local_context))
+        {
+            StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
+            pinned.setDataLakeTableState(*state);
+
+            /// Reload columns and sorting key from the same state so they cannot diverge.
+            if (configuration->shouldReloadSchemaForConsistency(local_context))
+            {
+                if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
+                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+            }
+
+            storage_snapshot = std::make_shared<StorageSnapshot>(
+                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+        }
+    }
+
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 

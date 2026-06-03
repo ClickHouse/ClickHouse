@@ -33,11 +33,6 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-    /// Returns the storage metadata with datalake_table_state pinned once, shared by every
-    /// read-pipeline consumer (file iterator, sorting-key check, column mapper).
-    StorageMetadataPtr getMetadataWithDatalakeState() const;
-
-
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
@@ -63,9 +58,6 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
-
-    /// Metadata with datalake_table_state pinned once; lazily computed by getMetadataWithDatalakeState.
-    mutable StorageMetadataPtr metadata_with_datalake_state;
 
     ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;

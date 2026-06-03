@@ -106,7 +106,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         filter_actions_dag,
         context,
-        configuration->getColumnMapperForCurrentSchema(getMetadataWithDatalakeState(), context),
+        configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
 
@@ -158,7 +158,7 @@ void ReadFromObjectStorageStep::createIterator()
     auto context = getContext();
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
-        configuration, configuration->getQuerySettings(context), object_storage, getMetadataWithDatalakeState(), distributed_processing,
+        configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
@@ -172,38 +172,14 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-StorageMetadataPtr ReadFromObjectStorageStep::getMetadataWithDatalakeState() const
-{
-    if (metadata_with_datalake_state)
-        return metadata_with_datalake_state;
-
-    auto metadata = storage_snapshot->metadata;
-
-    /// Pin the datalake state once so every pipeline consumer observes the same snapshot;
-    /// fetching it independently per consumer can diverge under concurrent commits.
-    if (configuration->isDataLakeConfiguration()
-        && metadata && !metadata->datalake_table_state.has_value())
-    {
-        if (auto state = configuration->getTableStateSnapshot(getContext()))
-        {
-            auto fixed_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata);
-            fixed_metadata->setDataLakeTableState(*state);
-            metadata = std::move(fixed_metadata);
-        }
-    }
-
-    metadata_with_datalake_state = metadata;
-    return metadata_with_datalake_state;
-}
-
 bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return configuration->isDataSortedBySortingKey(getMetadataWithDatalakeState(), getContext());
+    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
 {
-    return convertSortingKeyToInputOrder(getMetadataWithDatalakeState()->getSortingKey());
+    return convertSortingKeyToInputOrder(storage_snapshot->metadata->getSortingKey());
 }
 
 }
