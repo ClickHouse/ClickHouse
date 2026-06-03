@@ -2277,9 +2277,11 @@ Possible values: Numbers from 1 to 9.
     DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
 Controls the wire format used for snappy compression for generic file I/O paths such as `file()` and `url()`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
 
+Note that the raw snappy block format produced by a single `snappy::Compress` call (for example, the Prometheus remote protocol payloads handled by `SnappyReadBuffer`) is a separate, protocol-specific wire format and is not controlled by this setting.
+
 Possible values:
 
-- `basic` — Raw/Hadoop snappy block format. Compatible with files written by Hadoop. Read-only (writing is not supported in this mode).
+- `basic` — Hadoop snappy block format. Compatible with files written by Hadoop. Read-only (writing is not supported in this mode).
 - `framed` — Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
 )", 0) \
     \
