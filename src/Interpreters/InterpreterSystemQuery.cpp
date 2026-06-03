@@ -2116,7 +2116,11 @@ void InterpreterSystemQuery::scheduleMerge(ASTSystemQuery & query)
     for (const auto & child : query.scheduled_merge_parts->children)
         parts_to_merge.emplace_back(child->as<ASTLiteral &>().value.safeGet<String>());
 
-    ManualMergeSelector::push(table_id, parts_to_merge);
+    ActiveDataPartSet active_set;
+    for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
+        active_set.add(part->info, part->name);
+
+    ManualMergeSelector::push(table_id, parts_to_merge, active_set);
     merge_tree.triggerBackgroundOperations();
 }
 
