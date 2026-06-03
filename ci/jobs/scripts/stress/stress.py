@@ -326,7 +326,7 @@ class RandomAzuriteRestarter(RandomRestarter):
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
-                    "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ "
+                    f"curl -s -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{self.AZURITE_PORT}/ "
                     "| grep -qE '400|200'",
                     shell=True,
                     capture_output=True,
@@ -369,7 +369,7 @@ class RandomAzuriteRestarter(RandomRestarter):
         logging.info("%s: starting Azurite", self.NAME)
         subprocess.Popen(
             "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
-            "nohup azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory "
+            f"nohup azurite-rs --host 0.0.0.0 --blob-port {self.AZURITE_PORT} --silent --in-memory "
             ">/dev/null 2>&1 &",
             shell=True,
         )
@@ -378,6 +378,80 @@ class RandomAzuriteRestarter(RandomRestarter):
             logging.info("%s: Azurite back up", self.NAME)
         else:
             logging.error("%s: Azurite did not come back within timeout", self.NAME)
+
+
+class RandomRedpandaRestarter(RandomRestarter):
+    """Periodically kills and restarts Redpanda (Kafka-compatible broker).
+
+    Kafka engines and table functions route through Redpanda in the stress test
+    environment. Killing Redpanda mid-operation exercises consumer group
+    recovery, offset management, producer retry logic, and reconnection
+    handling in ClickHouse.
+    """
+
+    NAME = "RandomRedpandaRestarter"
+    KAFKA_PORT = 9092
+    SCHEMA_REGISTRY_PORT = 8081
+    RPC_PORT = 19092
+
+    def _wait_redpanda_up(self, timeout: float = 60.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    f"rpk topic list --brokers 127.0.0.1:{self.KAFKA_PORT} >/dev/null 2>&1 "
+                    f"&& curl -sf http://127.0.0.1:{self.SCHEMA_REGISTRY_PORT}/subjects >/dev/null 2>&1",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    def _stop_hard(self) -> None:
+        logging.info("%s: hard-killing Redpanda (SIGKILL)", self.NAME)
+        subprocess.run("pkill -9 -f 'rpk redpanda start'", shell=True, capture_output=True)
+        subprocess.run("pkill -9 -f '/opt/redpanda/'", shell=True, capture_output=True)
+
+    def _stop_graceful(self) -> None:
+        logging.info("%s: graceful stop Redpanda (SIGTERM)", self.NAME)
+        subprocess.run("pkill -f 'rpk redpanda start'", shell=True, capture_output=True)
+        subprocess.run("pkill -f '/opt/redpanda/'", shell=True, capture_output=True)
+        for _ in range(30):
+            ret = subprocess.run(
+                "pgrep -f '/opt/redpanda/'",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                break
+            time.sleep(1)
+
+    def _start_and_wait(self) -> None:
+        self._wait_port_free(self.KAFKA_PORT)
+        self._wait_port_free(self.SCHEMA_REGISTRY_PORT)
+        self._wait_port_free(self.RPC_PORT)
+
+        logging.info("%s: starting Redpanda", self.NAME)
+        subprocess.Popen(
+            "nohup rpk redpanda start "
+            "--mode dev-container --smp 1 --memory 256M --reserve-memory 0M --overprovisioned "
+            f"--kafka-addr 127.0.0.1:{self.KAFKA_PORT} --advertise-kafka-addr 127.0.0.1:{self.KAFKA_PORT} "
+            f"--rpc-addr 127.0.0.1:{self.RPC_PORT} --advertise-rpc-addr 127.0.0.1:{self.RPC_PORT} "
+            f"--schema-registry-addr 127.0.0.1:{self.SCHEMA_REGISTRY_PORT} "
+            "--set redpanda.auto_create_topics_enabled=false "
+            "--set redpanda.log_segment_size=16777216 "
+            ">/dev/null 2>&1 &",
+            shell=True,
+        )
+
+        if self._wait_redpanda_up():
+            logging.info("%s: Redpanda back up", self.NAME)
+        else:
+            logging.error("%s: Redpanda did not come back within timeout", self.NAME)
 
 
 class RandomQueryKiller(ChaosThread):
@@ -923,6 +997,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable random kill -9 / restart of Azurite during stress test",
     )
     parser.add_argument(
+        "--no-random-redpanda-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of Redpanda during stress test",
+    )
+    parser.add_argument(
         "--minio-data-dir",
         default="",
         help="MinIO data directory (required for random MinIO restarts)",
@@ -951,6 +1031,8 @@ def main():
         chaos_threads.append(RandomAzuriteRestarter(min_interval=120.0, max_interval=300.0))
     if not args.no_random_minio_restart and not args.upgrade_check and args.minio_data_dir:
         chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=120.0, max_interval=300.0))
+    if not args.no_random_redpanda_restart and not args.upgrade_check:
+        chaos_threads.append(RandomRedpandaRestarter(min_interval=120.0, max_interval=300.0))
     if not args.no_random_server_restart and not args.upgrade_check:
         chaos_threads.append(RandomServerRestarter(min_interval=120.0, max_interval=300.0))
 
