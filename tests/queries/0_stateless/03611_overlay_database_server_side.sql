@@ -51,7 +51,7 @@ SELECT * FROM db_overlay.t_new ORDER BY k;
 
 INSERT INTO db_overlay.t_new VALUES (999, 'Pass-through overlay');
 
-ALTER TABLE db_overlay.t_a ADD COLUMN z UInt8 DEFAULT 0;
+ALTER TABLE db_overlay.t_a ADD COLUMN z UInt8 DEFAULT 0; -- { serverError TABLE_IS_READ_ONLY }
 
 SELECT * FROM db_overlay.t_new ORDER BY k;
 

@@ -34,7 +34,7 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 | :------------------------- | :-----------------------------------------------------------------------------------------------|
 | `CREATE TABLE dboverlay.*` | **Rejected** — throws `BAD_ARGUMENTS` with a message, suggesting to create in an underlying database. |
 | `ATTACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
-| `ALTER TABLE dboverlay.*`  | **Pass-through** — forwards to the appropriate underlying database.                             |
+| `ALTER TABLE dboverlay.*`  | **Rejected** — `TABLE_IS_READ_ONLY`.                            |
 | `RENAME TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`.                                                                 |
 | `DROP TABLE dboverlay.*`   | **Rejected** — `BAD_ARGUMENTS`. Drop the table in the underlying database that owns it.         |
 | `DETACH TABLE dboverlay.*` | **Rejected** — `BAD_ARGUMENTS`. Detach the table in the underlying database that owns it.       |
@@ -48,7 +48,8 @@ Sources are searched in the order they were listed in `CREATE DATABASE … ENGIN
 
 | Scenario                                   | Error                                                                                                                                              |
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overlay `CREATE`/`ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH TABLE` | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Overlay `CREATE`/`ATTACH`/`RENAME`/`DROP`/`DETACH TABLE` | `BAD_ARGUMENTS` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
+| Overlay `ALTER` | `TABLE_IS_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
 | Overlay references missing database        | `BAD_ARGUMENTS`                                                                                                                                    |
 | DROP DATABASE overlay while tables “exist” | Succeeds (iterator/empty() semantics ensure no `DATABASE_NOT_EMPTY`)                                                                               |
