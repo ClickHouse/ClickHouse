@@ -30,6 +30,8 @@ Geometry
 0
 -- mvtEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes
 1
+-- mvtEncode: a tiny polygon near Int32::max keeps its area (exact integer shoelace, no double cancellation)
+1
 -- mvtEncode: an empty group produces an empty tile
 0
 -- mvtEncode: NULL (clipped-out) geometry rows are skipped, so they do not change the tile

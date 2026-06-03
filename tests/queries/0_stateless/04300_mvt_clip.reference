@@ -23,6 +23,7 @@
 -- mvtEncode: a geometry coordinate outside the representable MVT range is rejected
 -- mvtEncode: a geometry delta exceeding the MVT command range is rejected (both vertices are in range)
 -- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator
+-- mvtEncodeGeom: an extent + 2 * buffer that cannot fit the MVT command stream is rejected
 -- mvtEncodeGeom: fractional (non-integer) tile controls are rejected rather than silently truncated
 -- mvtEncodeGeom: a NULL argument yields a NULL geometry instead of a spurious default-position feature
 1

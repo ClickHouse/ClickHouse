@@ -277,17 +277,20 @@ private:
         }
     }
 
-    static double signedArea(const TilePoints & points)
+    /// Twice the signed area (the shoelace sum), computed exactly. Each Int32 * Int32 product fits in Int64 and the
+    /// sum is accumulated in 128-bit, so the orientation and the zero-area (degenerate) test stay correct even at
+    /// coordinates near Int32::max, where a double accumulator would lose a small ring's area to cancellation.
+    static Int128 doubledSignedArea(const TilePoints & points)
     {
-        double area = 0.0;
+        Int128 area = 0;
         const size_t n = points.size();
         for (size_t i = 0; i < n; ++i)
         {
             const auto & a = points[i];
             const auto & b = points[(i + 1) % n];
-            area += static_cast<double>(a.first) * b.second - static_cast<double>(b.first) * a.second;
+            area += static_cast<Int128>(a.first) * b.second - static_cast<Int128>(b.first) * a.second;
         }
-        return area * 0.5;
+        return area;
     }
 
     /// Emit a closed ring (MoveTo + LineTo + ClosePath) with the orientation MVT requires; advances the cursor.
@@ -301,12 +304,12 @@ private:
         if (points.size() < 3)
             return false;
 
-        const double area = signedArea(points);
-        if (area == 0.0)
+        const Int128 area = doubledSignedArea(points);
+        if (area == 0)
             return false;
 
         const bool want_positive = exterior == mvt_exterior_area_positive;
-        if ((area > 0.0) != want_positive)
+        if ((area > 0) != want_positive)
             std::reverse(points.begin(), points.end());
 
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));

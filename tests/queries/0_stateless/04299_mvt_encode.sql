@@ -57,6 +57,9 @@ SELECT length(mvtEncode('shapes')(mvtEncodeGeom([(13.37000, 52.52000), (13.37001
 SELECT '-- mvtEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes';
 SELECT length(mvtEncode('shapes')([(100.0, 100.0), (100.0, 100.0), (200.0, 200.0)]::LineString::Geometry)) > 0;
 
+SELECT '-- mvtEncode: a tiny polygon near Int32::max keeps its area (exact integer shoelace, no double cancellation)';
+SELECT length(mvtEncode('shapes')([[(2147483640.0, 2147483640.0), (2147483641.0, 2147483640.0), (2147483641.0, 2147483641.0), (2147483640.0, 2147483641.0), (2147483640.0, 2147483640.0)]]::Polygon::Geometry)) > 0;
+
 SELECT '-- mvtEncode: an empty group produces an empty tile';
 SELECT length(mvtEncode('points')((0.0, 0.0)::Point::Geometry)) FROM numbers(0);
 
