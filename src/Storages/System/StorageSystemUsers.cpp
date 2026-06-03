@@ -381,22 +381,27 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     /// do O(1) lookups instead of iterating all users.
     if (auto names = extractNamesFromPredicate(predicate, context))
     {
+        /// A name can exist in more than one access storage (for example a user defined in a
+        /// local directory shadowing one from `users.xml`), and the full scan over `findAll<User>`
+        /// emits a row for each. Look the name up in every storage so the fast path keeps the same
+        /// semantics instead of silently dropping the lower-precedence rows. This stays
+        /// O(number of requested names * number of access storages).
+        auto storages = access_control.getStorages();
         for (const auto & name : *names)
         {
-            auto id = access_control.find<User>(name);
-            if (!id)
-                continue;
+            for (const auto & storage : storages)
+            {
+                auto id = storage->find<User>(name);
+                if (!id)
+                    continue;
 
-            auto user = access_control.tryRead<User>(*id);
-            if (!user)
-                continue;
+                auto user = storage->tryRead<User>(*id);
+                if (!user)
+                    continue;
 
-            auto storage = access_control.findStorage(*id);
-            if (!storage)
-                continue;
-
-            add_row(user->getName(), *id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
-                    user->default_roles, user->grantees, user->default_database);
+                add_row(user->getName(), *id, storage->getStorageName(), user->authentication_methods, user->allowed_client_hosts,
+                        user->default_roles, user->grantees, user->default_database);
+            }
         }
         return;
     }
