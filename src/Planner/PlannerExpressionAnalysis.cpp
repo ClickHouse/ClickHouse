@@ -742,13 +742,29 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         const auto & expected_names = projection_analysis_result.projection_column_names;
         size_t projection_size = expected_names.size();
 
-        bool needs_reorder = false;
-        for (size_t i = 0; i < projection_size && i < current_output_columns.size(); ++i)
+        bool has_duplicate_names = false;
         {
-            if (current_output_columns[i].name != expected_names[i])
+            NameSet seen;
+            for (const auto & name : expected_names)
             {
-                needs_reorder = true;
-                break;
+                if (!seen.insert(name).second)
+                {
+                    has_duplicate_names = true;
+                    break;
+                }
+            }
+        }
+
+        bool needs_reorder = false;
+        if (!has_duplicate_names)
+        {
+            for (size_t i = 0; i < projection_size && i < current_output_columns.size(); ++i)
+            {
+                if (current_output_columns[i].name != expected_names[i])
+                {
+                    needs_reorder = true;
+                    break;
+                }
             }
         }
 
