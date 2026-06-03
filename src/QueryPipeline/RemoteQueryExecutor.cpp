@@ -125,13 +125,42 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
-            if (extension_ && extension_->parallel_reading_coordinator)
-                ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+            chassert(result.entry->isConnected());
 
-            connection_entries.emplace_back(std::move(result.entry));
+            const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
+            const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
+
+            if (extension_ && extension_->parallel_reading_coordinator)
+            {
+                // consider only replicas with support of stream id, otherwise we can get incorrect result
+                // replicas with older version considered as unavailable
+                if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
+                {
+                    ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+
+                    connection_entries.emplace_back(std::move(result.entry));
+                }
+                else
+                {
+                    LOG_DEBUG(
+                        log ? log : getLogger("RemoteQueryExecutor"),
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
+                        "no stream_id support (requires parallel_replicas_version >= {})",
+                        result.entry->getDescription(),
+                        protocol_version,
+                        parallel_replicas_version,
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
+                    result.entry->disconnect();
+                }
+            }
+            else
+            {
+                connection_entries.emplace_back(std::move(result.entry));
+            }
         }
         else
         {
@@ -176,7 +205,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_,
+    ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -236,7 +265,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 #endif
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
@@ -423,7 +452,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
     // Collect all roles granted on this node and pass those to the remote node
-    std::vector<String> local_granted_roles;
+    Strings local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
@@ -739,7 +768,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     return ReadResult(ReadResult::Type::Nothing);
 }
 
-bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
+bool RemoteQueryExecutor::setPartUUIDs(const UUIDs & uuids)
 {
     auto query_context = context->getQueryContext();
     auto duplicates = query_context->getPartUUIDs()->add(uuids);

@@ -1,0 +1,1015 @@
+<test>
+    <settings>
+        <max_query_size>1048576</max_query_size>
+    </settings>
+
+    <create_query>CREATE TABLE merge_perf_t0 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t1 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t2 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t3 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t4 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t5 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t6 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t7 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t8 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t9 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t10 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t11 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t12 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t13 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t14 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t15 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t16 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t17 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t18 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t19 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t20 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t21 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t22 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t23 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t24 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t25 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t26 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t27 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t28 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t29 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t30 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t31 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t32 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t33 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t34 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t35 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t36 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t37 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t38 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t39 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t40 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t41 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t42 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t43 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t44 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t45 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t46 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t47 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t48 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t49 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t50 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t51 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t52 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t53 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t54 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t55 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t56 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t57 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t58 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t59 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t60 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t61 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t62 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t63 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t64 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t65 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t66 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t67 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t68 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t69 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t70 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t71 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t72 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t73 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t74 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t75 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t76 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t77 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t78 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t79 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t80 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t81 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t82 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t83 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t84 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t85 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t86 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t87 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t88 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t89 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t90 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t91 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t92 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t93 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t94 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t95 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t96 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t97 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t98 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t99 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t100 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t101 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t102 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t103 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t104 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t105 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t106 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t107 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t108 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t109 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t110 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t111 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t112 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t113 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t114 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t115 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t116 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t117 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t118 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t119 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t120 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t121 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t122 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t123 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t124 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t125 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t126 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t127 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t128 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t129 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t130 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t131 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t132 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t133 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t134 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t135 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t136 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t137 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t138 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t139 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t140 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t141 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t142 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t143 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t144 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t145 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t146 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t147 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t148 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t149 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t150 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t151 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t152 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t153 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t154 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t155 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t156 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t157 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t158 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t159 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t160 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t161 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t162 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t163 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t164 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t165 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t166 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t167 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t168 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t169 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t170 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t171 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t172 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t173 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t174 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t175 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t176 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t177 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t178 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t179 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t180 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t181 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t182 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t183 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t184 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t185 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t186 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t187 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t188 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t189 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t190 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t191 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t192 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t193 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t194 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t195 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t196 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t197 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t198 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t199 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t200 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t201 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t202 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t203 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t204 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t205 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t206 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t207 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t208 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t209 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t210 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t211 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t212 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t213 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t214 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t215 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t216 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t217 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t218 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t219 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t220 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t221 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t222 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t223 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t224 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t225 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t226 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t227 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t228 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t229 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t230 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t231 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t232 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t233 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t234 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t235 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t236 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t237 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t238 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t239 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t240 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t241 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t242 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t243 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t244 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t245 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t246 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t247 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t248 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t249 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t250 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t251 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t252 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t253 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t254 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t255 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t256 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t257 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t258 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t259 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t260 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t261 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t262 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t263 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t264 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t265 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t266 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t267 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t268 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t269 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t270 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t271 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t272 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t273 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t274 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t275 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t276 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t277 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t278 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t279 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t280 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t281 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t282 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t283 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t284 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t285 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t286 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t287 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t288 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t289 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t290 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t291 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t292 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t293 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t294 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t295 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t296 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t297 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t298 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t299 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t300 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t301 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t302 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t303 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t304 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t305 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t306 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t307 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t308 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t309 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t310 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t311 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t312 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t313 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t314 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t315 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t316 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t317 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t318 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t319 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t320 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t321 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t322 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t323 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t324 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t325 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t326 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t327 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t328 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t329 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t330 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t331 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t332 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t333 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t334 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t335 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t336 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t337 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t338 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t339 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t340 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t341 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t342 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t343 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t344 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t345 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t346 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t347 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t348 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t349 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t350 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t351 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t352 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t353 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t354 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t355 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t356 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t357 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t358 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t359 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t360 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t361 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t362 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t363 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t364 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t365 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t366 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t367 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t368 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t369 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t370 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t371 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t372 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t373 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t374 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t375 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t376 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t377 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t378 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t379 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t380 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t381 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t382 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t383 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t384 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t385 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t386 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t387 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t388 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t389 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t390 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t391 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t392 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t393 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t394 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t395 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t396 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t397 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t398 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t399 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t400 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t401 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t402 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t403 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t404 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t405 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t406 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t407 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t408 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t409 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t410 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t411 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t412 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t413 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t414 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t415 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t416 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t417 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t418 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t419 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t420 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t421 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t422 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t423 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t424 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t425 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t426 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t427 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t428 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t429 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t430 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t431 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t432 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t433 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t434 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t435 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t436 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t437 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t438 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t439 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t440 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t441 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t442 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t443 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t444 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t445 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t446 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t447 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t448 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t449 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t450 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t451 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t452 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t453 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t454 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t455 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t456 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t457 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t458 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t459 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t460 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t461 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t462 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t463 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t464 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t465 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t466 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t467 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t468 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t469 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t470 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t471 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t472 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t473 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t474 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t475 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t476 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t477 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t478 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t479 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t480 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t481 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t482 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t483 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t484 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t485 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t486 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t487 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t488 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t489 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t490 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t491 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t492 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t493 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t494 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t495 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t496 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t497 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t498 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+    <create_query>CREATE TABLE merge_perf_t499 (date Date, category String, value Int64, customer_id String) ENGINE = MergeTree ORDER BY (date, category)</create_query>
+
+    <create_query>CREATE TABLE merge_perf_all (date Date, category String, value Int64, customer_id String) ENGINE = Merge(currentDatabase(), '^merge_perf_t')</create_query>
+
+    <fill_query>INSERT INTO merge_perf_t0 SELECT toDate('2021-10-04') + number % 70, ['auto', 'appliances', 'garden', 'children', 'home', 'hobbies', 'electronics', 'books'][number % 8 + 1], number, toString(number % 1000) FROM numbers(1000)</fill_query>
+
+    <query><![CDATA[SELECT count(), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 0, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 1, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 2, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 3, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 0, value * 1, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 1, value * 2, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 10, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 11, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 12, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 13, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 1, value * 2, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 2, value * 3, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 20, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 21, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 22, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 23, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 2, value * 3, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 3, value * 4, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 30, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 31, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 32, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 33, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 3, value * 4, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 4, value * 5, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 40, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 41, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 42, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 43, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 4, value * 5, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 5, value * 6, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 50, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 51, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 52, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 53, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 5, value * 6, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 6, value * 7, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 60, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 61, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 62, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 63, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 6, value * 7, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 7, value * 8, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 70, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 71, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 72, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 73, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 7, value * 8, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 8, value * 9, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 80, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 81, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 82, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 83, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 8, value * 9, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 9, value * 10, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 90, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 91, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 92, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 93, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 9, value * 10, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 10, value * 11, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 100, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 101, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 102, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 103, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 10, value * 11, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 11, value * 12, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 110, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 111, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 112, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 113, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 11, value * 12, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 12, value * 13, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 120, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 121, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 122, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 123, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 12, value * 13, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 13, value * 14, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 130, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 131, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 132, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 133, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 13, value * 14, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 14, value * 15, 0)), uniqExact(multiIf(multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND value > 140, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'b' AND value > 141, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'c' AND value > 142, customer_id, multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'd' AND value > 143, customer_id, '')), sum(multiIf(multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 14, value * 15, multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 15, value * 16, 0)) FROM merge_perf_all WHERE date >= '2021-10-04' AND date <= '2021-12-13' AND multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') >= 'a' AND multiIf(position(category, 'auto') > 0, 'auto_mapped', position(category, 'appliances') > 0, 'appliances_mapped', position(category, 'garden') > 0, 'garden_mapped', position(category, 'children') > 0, 'children_mapped', position(category, 'home') > 0, 'home_mapped', position(category, 'hobbies') > 0, 'hobbies_mapped', position(category, 'electronics') > 0, 'electronics_mapped', position(category, 'books') > 0, 'books_mapped', position(category, 'computers') > 0, 'computers_mapped', position(category, 'beauty') > 0, 'beauty_mapped', position(category, 'equipment') > 0, 'equipment_mapped', position(category, 'clothing') > 0, 'clothing_mapped', position(category, 'food') > 0, 'food_mapped', position(category, 'sports') > 0, 'sports_mapped', position(category, 'construction') > 0, 'construction_mapped', position(category, 'health') > 0, 'health_mapped', 'other') <= 'z' AND multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) >= 1 AND multiIf(position(category, 'auto') > 0, 1, position(category, 'appliances') > 0, 2, position(category, 'garden') > 0, 3, position(category, 'children') > 0, 4, position(category, 'home') > 0, 5, position(category, 'hobbies') > 0, 6, position(category, 'electronics') > 0, 7, position(category, 'books') > 0, 8, position(category, 'computers') > 0, 9, position(category, 'beauty') > 0, 10, position(category, 'equipment') > 0, 11, position(category, 'clothing') > 0, 12, position(category, 'food') > 0, 13, position(category, 'sports') > 0, 14, position(category, 'construction') > 0, 15, position(category, 'health') > 0, 16, 0) <= 16 GROUP BY addDays(CAST(date, 'Date'), -1 * (((7 + if(toDayOfWeek(date) = 7, 1, toDayOfWeek(date) + 1)) - 2) % 7)) FORMAT Null]]></query>
+
+    <drop_query>DROP TABLE IF EXISTS merge_perf_all</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t0</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t4</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t5</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t6</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t7</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t8</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t9</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t11</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t12</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t13</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t14</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t15</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t17</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t18</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t19</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t20</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t21</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t22</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t23</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t24</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t25</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t26</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t27</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t28</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t29</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t30</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t31</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t32</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t33</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t34</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t35</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t36</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t37</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t38</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t39</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t40</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t41</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t42</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t43</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t44</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t45</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t46</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t47</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t48</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t49</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t50</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t51</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t52</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t53</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t54</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t55</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t56</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t57</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t58</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t59</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t60</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t61</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t62</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t63</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t65</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t66</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t67</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t68</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t69</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t70</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t71</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t72</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t73</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t74</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t75</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t76</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t77</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t78</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t79</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t80</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t81</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t82</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t83</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t84</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t85</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t86</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t87</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t88</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t89</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t90</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t91</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t92</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t93</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t94</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t95</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t96</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t97</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t98</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t99</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t100</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t101</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t102</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t103</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t104</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t105</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t106</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t107</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t108</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t109</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t110</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t111</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t112</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t113</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t114</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t115</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t116</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t117</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t118</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t119</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t120</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t121</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t122</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t123</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t124</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t125</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t126</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t127</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t128</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t129</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t130</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t131</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t132</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t133</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t134</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t135</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t136</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t137</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t138</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t139</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t140</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t141</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t142</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t143</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t144</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t145</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t146</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t147</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t148</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t149</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t150</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t151</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t152</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t153</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t154</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t155</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t156</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t157</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t158</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t159</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t160</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t161</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t162</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t163</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t164</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t165</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t166</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t167</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t168</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t169</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t170</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t171</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t172</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t173</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t174</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t175</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t176</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t177</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t178</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t179</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t180</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t181</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t182</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t183</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t184</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t185</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t186</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t187</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t188</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t189</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t190</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t191</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t192</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t193</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t194</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t195</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t196</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t197</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t198</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t199</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t200</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t201</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t202</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t203</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t204</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t205</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t206</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t207</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t208</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t209</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t210</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t211</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t212</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t213</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t214</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t215</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t216</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t217</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t218</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t219</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t220</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t221</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t222</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t223</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t224</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t225</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t226</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t227</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t228</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t229</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t230</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t231</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t232</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t233</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t234</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t235</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t236</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t237</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t238</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t239</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t240</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t241</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t242</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t243</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t244</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t245</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t246</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t247</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t248</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t249</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t250</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t251</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t252</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t253</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t254</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t255</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t256</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t257</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t258</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t259</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t260</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t261</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t262</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t263</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t264</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t265</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t266</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t267</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t268</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t269</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t270</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t271</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t272</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t273</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t274</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t275</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t276</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t277</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t278</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t279</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t280</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t281</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t282</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t283</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t284</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t285</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t286</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t287</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t288</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t289</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t290</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t291</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t292</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t293</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t294</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t295</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t296</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t297</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t298</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t299</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t300</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t301</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t302</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t303</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t304</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t305</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t306</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t307</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t308</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t309</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t310</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t311</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t312</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t313</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t314</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t315</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t316</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t317</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t318</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t319</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t320</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t321</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t322</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t323</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t324</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t325</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t326</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t327</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t328</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t329</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t330</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t331</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t332</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t333</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t334</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t335</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t336</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t337</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t338</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t339</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t340</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t341</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t342</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t343</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t344</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t345</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t346</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t347</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t348</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t349</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t350</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t351</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t352</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t353</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t354</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t355</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t356</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t357</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t358</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t359</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t360</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t361</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t362</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t363</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t364</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t365</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t366</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t367</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t368</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t369</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t370</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t371</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t372</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t373</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t374</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t375</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t376</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t377</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t378</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t379</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t380</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t381</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t382</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t383</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t384</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t385</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t386</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t387</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t388</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t389</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t390</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t391</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t392</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t393</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t394</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t395</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t396</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t397</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t398</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t399</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t400</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t401</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t402</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t403</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t404</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t405</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t406</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t407</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t408</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t409</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t410</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t411</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t412</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t413</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t414</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t415</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t416</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t417</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t418</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t419</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t420</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t421</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t422</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t423</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t424</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t425</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t426</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t427</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t428</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t429</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t430</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t431</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t432</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t433</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t434</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t435</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t436</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t437</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t438</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t439</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t440</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t441</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t442</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t443</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t444</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t445</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t446</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t447</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t448</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t449</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t450</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t451</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t452</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t453</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t454</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t455</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t456</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t457</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t458</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t459</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t460</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t461</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t462</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t463</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t464</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t465</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t466</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t467</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t468</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t469</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t470</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t471</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t472</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t473</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t474</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t475</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t476</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t477</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t478</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t479</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t480</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t481</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t482</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t483</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t484</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t485</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t486</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t487</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t488</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t489</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t490</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t491</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t492</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t493</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t494</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t495</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t496</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t497</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t498</drop_query>
+    <drop_query>DROP TABLE IF EXISTS merge_perf_t499</drop_query>
+</test>
+
