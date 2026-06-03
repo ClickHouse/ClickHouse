@@ -94,8 +94,9 @@ public:
         else if (!column_index || isColumnConst(*column_index))
         {
             const auto * col_const_index = typeid_cast<const ColumnConst *>(column_index.get());
+            const bool index_omitted = !column_index;
             ssize_t index = !col_const_index ? 1 : col_const_index->getInt(0);
-            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index, vec_res, offsets_res);
+            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index, index_omitted, vec_res, offsets_res);
         }
         else
             vectorVector(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), column_index, vec_res, offsets_res);
@@ -130,11 +131,15 @@ private:
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         ssize_t index,
+        bool index_omitted,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
+        /// A pattern with no capturing group only has group 0, so the default index 1 falls back to it.
+        if (index_omitted && capture == 0)
+            index = 0;
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
