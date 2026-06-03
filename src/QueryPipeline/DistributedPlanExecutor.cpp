@@ -443,6 +443,25 @@ ExchangeLookupPtr createExchangeLookup(
         return std::make_shared<ExchangeViaChunks>(query_id);
     }
 
+    auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
+
+    bool has_streaming_exchange = false;
+    for (const auto & [exchange_id, exchange] : exchanges_)
+        if (exchange.kind == ExchangeDescription::Kind::Streaming)
+        {
+            has_streaming_exchange = true;
+            break;
+        }
+
+    /// Persisted exchanges only need the temporary-file lookup, so a plan where every exchange
+    /// is Persisted runs without a streaming transport (and on any platform). The streaming
+    /// port and lookup are required only when the plan actually contains a Streaming exchange.
+    if (!has_streaming_exchange)
+    {
+        UNUSED(exchange_stream_sources);
+        return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, /*streaming_exchange_lookup=*/nullptr);
+    }
+
 #ifdef OS_LINUX
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
     if (streaming_exchange_port == 0)
@@ -456,11 +475,12 @@ ExchangeLookupPtr createExchangeLookup(
 
     auto streaming_exchanges = createStreamingExchangeLookup(
         query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
-    auto persisted_exchanges = std::make_shared<ExchangeViaTemporaryFiles>(temporary_files_);
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
-    UNUSED(exchanges_, exchange_stream_sources, temporary_files_, context);
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming exchanges are only supported on Linux");
+    UNUSED(exchange_stream_sources);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Streaming exchanges are only supported on Linux; "
+        "use `distributed_plan_force_exchange_kind = 'Persisted'`");
 #endif
 }
 
