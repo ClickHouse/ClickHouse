@@ -5,19 +5,26 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
-#include <Functions/IFunction.h>
 
 #include <Parsers/IAST_fwd.h>
 
 #include <Common/SharedMutex.h>
+#include <Common/StopToken.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 enum class WasmAbiVersion : uint8_t
 {
     RowDirect,
     BufferedV1,
+    AssemblyScript,
 };
 
 String toString(WasmAbiVersion abi_type);
@@ -28,15 +35,17 @@ class WebAssemblyFunctionSettings
 public:
     void trySet(const String & name, Field value);
     Field getValue(const String & name) const;
+    bool isFuelEnabled() const;
+    WebAssembly::FuelMode getFuelMode() const;
 
 private:
-    std::unordered_map<String, Field> settings;
+    UnorderedMapWithMemoryTracking<String, Field> settings;
 };
 
 class UserDefinedWebAssemblyFunction
 {
 public:
-    virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows) const = 0;
+    virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const = 0;
 
     virtual ~UserDefinedWebAssemblyFunction() = default;
 
@@ -47,7 +56,8 @@ public:
         const DataTypes & arguments_,
         const DataTypePtr & result_type_,
         WasmAbiVersion abi_type,
-        WebAssemblyFunctionSettings function_settings_);
+        WebAssemblyFunctionSettings function_settings_,
+        bool is_deterministic_ = false);
 
     const String & getInternalFunctionName() const { return function_name; }
     const DataTypes & getArguments() const { return arguments; }
@@ -55,6 +65,7 @@ public:
     const DataTypePtr & getResultType() const { return result_type; }
     std::shared_ptr<WebAssembly::WasmModule> getModule() const { return wasm_module; }
     const WebAssemblyFunctionSettings & getSettings() const { return settings; }
+    bool getIsDeterministic() const { return is_deterministic; }
 
 protected:
 
@@ -64,7 +75,8 @@ protected:
         const Strings & argument_names_,
         const DataTypes & arguments_,
         const DataTypePtr & result_type_,
-        WebAssemblyFunctionSettings function_settings_);
+        WebAssemblyFunctionSettings function_settings_,
+        bool is_deterministic_ = false);
 
     String function_name;
     Strings argument_names;
@@ -74,6 +86,7 @@ protected:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
 
     WebAssemblyFunctionSettings settings;
+    bool is_deterministic = false;
 };
 
 class WasmModuleManager;
@@ -81,18 +94,36 @@ class WasmModuleManager;
 class UserDefinedWebAssemblyFunctionFactory
 {
 public:
+    struct RegisteredFunction
+    {
+        String sql_name;
+        std::shared_ptr<UserDefinedWebAssemblyFunction> function;
+        ASTPtr create_query;
+    };
+
     std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
 
-    bool has(const String & function_name);
-    FunctionOverloadResolverPtr get(const String & function_name);
+    bool has(const String & function_name) const;
+    FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+    /// Returns nullptr if the function is not registered. Useful for non-throwing rewrite-candidate checks.
+    FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);
 
+    /// Returns all registered WASM functions with their metadata for introspection (e.g. system.functions).
+    VectorWithMemoryTracking<RegisteredFunction> getAllFunctions() const;
+
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:
-    DB::SharedMutex registry_mutex;
-    std::unordered_map<String, std::shared_ptr<UserDefinedWebAssemblyFunction>> registry;
+    struct RegistryEntry
+    {
+        std::shared_ptr<UserDefinedWebAssemblyFunction> function;
+        ASTPtr create_query;
+    };
+
+    mutable DB::SharedMutex registry_mutex;
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> registry;
 };
 
 }

@@ -303,6 +303,9 @@ def test_server_restart_bridge_might_be_still_alive(ch_cluster):
     assert result.strip() == "101"
 
     instance.restart_clickhouse()
+    # Force the server to re-establish the bridge connection; the old bridge process
+    # may still be alive with stale state, causing "Connection reset by peer" on first dictGet.
+    instance.query("SYSTEM RELOAD DICTIONARY lib_dict_c")
 
     result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
     assert result.strip() == "101"
@@ -311,6 +314,7 @@ def test_server_restart_bridge_might_be_still_alive(ch_cluster):
         ["bash", "-c", "kill -9 `pidof clickhouse-library-bridge`"], user="root"
     )
     instance.restart_clickhouse()
+    instance.query("SYSTEM RELOAD DICTIONARY lib_dict_c")
 
     result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
     assert result.strip() == "101"

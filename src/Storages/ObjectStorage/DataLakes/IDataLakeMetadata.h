@@ -1,20 +1,23 @@
 #pragma once
+#include <memory>
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/DiskType.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Disks/DiskType.h>
+#include <IO/WriteBuffer.h>
 
 namespace DataLake
 {
@@ -41,6 +44,9 @@ struct ObjectInfo;
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -137,7 +143,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
-        StorageObjectStorageConfigurationPtr /*configuration*/,
+        StoragePtr /*storage_ptr*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
@@ -152,6 +158,19 @@ public:
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+
+    virtual Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & /*args*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/)
+    {
+        throwNotImplemented(fmt::format("EXECUTE {}", command_name));
+    }
+
     virtual void drop(ContextPtr) { }
 
 protected:

@@ -1,9 +1,10 @@
 import argparse
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from more_itertools import tail
 
@@ -42,16 +43,28 @@ INFRASTRUCTURE_ERROR_PATTERNS = [
     "OCI runtime create failed",
     "toomanyrequests",
     "pull access denied",
+    "Got exception pulling images:",  # docker pull failure during cluster.start()
 ]
 
 
 def _is_infrastructure_error(result: Result) -> bool:
-    """Returns True if the result is an ERROR caused by infrastructure issues."""
-    if result.status not in (Result.Status.ERROR, Result.StatusExtended.ERROR):
-        return False
+    """Returns True if the result is a failure caused by infrastructure issues."""
     if not result.info:
         return False
-    return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    if result.status == Result.Status.ERROR:
+        return any(pattern in result.info for pattern in INFRASTRUCTURE_ERROR_PATTERNS)
+    # Docker compose/pull infrastructure failures may appear with FAIL status
+    # when pytest reports fixture (setup phase) errors as test failures.
+    # Require both docker context and an infrastructure pattern to avoid
+    # false positives on genuine test failures.
+    if result.status == Result.Status.FAIL:
+        has_docker_context = (
+            "'docker'" in result.info or "images_pull_cmd" in result.info
+        )
+        return has_docker_context and any(
+            p in result.info for p in INFRASTRUCTURE_ERROR_PATTERNS
+        )
+    return False
 
 
 def _mark_infrastructure_errors(results: list) -> int:
@@ -63,14 +76,14 @@ def _mark_infrastructure_errors(results: list) -> int:
     for r in results:
         if _is_infrastructure_error(r):
             r.set_label(Result.Label.INFRA)
-            r.status = Result.StatusExtended.SKIPPED
+            r.status = Result.Status.SKIPPED
             count += 1
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
 
 
-def _start_docker_in_docker():
+def start_docker_in_docker():
     with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
         dockerd_proc = subprocess.Popen(
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -89,6 +102,150 @@ def _start_docker_in_docker():
             )
         time.sleep(2)
     print(f"Started docker-in-docker asynchronously with PID {dockerd_proc.pid}")
+
+
+_COMPOSE_DIR = Path("./tests/integration/compose")
+
+# Explicit mapping for with_* flags whose compose file name cannot be derived
+# by simply prepending "docker_compose_" and appending ".yml".
+_WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
+    "mysql57": ["docker_compose_mysql.yml"],
+    "mysql8": ["docker_compose_mysql_8_0.yml"],
+    "dremio26": ["docker_compose_dremio_26_0.yml"],
+    "kerberos_kdc": ["docker_compose_kerberos_kdc.yml"],
+    # with_iceberg_catalog can use any of the iceberg catalogs; include them all
+    "iceberg_catalog": [
+        "docker_compose_iceberg_rest_catalog.yml",
+        "docker_compose_iceberg_hms_catalog.yml",
+        "docker_compose_iceberg_lakekeeper_catalog.yml",
+        "docker_compose_iceberg_nessie_catalog.yml",
+    ],
+    "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
+    "glue_catalog": ["docker_compose_glue_catalog.yml"],
+    "prometheus_writer": ["docker_compose_prometheus_writer.yml"],
+    "prometheus_reader": ["docker_compose_prometheus_reader.yml"],
+    "prometheus_receiver": ["docker_compose_prometheus_receiver.yml"],
+    # with_odbc_drivers implicitly sets up mysql8 + postgres
+    "odbc_drivers": ["docker_compose_mysql_8_0.yml", "docker_compose_postgres.yml"],
+    # Flags with no separate compose file of their own
+    "jdbc_bridge": [],
+    "net_trics": [],
+}
+
+
+def get_compose_files_for_test_modules(test_modules: List[str]) -> List[Path]:
+    """Return compose files needed by the given test modules.
+
+    Grep every Python source file in each test suite directory for:
+    - `with_X=True` patterns (mapped via `_WITH_FLAG_TO_COMPOSE` or the obvious
+      `docker_compose_{X}.yml` naming convention), and
+    - explicit `docker_compose_*.yml` file name strings (used e.g. via
+      `extra_parameters={"docker_compose_file_name": "..."}` calls).
+    """
+    needed: set[Path] = set()
+    suite_dirs = {m.split("/")[0] for m in test_modules}
+
+    for suite_dir in suite_dirs:
+        suite_path = Path("./tests/integration/") / suite_dir
+        if not suite_path.is_dir():
+            continue
+        for py_file in suite_path.glob("**/*.py"):
+            try:
+                content = py_file.read_text(errors="replace")
+            except OSError:
+                continue
+
+            # 1. with_X=True → compose file via mapping or naming convention
+            for m in re.finditer(r"\bwith_(\w+)\s*=\s*True", content):
+                flag = m.group(1)
+                if flag in _WITH_FLAG_TO_COMPOSE:
+                    for fname in _WITH_FLAG_TO_COMPOSE[flag]:
+                        p = _COMPOSE_DIR / fname
+                        if p.exists():
+                            needed.add(p)
+                else:
+                    p = _COMPOSE_DIR / f"docker_compose_{flag}.yml"
+                    if p.exists():
+                        needed.add(p)
+
+            # 2. Directly named compose files (e.g. in extra_parameters dicts)
+            for m in re.finditer(r"(docker_compose_\w+\.yml)", content):
+                p = _COMPOSE_DIR / m.group(1)
+                if p.exists():
+                    needed.add(p)
+
+    return sorted(needed)
+
+
+def get_images_from_compose_files(compose_files: List[Path]) -> List[str]:
+    """Parse compose files and return a deduplicated list of image references.
+
+    Environment variable placeholders like `${DOCKER_NGINX_DAV_TAG:-latest}` are
+    resolved from `os.environ`.  For clickhouse images that appear without a tag
+    (e.g. `clickhouse/integration-test`) the tag is looked up from `IMAGES_ENV`.
+    Images with still-unresolvable variables are silently skipped.
+    """
+    known_image_tags: dict[str, str] = {}
+    for image_name, env_var in IMAGES_ENV.items():
+        tag = os.environ.get(env_var)
+        if tag:
+            known_image_tags[image_name] = tag
+
+    def resolve_image(raw: str) -> Optional[str]:
+        def replace_var(m: re.Match) -> str:
+            var_name = m.group(1)
+            default = m.group(2) if m.group(2) is not None else "latest"
+            return os.environ.get(var_name, default)
+
+        resolved = re.sub(r"\$\{(\w+)(?::-([^}]*))?\}", replace_var, raw)
+        if "${" in resolved:
+            return None  # Still-unresolvable variable — skip
+        # Append the correct tag for tagless known clickhouse images
+        if ":" not in resolved and resolved in known_image_tags:
+            resolved = f"{resolved}:{known_image_tags[resolved]}"
+        return resolved
+
+    images: set[str] = set()
+    for compose_file in compose_files:
+        try:
+            content = compose_file.read_text()
+        except OSError:
+            continue
+        for m in re.finditer(r"^\s+image:\s+(.+)$", content, re.MULTILINE):
+            # Strip inline YAML comments from unquoted values before resolving
+            # (e.g. `coredns/coredns:1.9.3 # :latest broke this test`).
+            raw = re.sub(r"\s+#.*$", "", m.group(1).strip())
+            resolved = resolve_image(raw)
+            if resolved:
+                images.add(resolved)
+
+    return sorted(images)
+
+
+def prefetch_images(
+    images: List[str], retries: int = 3, pull_timeout: int = 300
+) -> bool:
+    """Pull every image in parallel using `ci/prefetch-integration-test-images`.
+
+    Images with no manifest for the current architecture (e.g. amd64-only images
+    on arm64 runners) are silently skipped.  Returns True on success, False if any
+    image fails to pull for a real reason.
+    """
+    if not images:
+        print("No images to pre-fetch.")
+        return True
+
+    script = f"{repo_dir}/ci/jobs/scripts/prefetch-integration-test-images"
+    env = {
+        **os.environ,
+        "PULL_RETRIES": str(retries),
+        "PULL_TIMEOUT": str(pull_timeout),
+    }
+    return Shell.check(
+        f"{script} {' '.join(images)}",
+        verbose=True,
+        env=env,
+    )
 
 
 def parse_args():
@@ -149,12 +306,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
+def merge_profraw_files(llvm_profdata_cmd: str, job_params: list):
     """Merge all profraw files into final profdata file.
 
     Args:
         llvm_profdata_cmd: Path to llvm-profdata tool
-        batch_num: Batch number for naming output file
+        job_params: List of job parameters for naming output file
     """
     import subprocess
     from pathlib import Path
@@ -166,7 +323,9 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
         print("No profraw files found", flush=True)
         return
 
-    final_file = f"./it-{batch_num}.profdata"
+    joined_job_params = "_".join(job_params) if job_params else "all"
+    joined_job_params = joined_job_params.replace(" ", "_").replace("/", "_")
+    final_file = f"./it-{joined_job_params}.profdata"
     print(f"Merging {len(profraw_files)} profraw files into {final_file}", flush=True)
 
     result = subprocess.run(
@@ -213,14 +372,14 @@ def merge_profraw_files(llvm_profdata_cmd: str, batch_num: int):
             except Exception as e:
                 print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
         print(f"  Deleted {deleted_count} profraw files", flush=True)
+        return final_file
     else:
         print(f"ERROR: Failed to create final coverage file", flush=True)
         if result.stderr:
             print(result.stderr, flush=True)
+        return None
 
 
-FLAKY_CHECK_TEST_REPEAT_COUNT = 3
-FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
 def get_parallel_sequential_tests_to_run(
@@ -257,6 +416,22 @@ def get_parallel_sequential_tests_to_run(
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
         test_files, total_batches, batch_num, workers, job_options, info
     )
+
+    if "excluded_from_llvm" in (job_options or ""):
+        excluded_from_llvm_set = {
+            f
+            for f in (parallel_test_modules + sequential_test_modules)
+            if any(f.startswith(prefix) for prefix in LLVM_COVERAGE_SKIP_PREFIXES)
+            or "is_built_with_llvm_coverage" in Path(f"./tests/integration/{f}").read_text()
+        }
+        parallel_test_modules = [f for f in parallel_test_modules if f in excluded_from_llvm_set]
+        sequential_test_modules = [f for f in sequential_test_modules if f in excluded_from_llvm_set]
+        print(
+            f"LLVM coverage disabled-only: kept {len(parallel_test_modules)} parallel and "
+            f"{len(sequential_test_modules)} sequential test files "
+            f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
+        )
+
     if not args_test:
         return parallel_test_modules, sequential_test_modules
 
@@ -366,7 +541,7 @@ def run_pytest_and_collect_results(
         test_result.results.append(
             Result(
                 name="Timeout",
-                status=Result.StatusExtended.FAIL,
+                status=Result.Status.FAIL,
                 info=test_result.info,
             )
         )
@@ -453,12 +628,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             assert False, f"Unknown job option [{to}]"
 
-    if args.count or is_flaky_check:
-        repeat_option = (
-            f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
-        )
-    elif is_targeted_check:
-        repeat_option = f"--count 10 --random-order"
+    if args.count:
+        repeat_option = f"--count {args.count} --random-order"
+    # For flaky/targeted checks, --count is not used. Instead, --dist=each runs N workers
+    # each executing all modules independently with their own isolated Docker cluster
+    # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
 
     if args.workers:
         workers = args.workers
@@ -502,7 +676,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 changed_test_modules = ["test_accept_invalid_certificate/test.py"]
             else:
@@ -511,6 +685,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 for file in changed_files:
                     if (
                         file.startswith("tests/integration/test")
+                        # e2e tests require external credentials/backends and are
+                        # excluded from the default pytest run via the `e2e`
+                        # marker. Skip them so a mixed PR (both e2e and regular
+                        # integration tests changed) does not try to run them.
+                        and not file.startswith("tests/integration/test_e2e_")
                         and Path(file).name.startswith("test")
                         and file.endswith(".py")
                         and Path(file).is_file()
@@ -518,6 +697,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
+                if not changed_test_modules and Labels.CI_FORCE_ALL in info.pr_labels:
+                    print(
+                        f"NOTE: No changed test modules found, but '{Labels.CI_FORCE_ALL}' label forces run - using sanity test"
+                    )
+                    changed_test_modules = ["test_accept_invalid_certificate/test.py"]
 
     if is_bugfix_validation:
         if Utils.is_arm():
@@ -538,7 +722,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if is_bugfix_validation or is_flaky_check:
         assert (
-            changed_test_modules
+            changed_test_modules or (info.is_local_run and args.test)
         ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
@@ -548,9 +732,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
         if not tests:
@@ -570,7 +752,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
-        _start_docker_in_docker()
+        start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
     parallel_test_modules, sequential_test_modules = (
@@ -581,7 +763,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             workers,
             args.options,
             info,
-            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
+            no_strict=is_targeted_check or is_flaky_check,  # targeted check might want to run test that was removed on a merge-commit; flaky check might pick up a changed test filtered out by SKIP_LIST in the private fork
         )
     )
 
@@ -592,6 +774,31 @@ tar -czf ./ci/tmp/logs.tar.gz \
         sequential_test_modules = []
         assert not is_sequential
 
+    if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
+        # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
+        # Flaky check: all changed tests were filtered out (e.g. by SKIP_LIST in the private fork).
+        # Either way, skip gracefully instead of producing a "no results" error.
+        skip_info = (
+            "All targeted tests are stale (removed or renamed)"
+            if is_targeted_check
+            else "All changed tests were filtered out (e.g. by SKIP_LIST)"
+        )
+        Result.create_from(
+            status=Result.Status.SKIPPED,
+            info=skip_info,
+        ).complete_job()
+
+    if is_flaky_check or is_targeted_check:
+        # Sort by module file so all tests from the same file are consecutive.
+        # With --dist=each, pytest preserves CLI argument order and uses it as the
+        # collection order. If tests from different modules interleave (e.g. CIDB
+        # returns them sorted by failure time), pytest finalizes and re-enters
+        # module-scoped fixtures between them, breaking tests that call
+        # cluster.add_instance() inside the fixture.
+        # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
+        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
+        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
+
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
         tag = info.docker_tag(image_name)
@@ -600,6 +807,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
             os.environ[env_name] = tag
         else:
             assert False, f"No tag found for image [{image_name}]"
+
+    # Pre-fetch all Docker images needed by the selected test suites.
+    # This is done after IMAGES_ENV vars are set so tag resolution works correctly.
+    # Fail fast here rather than discovering missing images mid-test-run.
+    all_test_modules = parallel_test_modules + sequential_test_modules
+    compose_files = get_compose_files_for_test_modules(all_test_modules)
+    print(
+        f"Compose files detected for this batch ({len(compose_files)}): "
+        + ", ".join(str(f.name) for f in compose_files)
+    )
+    images_to_prefetch = get_images_from_compose_files(compose_files)
+    if not prefetch_images(images_to_prefetch):
+        Result.create_from(
+            status=Result.Status.ERROR,
+            info="Failed to pre-pull Docker images needed by the test batch",
+            labels=[Result.Label.INFRA],
+        ).complete_job()
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
@@ -611,6 +835,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
+        # PromQL compliance: deterministic JSON for post-hook (see promql_compliance_hook.py).
+        "COMPLIANCE_RESULT_FILE": os.environ.get(
+            "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
+        ),
     }
     if is_llvm_coverage:
         test_env["LLVM_PROFILE_FILE"] = f"it-%4m.profraw"
@@ -644,11 +872,25 @@ tar -czf ./ci/tmp/logs.tar.gz \
         session_timeout_parallel = args.session_timeout * 2
         session_timeout_sequential = args.session_timeout
 
-    error_info = []
-
-    module_repeat_cnt = 1
+    # Flaky-check soft timeout. Mirrors the pattern in `ci/jobs/functional_tests.py`:
+    # bound the total time spent inside pytest so the job has headroom for cleanup,
+    # log collection and reporting before the workflow global timeout fires. Without
+    # this, a flaky-check run over many modified test modules can be hard-killed by
+    # the global timeout, producing `Unknown error (exit status: None)` instead of
+    # a proper report.
+    FLAKY_CHECK_TIME_LIMIT = 90 * 60  # 90 min, integration tests are slower than functional
     if is_flaky_check:
-        module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
+        elapsed_for_flaky = int(sw.duration)
+        flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 60)
+        print(
+            f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s "
+            f"(elapsed so far: {elapsed_for_flaky}s, remaining: {flaky_check_remaining_s}s)"
+        )
+        # Cap per-phase session timeouts so a single phase cannot consume the entire budget.
+        session_timeout_parallel = min(session_timeout_parallel, flaky_check_remaining_s)
+        session_timeout_sequential = min(session_timeout_sequential, flaky_check_remaining_s)
+
+    error_info = []
 
     failed_test_cases = []
 
@@ -660,20 +902,28 @@ tar -czf ./ci/tmp/logs.tar.gz \
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
 
+    if is_flaky_check or is_targeted_check:
+        # Each xdist worker runs all modules independently with its own isolated Docker cluster.
+        # ClickHouseCluster appends PYTEST_XDIST_WORKER to the project name, so clusters
+        # from different workers never interfere. --dist=each sends all tests to every worker.
+        parallel_dist = "--dist=each"
+        parallel_workers = workers
+        # Sequential tests cannot run in parallel, so we loop over them instead.
+        # Run at least 3 times to have meaningful flakiness signal, at most workers times.
+        sequential_repeat_cnt = max(3, workers)
+    else:
+        parallel_dist = "--dist=loadfile"
+        parallel_workers = workers
+        sequential_repeat_cnt = 1
+
     if parallel_test_modules:
-        for attempt in range(module_repeat_cnt):
-            log_file = f"{temp_path}/pytest_parallel.log"
-            test_result_parallel = run_pytest_and_collect_results(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
-                env=test_env,
-                report_name="parallel",
-                timeout=session_timeout_parallel + 600,
-            )
-            if is_flaky_check and not test_result_parallel.is_ok():
-                print(
-                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-                )
-                break
+        log_file = f"{temp_path}/pytest_parallel.log"
+        test_result_parallel = run_pytest_and_collect_results(
+            command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            env=test_env,
+            report_name="parallel",
+            timeout=session_timeout_parallel + 600,
+        )
         test_results.extend(test_result_parallel.results)
         _mark_infrastructure_errors(test_result_parallel.results)
         failed_test_cases.extend(
@@ -682,44 +932,61 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
-            if not is_targeted_check:
-                # In targeted checks we may overload the run with many or heavy tests
-                # (--count N is used). In this mode, a session-timeout is an expected risk
-                # rather than an infrastructure problem, so we do not treat such errors as job-level
-                # failures and avoid setting the error flag for targeted runs.
+            if not is_targeted_check and not is_flaky_check:
+                # In targeted checks we may overload the run with many heavy tests running
+                # in parallel; in flaky checks the soft FLAKY_CHECK_TIME_LIMIT may cap the
+                # pytest session-timeout. In both cases a session-timeout is an expected
+                # risk rather than an infrastructure problem, so we do not treat such
+                # errors as job-level failures.
                 has_error = True
                 error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
-        for attempt in range(module_repeat_cnt):
+        for attempt in range(sequential_repeat_cnt):
+            # Recompute remaining budget for flaky-check at every iteration and stop
+            # scheduling new runs once it is exhausted (soft timeout).
+            iter_session_timeout_sequential = session_timeout_sequential
+            if is_flaky_check:
+                elapsed_for_flaky = int(sw.duration)
+                flaky_check_remaining_s = max(FLAKY_CHECK_TIME_LIMIT - elapsed_for_flaky, 0)
+                if flaky_check_remaining_s < 60:
+                    print(
+                        f"Flaky-check time limit reached after [{attempt}/{sequential_repeat_cnt}] sequential attempts "
+                        f"(elapsed: {elapsed_for_flaky}s, limit: {FLAKY_CHECK_TIME_LIMIT}s); stopping"
+                    )
+                    break
+                iter_session_timeout_sequential = min(
+                    session_timeout_sequential, flaky_check_remaining_s
+                )
             test_result_sequential = run_pytest_and_collect_results(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
-                timeout=session_timeout_sequential + 600,
+                timeout=iter_session_timeout_sequential + 600,
             )
-
-            if is_flaky_check and not test_result_sequential.is_ok():
+            test_results.extend(test_result_sequential.results)
+            _mark_infrastructure_errors(test_result_sequential.results)
+            failed_test_cases.extend(
+                [t.name for t in test_result_sequential.results if t.is_failure()]
+            )
+            if test_result_sequential.files:
+                failed_tests_files.extend(test_result_sequential.files)
+            if test_result_sequential.is_error():
+                if not is_targeted_check and not is_flaky_check:
+                    # In targeted checks we may overload the run with many heavy tests running
+                    # sequentially; in flaky checks the per-iteration `iter_session_timeout_sequential`
+                    # may be capped by FLAKY_CHECK_TIME_LIMIT. In both cases a session-timeout is
+                    # an expected risk rather than an infrastructure problem, so we do not treat
+                    # such errors as job-level failures.
+                    has_error = True
+                    error_info.append(test_result_sequential.info)
+                break
+            if (is_flaky_check or is_targeted_check) and not test_result_sequential.is_ok():
                 print(
-                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
+                    f"Flaky/targeted check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
                 )
                 break
-        test_results.extend(test_result_sequential.results)
-        _mark_infrastructure_errors(test_result_sequential.results)
-        failed_test_cases.extend(
-            [t.name for t in test_result_sequential.results if t.is_failure()]
-        )
-        if test_result_sequential.files:
-            failed_tests_files.extend(test_result_sequential.files)
-        if test_result_sequential.is_error():
-            if not is_targeted_check:
-                # In targeted checks we may overload the run with many or heavy tests
-                # (--count N is used). In this mode, a session-timeout is an expected risk
-                # rather than an infrastructure problem, so we do not treat such errors as job-level
-                # failures and avoid setting the error flag for targeted runs.
-                has_error = True
-                error_info.append(test_result_sequential.info)
 
     # Collect logs before re-run
     attached_files = []
@@ -787,14 +1054,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
             ):
                 test_results.append(
                     Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
+                        name=OOM_IN_DMESG_TEST_NAME, status=Result.Status.FAIL
                     )
                 )
                 attached_files.append("./ci/tmp/dmesg.log")
 
-    # For targeted checks, session-timeout is an expected risk (because of --count N
-    # overloading), so do not propagate the synthetic "Timeout" result as a failure.
-    if is_targeted_check:
+    # For targeted and flaky checks, session-timeout is an expected risk (because of
+    # `--count N` overloading on targeted, and the soft FLAKY_CHECK_TIME_LIMIT on flaky),
+    # so do not propagate the synthetic `Timeout` result as a failure.
+    if is_targeted_check or is_flaky_check:
         test_results = [r for r in test_results if r.name != "Timeout"]
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
@@ -805,11 +1073,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "LLVM coverage with bugfix validation is not supported"
         has_failure = False
         for r in R.results:
-            if r.status == Result.StatusExtended.FAIL:
+            if r.status == Result.Status.FAIL:
                 if r.has_label(Result.Label.OK_ON_RETRY):
                     # Remove label and set to OK
                     r.remove_label(Result.Label.OK_ON_RETRY)
-                    r.status = Result.StatusExtended.OK
+                    r.status = Result.Status.OK
                 else:
                     has_failure = True
         if has_failure:
@@ -832,19 +1100,19 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
         has_failure = False
         for r in R.results:
             # invert statuses
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
+            r.set_label(Result.Label.XFAIL)
+            if r.status == Result.Status.FAIL:
+                r.status = Result.Status.OK
                 has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
+            elif r.status == Result.Status.OK:
+                r.status = Result.Status.FAIL
         if not has_failure:
             print("Failed to reproduce the bug")
             R.set_failed()
@@ -857,7 +1125,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
         print("Collecting and merging LLVM coverage files...")
 
         # Merge all profraw files into final profdata file
-        merge_profraw_files(llvm_profdata_cmd, batch_num)
+        merged_profdata = merge_profraw_files(llvm_profdata_cmd, job_params)
+
+        # Attach profdata file to the result report so it is uploaded
+        # unconditionally (even when tests fail) and visible in the CI report.
+        if merged_profdata and os.path.exists(merged_profdata):
+            R.files.append(merged_profdata)
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")

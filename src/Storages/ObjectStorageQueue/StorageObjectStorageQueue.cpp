@@ -3,11 +3,14 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -21,8 +24,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
@@ -34,11 +39,15 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
+#include <Poco/Event.h>
 
 #include <fmt/ranges.h>
 
@@ -72,6 +81,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
     extern const char object_storage_queue_fail_commit_once[];
+    extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
 }
@@ -115,6 +125,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -129,6 +140,7 @@ namespace ObjectStorageQueueSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
@@ -136,6 +148,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
     extern const int KEEPER_EXCEPTION;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -272,6 +286,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+        .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -355,7 +370,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     zk_path = chooseZooKeeperPath(
@@ -398,6 +413,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
+    max_files_override = 0;
 }
 
 void StorageObjectStorageQueue::startup()
@@ -441,10 +457,10 @@ void StorageObjectStorageQueue::startup()
     /// Register table as a Queue table on this server.
     /// This will allow to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown.
-    ObjectStorageQueueFactory::instance().registerTable(getStorageID());
+    StreamingStorageRegistry::instance().registerTable(getStorageID());
     SCOPE_EXIT_SAFE({
         if (!startup_finished)
-            ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
+            StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
     });
 
     fiu_do_on(FailPoints::object_storage_queue_fail_startup, {
@@ -469,7 +485,7 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
     /// Unregister table from local Queue storages factory.
     /// (which allows to  to execute shutdown of Queue tables
     /// before shutting down all other tables on server shutdown).
-    ObjectStorageQueueFactory::instance().unregisterTable(getStorageID(), /* if_exists */true);
+    StreamingStorageRegistry::instance().unregisterTable(getStorageID(), /* if_exists */ true);
 
     table_is_being_dropped = is_drop;
     shutdown_called = true;
@@ -517,7 +533,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 {
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    ObjectStorageQueueFactory::instance().renameTable(prev_storage_id, getStorageID());
+    StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -601,7 +617,7 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-    bool do_commit_on_select;
+    bool do_commit_on_select = false;
     {
         std::lock_guard lock(mutex);
         do_commit_on_select = commit_on_select;
@@ -670,17 +686,23 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
-    bool commit_once_processed)
+    bool commit_once_processed,
+    size_t max_processed_files_override)
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
-    bool add_deduplication_info;
+    bool add_deduplication_info = false;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
+    if (max_processed_files_override)
+        commit_settings_copy.max_processed_files_before_commit = max_processed_files_override;
+    /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
+    const bool is_deduplication_v2 = add_deduplication_info
+        && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -702,34 +724,13 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(),
         log,
         commit_once_processed,
-        add_deduplication_info);
+        add_deduplication_info,
+        is_deduplication_v2);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
 {
-    auto table_id = getStorageID();
-
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
-
-    if (view_ids.empty())
-        return 0;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return 0;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return 0;
-    }
-
-    return view_ids.size();
+    return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
@@ -794,7 +795,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms;
+        UInt64 reschedule_interval_ms = 0;
         {
             std::lock_guard lock(mutex);
             reschedule_interval_ms = reschedule_processing_interval_ms;
@@ -830,13 +831,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
-    size_t min_insert_block_size_rows;
-    size_t min_insert_block_size_bytes;
-    bool is_deduplication_v2;
+    size_t min_insert_block_size_rows = 0;
+    size_t min_insert_block_size_bytes = 0;
+    bool is_deduplication_v2 = false;
     {
         std::lock_guard lock(mutex);
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
@@ -870,6 +871,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
+        /// All tasks share a single batch size override so that the halving
+        /// converges regardless of which task encounters the bad file.
+        auto effective_max_files = max_files_override.load();
+
         /// FIXME:
         /// it is possible that MV is dropped just before we start the insert,
         /// but in this case we would not throw any exception, so
@@ -913,7 +918,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                /*commit_once_processed=*/false);
+                /*commit_once_processed=*/false,
+                effective_max_files);
 
             pipes.emplace_back(source);
             sources.emplace_back(source);
@@ -950,12 +956,28 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
+
+                /// Halve the global batch size so that on the next iteration the bad file
+                /// ends up in a smaller batch, eventually alone (batch size 1),
+                /// and only then its retry count will be reduced.
+                /// The override is shared across all tasks so that the halving converges
+                /// regardless of which task encounters the bad file.
+                size_t current_max = max_files_override.load();
+                if (!current_max)
+                {
+                    std::lock_guard lock(mutex);
+                    current_max = commit_settings.max_processed_files_before_commit;
+                }
+                if (!current_max)
+                    current_max = processing_progress->processed_files.load();
+                max_files_override = std::max<size_t>(current_max / 2, 1);
             }
             catch (Exception & e)
             {
                 e.addMessage("Previous exception: {}", message);
                 throw;
             }
+
             throw;
         }
 
@@ -965,6 +987,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
+        max_files_override = 0;
         total_rows += rows;
     }
 
@@ -1062,6 +1085,13 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
+
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (!code.has_value())
@@ -1077,6 +1107,15 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        if (try_num > 1)
+        {
+            /// We had at least one hardware error retry, so the first attempt may have succeeded
+            /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+            /// before we received the response. Mark all metadata objects so their destructors
+            /// check ownership before removing the processing node instead of asserting.
+            for (auto & source : sources)
+                source->setUncertainCommit();
+        }
         throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 
@@ -1142,6 +1181,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1175,6 +1215,7 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
+    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1195,7 +1236,7 @@ static std::string normalizeSetting(const std::string & name)
     return name;
 }
 
-void checkNormalizedSetting(const std::string & name)
+static void checkNormalizedSetting(const std::string & name)
 {
     if (name.starts_with("s3queue_"))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
@@ -1248,7 +1289,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1321,7 +1362,7 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1484,6 +1525,8 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_preserve_path")
+                after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
@@ -1527,12 +1570,14 @@ const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetad
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::createFileIterator");
+
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
-    size_t list_objects_batch_size_copy;
-    bool enable_hash_ring_filtering_copy;
+    size_t list_objects_batch_size_copy = 0;
+    bool enable_hash_ring_filtering_copy = false;
     {
         std::lock_guard lock(mutex);
         list_objects_batch_size_copy = list_objects_batch_size;
@@ -1546,7 +1591,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getVirtualsList(),
+        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
@@ -1602,6 +1647,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
+        settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;
@@ -1696,6 +1742,124 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     if (result_zookeeper_name)
         *result_zookeeper_name = zkutil::extractZooKeeperName(result_zk_path);
     return zkutil::extractZooKeeperPath(result_zk_path, true);
+}
+
+void StorageObjectStorageQueue::waitForPathToBeProcessed(
+    const std::string & path,
+    ContextPtr local_context,
+    std::optional<std::chrono::steady_clock::time_point> deadline) const
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::waitForPathToBeProcessed");
+
+    /// Determine the Keeper paths we need to watch.
+    /// For unordered mode each file gets its own node under processed/ and failed/.
+    /// For ordered mode the processed pointer is a shared node whose *data* is updated,
+    /// while the failed node is still per-file.
+    const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
+
+    auto file_metadata = files_metadata->getFileMetadata(path);
+    const auto & processed_node_path = file_metadata->getProcessedNodePath();
+    const auto & failed_node_path = file_metadata->getFailedNodePath();
+
+    LOG_DEBUG(log, "Waiting for path '{}' to be processed by {}", path, getStorageID().getNameForLogs());
+
+    /// Check terminal state first — if the file is already processed or permanently
+    /// failed, return or throw immediately regardless of dependency/streaming guards.
+    {
+        std::string failure_message;
+        const auto state = file_metadata->getPathState(failure_message);
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
+        {
+            LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
+            return;
+        }
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+            throw Exception(ErrorCodes::ABORTED,
+                "Path '{}' failed to be processed by {}: {}",
+                path, getStorageID().getNameForLogs(), failure_message);
+    }
+
+    auto event = std::make_shared<Poco::Event>();
+
+    while (true)
+    {
+        if (shutdown_called || table_is_being_dropped)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                "Table {} is being dropped or server is shutting down",
+                getStorageID().getNameForLogs());
+
+        if (!startup_finished || streaming_tasks.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: background streaming for {} "
+                "has not started yet",
+                getStorageID().getNameForLogs());
+
+        if (getDependencies() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: table {} has no attached "
+                "materialized views and will not consume any files",
+                getStorageID().getNameForLogs());
+
+        if (getContext()->getS3QueueDisableStreaming())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: streaming is disabled for {}",
+                getStorageID().getNameForLogs());
+
+        if (auto query_status = local_context->getProcessListElementSafe())
+            query_status->checkTimeLimit();
+
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout waiting for path '{}' to be processed by {}",
+                path, getStorageID().getNameForLogs());
+
+        /// Register watches before checking state to avoid missing a transition
+        /// that occurs between the state check and watch registration.
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk = files_metadata->getZooKeeper()->getKeeper();
+
+            if (is_ordered)
+            {
+                /// The ordered processed pointer may or may not exist yet:
+                /// - Exists   → tryGetWatch registers a data-change watch.
+                /// - Missing  → fall back to existsWatch so we are notified
+                ///              when the node is first created.
+                std::string dummy_data;
+                Coordination::Stat dummy_stat{};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                if (!node_exists)
+                    zk->existsWatch(processed_node_path, nullptr, event);
+            }
+            else
+            {
+                /// Unordered: each file gets its own processed node; watch for its creation.
+                zk->existsWatch(processed_node_path, nullptr, event);
+            }
+
+            /// Per-file failed node: watch for creation regardless of mode.
+            zk->existsWatch(failed_node_path, nullptr, event);
+        });
+
+        std::string failure_message;
+        const auto state = file_metadata->getPathState(failure_message);
+
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
+        {
+            LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
+            return;
+        }
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        {
+            throw Exception(ErrorCodes::ABORTED,
+                "Path '{}' failed to be processed by {}: {}",
+                path, getStorageID().getNameForLogs(), failure_message);
+        }
+
+        constexpr UInt64 watch_timeout_ms = 1000;
+        event->tryWait(watch_timeout_ms);
+        (*event).reset();
+    }
 }
 
 }

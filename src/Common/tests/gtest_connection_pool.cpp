@@ -1,4 +1,5 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 
 #include <Poco/URI.h>
@@ -232,13 +233,13 @@ protected:
 };
 
 
-void wait_until(std::function<bool()> pred)
+static void wait_until(std::function<bool()> pred)
 {
     while (!pred())
         sleepForMilliseconds(10);
 }
 
-void echoRequest(String data, HTTPSession & session)
+static void echoRequest(String data, HTTPSession & session)
 {
     {
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1"); // HTTP/1.1 is required for keep alive

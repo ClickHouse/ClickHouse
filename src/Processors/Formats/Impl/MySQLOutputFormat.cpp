@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolBinary.h>
@@ -138,6 +139,7 @@ void MySQLOutputFormat::flushImpl()
     packet_endpoint->out->next();
 }
 
+void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(

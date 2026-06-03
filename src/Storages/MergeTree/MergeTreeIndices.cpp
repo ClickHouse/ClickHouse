@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -74,6 +75,15 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
 {
     if (!validators.emplace(index_type, std::move(validator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
+}
+
+std::vector<String> MergeTreeIndexFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    result.reserve(creators.size());
+    for (const auto & pair : creators)
+        result.push_back(pair.first);
+    return result;
 }
 
 void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
@@ -184,6 +194,12 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
+
+    /// Index type 'hypothesis' is no longer supported.
+    /// To allow loading tables with old indexes, register a dummy index which allows attach but
+    /// throws an exception when the user attempts to create or use it.
+    registerCreator("hypothesis", legacyHypothesisIndexCreator);
+    registerValidator("hypothesis", legacyHypothesisIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

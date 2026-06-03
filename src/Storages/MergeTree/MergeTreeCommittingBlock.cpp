@@ -51,7 +51,7 @@ void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & ou
 
 CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
 {
-    int64_t op;
+    int64_t op = 0;
     in >> "operation: " >> op >> "\n";
     return fromIntChecked<CommittingBlock::Op>(op);
 }
@@ -76,7 +76,7 @@ CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & r
         assertEOF(in);
         return committing_block_op;
     }
-    catch (...)
+    catch (const Exception &)
     {
         return CommittingBlock::Op::Unknown;
     }
