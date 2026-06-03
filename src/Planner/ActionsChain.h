@@ -71,6 +71,12 @@ public:
         return available_output_columns;
     }
 
+    /// Get mutable available output columns (e.g. to fix projection order after CSE)
+    ColumnsWithTypeAndName & getAvailableOutputColumns()
+    {
+        return available_output_columns;
+    }
+
     /// Get input column names
     const NameSet & getInputColumnNames() const
     {

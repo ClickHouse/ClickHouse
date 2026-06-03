@@ -723,6 +723,84 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         actions_chain);
     current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
+    /// `ActionsChainStep::initialize` builds `available_output_columns` by iterating
+    /// the internal node list (`getNodes`), whose order reflects DAG construction order.
+    /// When CSE shares a node between two projection expressions, the shared node
+    /// appears earlier in the node list than the containing expression, reversing their
+    /// relative order in `available_output_columns`.  This wrong order then propagates
+    /// to downstream steps (Before ORDER BY, etc.) as their `input_columns`, ultimately
+    /// causing positional column mismatches in distributed queries where the initiator
+    /// renames columns by position (see #81631).
+    ///
+    /// Fix: compare the projection columns in `available_output_columns` against the
+    /// recorded `projection_column_names` (captured in projection order by
+    /// `analyzeProjection`).  If they diverge, reorder both the DAG outputs and
+    /// `available_output_columns` to match, and propagate the corrected order into
+    /// `current_output_columns`.  For the common case where CSE does not affect order,
+    /// the comparison finds everything in place and no mutation occurs.
+    {
+        const auto & expected_names = projection_analysis_result.projection_column_names;
+        size_t projection_size = expected_names.size();
+
+        bool needs_reorder = false;
+        for (size_t i = 0; i < projection_size && i < current_output_columns.size(); ++i)
+        {
+            if (current_output_columns[i].name != expected_names[i])
+            {
+                needs_reorder = true;
+                break;
+            }
+        }
+
+        if (needs_reorder)
+        {
+            std::unordered_map<std::string_view, size_t> name_to_pos;
+            for (size_t i = 0; i < current_output_columns.size(); ++i)
+                name_to_pos.emplace(current_output_columns[i].name, i);
+
+            ColumnsWithTypeAndName reordered_columns;
+            reordered_columns.reserve(current_output_columns.size());
+
+            for (size_t i = 0; i < projection_size; ++i)
+            {
+                auto it = name_to_pos.find(expected_names[i]);
+                chassert(it != name_to_pos.end());
+                reordered_columns.push_back(current_output_columns[it->second]);
+            }
+            NameSet projection_name_set(expected_names.begin(), expected_names.end());
+            for (const auto & col : current_output_columns)
+            {
+                if (!projection_name_set.contains(col.name))
+                    reordered_columns.push_back(col);
+            }
+
+            current_output_columns = std::move(reordered_columns);
+            actions_chain.getLastStep()->getAvailableOutputColumns() = current_output_columns;
+
+            auto & dag_outputs = projection_analysis_result.projection_actions->dag.getOutputs();
+            if (projection_size <= dag_outputs.size())
+            {
+                std::unordered_map<std::string_view, const ActionsDAG::Node *> dag_name_to_node;
+                for (const auto * node : dag_outputs)
+                    dag_name_to_node.emplace(node->result_name, node);
+
+                ActionsDAG::NodeRawConstPtrs reordered_outputs;
+                reordered_outputs.reserve(dag_outputs.size());
+
+                for (size_t i = 0; i < projection_size; ++i)
+                {
+                    auto it = dag_name_to_node.find(expected_names[i]);
+                    chassert(it != dag_name_to_node.end());
+                    reordered_outputs.push_back(it->second);
+                }
+                for (size_t i = projection_size; i < dag_outputs.size(); ++i)
+                    reordered_outputs.push_back(dag_outputs[i]);
+
+                dag_outputs = std::move(reordered_outputs);
+            }
+        }
+    }
+
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
     {
@@ -854,61 +932,6 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
     actions_chain.finalize();
-
-    /// After chain finalization, the Projection DAG's outputs may have been reordered.
-    /// `finalizeInputAndOutputColumns` appends child-required columns by iterating the
-    /// internal node list (`getNodes`), whose order reflects DAG construction order rather
-    /// than the original projection order.  When Common Subexpression Elimination (CSE)
-    /// shares a node between two projection expressions, the shared node appears earlier
-    /// in the node list than its containing expression, reversing their relative order in
-    /// the outputs.  This propagates through the chain and causes positional column
-    /// mismatches in distributed queries where the initiator renames columns by position
-    /// (see #81631).
-    ///
-    /// Fix: compare the first N outputs against the recorded `projection_column_names`
-    /// (captured before finalization in projection order).  If they diverge, build a
-    /// permutation and reorder the outputs.  For the common case where CSE does not
-    /// affect order, the comparison finds everything in place and no mutation occurs.
-    {
-        auto & outputs = projection_analysis_result.projection_actions->dag.getOutputs();
-        const auto & expected_names = projection_analysis_result.projection_column_names;
-        size_t projection_size = expected_names.size();
-
-        if (projection_size <= outputs.size())
-        {
-            bool needs_reorder = false;
-            for (size_t i = 0; i < projection_size; ++i)
-            {
-                if (outputs[i]->result_name != expected_names[i])
-                {
-                    needs_reorder = true;
-                    break;
-                }
-            }
-
-            if (needs_reorder)
-            {
-                std::unordered_map<std::string_view, const ActionsDAG::Node *> name_to_node;
-                for (const auto * node : outputs)
-                    name_to_node.emplace(node->result_name, node);
-
-                ActionsDAG::NodeRawConstPtrs reordered;
-                reordered.reserve(outputs.size());
-
-                for (size_t i = 0; i < projection_size; ++i)
-                {
-                    auto it = name_to_node.find(expected_names[i]);
-                    chassert(it != name_to_node.end());
-                    reordered.push_back(it->second);
-                }
-
-                for (size_t i = projection_size; i < outputs.size(); ++i)
-                    reordered.push_back(outputs[i]);
-
-                outputs = std::move(reordered);
-            }
-        }
-    }
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 
