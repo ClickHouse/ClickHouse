@@ -1,0 +1,41 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- The deduplication log always uses the first disk of the policy.
+                 With `metadata_type=plain` this disk does not support writing with append. -->
+            <disk0_plain>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <endpoint>http://minio1:9001/root/data0/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk0_plain>
+            <disk1_local>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>http://minio1:9001/root/data1/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk1_local>
+        </disks>
+        <policies>
+            <mixed_metadata_policy>
+                <volumes>
+                    <!-- The plain disk goes first, so the deduplication log is created on it.
+                         `max_data_part_size_bytes=1` ensures no real data part fits here, so all
+                         parts are reserved on the next volume (a `local`-metadata disk that can
+                         host parts). This reproduces the configuration from issue #86189. -->
+                    <volume0>
+                        <disk>disk0_plain</disk>
+                        <max_data_part_size_bytes>1</max_data_part_size_bytes>
+                    </volume0>
+                    <volume1>
+                        <disk>disk1_local</disk>
+                    </volume1>
+                </volumes>
+            </mixed_metadata_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
