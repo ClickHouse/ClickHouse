@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemTables.h>
 
+#include <set>
+
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
@@ -196,6 +198,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -727,6 +730,23 @@ protected:
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    Array skipping_indices_types;
+                    if (metadata_snapshot)
+                    {
+                        /// Collect distinct types, sorted, so the result is deterministic.
+                        std::set<String> types;
+                        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                            types.insert(index.type);
+
+                        skipping_indices_types.reserve(types.size());
+                        for (const auto & type : types)
+                            skipping_indices_types.push_back(type);
+                    }
+                    res_columns[res_index++]->insert(skipping_indices_types);
                 }
 
                 if (columns_mask[src_index++])
