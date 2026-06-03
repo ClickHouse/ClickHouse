@@ -438,11 +438,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
             requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
 
-            /// Test-only pause point. Widens the window in which the new part is already
-            /// `Active` (because the storage `Transaction::commit` has returned) but the
-            /// CSN znode below has not yet been created in Keeper -- so
-            /// `TransactionLog::getCSN(creation_tid)` still returns 0. Used by regression
-            /// tests for races between in-flight tx creators and non-tx removers.
+            /// Test-only pause point: widens the window where the new part is `Active`
+            /// but its CSN znode has not yet been created in Keeper.
             FailPointInjection::pauseFailPoint(FailPoints::transaction_before_csn_publish);
 
             /// Commit point
