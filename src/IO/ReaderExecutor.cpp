@@ -644,6 +644,15 @@ void ReaderExecutor::maybeTriggerPrefetch()
     prefetch_issued_source_at_submit = stats.prefetch_issued_source_bytes;
     prefetch_issued_cache_at_submit = stats.prefetch_issued_cache_bytes;
 
+    /// Reserve the stash slot up front so a later discard of this prefetch (seek or
+    /// the readNextWindow cancel path) can move the handle into `abandoned_prefetches`
+    /// WITHOUT allocating. A `push_back` realloc there could throw; on the cancel path
+    /// that drops the handle before the worker is joined (it still runs against this
+    /// `ReaderExecutor` - use-after-free). Capacity is retained across drains, so this
+    /// allocates only on the first prefetch; reserving here keeps it off the hot
+    /// discard paths.
+    abandoned_prefetches.reserve(abandoned_prefetches.size() + 1);
+
     auto handle = prefetch_pool->submit([this, next_physical_window]()
     {
         Stopwatch watch;
