@@ -48,6 +48,9 @@ SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([(13.4, 52.5), (13.5, 52.6)]::LineS
 SELECT '-- mvtEncode: a polygon feature';
 SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([[(13.4, 52.5), (13.65, 52.5), (13.65, 52.65), (13.4, 52.65), (13.4, 52.5)]]::Polygon, 10, 550, 335)));
 
+SELECT '-- mvtEncode: a degenerate (collinear, zero-area) polygon ring is dropped, producing an empty tile';
+SELECT length(mvtEncode('shapes')([[(100.0, 100.0), (200.0, 100.0), (300.0, 100.0), (100.0, 100.0)]]::Polygon::Geometry));
+
 SELECT '-- mvtEncode: an empty group produces an empty tile';
 SELECT length(mvtEncode('points')((0.0, 0.0)::Point::Geometry)) FROM numbers(0);
 

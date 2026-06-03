@@ -24,6 +24,8 @@ Geometry
 1A1F78020A06736861706573121018021200220A09B207EE3A0A9A12F91D288020
 -- mvtEncode: a polygon feature
 1A2578020A06736861706573121618031200221009B207F60D1AC22D0000F82CC12D000F288020
+-- mvtEncode: a degenerate (collinear, zero-area) polygon ring is dropped, producing an empty tile
+0
 -- mvtEncode: an empty group produces an empty tile
 0
 -- mvtEncode: NULL (clipped-out) geometry rows are skipped, so they do not change the tile

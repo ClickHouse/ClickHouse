@@ -19,6 +19,8 @@
 -- mvtEncodeGeom: a line crossing the tile edge is clipped to the buffer boundary
 [[(1638,1850),(4096,1850)]]
 -- mvtEncode: a geometry coordinate outside the representable MVT range is rejected
+-- mvtEncode: a geometry delta exceeding the MVT command range is rejected (both vertices are in range)
 -- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator
+-- mvtEncodeGeom: fractional (non-integer) tile controls are rejected rather than silently truncated
 -- the largest valid tile index for a zoom is accepted
 1	1

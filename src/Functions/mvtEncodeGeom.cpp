@@ -173,11 +173,13 @@ public:
                 getName(),
                 geometry_type->getName());
 
+        /// zoom, tile_x, tile_y, extent, buffer and clip must be unsigned integers (matching mvtTileBBox); accepting
+        /// arbitrary numeric types would silently truncate fractional values such as a zoom of 1.9 to 1.
         for (size_t i = 1; i < arguments.size(); ++i)
-            if (!isNumber(arguments[i].type))
+            if (!isNativeUInt(arguments[i].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument #{} of function {} must be numeric, got {}",
+                    "Argument #{} of function {} must be an unsigned integer, got {}",
                     i + 1,
                     getName(),
                     arguments[i].type->getName());

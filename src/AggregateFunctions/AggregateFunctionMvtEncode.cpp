@@ -233,21 +233,35 @@ private:
         return points;
     }
 
+    /// MVT geometry parameters are zig-zagged deltas packed into a `uint32` field, so each delta must fit in `Int32`
+    /// (the zig-zag of any `Int32` fits in `uint32`). Two individually in-range vertices can still differ by more than
+    /// `Int32` can hold, so validate the delta before encoding it.
+    static UInt64 zigZagDelta(Int64 delta)
+    {
+        if (delta < std::numeric_limits<Int32>::min() || delta > std::numeric_limits<Int32>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function mvtEncode produced a geometry delta ({}) outside the range of the MVT command "
+                "stream; reduce the extent or clip the geometry to the tile with mvtEncodeGeom",
+                delta);
+        return encodeZigZag(delta);
+    }
+
     /// Emit MoveTo + LineTo for an open path; advances the cursor.
     static void emitLineTo(String & out, const TilePoints & points, Int64 & cursor_x, Int64 & cursor_y)
     {
         if (points.size() < 2)
             return;
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-        MVT::writeVarint(out, encodeZigZag(points[0].first - cursor_x));
-        MVT::writeVarint(out, encodeZigZag(points[0].second - cursor_y));
+        MVT::writeVarint(out, zigZagDelta(points[0].first - cursor_x));
+        MVT::writeVarint(out, zigZagDelta(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
         MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
-            MVT::writeVarint(out, encodeZigZag(points[i].first - cursor_x));
-            MVT::writeVarint(out, encodeZigZag(points[i].second - cursor_y));
+            MVT::writeVarint(out, zigZagDelta(points[i].first - cursor_x));
+            MVT::writeVarint(out, zigZagDelta(points[i].second - cursor_y));
             cursor_x = points[i].first;
             cursor_y = points[i].second;
         }
@@ -267,38 +281,52 @@ private:
     }
 
     /// Emit a closed ring (MoveTo + LineTo + ClosePath) with the orientation MVT requires; advances the cursor.
-    static void emitRing(String & out, TilePoints points, bool exterior, Int64 & cursor_x, Int64 & cursor_y)
+    /// Returns false (emitting nothing) for a degenerate ring — fewer than three distinct vertices, or zero area
+    /// after quantization to the pixel grid — which the MVT specification forbids.
+    static bool emitRing(String & out, TilePoints points, bool exterior, Int64 & cursor_x, Int64 & cursor_y)
     {
         if (points.size() >= 2 && points.front() == points.back())
             points.pop_back();
         if (points.size() < 3)
-            return;
+            return false;
+
+        const double area = signedArea(points);
+        if (area == 0.0)
+            return false;
 
         const bool want_positive = exterior == mvt_exterior_area_positive;
-        if ((signedArea(points) > 0.0) != want_positive)
+        if ((area > 0.0) != want_positive)
             std::reverse(points.begin(), points.end());
 
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-        MVT::writeVarint(out, encodeZigZag(points[0].first - cursor_x));
-        MVT::writeVarint(out, encodeZigZag(points[0].second - cursor_y));
+        MVT::writeVarint(out, zigZagDelta(points[0].first - cursor_x));
+        MVT::writeVarint(out, zigZagDelta(points[0].second - cursor_y));
         cursor_x = points[0].first;
         cursor_y = points[0].second;
         MVT::writeVarint(out, (MvtCommand::LineTo & 0x7) | (static_cast<UInt32>(points.size() - 1) << 3));
         for (size_t i = 1; i < points.size(); ++i)
         {
-            MVT::writeVarint(out, encodeZigZag(points[i].first - cursor_x));
-            MVT::writeVarint(out, encodeZigZag(points[i].second - cursor_y));
+            MVT::writeVarint(out, zigZagDelta(points[i].first - cursor_x));
+            MVT::writeVarint(out, zigZagDelta(points[i].second - cursor_y));
             cursor_x = points[i].first;
             cursor_y = points[i].second;
         }
         MVT::writeVarint(out, (MvtCommand::ClosePath & 0x7) | (1u << 3));
+        return true;
     }
 
+    /// Emit a polygon (exterior ring followed by holes). If the exterior ring is degenerate and dropped, the whole
+    /// polygon — including its holes — is skipped, so the output never contains holes without an enclosing ring.
     static void emitPolygon(String & out, const Field & rings_field, Int64 & cursor_x, Int64 & cursor_y, const String & function_name)
     {
         const Array & rings = rings_field.safeGet<Array>();
         for (size_t i = 0; i < rings.size(); ++i)
-            emitRing(out, readPointSequence(rings[i], function_name), /*exterior=*/i == 0, cursor_x, cursor_y);
+        {
+            const bool exterior = i == 0;
+            const bool emitted = emitRing(out, readPointSequence(rings[i], function_name), exterior, cursor_x, cursor_y);
+            if (exterior && !emitted)
+                return;
+        }
     }
 
     /// Encode one geometry (identified by its Variant discriminator) into the MVT command stream `out`,
@@ -315,8 +343,8 @@ private:
                 Int32 y = 0;
                 readPoint(geometry, x, y, getName());
                 MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
-                MVT::writeVarint(out, encodeZigZag(x));
-                MVT::writeVarint(out, encodeZigZag(y));
+                MVT::writeVarint(out, zigZagDelta(x));
+                MVT::writeVarint(out, zigZagDelta(y));
                 return MvtGeomType::Point;
             }
             case GeoDisc::LineString:
@@ -639,10 +667,11 @@ The result is the raw bytes of a single-layer tile, which can be returned direct
 SELECT mvtEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
 FROM
 (
-    SELECT mvtEncodeGeom(p, 10, 550, 335) AS geom, count() AS cluster_count
+    SELECT mvtEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
     FROM points
     GROUP BY geom
-);
+)
+SETTINGS allow_suspicious_types_in_group_by = 1;
             )",
             "",
         },
