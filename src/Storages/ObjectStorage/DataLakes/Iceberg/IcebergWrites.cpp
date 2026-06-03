@@ -422,7 +422,7 @@ void generateManifestFile(
                 /// unions. NULL selects branch 0; a concrete value selects branch 1.
                 /// See issue #105852: before this change, NULL partition values were
                 /// silently written as 0 because the schema was non-nullable.
-                size_t field_index;
+                size_t field_index = 0;
                 if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
