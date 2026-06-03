@@ -5306,6 +5306,19 @@ class ClickHouseInstance:
             raise Exception(
                 "clickhouse can be stopped only with stay_alive=True instance"
             )
+
+        # Under LLVM coverage the server runs several times slower and writes its
+        # .profraw only on a graceful shutdown (the libprofile atexit handler, or
+        # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
+        # SIGKILL loses everything this process executed. So for a graceful stop give
+        # the server a much larger window to finish shutting down (and flush coverage)
+        # before the force-kill below. The integration coverage job exports
+        # LLVM_PROFILE_FILE into the pytest environment (ci/jobs/integration_test_job.py),
+        # which is how we detect a coverage run here. restart_clickhouse() delegates to
+        # this method, so it is covered too.
+        if not kill and os.environ.get("LLVM_PROFILE_FILE") and stop_wait_sec < 180:
+            stop_wait_sec = 180
+
         try:
             ps_clickhouse = self.exec_in_container(
                 ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
