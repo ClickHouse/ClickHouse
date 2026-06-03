@@ -76,8 +76,8 @@ using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
 struct ChangelogFileDescription
 {
     std::string prefix;
-    uint64_t from_log_index;
-    uint64_t to_log_index;
+    uint64_t from_log_index{};
+    uint64_t to_log_index{};
     std::string extension;
 
     DiskPtr disk;
@@ -273,6 +273,14 @@ private:
     mutable SharedMutex commit_logs_cache_mutex;
     mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
 
+    /// Cache optimization: stores max(lastCommittedIndex from getEntry, cleanUpTo parameter).
+    /// Invariant: cache is cleaned to at least this index. Used by getEntry to skip
+    /// the exclusive lock on commit_logs_cache_mutex when the committed index has not advanced.
+    /// Both getEntry and cleanUpTo write to this; writes are conditional (only advance, never regress)
+    /// so that an external cleanUpTo with a lower compaction index does not invalidate the optimization.
+    /// Reset to 0 in clear().
+    mutable std::atomic<uint64_t> last_cleaned_committed_index{0};
+
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
 
@@ -284,8 +292,8 @@ private:
     struct FileReadInfo
     {
         ChangelogFileDescriptionPtr file_description;
-        size_t position;
-        size_t count;
+        size_t position{};
+        size_t count{};
     };
 
     struct PrefetchInfo
@@ -420,8 +428,10 @@ private:
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
+    /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
+    void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
@@ -452,7 +462,7 @@ private:
 
     struct AppendLog
     {
-        uint64_t index;
+        uint64_t index{};
         nuraft::ptr<nuraft::log_entry> log_entry;
     };
 

@@ -1,6 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/registerCompressionCodecs.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -38,11 +39,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     if (level)
     {
-        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
 
-    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
     return get(makeASTFunction("CODEC", identifier), {});
 }
 
@@ -191,21 +192,18 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 }
 
 
-void registerCodecNone(CompressionCodecFactory & factory);
-void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
-void registerCodecZSTD(CompressionCodecFactory & factory);
-void registerCodecMultiple(CompressionCodecFactory & factory);
+Strings CompressionCodecFactory::getAllRegisteredNames() const
+{
+    Strings result;
+    result.reserve(family_name_with_codec.size());
+    for (const auto & pair : family_name_with_codec)
+        result.push_back(pair.first);
+    return result;
+}
 
-/// Keeper use only general-purpose codecs, so we don't need these special codecs
-/// in standalone build
-void registerCodecDelta(CompressionCodecFactory & factory);
-void registerCodecT64(CompressionCodecFactory & factory);
-void registerCodecDoubleDelta(CompressionCodecFactory & factory);
-void registerCodecGorilla(CompressionCodecFactory & factory);
-void registerCodecEncrypted(CompressionCodecFactory & factory);
-void registerCodecFPC(CompressionCodecFactory & factory);
-void registerCodecGCD(CompressionCodecFactory & factory);
+
+/// Defined in individual CompressionCodec*.cpp files
+/// and declared in registerCompressionCodecs.h
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -221,6 +219,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
     registerCodecGCD(*this);
+    registerCodecALP(*this);
 
     default_codec = get("LZ4", {});
 }

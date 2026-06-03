@@ -319,12 +319,12 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
         return 0;
 
     // locate dots
-    uint16_t dotmask;
+    uint16_t dotmask = 0;
     {
         const __m128i dot = _mm_set1_epi8('.');
         const __m128i t0 = _mm_cmpeq_epi8(input, dot);
         dotmask = static_cast<uint16_t>(_mm_movemask_epi8(t0));
-        uint16_t mask = static_cast<uint16_t>(1) << ipv4_string_length;
+        uint16_t mask = static_cast<uint16_t>(1 << ipv4_string_length);
         dotmask &= mask - 1;
         dotmask |= mask;
     }
@@ -344,7 +344,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
     // and that `pat` is the correct pattern for that mask.
     // The original implementation didn't have this check and could succeed for invalid inputs
     // (e.g. "1111111.1111111" was parsed as "11.11.1.1").
-    uint16_t expected_dotmask;
+    uint16_t expected_dotmask = 0;
     memcpy(&expected_dotmask, pat + 16, 2);
     if (dotmask != expected_dotmask)
         return 0;
@@ -390,7 +390,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
     // pack and we are done!
     const __m128i t6 = _mm_packus_epi16(t5, t5);
     *destination = __builtin_bswap32(static_cast<uint32_t>(_mm_cvtsi128_si32(t6)));
-    return ipv4_string_length - pat[6];
+    return static_cast<int>(ipv4_string_length) - pat[6];
 }
 
 #endif

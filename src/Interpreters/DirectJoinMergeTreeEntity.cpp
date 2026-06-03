@@ -88,7 +88,7 @@ static std::unique_ptr<FilterStep> buildFilterStepWithIn(const ColumnWithTypeAnd
     DataTypePtr set_type = std::make_shared<DataTypeSet>();
     auto future_set = std::make_shared<FutureSetFromTuple>(CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{key_column}, false, SizeLimits{});
 
-    auto set_column = ColumnSet::create(1, future_set);
+    auto set_column = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const auto * set_node = &filter_dag.addColumn(ColumnWithTypeAndName(std::move(set_column), set_type, "__set"));
 
     auto in_function = FunctionFactory::instance().get("in", nullptr);
@@ -123,7 +123,12 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
     {
         if (!result_chunk)
         {
-            result_chunk = Chunk(result_block.getColumns(), result_block.rows());
+            /// Materialize columns to ensure consistent types across blocks
+            /// (e.g., ColumnConst or ColumnSparse may appear in some blocks but not others).
+            auto columns = result_block.getColumns();
+            for (auto & col : columns)
+                col = col->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
+            result_chunk = Chunk(std::move(columns), result_block.rows());
         }
         else
         {
@@ -133,8 +138,9 @@ Chunk DirectJoinMergeTreeEntity::executePlan(QueryPlan & plan) const
 
             for (size_t i = 0; i < columns.size(); ++i)
             {
+                auto new_col = new_columns[i]->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
                 auto mutable_col = IColumn::mutate(std::move(columns[i]));
-                mutable_col->insertRangeFrom(*new_columns[i], 0, new_columns[i]->size());
+                mutable_col->insertRangeFrom(*new_col, 0, new_col->size());
                 columns[i] = std::move(mutable_col);
             }
 
@@ -245,14 +251,14 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
             for (size_t row_idx : matching_rows)
             {
                 selector_data.push_back(row_idx);
-                out_null_map.push_back(1);
+                out_null_map.push_back(true);
             }
         }
         else
         {
             /// Key not found: use sentinel index pointing to default values appended below
             selector_data.push_back(num_found_rows);
-            out_null_map.push_back(0);
+            out_null_map.push_back(false);
         }
 
         out_offsets.push_back(selector_data.size());

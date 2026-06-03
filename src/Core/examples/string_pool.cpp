@@ -13,8 +13,9 @@
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
-int main(int argc, char ** argv)
+int mainEntryExampleStringPool(int argc, char ** argv)
 {
     if (argc < 2)
     {
@@ -51,8 +52,8 @@ int main(int argc, char ** argv)
         }
 
         std::cerr << "Read and inserted into vector in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
     }
 
@@ -69,8 +70,8 @@ int main(int argc, char ** argv)
         }
 
         std::cerr << "Inserted into pool in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         devnull.write(res, 100);
@@ -85,8 +86,8 @@ int main(int argc, char ** argv)
             set[elem] = 0;
 
         std::cerr << "Inserted into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -105,8 +106,8 @@ int main(int argc, char ** argv)
             set[std::string_view(elem)] = 0;
 
         std::cerr << "Inserted refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -126,8 +127,8 @@ int main(int argc, char ** argv)
             set[std::string_view(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into std::unordered_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -147,8 +148,8 @@ int main(int argc, char ** argv)
             set[elem] = 0;
 
         std::cerr << "Inserted into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -168,8 +169,8 @@ int main(int argc, char ** argv)
             set[std::string_view(elem.data(), elem.size())] = 0;
 
         std::cerr << "Inserted refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -190,8 +191,8 @@ int main(int argc, char ** argv)
             set[std::string_view(pool.insert(elem.data(), elem.size()), elem.size())] = 0;
 
         std::cerr << "Inserted into pool and refs into google::dense_hash_map in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -208,14 +209,14 @@ int main(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(elem), inserted_it, inserted);
         }
 
         std::cerr << "Inserted refs into HashMap in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;
@@ -235,14 +236,14 @@ int main(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
         }
 
         std::cerr << "Inserted into pool and refs into HashMap in " << watch.elapsedSeconds() << " sec, "
-            << vec.size() / watch.elapsedSeconds() << " rows/sec., "
-            << in.count() / watch.elapsedSeconds() / 1000000 << " MB/sec."
+            << static_cast<double>(vec.size()) / watch.elapsedSeconds() << " rows/sec., "
+            << static_cast<double>(in.count()) / watch.elapsedSeconds() / 1000000 << " MB/sec."
             << std::endl;
 
         size_t i = 0;

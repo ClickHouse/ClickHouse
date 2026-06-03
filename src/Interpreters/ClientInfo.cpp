@@ -24,6 +24,7 @@ namespace ErrorCodes
 
 ClientInfo::ClientInfo()
 {
+    connection_address = std::make_shared<Poco::Net::SocketAddress>();
     current_address = std::make_shared<Poco::Net::SocketAddress>();
     initial_address = std::make_shared<Poco::Net::SocketAddress>();
 }
@@ -238,7 +239,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
-        UInt64 value;
+        UInt64 value = 0;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
         readVarUInt(obsolete_count_participating_replicas, in);

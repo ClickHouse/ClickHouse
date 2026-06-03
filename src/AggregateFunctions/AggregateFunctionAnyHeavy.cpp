@@ -2,7 +2,6 @@
 #include <AggregateFunctions/SingleValueData.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/defines.h>
 
 
 namespace DB
@@ -27,16 +26,22 @@ struct AggregateFunctionAnyHeavyData
     using Self = AggregateFunctionAnyHeavyData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     UInt64 counter = 0;
 
 public:
-    [[noreturn]] explicit AggregateFunctionAnyHeavyData()
+    [[noreturn]] explicit AggregateFunctionAnyHeavyData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionAnyHeavyData initialized empty");
     }
 
-    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
+    explicit AggregateFunctionAnyHeavyData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionAnyHeavyData() { data().~SingleValueDataBase(); }
 
@@ -119,9 +124,9 @@ public:
         data(place).add(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        data(place).addManyDefaults(*columns[0], length, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -160,10 +165,41 @@ createAggregateFunctionAnyHeavy(const std::string & name, const DataTypes & argu
 
 }
 
+void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnyHeavy(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description_anyHeavy = R"(
+Selects a frequently occurring value using the [heavy hitters](https://doi.org/10.1145/762471.762473) algorithm.
+If there is a value that occurs more than in half the cases in each of the query's execution threads, this value is returned.
+Normally, the result is nondeterministic.
+    )";
+    FunctionDocumentation::Syntax syntax_anyHeavy = R"(
+anyHeavy(column)
+    )";
+    FunctionDocumentation::Arguments arguments_anyHeavy = {
+        {"column", "The column name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_anyHeavy = {"Returns a frequently occurring value. The result is nondeterministic.", {"Any"}};
+    FunctionDocumentation::Examples examples_anyHeavy = {
+    {
+        "Usage example",
+        R"(
+SELECT anyHeavy(AirlineID) AS res
+FROM ontime;
+        )",
+        R"(
+┌───res─┐
+│ 19690 │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_anyHeavy = {1, 1};
+    FunctionDocumentation::Category category_anyHeavy = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_anyHeavy = {description_anyHeavy, syntax_anyHeavy, arguments_anyHeavy, {}, returned_value_anyHeavy, examples_anyHeavy, introduced_in_anyHeavy, category_anyHeavy};
+
     AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
-    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, default_properties});
+    factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, documentation_anyHeavy, default_properties});
 }
 
 }

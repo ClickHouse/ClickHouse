@@ -88,7 +88,7 @@ Columns HashedArrayDictionary<dictionary_key_type, sharded>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -460,8 +460,11 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
-            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<std::vector<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
-            Attribute attribute{dictionary_attribute.underlying_type, AttributeContainerShardsType<ValueType>(configuration.shards), std::move(is_index_null)};
+            auto is_index_null = dictionary_attribute.is_nullable ? std::make_optional<VectorWithMemoryTracking<typename Attribute::RowsMask>>(configuration.shards) : std::nullopt;
+            Attribute attribute{
+                .containers = AttributeContainerShardsType<ValueType>(configuration.shards),
+                .is_index_null = std::move(is_index_null),
+                .type = dictionary_attribute.underlying_type};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -483,12 +486,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -637,7 +641,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
     KeysProvider && keys_object) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -670,6 +674,31 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
 
                 getItemsShortCircuitImpl<ValueType, false>(
                     attribute, keys_object, [&](const size_t, const Array & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, keys_object, [&](const size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_mask);
+                else
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, keys_object, [&](const size_t, const Object & value, bool) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -727,6 +756,37 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                     keys_object,
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    keys_object,
+                    [&](const size_t, const Map & value, bool) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        keys_object,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        keys_object,
+                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -897,7 +957,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -944,7 +1004,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitIm
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
-        ssize_t element_index;
+        ssize_t element_index = 0;
         if constexpr (sharded)
         {
             element_index = key_index_to_element_index[key_index].first;
@@ -985,9 +1045,6 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
 
@@ -997,6 +1054,9 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (true)
             {
@@ -1029,12 +1089,16 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if (parallel_loader)
             parallel_loader->finish();
 
-        LOG_DEBUG(log,
-            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} sec",
+        LOG_DEBUG(
+            log,
+            "Finished {}reading {} blocks with {} rows to dictionary {} from pipeline in {:.2f} sec and inserted into hashtable in {:.2f} "
+            "sec",
             configuration.use_async_executor ? "asynchronous " : "",
-            total_blocks, total_rows,
+            total_blocks,
+            total_rows,
             dictionary_name,
-            pull_time_microseconds / 1000000.0, process_time_microseconds / 1000000.0);
+            static_cast<double>(pull_time_microseconds) / 1000000.0,
+            static_cast<double>(process_time_microseconds) / 1000000.0);
     }
     else
     {
@@ -1081,6 +1145,16 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::calculateBytesAllocate
                 {
                     /// It is not accurate calculations
                     bytes_allocated += sizeof(Array) * container.size();
+                }
+                else if constexpr (std::is_same_v<ValueType, Map>)
+                {
+                    /// It is not accurate calculations
+                    bytes_allocated += sizeof(Map) * container.size();
+                }
+                else if constexpr (std::is_same_v<ValueType, Object>)
+                {
+                    /// It is not accurate calculations
+                    bytes_allocated += sizeof(Object) * container.size();
                 }
                 else
                 {
@@ -1151,6 +1225,7 @@ template class HashedArrayDictionary<DictionaryKeyType::Simple, /* sharded */ tr
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ false>;
 template class HashedArrayDictionary<DictionaryKeyType::Complex, /* sharded */ true>;
 
+void registerDictionaryArrayHashed(DictionaryFactory & factory);
 void registerDictionaryArrayHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,

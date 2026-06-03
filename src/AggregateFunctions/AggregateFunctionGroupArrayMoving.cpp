@@ -2,8 +2,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -11,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 
 #include <Common/ArenaAllocator.h>
@@ -294,6 +291,7 @@ AggregateFunctionPtr createAggregateFunctionMoving(
 }
 
 
+void registerAggregateFunctionMoving(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMoving(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -360,7 +358,7 @@ FROM t;
     FunctionDocumentation::Category category_sum = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_sum = {description_sum, syntax_sum, arguments_sum, parameters_sum, returned_value_sum, examples_sum, introduced_in_sum, category_sum};
 
-    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, properties, documentation_sum });
+    factory.registerFunction("groupArrayMovingSum", { createAggregateFunctionMoving<MovingSumTemplate>, documentation_sum, properties });
 
     FunctionDocumentation::Description description = R"(
 Calculates the moving average of input values.
@@ -380,7 +378,7 @@ groupArrayMovingAvg(window_size)(numbers_for_summing)
     FunctionDocumentation::Parameters parameters = {
         {"window_size", "Size of the calculation window. If left unspecified, the function takes the window size equal to the number of rows in the column.", {"UInt64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size and type as the input data.", {"Array"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size as the input data. For non-Decimal input, the array contains Float64 values. For Decimal input, the array contains Decimal values with the input scale.", {"Array"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
@@ -402,9 +400,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I─────────┬─F───────────────────────────────────┬─D─────────────────────┐
-│ [0,0,1,3] │ [0.275,0.82500005,1.9250001,3.8675] │ [0.27,0.82,1.92,3.86] │
-└───────────┴─────────────────────────────────────┴───────────────────────┘
+┌─I────────────────────┬─F─────────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.25,0.75,1.75,3.5] │ [0.2750000059604645,0.8250000178813934,1.9250000417232513,3.8675000369548798] │ [0.27,0.82,1.92,3.86] │
+└──────────────────────┴───────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
         )"
     },
     {
@@ -417,9 +415,9 @@ SELECT
 FROM t;
         )",
         R"(
-┌─I─────────┬─F────────────────────────────────┬─D─────────────────────┐
-│ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
-└───────────┴──────────────────────────────────┴───────────────────────┘
+┌─I───────────────┬─F───────────────────────────────────────────────────────────────────────────┬─D─────────────────────┐
+│ [0.5,1.5,3,5.5] │ [0.550000011920929,1.6500000357627869,3.3000000715255737,6.085000038146973] │ [0.55,1.65,3.30,6.08] │
+└─────────────────┴─────────────────────────────────────────────────────────────────────────────┴───────────────────────┘
         )"
     }
     };
@@ -427,7 +425,7 @@ FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, properties, documentation });
+    factory.registerFunction("groupArrayMovingAvg", { createAggregateFunctionMoving<MovingAvgTemplate>, documentation, properties });
 }
 
 }

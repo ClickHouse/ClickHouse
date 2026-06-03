@@ -129,7 +129,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)
@@ -198,7 +198,7 @@ ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -240,6 +240,7 @@ DatabaseTablesIteratorPtr DatabaseHDFS::getTablesIterator(ContextPtr, const Filt
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseHDFS(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -262,7 +263,11 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("HDFS", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::HDFS,
+    });
 }
 } // DB
 

@@ -102,6 +102,14 @@ struct BackupSettings
     /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
+    /// Should we back up data from refreshable materialized view targets?
+    ///
+    /// Data is skipped only for targets of refreshable views that fully
+    /// replace the table on each refresh (without APPEND), as they contain
+    /// transient data that can be recomputed. Targets with APPEND or regular
+    /// materialized views are always backed up because they may store history.
+    bool backup_data_from_refreshable_materialized_view_targets = false;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -125,6 +133,14 @@ struct BackupSettings
     void copySettingsToQuery(ASTBackupQuery & query) const;
 
     static bool isAsync(const ASTBackupQuery & query);
+
+    /// Returns only the non-backup-specific settings from a `BACKUP` query.
+    /// In contrast to `fromBackupQuery`, this helper does not touch the
+    /// `base_backup_name` AST node, so it is safe to call before
+    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
+    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
+    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
+    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 
     struct Util
     {

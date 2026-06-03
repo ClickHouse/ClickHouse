@@ -13,7 +13,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -417,7 +416,7 @@ struct GroupArrayNodeBase
     /// Reads and allocates node from ReadBuffer's data (doesn't set next)
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         checkElementSize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
@@ -604,7 +603,7 @@ public:
 
     void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        UInt64 new_elems;
+        UInt64 new_elems = 0;
         if (limit_num_elems)
         {
             if (cur_elems.value.size() >= max_elems)
@@ -679,7 +678,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt64 elems;
+        UInt64 elems = 0;
         readVarUInt(elems, buf);
         checkArraySize(elems, max_elems);
 
@@ -844,11 +843,52 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
+void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    /// groupArray
+    FunctionDocumentation::Description description_groupArray = R"(
+Creates an array of argument values.
+Values can be added to the array in any (indeterminate) order.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any(x)]`.
+
+In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.
+
+The `groupArray` function will remove `NULL` values from the result.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArray = R"(
+groupArray(x)
+groupArray(max_size)(x)
+    )";
+    FunctionDocumentation::Parameters parameters_groupArray = {
+        {"max_size", "Optional. Limits the size of the resulting array to `max_size` elements.", {"UInt64"}}
+    };
+    FunctionDocumentation::Arguments arguments_groupArray = {
+        {"x", "Argument values to collect into an array.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArray = {"Returns an array of argument values.", {"Array"}};
+    FunctionDocumentation::Examples examples_groupArray = {
+    {
+        "Basic usage",
+        R"(
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+        )",
+        R"(
+┌─id─┬─groupArray(10)(name)─┐
+│  1 │ ['zhangsan','lisi']  │
+│  2 │ ['wangwu']           │
+└────┴──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArray = {1, 1};
+    FunctionDocumentation::Category category_groupArray = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArray = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArray};
+
+    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, documentation_groupArray, properties });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
@@ -927,7 +967,7 @@ SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.co
     FunctionDocumentation::Category category_groupArraySample = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArraySample = {description_groupArraySample, syntax_groupArraySample, arguments_groupArraySample, parameters_groupArraySample, returned_value_groupArraySample, examples_groupArraySample, introduced_in_groupArraySample, category_groupArraySample};
 
-factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
+factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, documentation_groupArraySample, properties});
 
     /// groupArrayLast
     FunctionDocumentation::Description description_groupArrayLast = R"(
@@ -978,7 +1018,7 @@ SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
     FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupArrayLast = {description_groupArrayLast, syntax_groupArrayLast, arguments_groupArrayLast, parameters_groupArrayLast, returned_value_groupArrayLast, examples_groupArrayLast, introduced_in_groupArrayLast, category_groupArrayLast};
 
-    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast});
+    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, documentation_groupArrayLast, properties});
 }
 
 }

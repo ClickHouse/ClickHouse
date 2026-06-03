@@ -1,13 +1,14 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <boost/math/distributions/students_t.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
+#include <cmath>
 #include <numeric>
-
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <boost/math/distributions/fisher_f.hpp>
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/students_t.hpp>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -247,7 +248,7 @@ struct CorrMoments
 
     T NO_SANITIZE_UNDEFINED get() const
     {
-        return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
+        return (m0 * xy - x1 * y1) / std::sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
 
     T getSample() const
@@ -337,7 +338,7 @@ struct TTestMoments
         Float64 sx2 = (x2 + nx * mean_x * mean_x - 2 * mean_x * x1) / (nx - 1);
         Float64 sy2 = (y2 + ny * mean_y * mean_y - 2 * mean_y * y1) / (ny - 1);
 
-        return sqrt(sx2 / nx + sy2 / ny);
+        return std::sqrt(sx2 / nx + sy2 / ny);
     }
 
     std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level, Float64 degrees_of_freedom) const
@@ -416,7 +417,7 @@ struct OneSampleTTestMoments
     Float64 getStandardError() const
     {
         Float64 variance = getVariance();
-        return sqrt(variance / n);
+        return std::sqrt(variance / n);
     }
 
     Float64 getTStatistic() const
@@ -519,7 +520,7 @@ struct ZTestMoments
         Float64 mean_y = getMeanY();
 
         Float64 z = boost::math::quantile(boost::math::complement(
-            boost::math::normal(0.0f, 1.0f), (1.0f - confidence_level) / 2.0f));
+            boost::math::normal(0.0, 1.0), (1.0 - confidence_level) / 2.0));
         Float64 se = getStandardError(pop_var_x, pop_var_y);
         Float64 ci_low = (mean_x - mean_y) - z * se;
         Float64 ci_high = (mean_x - mean_y) + z * se;
@@ -534,11 +535,11 @@ struct AnalysisOfVarianceMoments
     constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
 
     /// Sums of values within a group
-    std::vector<T> xs1{};
+    VectorWithMemoryTracking<T> xs1{};
     /// Sums of squared values within a group
-    std::vector<T> xs2{};
+    VectorWithMemoryTracking<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    std::vector<size_t> ns{};
+    VectorWithMemoryTracking<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {
@@ -597,7 +598,7 @@ struct AnalysisOfVarianceMoments
         if (n == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
 
-        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -605,7 +606,7 @@ struct AnalysisOfVarianceMoments
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
 
-        return xs1[group] / ns[group];
+        return xs1[group] / static_cast<T>(ns[group]);
     }
 
     Float64 getBetweenGroupsVariation() const
@@ -616,7 +617,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+            res += static_cast<Float64>(ns[i]) * (group_mean - mean) * (group_mean - mean);
         }
         return res;
     }
@@ -627,7 +628,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+            res += xs2[i] + static_cast<Float64>(ns[i]) * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
         return res;
     }
@@ -643,7 +644,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
+        return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
     }
 
     Float64 getPValue(Float64 f_statistic) const
@@ -660,7 +661,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
+        return 1.0 - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
     }
 };
 

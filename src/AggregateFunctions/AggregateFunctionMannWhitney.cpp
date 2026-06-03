@@ -6,12 +6,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
-#include <Common/PODArray.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/ReadHelpers.h>
 #include <limits>
 
 #include <boost/math/distributions/normal.hpp>
@@ -52,16 +48,16 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
-        Float64 tie_correction;
+        Float64 tie_correction = 0;
 
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
 
-        const Float64 n1 = this->size_x;
-        const Float64 n2 = this->size_y;
+        const Float64 n1 = static_cast<Float64>(this->size_x);
+        const Float64 n2 = static_cast<Float64>(this->size_y);
 
         Float64 r1 = 0;
-        for (size_t i = 0; i < n1; ++i)
+        for (size_t i = 0; i < static_cast<size_t>(n1); ++i)
             r1 += ranks[i];
 
         const Float64 u1 = n1 * n2 + (n1 * (n1 + 1.)) / 2. - r1;
@@ -146,6 +142,7 @@ private:
     bool continuity_correction{true};
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
@@ -211,7 +208,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
             data(place).addY(value, arena);
@@ -272,6 +269,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -316,7 +314,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, {}, documentation});
+    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, documentation, {}});
 }
 
 }

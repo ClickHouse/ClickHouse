@@ -7,6 +7,7 @@ import time
 import uuid
 from multiprocessing.dummy import Pool
 import pytest
+from minio.deleteobjects import DeleteObject
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.config_cluster import minio_secret_key
 
@@ -115,6 +116,12 @@ def recreate_minio_bucket(started_cluster, bucket_name):
     minio_client = started_cluster.minio_client
     if minio_client.bucket_exists(bucket_name):
         logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        objects = minio_client.list_objects(bucket_name, recursive=True)
+        errors = list(minio_client.remove_objects(
+            bucket_name,
+            [DeleteObject(obj.object_name) for obj in objects],
+        ))
+        assert not errors, f"failed to clear bucket '{bucket_name}': {errors}"
         minio_client.remove_bucket(bucket_name)
     minio_client.make_bucket(bucket_name)
 
@@ -146,9 +153,15 @@ def create_table(
     database_name="default",
     replace=False,
     no_settings=False,
+    hive_partitioning_path="",
+    hive_partitioning_columns="",
+    partitioning_mode="",
+    partition_regex="",
+    partition_component="",
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
+    preserve_move_path=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -166,6 +179,9 @@ def create_table(
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
 
+        if preserve_move_path:
+            settings["after_processing_move_preserve_path"] = True
+
         if move_to_prefix:
             settings["after_processing_move_prefix"] = move_to_prefix
         if move_to_bucket:
@@ -182,25 +198,39 @@ def create_table(
 
     settings.update(additional_settings)
 
+    if hive_partitioning_columns:
+        hive_partitioning_columns = f", {hive_partitioning_columns}"
+        if not partitioning_mode:  # Backward compatibility
+            settings["use_hive_partitioning"] = True
+        settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
+
+    # Add regex partitioning settings
+    if partitioning_mode:
+        settings["partitioning_mode"] = partitioning_mode
+    if partition_regex:
+        settings["partition_regex"] = partition_regex
+    if partition_component:
+        settings["partition_component"] = partition_component
+
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
         azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
-        engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
 
     create = "REPLACE" if replace else "CREATE"
     if not replace:
         node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """
@@ -235,6 +265,14 @@ def create_mv(
 
     node.query(f"DROP TABLE IF EXISTS {mv_name};")
 
+    names = ""
+    for column in format.split(","):
+        name, _ = column.strip().rsplit(" ", 1)
+        if names == "":
+            names = name
+        else:
+            names += f", {name}"
+
     virtual_format = ""
     virtual_names = ""
     virtual_columns_list = virtual_columns.split(",")
@@ -252,14 +290,14 @@ def create_mv(
             """)
         node.query(
             f"""
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * {virtual_names} FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """)
         if not dst_table_exists:
             node.query(f"""

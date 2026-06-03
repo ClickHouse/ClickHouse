@@ -35,7 +35,7 @@ enum class MergeTreeDeduplicationOp : uint8_t
 /// Record for deduplication on disk
 struct MergeTreeDeduplicationLogRecord
 {
-    MergeTreeDeduplicationOp operation;
+    MergeTreeDeduplicationOp operation{};
     std::string part_name;
     std::string block_id;
 };
@@ -53,7 +53,7 @@ void writeRecord(const MergeTreeDeduplicationLogRecord & record, WriteBuffer & o
 
 void readRecord(MergeTreeDeduplicationLogRecord & record, ReadBuffer & in)
 {
-    uint8_t op;
+    uint8_t op = 0;
     readIntText(op, in);
     record.operation = static_cast<MergeTreeDeduplicationOp>(op);
     assertChar('\t', in);
@@ -179,6 +179,8 @@ void MergeTreeDeduplicationLog::rotate()
     } catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        if (current_writer)
+            current_writer->cancel();
         current_writer = nullptr;
     }
 
@@ -342,6 +344,9 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 {
     std::lock_guard lock(state_mutex);
 
+    if (stopped)
+        return;
+
     deduplication_window = deduplication_window_;
     rotate_interval = deduplication_window * 2;
 
@@ -378,6 +383,7 @@ void MergeTreeDeduplicationLog::shutdown()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            current_writer->cancel();
             current_writer.reset();
         }
     }

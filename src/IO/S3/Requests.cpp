@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
@@ -35,7 +36,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    std::vector<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -55,17 +56,25 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     return headers;
 }
 
+void HeadObjectRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
+{
+    // S3's HeadObject doesn't support `x-amz-server-side-encryption` headers so we skip adding them
+    // Docs: https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html
+    if (headerName != "x-amz-server-side-encryption")
+        Model::HeadObjectRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
+}
+
 void CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's CompleteMultipartUpload doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
 void UploadPartRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's UploadPart doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::UploadPartRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
@@ -159,7 +168,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
+void ComposeObjectRequest::SetComponentNames(Strings component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -170,7 +179,7 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
 }
 
 
-size_t getAttemptFromInfo(const Aws::String & request_info)
+static size_t getAttemptFromInfo(const Aws::String & request_info)
 {
     static auto key = Aws::String("attempt=");
 
@@ -191,13 +200,13 @@ size_t getAttemptFromInfo(const Aws::String & request_info)
     {
         return std::stol(value, nullptr, 10);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return 1;
     }
 }
 
-String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
 {
     auto it = map.find(key);
     if (it == map.end())

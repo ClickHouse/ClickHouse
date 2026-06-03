@@ -1,6 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -32,6 +31,9 @@ String LimitByTransform::getName() const
 
 void LimitByTransform::transform(Chunk & chunk)
 {
+    if (chunk.getNumRows() == 0)
+        return;
+
     if (in_order)
         transformInOrder(chunk);
     else

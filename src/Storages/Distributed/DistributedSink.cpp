@@ -1,3 +1,4 @@
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
@@ -29,6 +30,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -124,13 +126,13 @@ static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & 
 
 static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
 {
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto columns = make_intrusive<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
     for (const auto & column_name : column_names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(column_name));
     return query;
 }
 
@@ -572,7 +574,7 @@ void DistributedSink::onFinish()
     auto log_performance = [this]()
     {
         double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
+        LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, static_cast<double>(inserted_rows) / elapsed, getCurrentStateDescription());
     };
 
     std::lock_guard lock(execution_mutex);
@@ -682,7 +684,7 @@ Blocks DistributedSink::splitBlock(const Block & block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
@@ -829,7 +831,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     };
 
     auto sleep_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms].totalMilliseconds();
-    size_t file_size;
+    size_t file_size = 0;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent

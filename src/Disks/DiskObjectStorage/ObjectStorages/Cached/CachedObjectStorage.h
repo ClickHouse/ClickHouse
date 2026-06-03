@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCacheKey.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
 #include "config.h"
 
 namespace Poco
@@ -34,7 +34,16 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
+
+    void prepareRead(
+        ObjectStoragePtr storage,
+        const StoredObjects & objects,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -95,10 +104,6 @@ public:
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
 
-    const std::string & getCacheConfigName() const { return cache_config_name; }
-
-    ObjectStoragePtr getWrappedObjectStorage() { return object_storage; }
-
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
@@ -112,6 +117,11 @@ public:
     AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override
     {
         return object_storage->getAzureBlobStorageAuthMethod();
+    }
+
+    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    {
+        return object_storage->getAzureBlobStorageConnectionParams();
     }
 #endif
 
@@ -133,6 +143,8 @@ public:
         object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
+
+    ObjectStoragePtr getUnderlying() override { return object_storage; }
 
 private:
     FileCacheKey getCacheKey(const std::string & path) const;

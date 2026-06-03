@@ -2,12 +2,13 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/NaNUtils.h>
 
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -118,9 +119,6 @@ private:
      */
     void compress(UInt32 max_bins)
     {
-        if (size <= max_bins)
-            return;
-
         auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
         if (sorted_prefix == 0)
         {
@@ -132,13 +130,19 @@ private:
             ::sort(points + sorted_prefix, points + size, cmp);
             std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
+        sorted_prefix = size;
+        last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
+
+        if (size <= max_bins)
+            return;
+
         auto new_size = size;
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
-        std::vector<UInt32> previous(size + 1);
-        std::vector<UInt32> next(size + 1);
-        std::vector<bool> active(size + 1, true);
+        VectorWithMemoryTracking<UInt32> previous(size + 1);
+        VectorWithMemoryTracking<UInt32> next(size + 1);
+        VectorWithMemoryTracking<bool> active(size + 1, true);
         active[size] = false;
 
         auto delete_node = [&](UInt32 i)
@@ -159,7 +163,7 @@ private:
 
         using QueueItem = std::pair<Mean, UInt32>;
 
-        std::vector<QueueItem> storage(2 * size - max_bins);
+        VectorWithMemoryTracking<QueueItem> storage(2 * size - max_bins);
 
         std::priority_queue<QueueItem, PriorityQueueStorage<QueueItem>, std::greater<>> queue{
             std::greater<>(), PriorityQueueStorage<QueueItem>(storage.data())};
@@ -429,9 +433,10 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 
 }
 
+void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", createAggregateFunctionHistogram);
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {}});
 }
 
 }

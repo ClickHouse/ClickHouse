@@ -49,7 +49,7 @@ namespace ErrorCodes
   * IPv6NumToString (num) - See below.
   * IPv6StringToNum(string) - Convert, for example, '::1' to 1 and vice versa.
   */
-class FunctionIPv6NumToString : public IFunction
+class FunctionIPv6NumToString final : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
@@ -130,7 +130,7 @@ public:
 };
 
 
-class FunctionCutIPv6 : public IFunction
+class FunctionCutIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
@@ -268,7 +268,7 @@ private:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv6StringToNum : public IFunction
+class FunctionIPv6StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -348,7 +348,7 @@ private:
 /** If mask_tail_octets > 0, the last specified number of octets will be filled with "xxx".
   */
 template <size_t mask_tail_octets, typename Name>
-class FunctionIPv4NumToString : public IFunction
+class FunctionIPv4NumToString final : public IFunction
 {
 private:
     template <typename ArgType>
@@ -439,7 +439,7 @@ public:
 };
 
 template <IPStringToNumExceptionMode exception_mode>
-class FunctionIPv4StringToNum : public IFunction
+class FunctionIPv4StringToNum final : public IFunction
 {
 public:
     static constexpr auto name = exception_mode == IPStringToNumExceptionMode::Throw
@@ -516,7 +516,7 @@ private:
 };
 
 
-class FunctionIPv4ToIPv6 : public IFunction
+class FunctionIPv4ToIPv6 final : public IFunction
 {
 public:
     static constexpr auto name = "IPv4ToIPv6";
@@ -600,7 +600,7 @@ private:
     }
 };
 
-class FunctionMACNumToString : public IFunction
+class FunctionMACNumToString final : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
@@ -634,17 +634,17 @@ public:
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
 
-        writeHexByteUppercase(mac >> 40, &out[0]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 40), &out[0]);
         out[2] = ':';
-        writeHexByteUppercase(mac >> 32, &out[3]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 32), &out[3]);
         out[5] = ':';
-        writeHexByteUppercase(mac >> 24, &out[6]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 24), &out[6]);
         out[8] = ':';
-        writeHexByteUppercase(mac >> 16, &out[9]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 16), &out[9]);
         out[11] = ':';
-        writeHexByteUppercase(mac >> 8, &out[12]);
+        writeHexByteUppercase(static_cast<UInt8>(mac >> 8), &out[12]);
         out[14] = ':';
-        writeHexByteUppercase(mac, &out[15]);
+        writeHexByteUppercase(static_cast<UInt8>(mac), &out[15]);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -733,7 +733,7 @@ struct ParseOUIImpl
 
 
 template <typename Impl>
-class FunctionMACStringTo : public IFunction
+class FunctionMACStringTo final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -799,7 +799,7 @@ public:
     }
 };
 
-class FunctionIPv6CIDRToRange : public IFunction
+class FunctionIPv6CIDRToRange final : public IFunction
 {
 private:
 
@@ -828,7 +828,7 @@ private:
         for (size_t i = 0; i < 16; ++i)
         {
             dst_lower[i] = src[i] & mask[i];
-            dst_upper[i] = dst_lower[i] | ~mask[i];
+            dst_upper[i] = static_cast<char>(dst_lower[i] | ~mask[i]);
         }
     }
 
@@ -935,7 +935,7 @@ public:
 };
 
 
-class FunctionIPv4CIDRToRange : public IFunction
+class FunctionIPv4CIDRToRange final : public IFunction
 {
 private:
     static std::pair<UInt32, UInt32> applyCIDRMask(UInt32 src, UInt8 bits_to_keep)
@@ -1052,7 +1052,7 @@ public:
     }
 };
 
-class FunctionIsIPv4String : public IFunction
+class FunctionIsIPv4String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv4String";
@@ -1109,7 +1109,7 @@ public:
     }
 };
 
-class FunctionIsIPv6String : public IFunction
+class FunctionIsIPv6String final : public IFunction
 {
 public:
     static constexpr auto name = "isIPv6String";

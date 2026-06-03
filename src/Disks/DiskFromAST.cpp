@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::string getOrCreateCustomDisk(
+static std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -41,7 +41,7 @@ std::string getOrCreateCustomDisk(
 
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
     {
-        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context);
+        auto xml_document = getDiskConfigurationFromASTImpl(disk_args, context, attach);
 
         Poco::AutoPtr<Poco::XML::NamePool> name_pool(new Poco::XML::NamePool());
         Poco::XML::DOMParser dom_parser(name_pool);
@@ -153,7 +153,7 @@ public:
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
-            ast = std::make_shared<ASTLiteral>(disk_name);
+            ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };

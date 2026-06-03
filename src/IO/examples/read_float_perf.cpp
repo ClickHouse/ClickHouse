@@ -1,3 +1,8 @@
+// NOLINTBEGIN(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)
+// False positives: clang-analyzer traces into fast_float library headers and reports
+// UndefinedBinaryOperatorResult in ascii_number.h and EnumCastOutOfRange in float_common.h.
+// These cannot be suppressed via NOLINT at call sites because the diagnostics are reported
+// at the library header locations, not at the call site.
 #include <string>
 
 #include <iostream>
@@ -12,6 +17,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Examples/clickhouse_examples.h>
 
 /** How to test:
 
@@ -55,11 +61,11 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 
     watch.stop();
     out << "Read in " << watch.elapsedSeconds() << " sec, "
-        << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
+        << formatReadableSizeWithBinarySuffix(static_cast<double>(in.count()) / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryExampleReadFloatPerf(int argc, char ** argv)
 try
 {
     int method = 0;
@@ -84,3 +90,4 @@ catch (const Exception & e)
     std::cerr << e.what() << ", " << e.displayText() << std::endl;
     return 1;
 }
+// NOLINTEND(clang-analyzer-core.UndefinedBinaryOperatorResult,clang-analyzer-optin.core.EnumCastOutOfRange)

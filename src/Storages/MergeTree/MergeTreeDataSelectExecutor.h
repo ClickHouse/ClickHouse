@@ -1,5 +1,6 @@
 #pragma once
 
+#include <expected>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -10,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
+
+struct PreformattedMessage;
 
 namespace DB
 {
@@ -93,17 +96,6 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
-        LoggerPtr log);
-
-    static MarkRanges filterMarksUsingMergedIndex(
-        MergeTreeIndices indices,
-        MergeTreeIndexMergedConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
@@ -217,31 +209,37 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Filter parts using column statistics.
+    /// Returns filtered parts and updates index_stats with statistics pruning info.
+    static RangesInDataParts filterPartsByStatistics(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    struct IndexAnalysisContext
+    {
+        StorageMetadataPtr metadata_snapshot;
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+        const SelectQueryInfo & query_info;
+        const ContextPtr & context;
+        const ReadFromMergeTree::Indexes & indexes;
+        const std::optional<TopKFilterInfo> & top_k_filter_info;
+        const MergeTreeReaderSettings & reader_settings;
+        LoggerPtr log;
+        size_t num_streams;
+        bool find_exact_ranges;
+        bool is_parallel_reading_from_replicas;
+        bool has_projections;
+        ReadFromMergeTree::AnalysisResult & result;
+    };
+
     /// Filter parts using primary key and secondary indexes.
     /// For every part, select mark ranges to read.
-    /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
-    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
-        RangesInDataParts parts_with_ranges,
-        StorageMetadataPtr metadata_snapshot,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-        const SelectQueryInfo & query_info,
-        const ContextPtr & context,
-        const KeyCondition & key_condition,
-        const std::optional<KeyCondition> & part_offset_condition,
-        const std::optional<KeyCondition> & total_offset_condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
-        const UsefulSkipIndexes & skip_indexes,
-        const std::optional<TopKFilterInfo> & top_k_filter_info,
-        const MergeTreeReaderSettings & reader_settings,
-        LoggerPtr log,
-        size_t num_streams,
-        ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes,
-        bool use_skip_indexes_for_disjunctions_,
-        bool find_exact_ranges,
-        bool is_final_query,
-        bool is_parallel_reading_from_replicas,
-        ReadFromMergeTree::AnalysisResult & result);
+    static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
@@ -282,6 +280,14 @@ public:
         const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
+
+    /// Check if a skip index can be used when there are lightweight updates.
+    /// Returns an error message if the index depends on a column that will be updated on the fly.
+    static std::expected<void, PreformattedMessage> canUseIndex(
+        const MergeTreeIndexPtr & index,
+        const StorageMetadataPtr & metadata_snapshot,
+        const NameSet & all_updated_columns);
+
 
 };
 

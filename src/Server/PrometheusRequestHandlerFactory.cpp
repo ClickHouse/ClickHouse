@@ -39,6 +39,7 @@ namespace
     {
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::ExposeMetrics;
+        res.expose_info = config.getBool(config_prefix + ".info", true);
         res.expose_metrics = config.getBool(config_prefix + ".metrics", true);
         res.expose_asynchronous_metrics = config.getBool(config_prefix + ".asynchronous_metrics", true);
         res.expose_events = config.getBool(config_prefix + ".events", true);

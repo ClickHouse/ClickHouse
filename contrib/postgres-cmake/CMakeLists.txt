@@ -56,6 +56,7 @@ set(SRCS
     "${POSTGRES_SOURCE_DIR}/src/port/pgstrcasecmp.c"
     "${POSTGRES_SOURCE_DIR}/src/port/pg_bitutils.c"
     "${POSTGRES_SOURCE_DIR}/src/port/path.c"
+    "${POSTGRES_SOURCE_DIR}/src/port/timingsafe_bcmp.c"
 )
 
 if(NOT OS_DARWIN)
@@ -78,7 +79,7 @@ target_include_directories (_libpq SYSTEM PUBLIC "${LIBPQ_CMAKE_SOURCE_DIR}") # 
 # NOTE: this is a dirty hack to avoid and instead pg_config.h should be shipped
 # for different OS'es like for jemalloc, not one generic for all OS'es like
 # now.
-if (OS_DARWIN OR OS_FREEBSD OR USE_MUSL)
+if (OS_DARWIN OR OS_FREEBSD OR OS_SUNOS OR USE_MUSL)
     target_compile_definitions(_libpq PRIVATE -DSTRERROR_R_INT=1)
 endif()
 

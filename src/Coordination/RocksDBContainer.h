@@ -161,7 +161,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get rocksdb options");
         }
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db;
+        rocksdb::DB * db = nullptr;
         auto status = rocksdb::DB::Open(*options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -284,7 +284,7 @@ public:
     {
         auto it = find(key);
         chassert(it != end());
-        return MockNode(it->value.stats.numChildren(), it->value.getData(), it->value.acl_id);
+        return MockNode(it->value.numChildren(), it->value.getData(), it->value.acl_id);
     }
 
     const_iterator updateValue(std::string_view key, ValueUpdater updater)
@@ -329,7 +329,7 @@ public:
         load_options.target_file_size_base = 256 * 1024 * 1024;
 
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db;
+        rocksdb::DB * db = nullptr;
         auto status = rocksdb::DB::Open(load_options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -352,7 +352,7 @@ public:
 
         auto load_options = *options;
         rocksdb_dir = disk->getPath();
-        rocksdb::DB * db;
+        rocksdb::DB * db = nullptr;
         auto status = rocksdb::DB::Open(*options, rocksdb_dir, &db);
         if (!status.ok())
         {
@@ -512,7 +512,7 @@ private:
     DiskPtr disk;
     std::shared_ptr<rocksdb::Options> options;
 
-    const rocksdb::Snapshot * snapshot;
+    const rocksdb::Snapshot * snapshot{};
 
     bool snapshot_mode{false};
     size_t current_version{0};

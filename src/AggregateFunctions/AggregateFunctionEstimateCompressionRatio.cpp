@@ -1,9 +1,7 @@
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <optional>
-#include <fcntl.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
@@ -20,7 +18,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -28,8 +25,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Poco/Exception.h>
-#include <Poco/Logger.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -77,27 +72,40 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void createBuffersIfNeeded(AggregateDataPtr __restrict place) const
+    void resetBuffersIfNeeded(AggregateDataPtr __restrict place) const
     {
-        if (!data(place).null_buf)
-            data(place).null_buf = std::make_unique<NullWriteBuffer>();
-        if (!data(place).compressed_buf)
-            data(place).compressed_buf = std::make_unique<CompressedWriteBuffer>(
-                *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+        Data & data_ref = data(place);
+
+        if (!data_ref.null_buf || data_ref.null_buf->isFinalized())
+            data_ref.null_buf = std::make_unique<NullWriteBuffer>();
+
+        /// When aggregating on windows transformed columns, the function WindowTransform::appendChunk
+        /// calls updateAggregationState + writeOutCurrentRow in a loop.
+        /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
+        /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
+        if (!data_ref.compressed_buf || data_ref.compressed_buf->isFinalized())
+            data_ref.compressed_buf = std::make_unique<CompressedWriteBuffer>(
+                *data_ref.null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
     std::pair<UInt64, UInt64> finalizeAndGetSizes(ConstAggregateDataPtr __restrict place) const
     {
-        UInt64 uncompressed_size = data(place).merged_uncompressed_size;
-        UInt64 compressed_size = data(place).merged_compressed_size;
-        if (data(place).compressed_buf)
-        {
-            data(place).compressed_buf->finalize();
-            data(place).null_buf->finalize();
+        const Data & data_ref = data(place);
 
-            uncompressed_size += data(place).compressed_buf->getUncompressedBytes();
-            compressed_size += data(place).compressed_buf->getCompressedBytes();
+        UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
+        UInt64 compressed_size = data_ref.merged_compressed_size;
+
+        if (data_ref.compressed_buf)
+        {
+            chassert(data_ref.null_buf != nullptr);
+
+            data_ref.compressed_buf->finalize();
+            data_ref.null_buf->finalize();
+
+            uncompressed_size += data_ref.compressed_buf->getUncompressedBytes();
+            compressed_size += data_ref.compressed_buf->getCompressedBytes();
         }
+
         return {uncompressed_size, compressed_size};
     }
 
@@ -134,7 +142,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -166,7 +174,7 @@ public:
     {
         const auto & column = columns[0];
 
-        createBuffersIfNeeded(place);
+        resetBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -208,16 +216,29 @@ public:
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
 
+        /// Persist finalized sizes so the next add()/resetBuffersIfNeeded() cycle
+        /// preserves all previously accumulated data. Without this, window functions
+        /// with growing frames (e.g. UNBOUNDED PRECEDING AND CURRENT ROW) lose all
+        /// prior data when the buffer is recreated after finalization.
+        data(place).merged_uncompressed_size = uncompressed_size;
+        data(place).merged_compressed_size = compressed_size;
+
+        /// Reset buffers so that a repeated insertResultInto without an
+        /// intervening add (unchanged window frame) does not re-count the
+        /// already-persisted finalized bytes.
+        data(place).compressed_buf.reset();
+        data(place).null_buf.reset();
+
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
 };
 }
 
-AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
+static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
     if (arguments.size() != 1)
@@ -248,7 +269,15 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
             UInt64 new_block_size_bytes = param.safeGet<UInt64>();
             if (new_block_size_bytes == 0)
-                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater than 0");
+
+            /// Limit to 256 MiB to prevent absurd memory allocations from fuzzed queries
+            static constexpr UInt64 max_block_size_bytes = 256 * 1024 * 1024;
+            if (new_block_size_bytes > max_block_size_bytes)
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "block_size_bytes ({}) is too large, maximum is {}",
+                    new_block_size_bytes, max_block_size_bytes);
 
             block_size_bytes = new_block_size_bytes;
         }
@@ -264,6 +293,7 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 
+void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -280,7 +310,7 @@ See [Column Compression Codecs](/sql-reference/statements/create/table#column_co
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -334,6 +364,6 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
+        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
 }
 }

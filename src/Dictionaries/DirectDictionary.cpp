@@ -57,7 +57,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     DefaultsOrFilter defaults_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -90,15 +90,15 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     Stopwatch watch;
     size_t block_num = 0;
     size_t rows_num = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {
@@ -218,7 +218,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (is_short_circuit)
     {
@@ -262,13 +262,13 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
-    PullingPipelineExecutor executor(pipeline);
-
     size_t keys_found = 0;
 
     io.executeWithCallbacks([&]()
     {
+        QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
+        PullingPipelineExecutor executor(pipeline);
+
         Block block;
         while (executor.pull(block))
         {
@@ -284,7 +284,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
                 auto block_key = block_keys_extractor.extractCurrentKey();
 
                 const auto * it = requested_key_to_index.find(block_key);
-                assert(it);
+                chassert(it);
 
                 auto & result_data_found_indexes = it->getMapped();
                 for (size_t result_data_found_index : result_data_found_indexes)
@@ -315,7 +315,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type, keys_found);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
@@ -415,11 +415,11 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
     {
-        std::vector<UInt64> ids(requested_keys.begin(), requested_keys.end());
+        VectorWithMemoryTracking<UInt64> ids(requested_keys.begin(), requested_keys.end());
         return source_ptr->loadIds(ids);
     }
 
-    std::vector<size_t> requested_rows(requested_keys.size());
+    VectorWithMemoryTracking<size_t> requested_rows(requested_keys.size());
     iota(requested_rows.data(), requested_keys.size(), size_t(0));
 
     return source_ptr->loadKeys(key_columns, requested_rows);
@@ -498,6 +498,7 @@ namespace
 template class DirectDictionary<DictionaryKeyType::Simple>;
 template class DirectDictionary<DictionaryKeyType::Complex>;
 
+void registerDictionaryDirect(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory)
 {
     factory.registerLayout("direct", createDirectDictionary<DictionaryKeyType::Simple>, false);

@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ class Context;
 
 /** Prints the result in the form of beautiful tables.
   */
-class PrettyBlockOutputFormat : public IOutputFormat
+class PrettyBlockOutputFormat final : public IOutputFormat
 {
 public:
     enum class Style
@@ -49,12 +50,12 @@ protected:
     using WidthsPerColumn = std::vector<Widths>;
 
     void write(Chunk chunk, PortKind port_kind);
-    virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
+    void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    virtual void writeSuffixImpl();
+    void writeSuffixImpl();
 
-    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
+    void onRowsReadBeforeUpdate() override;
 
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,

@@ -2,7 +2,7 @@
 
 #include <Common/TargetSpecific.h>
 
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 #include <immintrin.h>
 #endif
 
@@ -22,41 +22,9 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 }
 
-DECLARE_DEFAULT_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
+bool isAllASCII(const UInt8 * data, size_t size)
 {
-    UInt8 mask = 0;
-    for (size_t i = 0; i < size; ++i)
-        mask |= data[i];
-
-    return !(mask & 0x80);
-})
-
-DECLARE_SSE42_SPECIFIC_CODE(
-/// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
-static bool isAllASCII(const UInt8 * data, size_t size)
-{
-    __m128i masks = _mm_setzero_si128();
-
-    size_t i = 0;
-    for (; i + 16 <= size; i += 16)
-    {
-        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
-        masks = _mm_or_si128(masks, bytes);
-    }
-    int mask = _mm_movemask_epi8(masks);
-
-    UInt8 tail_mask = 0;
-    for (; i < size; i++)
-        tail_mask |= data[i];
-
-    mask |= (tail_mask & 0x80);
-    return !mask;
-})
-
-DECLARE_AVX2_SPECIFIC_CODE(
-static bool isAllASCII(const UInt8 * data, size_t size)
-{
+#if defined(__AVX2__)
     __m256i masks = _mm256_setzero_si256();
 
     size_t i = 0;
@@ -73,17 +41,13 @@ static bool isAllASCII(const UInt8 * data, size_t size)
 
     mask |= (tail_mask & 0x80);
     return !mask;
-})
+#else
+    UInt8 mask = 0;
+    for (size_t i = 0; i < size; ++i)
+        mask |= data[i];
 
-bool isAllASCII(const UInt8 * data, size_t size)
-{
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(DB::TargetArch::AVX2))
-        return TargetSpecific::AVX2::isAllASCII(data, size);
-    if (isArchSupported(DB::TargetArch::SSE42))
-        return TargetSpecific::SSE42::isAllASCII(data, size);
+    return !(mask & 0x80);
 #endif
-    return TargetSpecific::Default::isAllASCII(data, size);
 }
 
 /// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'

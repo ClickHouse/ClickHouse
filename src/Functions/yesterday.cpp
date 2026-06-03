@@ -9,10 +9,10 @@
 namespace DB
 {
 
-class ExecutableFunctionYesterday : public IExecutableFunction
+class ExecutableFunctionYesterday final : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionYesterday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionYesterday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "yesterday"; }
 
@@ -25,7 +25,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseYesterday : public IFunctionBase
+class FunctionBaseYesterday final : public IFunctionBase
 {
 public:
     explicit FunctionBaseYesterday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -56,7 +56,7 @@ private:
     DataTypePtr return_type;
 };
 
-class YesterdayOverloadResolver : public IFunctionOverloadResolver
+class YesterdayOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "yesterday";
@@ -74,7 +74,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
-        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
+        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(static_cast<UInt16>(day_num)));
     }
 };
 
