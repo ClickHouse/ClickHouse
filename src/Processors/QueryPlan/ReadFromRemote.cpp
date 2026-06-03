@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -45,6 +47,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
 
@@ -76,6 +79,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int ALL_REPLICAS_ARE_STALE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -227,7 +231,7 @@ void ReadFromRemote::enforceAggregationInOrder(const SortDescription & sort_desc
     DB::enforceAggregationInOrder(stage, &shards, sort_description, *context);
 }
 
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
+static ASTSelectQuery & getSelectQuery(ASTPtr ast)
 {
     if (const auto * explain = ast->as<ASTExplainQuery>())
         ast = explain->getExplainedQuery();
@@ -415,7 +419,16 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// and it should be built before sending the external tables.
 
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
-                        NamesAndTypesList columns = header->getNamesAndTypesList();
+                        /// The subquery may produce columns with duplicate names
+                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
+                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
+                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
+                        /// the same step. Column matching when the temporary table is populated and
+                        /// when it is later used by the remote shard's `IN` operator is by position,
+                        /// so renaming the columns is safe.
+                        Block header_with_unique_names = *header;
+                        makeUniqueColumnNamesInBlock(header_with_unique_names);
+                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
@@ -482,8 +495,37 @@ static void addFilters(
     if (table_expressions.size() != 1)
         return;
 
-    const auto * table_node = table_expressions.front()->as<TableNode>();
-    if (!table_node)
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
+    /// Supported cases:
+    ///   - TableNode (a real table)
+    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
+    ///   - QueryNode wrapping any of the above (one level of subquery)
+    StorageSnapshotPtr table_snapshot;
+    ASTPtr table_identifier_ast;
+    String table_alias;
+
+    auto extract_from_expression = [&](const QueryTreeNodePtr & expr) -> bool
+    {
+        if (const auto * tn = expr->as<TableNode>())
+        {
+            table_snapshot = tn->getStorageSnapshot();
+            table_identifier_ast = tn->toASTIdentifier();
+            table_alias = tn->getAlias();
+            return true;
+        }
+        if (const auto * tfn = expr->as<TableFunctionNode>())
+        {
+            table_snapshot = tfn->getStorageSnapshot();
+            /// Table functions don't have a stable database/table identifier - we only
+            /// need the alias on the receiving side so `setColumnShortName` can strip it.
+            table_identifier_ast = nullptr;
+            table_alias = tfn->getAlias();
+            return true;
+        }
+        return false;
+    };
+
+    if (!extract_from_expression(table_expressions.front()))
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
@@ -494,15 +536,14 @@ static void addFilters(
         if (table_expressions.size() != 1)
             return;
 
-        table_node = table_expressions.front()->as<TableNode>();
-        if (!table_node)
+        if (!extract_from_expression(table_expressions.front()))
             return;
     }
 
     TableWithColumnNamesAndTypes table_with_columns(
-        DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
-        table_node->getStorageSnapshot()->getColumns(GetColumnsOptions::Kind::Ordinary));
-    table_with_columns.table.alias = table_node->getAlias();
+        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
+        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_alias;
 
     bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
     bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
@@ -664,7 +705,8 @@ void ReadFromRemote::addLazyPipe(
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+            std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
+            my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
 
         auto pipe = createRemoteSourcePipe(
@@ -848,9 +890,25 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 {
     auto explain_settings = make_intrusive<ASTSetQuery>();
     explain_settings->is_standalone = false;
-    explain_settings->changes =  options.toSettingsChanges();
+    explain_settings->changes = options.toSettingsChanges();
 
     auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPlan);
+    explain_query->setExplainedQuery(query);
+    explain_query->setSettings(explain_settings);
+
+    return explain_query;
+}
+
+static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_repeated_processor_chains, ASTPtr query)
+{
+    auto explain_settings = make_intrusive<ASTSetQuery>();
+    explain_settings->is_standalone = false;
+    explain_settings->changes.emplace_back("header", int(header));
+    explain_settings->changes.emplace_back("distributed", int(distributed));
+    if (compact_repeated_processor_chains)
+        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
+
+    auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
     explain_query->setSettings(explain_settings);
 
@@ -897,6 +955,31 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
             shard_copy.header = header;
             shard_copy.query = makeExplain(options, shard.query);
         }
+    }
+
+    formatExplain(settings, addPipes(used_shards, header));
+}
+
+void ReadFromRemote::describeDistributedPipeline(FormatSettings & settings, bool distributed)
+{
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+    ClusterProxy::SelectStreamFactory::Shards used_shards;
+
+    for (const auto & shard : shards)
+    {
+        if (shard.query_plan)
+            /// A serialized query plan is not suitable for building a pipeline locally
+            /// (e.g. ReadFromTableFunctionStep does not implement initializePipeline).
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN PIPELINE distributed=1 is not supported with serialize_query_plan=1");
+
+        auto & shard_copy = used_shards.emplace_back(shard);
+        shard_copy.header = header;
+        shard_copy.query = makeExplainPipeline(
+            settings.write_header,
+            distributed,
+            settings.compact_repeated_processor_chains,
+            shard.query);
     }
 
     formatExplain(settings, addPipes(used_shards, header));
@@ -1071,7 +1154,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     String query_string = formattedAST(ast, enable_analyzer);
 
-    assert(output_header);
+    chassert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,
@@ -1112,4 +1195,17 @@ void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings 
     }
 }
 
+void ReadFromParallelRemoteReplicasStep::describeDistributedPipeline(FormatSettings & settings, bool distributed)
+{
+    if (query_plan)
+        /// A serialized query plan is not suitable for building a pipeline locally
+        /// (e.g. ReadFromTableFunctionStep does not implement initializePipeline).
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN PIPELINE distributed=1 is not supported with serialize_query_plan=1");
+
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+
+    auto explain_query = makeExplainPipeline(settings.write_header, distributed, settings.compact_repeated_processor_chains, query_ast);
+    formatExplain(settings, addPipes(explain_query, header));
+}
 }

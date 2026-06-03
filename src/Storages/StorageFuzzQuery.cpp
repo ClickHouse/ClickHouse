@@ -73,8 +73,8 @@ StorageFuzzQuery::StorageFuzzQuery(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageFuzzQuery::createVirtuals()
@@ -155,6 +155,7 @@ StorageFuzzQuery::Configuration StorageFuzzQuery::getConfiguration(ASTs & engine
     return configuration;
 }
 
+void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory)
 {
     factory.registerStorage(

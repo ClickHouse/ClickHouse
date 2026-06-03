@@ -252,8 +252,12 @@
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
     M(KeeperReadBatchCount) \
     M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -263,6 +267,7 @@
     M(KeeperReadSnapshot) \
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -416,6 +421,7 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperResponseTime) \
     M(KeeperReceiveRequestTimeMetricFamily) \
     M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
     M(KeeperWritePreCommitTimeMetricFamily) \
@@ -424,6 +430,7 @@ extern const std::vector<Metric> keeper_metrics
     M(KeeperSendResponseTimeMetricFamily) \
     M(KeeperReadWaitForWriteTimeMetricFamily) \
     M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeElementsMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 
 

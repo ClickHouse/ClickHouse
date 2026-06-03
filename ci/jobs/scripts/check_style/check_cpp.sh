@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|base/base/openpty\.h|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -42,7 +42,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/glibc-compatibility/**' --glob '!**/poco/**' --glob '!**/memcpy/**' \
     --glob '!**/consistent-hashing/**' --glob '!**/*benchmark*' \
     --glob '!**/tests/**/*.cpp' \
-    --glob '!**/base/base/openpty.h' --glob '!**/AvroSchema.h' \
+    --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
@@ -240,7 +240,7 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg '(std::mt19937|std::mersenne_twister_
 
 # Require checking return value of close(),
 # since it can hide fd misuse and break other places.
-xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = && echo "Return value of close() should be checked"
+xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | grep -v = | grep -vE ':\s*(///?|\*)' && echo "Return value of close() should be checked"
 } > "$O.07b" 2>&1 &
 
 # 08: std containers lint
@@ -248,12 +248,20 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | g
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
     src/Columns
+    src/Compression
+    src/Daemon
     src/Dictionaries
+    src/Functions
+    src/IO
+    src/Loggers
+    src/QueryPipeline
+    src/TableFunctions
 )
 
 for dir in "${directories_to_lint_std_containers_usages[@]}"; do
     grep "/$dir/" "$STYLE_TMPDIR/all_excluded" |
         xargs rg -Hn 'std::(deque|list|map|multimap|multiset|queue|set|unordered_map|unordered_multimap|unordered_multiset|unordered_set|vector)<' |
+        grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|//|/\*)' |
         grep -v "STYLE_CHECK_ALLOW_STD_CONTAINERS" && echo "Use an -WithMemoryTracking alternative or mark these usages with STYLE_CHECK_ALLOW_STD_CONTAINERS"
 done
 } > "$O.08" 2>&1 &
@@ -283,6 +291,7 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/IO/Ask.cpp
+    src/Examples/main.cpp
     # Only in block comments (/* ... */)
     src/Storages/IStorage.h
     src/Common/mysqlxx/mysqlxx/Query.h
@@ -376,7 +385,7 @@ join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|TcpExtListenOverflows' &&
+xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|TcpExtListenOverflows' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&
@@ -436,8 +445,15 @@ CONTEXT_H_EXCLUDES=(
     --include "$ROOT_PATH/src/Functions/IFunction*"
 )
 find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
-    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and move Context.h out from .h into .cpp'
 } > "$O.17" 2>&1 &
+
+# 18: Do not use simple assert()
+{
+xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
+    rg -v ':[[:space:]]*(//|/\*|\*)' &&
+    echo "Use chassert instead of assert"
+} > "$O.18" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
 wait
