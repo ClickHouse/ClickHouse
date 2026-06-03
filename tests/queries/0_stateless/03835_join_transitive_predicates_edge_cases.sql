@@ -5,6 +5,7 @@ SET query_plan_optimize_join_order_limit = 10;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_transitive_predicates = 1;
+SET materialize_statistics_on_insert = 1;
 
 DROP TABLE IF EXISTS e1;
 DROP TABLE IF EXISTS e2;
