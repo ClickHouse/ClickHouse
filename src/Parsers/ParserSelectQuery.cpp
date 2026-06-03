@@ -165,25 +165,41 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (has_all && (select_query->distinct || distinct_on_expression_list))
             return false;
 
-        if (s_top.ignore(pos, expected))
         {
-            ParserNumber num;
+            Pos pos_before_top = pos;
+            Expected expected_before_top = expected;
 
-            if (open_bracket.ignore(pos, expected))
+            if (s_top.ignore(pos, expected))
             {
-                if (!num.parse(pos, top_length, expected))
-                    return false;
-                if (!close_bracket.ignore(pos, expected))
-                    return false;
-            }
-            else
-            {
-                if (!num.parse(pos, top_length, expected))
-                    return false;
-            }
+                ParserNumber num;
+                bool parsed_top = false;
 
-            if (s_with_ties.ignore(pos, expected))
-                select_query->limit_with_ties = true;
+                if (open_bracket.ignore(pos, expected))
+                {
+                    if (!num.parse(pos, top_length, expected))
+                        return false;
+                    if (!close_bracket.ignore(pos, expected))
+                        return false;
+                    parsed_top = true;
+                }
+                else
+                {
+                    if (num.parse(pos, top_length, expected))
+                        parsed_top = true;
+                }
+
+                if (parsed_top)
+                {
+                    if (s_with_ties.ignore(pos, expected))
+                        select_query->limit_with_ties = true;
+                }
+                else
+                {
+                    pos = pos_before_top;
+                    expected = expected_before_top;
+                    top_length = nullptr;
+                }
+            }
         }
 
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
