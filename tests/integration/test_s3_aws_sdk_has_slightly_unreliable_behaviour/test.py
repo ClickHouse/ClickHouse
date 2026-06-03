@@ -83,9 +83,15 @@ def test_dataloss(cluster):
     )
 
     # Must throw an exception because we use proxy which always fail
-    # CompleteMultipartUpload requests
+    # CompleteMultipartUpload requests.
+    # async_insert is disabled so the write fails synchronously: otherwise the
+    # insert returns after the async timeout while a background flush keeps
+    # retrying against the always-failing proxy, racing the cleanup DROP below.
     try:
         with pytest.raises(Exception):
-            node.query("INSERT INTO s3_failover_test VALUES (1, 'Hello')")
+            node.query(
+                "INSERT INTO s3_failover_test VALUES (1, 'Hello')",
+                settings={"async_insert": 0},
+            )
     finally:
         node.query("DROP TABLE IF EXISTS s3_failover_test")

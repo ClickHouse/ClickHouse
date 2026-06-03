@@ -15,7 +15,8 @@
                 <skip_access_check>true</skip_access_check>
                 <!-- Avoid extra retries to speed up tests -->
                 <!-- never set retry_attempts to 0, as it disables retries on all errors including sporadic timeouts -->
-                <retry_attempts>2</retry_attempts>
+                <!-- disk request settings need the s3_ prefix; the bare key is ignored -->
+                <s3_retry_attempts>2</s3_retry_attempts>
                 <skip_access_check>true</skip_access_check>
             </s3>
         </disks>
