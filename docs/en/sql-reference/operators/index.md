@@ -399,7 +399,7 @@ The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `Dat
 
 `zone` can be any constant string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`, or `concat('America', '/', 'Denver')`). Because `AT TIME ZONE` desugars to `toTimeZone`, the same timezone-argument rules apply: non-constant expressions such as a column reference require [`allow_nonconst_timezone_arguments = 1`](../../operations/settings/settings.md#allow_nonconst_timezone_arguments).
 
-`AT LOCAL` uses the current [session timezone](../../operations/settings/settings.md#session_timezone) (or the server default if no session timezone is set).
+`AT LOCAL` uses the current [session timezone](../../operations/settings/settings.md#session_timezone) (or the server default if no session timezone is set). On `Distributed` tables, `session_timezone` must be explicitly set; when it is empty, `timeZone()` is shard-local and cannot be used as a constant `toTimeZone` argument, causing an `ILLEGAL_COLUMN` exception.
 
 :::note
 Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
