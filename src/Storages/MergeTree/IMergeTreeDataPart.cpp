@@ -2238,12 +2238,11 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
             /// slot 2 to slot 1).  The reader's stale-slot guards
             /// (`MergeTreeReaderCompact::fillColumnPositions`,
             /// `MergeTreeReaderWide::getStream`) then reset the position so
-            /// the requested column reads defaults.
-            auto remapped_column = column;
-            /// column_id stays as-is on `column` (empty for pre-activation,
-            /// equal to logical name for post-activation); the reader's
-            /// guard treats empty as the logical name.
-            remapped_columns.push_back(remapped_column);
+            /// the requested column reads defaults.  Push the original
+            /// `column` unchanged -- column_id stays as-is (empty for
+            /// pre-activation, equal to logical name for post-activation);
+            /// the reader's guard treats empty as the logical name.
+            remapped_columns.push_back(column);
         }
         else
         {
