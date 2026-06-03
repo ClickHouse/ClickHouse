@@ -182,7 +182,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
 QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, in);
 
     if (version > QUERY_PLAN_CACHE_SERIALIZATION_VERSION)

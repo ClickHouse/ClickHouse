@@ -1830,6 +1830,16 @@ static BlockIO executeQueryImpl(
                             auto plan = materializePlan(cached_entry->serialized_plan, context);
                             interpreter_with_analyzer->setQueryPlan(std::move(plan));
                             interpreter_with_analyzer->getPlanner().setUsedRowPolicies(cached_entry->used_row_policies);
+
+                            /// The normal planner records query access info via Context::addQueryAccessInfo
+                            /// in PlannerJoinTree. On a cache hit setQueryPlan makes buildQueryPlanIfNeeded
+                            /// return early, so we restore it here to keep system.query_log.query_databases,
+                            /// query_tables, and query_columns populated. For SELECT count() the cached
+                            /// selected_columns is empty, so only the database and table are recorded.
+                            if (!internal && context->hasQueryContext())
+                                context->getQueryContext()->addQueryAccessInfo(
+                                    query_plan_cache_key->storage_id, cached_entry->selected_columns);
+
                             query_plan_cache_hit = true;
                         }
                         catch (const Exception & e)

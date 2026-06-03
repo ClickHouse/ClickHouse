@@ -38,7 +38,7 @@ struct QueryPlanCacheKey
     IASTHash ast_hash;
 
     /// SipHash of plan-affecting settings only (see SemanticSettings)
-    UInt64 semantic_settings_hash;
+    UInt64 semantic_settings_hash = 0;
 
     /// Per-table schema version: {database.table -> metadata_version}
     /// Incremented by ReplicatedMergeTree on schema changes; for non-replicated tables,
