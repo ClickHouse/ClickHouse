@@ -16,7 +16,6 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Storages/prepareReadingFromFormat.h>
 
 
@@ -67,20 +66,11 @@ QueryPlanStepPtr ReadFromObjectStorageStep::clone() const
 void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-    // It is important to build the inplace sets for the filter here, before reading data from object storage.
-    // If we delay building these sets until later in the pipeline, the filter can be applied after the data
-    // has already been read, potentially in parallel across many streams. This can significantly reduce the
-    // effectiveness of an Iceberg partition pruning, as unnecessary data may be read. Additionally, building ordered sets
-    // at this stage enables the KeyCondition class to apply more efficient optimizations than for unordered sets.
-    if (!filter_actions_dag)
-        return;
-
-    /// Narrow to inputs a downstream consumer can use, so unrelated IN subqueries don't execute.
-    auto allowed_inputs = buildAllowedFilterInputs(
-        storage_snapshot, info.source_header, query_info.prewhere_info, query_info.row_level_filter);
-    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
-            filter_actions_dag->getOutputs().at(0), &allowed_inputs, getContext(), /*allow_partial_result=*/ true))
-        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, getContext());
+    /// Build sets here so format-level KeyCondition / Iceberg partition pruning can use them.
+    prepareEagerKeyConditionSets(
+        configuration->format, filter_actions_dag,
+        storage_snapshot, info.source_header,
+        query_info.prewhere_info, query_info.row_level_filter, getContext());
 }
 
 void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)

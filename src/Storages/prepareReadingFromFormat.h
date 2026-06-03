@@ -13,6 +13,8 @@ namespace DB
     struct FilterDAGInfo;
     using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 
+    class ActionsDAG;
+
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -52,6 +54,16 @@ namespace DB
         const Block & source_header,
         const PrewhereInfoPtr & prewhere_info,
         const FilterDAGInfoPtr & row_level_filter);
+
+    /// Eagerly materialise IN-subquery sets for Parquet/ORC KeyCondition pushdown.
+    void prepareEagerKeyConditionSets(
+        const String & format_name,
+        const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+        const StorageSnapshotPtr & storage_snapshot,
+        const Block & source_header,
+        const PrewhereInfoPtr & prewhere_info,
+        const FilterDAGInfoPtr & row_level_filter,
+        const ContextPtr & context);
 
     struct PrepareReadingFromFormatHiveParams
     {

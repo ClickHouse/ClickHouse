@@ -1829,15 +1829,12 @@ void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
-    {
         predicate = filter_actions_dag->getOutputs().at(0);
-        /// Materialise IN-subquery sets the format reader can use, skipping those over unrelated columns.
-        auto allowed_inputs = buildAllowedFilterInputs(
-            storage_snapshot, info.source_header, query_info.prewhere_info, query_info.row_level_filter);
-        if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
-                predicate, &allowed_inputs, getContext(), /*allow_partial_result=*/ true))
-            VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, getContext());
-    }
+
+    prepareEagerKeyConditionSets(
+        storage->format_name, filter_actions_dag,
+        storage_snapshot, info.source_header,
+        query_info.prewhere_info, query_info.row_level_filter, getContext());
 
     createIterator(predicate);
 }

@@ -2,10 +2,12 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -405,6 +407,30 @@ Block buildAllowedFilterInputs(
         if (!base.has(col.name))
             base.insert(col);
     return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+void prepareEagerKeyConditionSets(
+    const String & format_name,
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter,
+    const ContextPtr & context)
+{
+    if (!filter_actions_dag)
+        return;
+    /// Only Parquet/ORC readers build a KeyCondition that consumes the set;
+    /// for other formats CreatingSetsStep materialises sets at WHERE-time.
+    if (format_name != "Parquet" && format_name != "ORC")
+        return;
+
+    auto allowed_inputs = buildAllowedFilterInputs(
+        storage_snapshot, source_header, prewhere_info, row_level_filter);
+    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
+            /*allow_partial_result=*/ true))
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
 }
 
 }
