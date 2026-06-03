@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -60,21 +61,38 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 namespace
@@ -102,6 +120,18 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
+/// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
+/// InterpreterCreateQuery so that ALTER ADD/MODIFY COLUMN behaves like CREATE TABLE.
+void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null_modifier)
+{
+    if (!null_modifier)
+        return;
+    if (data_type->isNullable())
+        throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
+    if (*null_modifier)
+        data_type = makeNullable(data_type);
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -120,6 +150,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
+            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -177,6 +208,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
+            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
 
         if (ast_col_decl.getDefaultExpression())
@@ -479,7 +511,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_REFRESH;
-        command.refresh = command_ast->refresh;
+        command.refresh = command_ast->refresh->ptr();
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
@@ -658,15 +690,15 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             /// Primary and sorting key become independent after this ALTER so
             /// we have to save the old ORDER BY expression as the new primary
             /// key.
-            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, context);
+            primary_key = KeyDescription::getKeyFromAST(sorting_key.definition_ast, metadata.columns, metadata.virtuals, context);
         }
 
         /// Recalculate key with new order_by expression.
-        sorting_key.recalculateWithNewAST(order_by, metadata.columns, context);
+        sorting_key.recalculateWithNewAST(order_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
-        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
+        metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == REMOVE_SAMPLE_BY)
     {
@@ -703,8 +735,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
 
-        auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-            || metadata.add_minmax_index_for_temporal_columns;
+        auto using_auto_minmax_index =
+               metadata.add_minmax_index_for_numeric_columns
+            || metadata.add_minmax_index_for_string_columns
+            || metadata.add_minmax_index_for_temporal_columns
+            || metadata.add_minmax_index_for_block_number_column
+            || metadata.add_minmax_index_for_block_offset_column;
         if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX) && using_auto_minmax_index)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
@@ -859,7 +895,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_PROJECTION)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_decl, metadata.columns, &metadata.partition_key, context);
+        auto projection = ProjectionDescription::getProjectionFromAST(
+            projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)
@@ -929,6 +966,33 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 it->value = change.value;
             else
                 settings_from_storage.push_back(change);
+        }
+
+        MergeTreeSettings effective_settings;
+        bool any_mt_setting = false;
+        for (const auto & change : settings_from_storage)
+        {
+            if (MergeTreeSettings::hasBuiltin(change.name))
+            {
+                effective_settings.applyChange(change);
+                any_mt_setting = true;
+            }
+        }
+        if (any_mt_setting)
+        {
+            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+            for (const auto & column : metadata.columns)
+            {
+                metadata.dropImplicitIndicesForColumn(column.name);
+                metadata.addImplicitIndicesForColumn(column, context);
+            }
+            metadata.dropImplicitIndicesForVirtualColumns();
+            metadata.addImplicitIndicesForVirtualColumns(context);
         }
     }
     else if (type == RESET_SETTING)
@@ -1210,7 +1274,14 @@ bool AlterCommand::isDropOrRename() const
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata, context))
+    {
+        /// Even though this command doesn't require a mutation, we still need to apply it
+        /// to the metadata so that subsequent commands see the updated state. For example,
+        /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
+        if (!ignore)
+            apply(metadata, context);
         return {};
+    }
 
     MutationCommand result;
 
@@ -1219,7 +1290,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.type = MutationCommand::Type::READ_COLUMN;
         result.column_name = column_name;
         result.data_type = data_type;
-        result.predicate = nullptr;
     }
     else if (type == DROP_COLUMN)
     {
@@ -1227,9 +1297,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = column_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-        result.predicate = nullptr;
     }
     else if (type == DROP_INDEX)
     {
@@ -1237,10 +1304,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = index_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_STATISTICS)
     {
@@ -1249,10 +1312,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
 
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == DROP_PROJECTION)
     {
@@ -1260,10 +1319,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.column_name = projection_name;
         if (clear)
             result.clear = true;
-        if (partition)
-            result.partition = partition;
-
-        result.predicate = nullptr;
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1272,7 +1327,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         result.rename_to = rename_to;
     }
 
-    result.ast = ast->clone();
+    result.ast_text = ast->formatWithSecretsOneLine();
+    const auto & settings = context->getSettingsRef();
+    result.max_parser_depth = settings[Setting::max_parser_depth];
+    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
     apply(metadata, context);
     return result;
 }
@@ -1309,24 +1367,24 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             command.apply(metadata_copy, context);
 
     /// Changes in columns may lead to changes in keys expression.
-    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+    metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
-        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.primary_key = KeyDescription::getKeyFromAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
         metadata_copy.primary_key.definition_ast = nullptr;
     }
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
     {
-        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
         /// If partition key expression is changed, we also need to rebuild minmax_count_projection
-        if (!blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
+        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
         {
             auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
             auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
@@ -1338,7 +1396,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     // /// And in sample key expression
     if (metadata_copy.sampling_key.definition_ast != nullptr)
-        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, context);
+        metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
     for (auto & index : metadata_copy.secondary_indices)
@@ -1399,7 +1457,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
 
@@ -1413,7 +1471,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name) || columns.hasNested(command.column_name);
+        bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
@@ -1455,10 +1513,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
-    const auto & metadata = table->getInMemoryMetadata();
-    auto virtuals = table->getVirtualsPtr();
+    const auto metadata = table->getInMemoryMetadataPtr(context, false);
+    const auto virtuals = metadata->virtuals;
 
-    auto all_columns = metadata.columns;
+    bool share_nested = true;
+    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     NameSet modified_columns;
@@ -1470,10 +1532,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
+        if ((command.type == AlterCommand::ADD_STATISTICS || command.type == AlterCommand::DROP_STATISTICS
+             || command.type == AlterCommand::MODIFY_STATISTICS)
+            && !context->getSettingsRef()[Setting::allow_statistics])
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (all_columns.has(column_name) || all_columns.hasNested(column_name))
+            if (all_columns.has(column_name) || (share_nested && all_columns.hasNested(column_name)))
             {
                 if (!command.if_not_exists)
                     throw Exception(ErrorCodes::DUPLICATE_COLUMN,
@@ -1489,12 +1556,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
-            if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
+            if (virtuals.tryGet(column_name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
             if (command.default_kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                && virtuals.tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
@@ -1528,7 +1595,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                                              "in a single ALTER query", backQuote(column_name));
 
             if (command.default_kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                && virtuals.tryGet(column_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot modify column {} to ephemeral: it conflicts with a virtual column of the same name",
                     backQuote(column_name));
@@ -1624,7 +1691,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || all_columns.hasNested(command.column_name))
+            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
@@ -1641,7 +1708,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 auto expression = buildQueryTree(default_expression->clone(), execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
-                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
                                 auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
                                 collectSourceColumns(expression, planner_context);
                                 if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
@@ -1700,7 +1767,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
-            if (metadata.settings_changes == nullptr)
+            if (metadata->settings_changes == nullptr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
@@ -1723,7 +1790,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// TODO Implement nested rename
             if (all_columns.hasNested(command.column_name))
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
+                bool skip = false;
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                    skip = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+                if (!skip)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
             }
 
             if (!all_columns.has(command.column_name))
@@ -1742,12 +1813,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
                     "Cannot rename to {}: column with this name already exists", backQuote(command.rename_to));
 
-            if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
+            if (virtuals.tryGet(command.rename_to, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
 
             if (all_columns.get(command.column_name).default_desc.kind == ColumnDefaultKind::Ephemeral
-                && virtuals->tryGet(command.rename_to, VirtualsKind::Ephemeral))
+                && virtuals.tryGet(command.rename_to, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename ephemeral column to {}: it conflicts with a virtual column of the same name",
                     backQuote(command.rename_to));
@@ -1760,6 +1831,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             String to_nested_table_name = Nested::extractTableName(command.rename_to);
             bool from_nested = from_nested_table_name != command.column_name;
             bool to_nested = to_nested_table_name != command.rename_to;
+
+            /// When share_nested_offsets is disabled, dotted-name columns are independent
+            /// and not part of a Nested group, so they can be freely renamed.
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+            {
+                if (!(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets])
+                {
+                    from_nested = false;
+                    to_nested = false;
+                }
+            }
 
             if (from_nested && to_nested)
             {
@@ -1778,11 +1860,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
             }
         }
-        else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
+        else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have any table TTL expression, cannot remove");
         }
-        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
+        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata->hasSamplingKey())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
         }
@@ -1862,12 +1944,27 @@ static MutationCommand createMaterializeTTLCommand()
     auto ast = make_intrusive<ASTAlterCommand>();
     ast->type = ASTAlterCommand::MATERIALIZE_TTL;
     command.type = MutationCommand::MATERIALIZE_TTL;
-    command.ast = std::move(ast);
+    command.ast_text = ast->formatWithSecretsOneLine();
     return command;
 }
 
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
 {
+    /// Save a copy of the original metadata before applying commands.
+    /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
+    /// making it impossible to detect TTL changes afterwards.
+    const StorageInMemoryMetadata original_metadata = metadata;
+
+    /// Remove implicit statistics before applying commands to the metadata copy.
+    /// This is needed because `getMutationCommands` may be called before `removeImplicitStatistics`
+    /// in the ALTER flow (e.g. in StorageMergeTree::alter), and applying ADD_STATISTICS
+    /// to metadata that already contains auto-added statistics would throw a duplicate error.
+    removeImplicitStatistics(metadata.columns);
+
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -1877,7 +1974,12 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{.ast = alter_cmd.ast->clone(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
+            result.push_back(MutationCommand{
+                .ast_text = alter_cmd.ast->formatWithSecretsOneLine(),
+                .max_parser_depth = max_parser_depth,
+                .max_parser_backtracks = max_parser_backtracks,
+                .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
+            });
         }
     }
 
@@ -1885,7 +1987,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     {
         for (const auto & alter_cmd : *this)
         {
-            if (alter_cmd.isTTLAlter(metadata))
+            if (alter_cmd.isTTLAlter(original_metadata))
             {
                 result.push_back(createMaterializeTTLCommand());
                 break;
