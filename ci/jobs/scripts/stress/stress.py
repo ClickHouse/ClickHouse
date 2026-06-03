@@ -191,8 +191,8 @@ class RandomServerRestarter(RandomRestarter):
                 time.sleep(1)
         return False
 
-    def _stop_hard(self) -> None:
-        pid = self._read_pid()
+    def _stop_hard(self, saved_pid: Optional[int] = None) -> None:
+        pid = saved_pid or self._read_pid()
         if pid is None:
             logging.warning("%s: no PID file, server may already be down", self.NAME)
             return
@@ -212,6 +212,7 @@ class RandomServerRestarter(RandomRestarter):
             f.write(f"{pid}\n")
 
     def _stop_graceful(self) -> None:
+        pid = self._read_pid()
         logging.info("%s: graceful stop via clickhouse stop", self.NAME)
         ret = subprocess.run(
             "clickhouse stop --do-not-kill --max-tries 60",
@@ -220,12 +221,22 @@ class RandomServerRestarter(RandomRestarter):
             timeout=90,
         )
         if ret.returncode != 0:
+            if pid is None:
+                logging.error(
+                    "%s: graceful stop failed (rc=%d) and no PID was saved; "
+                    "skipping start attempt",
+                    self.NAME,
+                    ret.returncode,
+                )
+                self._recovery_failures += 1
+                raise RuntimeError("graceful stop failed without saved PID")
             logging.warning(
-                "%s: graceful stop failed (rc=%d), falling back to SIGKILL",
+                "%s: graceful stop failed (rc=%d), sending SIGKILL to saved pid %d",
                 self.NAME,
                 ret.returncode,
+                pid,
             )
-            self._stop_hard()
+            self._stop_hard(pid)
 
     def _start_and_wait(self) -> None:
         self._wait_port_free(9000)
