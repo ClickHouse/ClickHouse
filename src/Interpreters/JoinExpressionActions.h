@@ -134,6 +134,41 @@ String toString(const BitSet & bitset);
 
 inline bool isSubsetOf(const BitSet & lhs, const BitSet & rhs) { return (lhs & rhs) == lhs; }
 
+
+// generates S \subset X, S \neq \emptyset
+template <std::unsigned_integral Tuint>
+class NonEmptySubsetIterator
+{
+public:
+    using bitvector_t = Tuint;
+    explicit NonEmptySubsetIterator(const bitvector_t x)
+        : start(0)
+        , current(0)
+    {
+        init(x);
+    }
+    void init(bitvector_t x)
+    {
+        start = x;
+        current = (x & (-x));
+    }
+    void reset() { current = (start & (-start)); }
+    NonEmptySubsetIterator & operator++()
+    {
+        advance();
+        return (*this);
+    }
+    bool isValid() const { return (start != current); }
+    Tuint operator*() { return current; }
+    Tuint get() const { return current; }
+    Tuint getFullSet() const { return start; }
+
+private:
+    void advance() { current = (start & (current - start)); }
+    bitvector_t start;
+    bitvector_t current;
+};
+
 class JoinActionRef;
 
 class JoinExpressionActions

@@ -2,11 +2,11 @@
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
+#include <bit>
 #include <deque>
 #include <functional>
 #include <limits>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 #include <Core/Joins.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -16,6 +16,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/safe_cast.h>
+#include "base/types.h"
 #include <base/defines.h>
 #include <ranges>
 #include <stack>
@@ -310,6 +311,7 @@ public:
 private:
     void buildQueryGraph();
 
+    std::shared_ptr<DPJoinEntry> solveDPsub();
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
@@ -501,6 +503,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
+            case JoinOrderAlgorithm::DPSUB:
+                best_plan = solveDPsub();
+                break;
             case JoinOrderAlgorithm::DPSIZE:
                 best_plan = solveDPsize();
                 break;
@@ -523,7 +528,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
     return best_plan;
 }
-
 
 std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
 {
@@ -691,6 +695,29 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
     return (participating & left) && (participating & right);
 }
 
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
+{
+    struct DPEntry {
+        UInt32 neighbor{0};
+        std::optional<UInt64> estimated_rows = {};
+        double cost{0.0};
+        std::unordered_map<String, ColumnStats> column_stats = {};
+    };
+    using dptable_t = DpTable<UInt32, DPEntry>;
+    using checker_t = EnumeratorChecker<UInt32, dptable_t>;
+    using enumerator_t = EnumCcpSub<checker_t, dptable_t, QueryGraph, UInt32>;
+
+    const size_t n = query_graph.relation_stats.size();
+    checker_t checker(n);
+    enumerator_t enumerator(n, log);
+    enumerator.enumerate(checker, &checker_t::accept, query_graph);
+    checker.dptable().printStatistics(std::cout);
+
+    
+    return nullptr; /// FIXME: return proper plan after implementing the algorithm
+}
+
+
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 {
     const size_t total_relations_count = query_graph.relation_stats.size();
@@ -743,6 +770,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
+                        LOG_TEST(log, "Bitset Rep. left: {}, right: {}, edge: {}", toString(left->relations),
+                            toString(right->relations), toString(edge_it->getSourceRelations()));
+
                         if (connects(edge_it, left->relations, right->relations))
                         {
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());

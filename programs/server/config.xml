@@ -21,7 +21,7 @@
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
-        <level>trace</level>
+        <level>test</level>
 
         <!-- Startup level is used to set the root logger level at server startup.
              It is useful for debugging startup issues.
