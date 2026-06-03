@@ -6,6 +6,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
+#include <Common/StackTrace.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -701,11 +702,11 @@ void ZooKeeper::sendHandshake()
 
 void ZooKeeper::receiveHandshake()
 {
-    int32_t handshake_length;
-    int32_t protocol_version_read;
-    int32_t timeout;
-    std::array<char, PASSWORD_LENGTH> passwd;
-    bool read_only;
+    int32_t handshake_length = 0;
+    int32_t protocol_version_read = 0;
+    int32_t timeout = 0;
+    std::array<char, PASSWORD_LENGTH> passwd{};
+    bool read_only = false;
 
     read(handshake_length);
     if (handshake_length != SERVER_HANDSHAKE_LENGTH && handshake_length != SERVER_HANDSHAKE_LENGTH_WITH_READONLY)
@@ -760,10 +761,10 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
     flushWriteBuffer();
 
-    int32_t length;
-    XID read_xid;
-    int64_t zxid;
-    Error err;
+    int32_t length = 0;
+    XID read_xid = 0;
+    int64_t zxid = 0;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();
@@ -998,10 +999,10 @@ void ZooKeeper::receiveThread()
 
 void ZooKeeper::receiveEvent()
 {
-    int32_t length;
-    XID xid;
-    int64_t zxid;
-    Error err;
+    int32_t length = 0;
+    XID xid = 0;
+    int64_t zxid = 0;
+    Error err = {};
 
     read(length);
     size_t count_before_event = in->count();
@@ -2102,8 +2103,8 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
     }
     else
     {
-        assert(response);
-        assert(response->xid == PING_XID || response->xid == WATCH_XID);
+        chassert(response);
+        chassert(response->xid == PING_XID || response->xid == WATCH_XID);
         elems.emplace_back();
     }
 

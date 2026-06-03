@@ -1,12 +1,10 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
-#include <filesystem>
-#include <iomanip>
-
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
 #include <base/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/UDFProcessSubtreeSampler.h>
@@ -371,7 +369,7 @@ public:
         }
         catch (...)
         {
-            std::vector<String> quoted_arguments_with_parameters;
+            VectorWithMemoryTracking<String> quoted_arguments_with_parameters;
             for (const auto & argument : command_arguments_with_parameters)
                 quoted_arguments_with_parameters.push_back("\"" + argument + "\"");
             String quoted_arguments_string = boost::algorithm::join(quoted_arguments_with_parameters, ", ");
@@ -453,12 +451,12 @@ bool UserDefinedExecutableFunctionFactory::has(const String & function_name, Con
     return result;
 }
 
-std::vector<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
+Strings UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto loaded_objects = loader.getLoadedObjects();
 
-    std::vector<std::string> registered_names;
+    Strings registered_names;
     registered_names.reserve(loaded_objects.size());
 
     for (auto & loaded_object : loaded_objects)
