@@ -3,6 +3,7 @@
 /// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
 #include <base/defines.h>
+#include <base/phdr_cache.h>
 
 #if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(USE_MUSL)
     #define USE_PHDR_CACHE 1
@@ -77,12 +78,12 @@ int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * da
 
 extern "C"
 {
-#ifdef ADDRESS_SANITIZER
-void __lsan_ignore_object(const void *);
-#else
-void __lsan_ignore_object(const void *) {} // NOLINT
-#endif
+void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
+
+#ifndef ADDRESS_SANITIZER
+extern "C" void __lsan_ignore_object(const void *) {} // NOLINT
+#endif
 
 
 void updatePHDRCache()

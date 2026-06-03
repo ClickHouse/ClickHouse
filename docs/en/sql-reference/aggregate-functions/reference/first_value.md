@@ -7,8 +7,6 @@ title: 'first_value'
 doc_type: 'reference'
 ---
 
-# first_value
-
 It is an alias for [`any`](../../../sql-reference/aggregate-functions/reference/any.md) but it was introduced for compatibility with [Window Functions](../../window-functions/index.md), where sometimes it's necessary to process `NULL` values (by default all ClickHouse aggregate functions ignore NULL values).
 
 It supports declaring a modifier to respect nulls (`RESPECT NULLS`), both under [Window Functions](../../window-functions/index.md) and in normal aggregations.
