@@ -171,12 +171,21 @@ const ArrowNumericArray & checkedCast(const arrow::Array & array, const String &
 /// Validate that a single BinaryView struct's data range is within its variadic buffer.
 /// Inline views store data directly inside the view struct (already covered by
 /// checkedCastView on buffers[1]); only non-inline views reference a variadic buffer.
-static void checkViewStruct(
+void checkViewStruct(
     const arrow::BinaryViewType::c_type & v,
     const arrow::ArrayData & chunk_data,
     const String & column_name,
     int64_t row)
 {
+    /// Reject negative sizes before the inline check: a crafted size of e.g. -1
+    /// would satisfy is_inline() (−1 ≤ kInlineSize = 12) and return here unchecked,
+    /// then static_cast<size_t>(-1) in the accumulation loop wraps to SIZE_MAX.
+    if (unlikely(v.size() < 0))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow StringView has negative size {} for column '{}' row {}",
+            v.size(), column_name, row);
+
     if (v.is_inline())
         return;
 
@@ -464,7 +473,7 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
             for (int64_t i = 0; i < chunk_length; ++i)
             {
                 checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
-                total_bytes_size += static_cast<size_t>(view_structs[i].size());
+                total_bytes_size += static_cast<size_t>(view_structs[i].size()); /// size() >= 0 guaranteed by checkViewStruct
             }
         }
         else
@@ -671,12 +680,25 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             if (chunk.IsNull(value_i))
+            {
                 integer_column.insertDefault();
+            }
             else
+            {
+                const size_t safe_offset = static_cast<size_t>(chunk.value_offset(value_i));
+                if (unlikely(safe_offset + sizeof(ValueType) > data_buf_size))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow BinaryArray data buffer too small for column '{}': "
+                        "row {} has offset {} but buffer is {} bytes",
+                        column_name, value_i, safe_offset, data_buf_size);
                 integer_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
+            }
         }
     }
     return {std::move(internal_column), column_type, column_name};
@@ -1271,12 +1293,25 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             if (chunk.IsNull(value_i))
+            {
                 ipv6_column.insertDefault();
+            }
             else
+            {
+                const size_t safe_offset = static_cast<size_t>(chunk.value_offset(value_i));
+                if (unlikely(safe_offset + sizeof(IPv6) > data_buf_size))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow BinaryArray data buffer too small for column '{}': "
+                        "row {} has offset {} but buffer is {} bytes",
+                        column_name, value_i, safe_offset, data_buf_size);
                 ipv6_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
+            }
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};

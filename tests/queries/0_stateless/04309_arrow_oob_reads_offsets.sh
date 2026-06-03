@@ -14,6 +14,9 @@
 #   25. readColumnWithBigNumberFromBinaryData – offsets buffer read before size check
 #   26. readColumnWithGeoData     – offsets buffer read before per-row data-buffer check
 #   27. readIPv6ColumnFromBinaryData – offsets buffer read before size check
+#   28. checkViewStruct           – negative view size passes is_inline(), wraps in accumulation
+#   29. readColumnWithBigNumberFromBinaryData – data buffer over-read in copy loop
+#   30. readIPv6ColumnFromBinaryData – data buffer over-read in copy loop
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -129,6 +132,38 @@ open(f'{out}/geo.arrow', 'wb').write(inflate_row_count(d, 1))
 # 27. readIPv6ColumnFromBinaryData: same offsets-buffer gap as case 25 but for IPv6.
 d = write_arrow(pa.array([b'\x00'*16], type=pa.binary()))
 open(f'{out}/ipv6_binary.arrow', 'wb').write(inflate_row_count(d, 1))
+
+# 28. checkViewStruct: a view-struct with size = -1 satisfies is_inline() (-1 <= 12)
+#     and was previously returned without error; static_cast<size_t>(-1) in the
+#     accumulation loop wraps to SIZE_MAX, corrupting total_bytes_size.
+#     Build a 2-row StringViewArray with valid inline rows, then patch row-0's size to -1.
+d = write_arrow(pa.array(['a', 'b'], type=pa.string_view()))
+needle = struct.pack('<i', 1) + b'a' + b'\x00'*11   # size=1, data='a', padding
+idx = d.rfind(needle)
+assert idx >= 0
+d[idx:idx+4] = struct.pack('<i', -1)
+open(f'{out}/view_negsize.arrow', 'wb').write(d)
+
+# 29. readColumnWithBigNumberFromBinaryData data-buffer: offsets are valid (all value
+#     lengths = 16) but the data buffer is too small to hold offset[row] + 16 bytes.
+#     7 rows, each claiming to be at offset 0 with length 16, but only 8 bytes of data.
+d = write_arrow(pa.array([b'\xcc'*16]*7, type=pa.binary()))
+# Shrink the data buffer from 112 to 8 bytes
+data_len_bytes = struct.pack('<q', 7*16)
+assert data_len_bytes in d
+idx = d.rfind(data_len_bytes)
+if idx >= 8 and struct.unpack_from('<q', d, idx-8)[0] >= 0:
+    d[idx:idx+8] = struct.pack('<q', 8)
+open(f'{out}/bignum_dlen.arrow', 'wb').write(d)
+
+# 30. readIPv6ColumnFromBinaryData data-buffer: same as case 29 but for IPv6.
+d = write_arrow(pa.array([b'\x00'*16]*7, type=pa.binary()))
+data_len_bytes = struct.pack('<q', 7*16)
+assert data_len_bytes in d
+idx = d.rfind(data_len_bytes)
+if idx >= 8 and struct.unpack_from('<q', d, idx-8)[0] >= 0:
+    d[idx:idx+8] = struct.pack('<q', 8)
+open(f'{out}/ipv6_dlen.arrow', 'wb').write(d)
 PYEOF
 
 check() {
@@ -166,3 +201,9 @@ check geo        $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/geo.a
                    --input_format_parquet_allow_geoparquet_parser=1
 # IPv6: offsets buffer read via value_length() before checkBinaryOffsetsBuffer
 check ipv6_binary $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/ipv6_binary.arrow', Arrow, 'x IPv6')"
+# View negative size: size=-1 passes is_inline() and wraps SIZE_MAX in accumulation
+check view_negsize $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/view_negsize.arrow', Arrow)"
+# BigNum data-buffer: data buffer too small for value_offset + sizeof(ValueType)
+check bignum_dlen  $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/bignum_dlen.arrow', Arrow, 'x Int128')"
+# IPv6 data-buffer: data buffer too small for value_offset + sizeof(IPv6)
+check ipv6_dlen    $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/ipv6_dlen.arrow', Arrow, 'x IPv6')"
