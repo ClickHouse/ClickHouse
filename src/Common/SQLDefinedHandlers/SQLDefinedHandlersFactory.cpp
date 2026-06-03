@@ -218,9 +218,13 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
 
     auto old = loaded_handlers.at(alter_query.handler_name);
     loaded_handlers.erase(alter_query.handler_name);
+    /// Keep the ambiguity check and the persistent write under a single recovery scope: if either the
+    /// check or `store` fails (e.g. Keeper returns an error or loses the connection), restore the old
+    /// handler so that `loaded_handlers` is never left missing an entry that still exists in storage.
     try
     {
         checkAmbiguity(*updated, lock);
+        metadata_storage->store(alter_query.handler_name, updated->create_statement, true);
     }
     catch (...)
     {
@@ -228,7 +232,6 @@ void SQLDefinedHandlersFactory::updateFromSQL(const ASTCreateHandlerQuery & alte
         throw;
     }
 
-    metadata_storage->store(alter_query.handler_name, updated->create_statement, true);
     loaded_handlers.emplace(alter_query.handler_name, updated);
     rebuildSnapshot(lock);
 }
