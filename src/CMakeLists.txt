@@ -400,6 +400,9 @@ ${CMAKE_SOURCE_DIR}/programs/server/schema.html")
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
 
+set_source_files_properties(Client/TransformerModel.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/client/ggml-model-f32.model")
+
 set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
 
@@ -518,7 +521,7 @@ target_link_libraries (clickhouse_common_io
             ch_contrib::double_conversion
             ch_contrib::zmij
             ch_contrib::libdivide
-	    ch_contrib::ggml
+            ch_contrib::ggml
 )
 
 

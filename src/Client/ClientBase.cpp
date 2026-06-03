@@ -3087,9 +3087,8 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (have_error)
                     processError(full_query);
 
-                if (!have_error)
-                    if (autocomplete)
-                        autocomplete->addQuery(full_query);
+                if (!have_error && autocomplete)
+                    autocomplete->addQuery(String(full_query));
 
                 // Stop processing queries if needed.
                 if (have_error && (buzz_house || !ignore_error))

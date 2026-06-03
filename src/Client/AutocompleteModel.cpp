@@ -9,7 +9,7 @@
 #include <Parsers/CommonParsers.h>
 
 
-std::string toUpperCaseString(const char * begin, const char * end)
+static std::string toUpperCaseString(const char * begin, const char * end)
 {
     std::string result;
 
@@ -17,7 +17,7 @@ std::string toUpperCaseString(const char * begin, const char * end)
 
     for (const char * ptr = begin; ptr != end; ++ptr)
     {
-        result += std::toupper(*ptr);
+        result += static_cast<char>(std::toupper(static_cast<unsigned char>(*ptr)));
     }
 
     return result;
@@ -187,7 +187,7 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer & lexer)
     {
         auto [markov_all_rec, prob] = markov_all.predictNextWithProb(preprocessed_for_markov);
 
-        if (prob > 0.8 && markov_all_rec.size() > 1)
+        if (prob > 0.8L && markov_all_rec.size() > 1)
         {
             recs.insert(recs.begin(), markov_all_rec);
         }

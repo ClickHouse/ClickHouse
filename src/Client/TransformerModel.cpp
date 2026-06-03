@@ -15,9 +15,11 @@
 
 #include <IO/ReadBufferFromString.h>
 
-#include <incbin.h>
-
-INCBIN(ggml_model_f32, SOURCE_DIR "/programs/client/ggml-model-f32.model");
+/// The trained model is embedded into the binary so that the client is self-contained.
+constexpr unsigned char ggml_model_f32_data[] =
+{
+#embed "../../programs/client/ggml-model-f32.model"
+};
 
 #if defined(_MSC_VER)
 #    pragma warning(disable : 4244 4267) // possible loss of data
@@ -66,7 +68,7 @@ bool GPTJModel::loadModel(const std::string & file_name)
 {
     out_err.next();
 
-    auto fin = DB::ReadBufferFromString({reinterpret_cast<const char *>(gggml_model_f32Data), gggml_model_f32Size});
+    auto fin = DB::ReadBufferFromString({reinterpret_cast<const char *>(ggml_model_f32_data), sizeof(ggml_model_f32_data)});
     size_t ignore = 0;
 
     // verify magic
@@ -404,7 +406,7 @@ bool GPTJModel::gptjEval(const std::vector<GptVocab::id> & ids_input, std::vecto
 
     if (mem_per_token > 0 && mem_per_token * n > buf_size)
     {
-        const size_t buf_size_new = static_cast<size_t>(1.1 * (mem_per_token * n)); // add 10% to account for ggml object overhead
+        const size_t buf_size_new = static_cast<size_t>(1.1 * static_cast<double>(mem_per_token * n)); // add 10% to account for ggml object overhead
         //printf("\n%s: reallocating buffer from %zu to %zu bytes\n", __func__, buf_size, buf_size_new);
 
         // reallocate
@@ -514,7 +516,7 @@ bool GPTJModel::gptjEval(const std::vector<GptVocab::id> & ids_input, std::vecto
             struct ggml_tensor * kq = ggml_mul_mat(ctx0, k, q);
 
             // KQ_scaled = KQ / sqrt(n_embd/n_head)
-            struct ggml_tensor * kq_scaled = ggml_scale_inplace(ctx0, kq, 1.0f / sqrt(float(n_embd) / n_head));
+            struct ggml_tensor * kq_scaled = ggml_scale_inplace(ctx0, kq, 1.0f / sqrt(float(n_embd) / static_cast<float>(n_head)));
 
             // KQ_masked = mask_past(KQ_scaled)
             struct ggml_tensor * kq_masked = ggml_diag_mask_inf_inplace(ctx0, kq_scaled, n_past);
@@ -658,12 +660,12 @@ std::vector<std::string> GPTJModel::ids2Tokens(const std::vector<GptVocab::id> &
     return result;
 }
 
-bool hasCommonPrefix(const std::vector<GptVocab::id> & cached_query, const std::vector<GptVocab::id> & new_ids)
+static bool hasCommonPrefix(const std::vector<GptVocab::id> & cached_query, const std::vector<GptVocab::id> & new_ids)
 {
     return new_ids.size() >= cached_query.size() - 1 && std::equal(cached_query.begin() + 1, cached_query.end(), new_ids.begin());
 }
 
-std::vector<GptVocab::id> getNewElements(const std::vector<GptVocab::id> & cached_query, const std::vector<GptVocab::id> & new_ids)
+static std::vector<GptVocab::id> getNewElements(const std::vector<GptVocab::id> & cached_query, const std::vector<GptVocab::id> & new_ids)
 {
     if (hasCommonPrefix(cached_query, new_ids))
     {

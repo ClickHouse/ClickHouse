@@ -1,4 +1,5 @@
 #include <Client/Autocomplete.h>
+#include <Interpreters/Context.h>
 #include <replxx.hxx>
 #include <base/defines.h>
 namespace DB
@@ -150,7 +151,7 @@ void Autocomplete::load(IServerConnection & connection, const ConnectionTimeouts
 
 void Autocomplete::fillQueriesFromBlock(const Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     if (block.columns() != 1)
@@ -172,6 +173,4 @@ void Autocomplete::fillQueriesFromBlock(const Block & block)
 
 
 template void Autocomplete::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters);
-
-template void Autocomplete::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters);
 }
