@@ -47,6 +47,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int SUPPORT_IS_DISABLED;
@@ -132,7 +133,7 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr cont
     /// local disk and fail fast if the operator pointed `tmp_policy`
     /// elsewhere.
     if (tmp_disk->isRemote())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SSTIndexWriter: temporary disk '{}' is remote; UNIQUE KEY SST staging requires a local tmp_policy disk",
             tmp_disk->getName());
     /// `tmp` prefix is required: `Context::setupTmpPath` only sweeps names
