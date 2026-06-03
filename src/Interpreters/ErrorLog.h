@@ -2,7 +2,6 @@
 
 #include <Interpreters/PeriodicLog.h>
 #include <Common/ErrorCodes.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -19,7 +18,10 @@ struct ErrorLogElement
     ErrorCodes::ErrorCode code{};
     ErrorCodes::Value value{};
     bool remote{};
-
+    UInt64 last_error_time = 0;
+    String last_error_message{};
+    String last_error_query_id{};
+    std::vector<void *> last_error_trace{};
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

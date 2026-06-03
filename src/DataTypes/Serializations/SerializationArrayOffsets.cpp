@@ -1,8 +1,22 @@
 #include <Columns/ColumnsNumber.h>
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationArrayOffsets.h>
 
 namespace DB
 {
+
+
+UInt128 SerializationArrayOffsets::getHash()
+{
+    SipHash hash;
+    hash.update("ArrayOffsets");
+    return hash.get128();
+}
+
+SerializationPtr SerializationArrayOffsets::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationArrayOffsets(); });
+}
 
 void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
@@ -26,14 +40,14 @@ void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
         if (rows_offset)
             column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         auto mutable_column = column->assumeMutable();
         size_t prev_size = mutable_column->size();
         /// Deserialize rows_offset + limit rows, we will apply rows_offset later.
-        deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, settings.avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, 0);
         num_read_rows = mutable_column->size() - prev_size;
 
         if (cache)

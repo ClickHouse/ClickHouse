@@ -132,7 +132,9 @@ select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, 
 select count(), sum(number) from file('02841.parquet') where indexHint(negative_or_null > -50);
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, negative_or_null Int64') where indexHint(negative_or_null > -50);
 select count(), sum(number) from file('02841.parquet') where indexHint(string_or_null == ''); -- quirk with infinities
-select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, string_or_null String') where indexHint(string_or_null == '');
+
+-- Parquet index analysis doesn't support empty() function yet
+select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, string_or_null String') where indexHint(string_or_null == '') settings optimize_empty_string_comparisons = 0;
 select count(), sum(number) from file('02841.parquet', Parquet, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where indexHint(nEgAtIvE_oR_nUlL > -50) settings input_format_parquet_case_insensitive_column_matching = 1;
 
 select '# Bad type conversions';

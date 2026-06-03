@@ -37,10 +37,12 @@ private:
     template <typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
+    MutableColumns createMergedColumns() const;
+
 };
 
 
-class MergeSorterSource : public ISource
+class MergeSorterSource final : public ISource
 {
 public:
     MergeSorterSource(SharedHeader header, Chunks chunks, SortDescription & description, size_t max_merged_block_size, UInt64 limit)

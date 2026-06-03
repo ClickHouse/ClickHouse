@@ -16,7 +16,8 @@ doc_type: 'reference'
 ## Description {#description}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
-[`NULL`](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+
+Note that [`NULL`](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
 
 ## Example usage {#example-usage}
 

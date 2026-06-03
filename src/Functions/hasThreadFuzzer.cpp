@@ -12,7 +12,7 @@ namespace
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
   */
-class FunctionHasThreadFuzzer : public IFunction
+class FunctionHasThreadFuzzer final : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";
@@ -70,7 +70,7 @@ SELECT hasThreadFuzzer()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasThreadFuzzer>(documentation);
 }

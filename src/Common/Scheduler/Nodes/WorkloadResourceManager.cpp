@@ -5,10 +5,8 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/Priority.h>
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -62,7 +60,7 @@ WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     , resource_name(getEntityName(resource_entity))
     , unit(getResourceUnit(resource_entity_))
 {
-    scheduler.start("Sch." + resource_name);
+    scheduler.start(ThreadName::WORKLOAD_RESOURCE_MANAGER);
 }
 
 WorkloadResourceManager::Resource::~Resource()
@@ -125,13 +123,13 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);
 
-    executeInSchedulerThread([&]
+    executeInSchedulerThread([&, n = std::move(node)]() mutable
     {
         if (!info.parent.empty())
-            node_for_workload[info.parent]->detachUnifiedChild(node);
+            node_for_workload[info.parent]->detachUnifiedChild(n);
         else
         {
-            chassert(node == root_node);
+            chassert(n == root_node);
             scheduler.removeChild(root_node.get());
             root_node.reset();
         }
@@ -139,6 +137,14 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         node_for_workload.erase(info.name);
 
         updateCurrentVersion();
+
+        // Note: `n` must be explicitly destroyed here, in the scheduler thread,
+        // to avoid a data race between the destructor and the scheduler thread
+        // that may still process activations for this node.
+        // Without this explicit reset, `n` (a captured lambda member) would be
+        // destroyed when the lambda itself is destroyed — which happens in the
+        // caller's thread after `executeInSchedulerThread` returns, not here.
+        n.reset();
     });
 }
 
@@ -423,11 +429,32 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     }
 }
 
-void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
+WorkloadSettings WorkloadResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
+{
+    std::unique_lock lock{mutex};
+    auto iter = attachments.find(resource_name);
+    if (iter != attachments.end())
+    {
+        // Extract settings from the attached resource
+        return iter->second.settings;
+    }
+    return {};
+}
+
+void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, UnifiedSchedulerNode * node)
 {
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
-    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link};
+    ResourceLink link;
+    WorkloadSettings wl_settings{};
+    if (node)
+    {
+        auto queue = node->getQueue();
+        if (queue)
+            link = ResourceLink{.queue = queue.get()};
+        wl_settings = node->getSettings();
+    }
+    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link, .settings = wl_settings};
 }
 
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
@@ -447,11 +474,12 @@ std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier
         {
             if (auto iter = node_for_workload.find(workload_name); iter != node_for_workload.end())
             {
+                auto nodePtr = iter->second;
                 auto queue = iter->second->getQueue();
                 if (!queue)
                     throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to use workload '{}' that have children for resource '{}'",
                         workload_name, resource_name);
-                classifier.attach(shared_from_this(), current_version, ResourceLink{.queue = queue.get()});
+                classifier.attach(shared_from_this(), current_version, nodePtr.get());
             }
             else
             {

@@ -19,11 +19,15 @@ configure_file (Common/config_version.cpp.in ${CONFIG_INCLUDE_PATH}/config_versi
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
 
-if (NO_SSE3_OR_HIGHER)
-    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
-    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
-    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
-    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
+if (ARCH_AMD64 AND NOT X86_ARCH_LEVEL VERSION_EQUAL 3)
+    # Multi-target dispatch (see `src/Common/TargetSpecific.h`) is only useful at
+    # the default x86-64-v3 level, where the default code uses AVX2 and the v4
+    # variants add AVX-512.  At other levels it causes problems:
+    #  - Below v3: FORCE_INLINE in DECLARE_*_SPECIFIC_CODE blocks leaks higher
+    #    ISA requirements into generic code.
+    #  - Above v3 (e.g. v4): the default code already includes AVX-512, and
+    #    multi-target macros may conflict with third-party libraries that do
+    #    their own ISA detection (e.g. StringZilla, see #99172).
     set(ENABLE_MULTITARGET_CODE OFF)
 endif()
 
@@ -71,6 +75,10 @@ add_subdirectory (Daemon)
 add_subdirectory (Loggers)
 add_subdirectory (Formats)
 
+if (ENABLE_EXAMPLES)
+    add_subdirectory (Examples)
+endif()
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     # Files inherited via extract_into_parent_list that would be marked to remove heavy symbols otherwise
     set_source_files_properties(
@@ -90,7 +98,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         Functions/GatherUtils/createArraySink.cpp
         Functions/GatherUtils/resizeConstantSize.cpp
         Functions/GatherUtils/resizeDynamicSize.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
+        PROPERTIES COMPILE_FLAGS -g1)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
@@ -104,15 +112,24 @@ add_headers_and_sources(clickhouse_common_io IO/Archives)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
-add_headers_and_sources(clickhouse_common_io Disks/ObjectStorages/AzureBlobStorage)
+add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
 add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 
 add_headers_and_sources(dbms Disks/IO)
-add_headers_and_sources(dbms Disks/ObjectStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/Replication)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Cache)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Local)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Plain)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/PlainRewritable)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/MetadataStorages/Web)
 if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
@@ -131,14 +148,20 @@ add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Common)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
+add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Paimon)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
 
 add_headers_and_sources(dbms Core/YTsaurus)
 add_headers_and_sources(dbms Storages/YTsaurus)
+
+add_headers_and_sources(dbms Core/Streaming)
+add_headers_and_sources(dbms Storages/Streaming)
+add_headers_and_sources(dbms Storages/MergeTree/Streaming)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -156,23 +179,23 @@ endif()
 
 if (TARGET ch_contrib::aws_s3)
     add_headers_and_sources(dbms Common/S3)
-    add_headers_and_sources(dbms Disks/ObjectStorages/S3)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/S3)
 endif()
 
 if (TARGET ch_contrib::azure_sdk)
-    add_headers_and_sources(dbms Disks/ObjectStorages/AzureBlobStorage)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
     add_headers_and_sources(dbms IO/AzureBlobStorage)
 endif()
 
 if (TARGET ch_contrib::hdfs)
-    add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
+    add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/HDFS)
 endif()
 
 add_headers_and_sources(dbms Databases/DataLake)
 
-add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
-add_headers_and_sources(dbms Disks/ObjectStorages/Local)
-add_headers_and_sources(dbms Disks/ObjectStorages/Web)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Cached)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Local)
+add_headers_and_sources(dbms Disks/DiskObjectStorage/ObjectStorages/Web)
 
 add_headers_and_sources(dbms Storages/Cache)
 if (TARGET ch_contrib::hivemetastore)
@@ -212,11 +235,55 @@ else()
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
 endif()
 
+# Origin tracking dominates the QueryLog flush hot path under MSan. Both the per-element
+# helpers (SettingsImpl::dumpToMapColumn in Core/Settings.cpp,
+# ProfileEvents::dumpToMapColumn in Interpreters/ProfileEventsExt.cpp) and the per-row
+# LogElement::appendToBlock functions walk hundreds of values and do tight column inserts in
+# a loop, so the per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to
+# seconds per `SYSTEM FLUSH LOGS query_log`. With x86-64-v3 AVX2 codegen these flushes push
+# the MSan WasmEdge stateless check over the 600s/180s timeouts.
+#
+# Origin tracking is still on globally; these files are leaf helpers where MSan checks
+# don't carry uninit values into user code, so dropping origin tracking here is safe.
+# History: Core/Settings.cpp got this treatment in #92716. The QueryLog flush path
+# (Interpreters/ProfileEventsExt.cpp, Interpreters/SystemLog.cpp, and the LogElement files
+# Interpreters/QueryLog.cpp / QueryThreadLog.cpp / MetricLog.cpp / QueryMetricLog.cpp) was
+# added when the same pattern surfaced under v3.
+if (SANITIZE STREQUAL "memory")
+    set_source_files_properties(
+        Core/Settings.cpp
+        Interpreters/ProfileEventsExt.cpp
+        Interpreters/SystemLog.cpp
+        Interpreters/QueryLog.cpp
+        Interpreters/QueryThreadLog.cpp
+        Interpreters/MetricLog.cpp
+        Interpreters/QueryMetricLog.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize-memory-track-origins"
+    )
+endif ()
 
+# ThreadFuzzer's injection() shows up in perf top of mutex-heavy code paths. Omitting the
+# frame pointer here shaves a couple of instructions off each call (almost a 2x speedup of
+# the ThreadFuzzer test); see commit d5825ec8 / azat 2024-03-04.
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
+
+# Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
+# RocksDB EmbeddedRocksDB full scan hits a pointer-overflow when a corrupted slice size
+# causes pointer arithmetic to overflow. Pre-existing bug: https://github.com/ClickHouse/ClickHouse/issues/99862
+if (SANITIZE STREQUAL "address,undefined")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Processors/Formats/Impl/ArrowColumnToCHColumn.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=alignment")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Storages/RocksDB/StorageEmbeddedRocksDB.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize=pointer-overflow")
+endif ()
 
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
+if (TARGET ch_contrib::jemalloc)
+    target_link_libraries (clickhouse_malloc PRIVATE ch_contrib::jemalloc clickhouse_common_io)
+endif()
 
 add_library (clickhouse_new_delete STATIC Common/AllocationInterceptors.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
@@ -230,7 +297,8 @@ if (TARGET ch_contrib::azure_sdk)
     target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
 endif()
@@ -239,7 +307,6 @@ add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
-set (all_modules)
 macro(add_object_library name common_path)
     add_headers_and_sources(dbms ${common_path})
 endmacro()
@@ -249,7 +316,10 @@ if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_access_ssh Access/SSH)
 endif()
 add_object_library(clickhouse_backups Backups)
+
 add_object_library(clickhouse_core Core)
+list (APPEND dbms_sources Common/ExceptionExt.cpp)
+
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
@@ -263,33 +333,45 @@ add_object_library(clickhouse_analyzer_passes Analyzer/Resolve)
 add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
+add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
 add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
+add_object_library(clickhouse_interpreters_wasm Interpreters/WebAssembly)
+add_object_library(clickhouse_interpreters_merge_tree_transaction Interpreters/MergeTreeTransaction)
 add_object_library(clickhouse_columns Columns)
 add_object_library(clickhouse_storages Storages)
+
+# TODO: at v3 SLP-emitted YMM zero-stores in column construction add `vzeroupper`s around the
+# per-block dispatch and regress `generate_table_function #0/#1/#5` ~18% with no real win.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set_source_files_properties(Storages/StorageGenerateRandom.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+endif()
+
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
+add_object_library(clickhouse_storages_mergetree_unique_key Storages/MergeTree/UniqueKey)
 add_object_library(clickhouse_storages_mergetree_compaction Storages/MergeTree/Compaction)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_predicates Storages/MergeTree/Compaction/MergePredicates)
 add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Storages/MergeTree/Compaction/MergeSelectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
+add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
-add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
 add_object_library(clickhouse_storages_materializedview Storages/MaterializedView)
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
+add_object_library(clickhouse_storages_time_series_prometheus_query_to_sql Storages/TimeSeries/PrometheusQueryToSQL)
 add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
 # https://github.com/ClickHouse/ClickHouse/issues/65745
-set_source_files_properties(Client/ClientBaseOptimizedParts.cpp PROPERTIES COMPILE_FLAGS "-O3")
+set_source_files_properties(Client/ClientApplicationBaseParser.cpp PROPERTIES COMPILE_FLAGS "-O3")
 add_object_library(clickhouse_bridge BridgeHelper)
 
 if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
@@ -299,8 +381,63 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
+${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
+${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
+${CMAKE_SOURCE_DIR}/programs/server/schema.html")
+
+set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/webterminal.html")
+
+set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
+
+set_source_files_properties(Server/KeeperJemallocHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+
+# Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
+# Add OBJECT_DEPENDS only if the submodule is checked out.
+set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
+set(_nlp_tonality "${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
+if (EXISTS "${_nlp_charset}" AND EXISTS "${_nlp_tonality}")
+    set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
+        "${_nlp_charset};${_nlp_tonality}")
+endif()
+
+set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schemata.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/tables.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/views.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/columns.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/key_column_usage.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_constraints.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+
+if (ENABLE_SSL)
+    add_object_library(clickhouse_server_acme Server/ACME)
+endif()
 if (TARGET ch_contrib::ssh)
     add_object_library(clickhouse_server_ssh Server/SSH)
+endif()
+if (TARGET ch_contrib::arrow_flight)
+    add_object_library(clickhouse_server_arrowflight Server/ArrowFlight)
 endif()
 add_object_library(clickhouse_server_embedded_client Server/ClientEmbedded)
 add_object_library(clickhouse_formats Formats)
@@ -316,7 +453,24 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+# Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
+# At -Og with AVX2+ targets, the compiler miscompiles functions that combine
+# floating-point return values with ymm-based memset zero-initialization.
+# Force -O2 for this file in debug x86 builds to avoid the buggy codegen.
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
+    set_source_files_properties(Processors/QueryPlan/Optimizations/joinOrder.cpp PROPERTIES COMPILE_FLAGS "-O2")
+endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
+
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set_property(SOURCE
+    Columns/IColumn.cpp                        # hashjoin_with_large_output
+    Processors/Transforms/WindowTransform.cpp  # window functions
+    Interpreters/Aggregator.cpp                # destroy_aggregate_states
+    Common/IntervalTree.cpp                    # range_hashed_dictionary
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
 
 if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
@@ -327,35 +481,18 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
+target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
 endif()
-set (all_modules dbms)
 
-macro (dbms_target_include_directories)
-    foreach (module ${all_modules})
-        target_include_directories (${module} ${ARGN})
-    endforeach ()
-endmacro ()
-
-macro (dbms_target_link_libraries)
-    foreach (module ${all_modules})
-        target_link_libraries (${module} ${ARGN})
-    endforeach ()
-endmacro ()
-
-macro (dbms_target_include_directories)
-    foreach (module ${all_modules})
-        target_include_directories (${module} ${ARGN})
-    endforeach ()
-endmacro ()
-
-dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
+target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (TARGET ch_contrib::llvm)
-    dbms_target_link_libraries (PUBLIC ch_contrib::llvm)
+    target_link_libraries (dbms PUBLIC ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
@@ -364,6 +501,7 @@ if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
             Common/Elf.cpp
             Common/Dwarf.cpp
+            Common/MachO.cpp
             Common/SymbolIndex.cpp
             Common/ThreadFuzzer.cpp
             PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE_FLAGS}")
@@ -376,7 +514,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ch_contrib::double_conversion
-            ch_contrib::dragonbox_to_chars
+            ch_contrib::zmij
             ch_contrib::libdivide
 )
 
@@ -392,21 +530,6 @@ target_link_libraries (clickhouse_compression
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
-
-# Use X86 AVX2/AVX512 instructions to accelerate filter operations
-set_source_files_properties(
-        Columns/ColumnFixedString.cpp
-        Columns/ColumnsCommon.cpp
-        Columns/ColumnVector.cpp
-        Columns/ColumnDecimal.cpp
-        Columns/ColumnString.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
-
-if (ENABLE_QPL)
-    set_source_files_properties(
-            Compression/CompressionCodecDeflateQpl.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
 
 target_link_libraries(clickhouse_common_io
         PUBLIC
@@ -440,39 +563,41 @@ if (TARGET ch_contrib::ssh)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::ssh)
 endif()
 
-dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries(dbms PUBLIC ch_contrib::abseil_swiss_tables)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
+target_link_libraries (clickhouse_common_io PUBLIC absl::stacktrace)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
-dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
+target_link_libraries(dbms PUBLIC ch_contrib::roaring)
 if (TARGET ch_contrib::fastpfor)
-    dbms_target_link_libraries(PUBLIC ch_contrib::fastpfor)
+    target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
-    dbms_target_link_libraries(PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
+    target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
 if (TARGET ch_contrib::nats_io)
-    dbms_target_link_libraries(PRIVATE ch_contrib::nats_io ch_contrib::uv)
+    target_link_libraries(dbms PRIVATE ch_contrib::nats_io ch_contrib::uv)
 endif()
 
 if (TARGET ch_contrib::sasl2)
-    dbms_target_link_libraries(PRIVATE ch_contrib::sasl2)
+    target_link_libraries(dbms PRIVATE ch_contrib::sasl2)
 endif()
 
 if (TARGET ch_contrib::krb5)
-    dbms_target_link_libraries(PRIVATE ch_contrib::krb5)
-    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::krb5)
+    target_link_libraries(dbms PRIVATE ch_contrib::krb5)
+    target_link_libraries(clickhouse_compression PRIVATE ch_contrib::krb5)
 endif()
 
 if (TARGET ch_contrib::nuraft)
-    dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::nuraft)
+    target_link_libraries(dbms PUBLIC ch_contrib::nuraft)
+    target_link_libraries(clickhouse_compression PUBLIC ch_contrib::nuraft)
 endif()
 
-dbms_target_link_libraries (
+target_link_libraries(
+    dbms
     PRIVATE
         boost::filesystem
         boost::program_options
@@ -490,8 +615,13 @@ dbms_target_link_libraries (
         Poco::Redis
 )
 
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
+
 if (TARGET ch_contrib::mongocxx)
-    dbms_target_link_libraries(
+    target_link_libraries(
+        dbms
         PUBLIC
             ch_contrib::libbson
             ch_contrib::libmongoc
@@ -501,78 +631,85 @@ if (TARGET ch_contrib::mongocxx)
 endif ()
 
 if (TARGET ch::mysqlxx)
-    dbms_target_link_libraries (PUBLIC ch::mysqlxx)
+    target_link_libraries(dbms PUBLIC ch::mysqlxx)
 endif()
 
-dbms_target_link_libraries (
+target_link_libraries(
+    dbms
     PUBLIC
         boost::circular_buffer
-        boost::heap)
+        boost::heap
+        boost::iostreams)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
-dbms_target_link_libraries(PUBLIC
+target_link_libraries(dbms PUBLIC
     ch_contrib::miniselect
     ch_contrib::pdqsort)
 
-dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
+target_link_libraries(dbms PRIVATE ch_contrib::zstd)
+
+if (TARGET ch_contrib::simdcomp)
+    target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)
+endif()
+
+target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::zstd)
+target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::xz)
 
 if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
 endif ()
 
 if (TARGET ch_contrib::icu)
-    dbms_target_link_libraries (PRIVATE ch_contrib::icu)
+    target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
 
 if (TARGET ch_contrib::capnp)
-    dbms_target_link_libraries (PRIVATE ch_contrib::capnp)
+    target_link_libraries(dbms PRIVATE ch_contrib::capnp)
 endif ()
 
 if (TARGET ch_contrib::parquet)
-    dbms_target_link_libraries (PRIVATE ch_contrib::parquet)
+    target_link_libraries(dbms PRIVATE ch_contrib::parquet)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)
-    dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
+    target_link_libraries(dbms PRIVATE ch_contrib::avrocpp)
 endif ()
 
 set_source_files_properties(Common/CaresPTRResolver.cpp PROPERTIES COMPILE_FLAGS -Wno-reserved-identifier)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::c-ares)
 
 if (TARGET OpenSSL::Crypto)
-    dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
+    target_link_libraries(dbms PRIVATE OpenSSL::Crypto)
     target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
 
 if (ENABLE_CLIENT_AI AND TARGET ch_contrib::ai-sdk-cpp)
-    dbms_target_link_libraries (PUBLIC ch_contrib::ai-sdk-cpp)
+    target_link_libraries(dbms PUBLIC ch_contrib::ai-sdk-cpp)
 endif()
 
 if (TARGET ch_contrib::ldap)
-    dbms_target_link_libraries (PRIVATE ch_contrib::ldap ch_contrib::lber)
+    target_link_libraries(dbms PRIVATE ch_contrib::ldap ch_contrib::lber)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::ldap ch_contrib::lber)
 endif ()
-dbms_target_link_libraries (PUBLIC ch_contrib::sparsehash)
+target_link_libraries(dbms PUBLIC ch_contrib::sparsehash)
 
 if (TARGET ch_contrib::protobuf)
-    dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
+    target_link_libraries(dbms PRIVATE ch_contrib::protobuf)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::protobuf)
 endif ()
 
 if (TARGET clickhouse_grpc_protos)
-    dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
+    target_link_libraries(dbms PUBLIC clickhouse_grpc_protos)
 endif()
 
 if (TARGET ch_contrib::hdfs)
-    dbms_target_link_libraries(PRIVATE ch_contrib::hdfs)
+    target_link_libraries(dbms PRIVATE ch_contrib::hdfs)
 endif()
 
 if (TARGET ch_contrib::hivemetastore)
-    dbms_target_link_libraries(PRIVATE ch_contrib::hivemetastore)
+    target_link_libraries(dbms PRIVATE ch_contrib::hivemetastore)
 endif()
 
 
@@ -582,15 +719,15 @@ endif()
 
 if (TARGET ch_contrib::azure_sdk)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::azure_sdk)
-    dbms_target_link_libraries (PRIVATE ch_contrib::azure_sdk)
+    target_link_libraries(dbms PRIVATE ch_contrib::azure_sdk)
 endif()
 
 if (TARGET ch_contrib::s2)
-    dbms_target_link_libraries (PUBLIC ch_contrib::s2)
+    target_link_libraries(dbms PUBLIC ch_contrib::s2)
 endif()
 
 if (TARGET ch_contrib::vectorscan)
-    dbms_target_link_libraries (PRIVATE ch_contrib::vectorscan)
+    target_link_libraries(dbms PRIVATE ch_contrib::vectorscan)
 endif()
 
 if (TARGET ch_contrib::brotli)
@@ -602,11 +739,11 @@ if (TARGET ch_contrib::snappy)
 endif()
 
 if (TARGET ch_contrib::amqp_cpp)
-    dbms_target_link_libraries(PUBLIC ch_contrib::amqp_cpp)
+    target_link_libraries(dbms PUBLIC ch_contrib::amqp_cpp)
 endif()
 
 if (TARGET ch_contrib::sqlite)
-    dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
+    target_link_libraries(dbms PUBLIC ch_contrib::sqlite)
 endif()
 
 if (TARGET ch_contrib::bcrypt)
@@ -625,47 +762,38 @@ endif()
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (USE_ORC)
-    dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
+    target_link_libraries(dbms PUBLIC ${ORC_LIBRARIES})
+    target_include_directories(dbms SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (TARGET ch_contrib::rocksdb)
-    dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
+    target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)
 endif()
 
 if (TARGET ch_contrib::libpqxx)
-    dbms_target_link_libraries(PUBLIC ch_contrib::libpqxx)
+    target_link_libraries(dbms PUBLIC ch_contrib::libpqxx)
 endif()
 
 if (TARGET ch_contrib::datasketches)
-    dbms_target_link_libraries(PUBLIC ch_contrib::datasketches)
+    target_link_libraries(dbms PUBLIC ch_contrib::datasketches)
 endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qpl)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
-endif ()
-
-if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
-    dbms_target_link_libraries(PUBLIC ch_contrib::qatzstd_plugin)
-    dbms_target_link_libraries(PUBLIC ch_contrib::accel-config)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
-endif ()
-
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
-dbms_target_link_libraries(PUBLIC boost::context)
+target_link_libraries(dbms PUBLIC boost::context)
+
+if (TARGET ch_contrib::stemmer)
+    target_link_libraries(dbms PUBLIC ch_contrib::stemmer)
+endif()
 
 if (ENABLE_NLP)
-    dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
-    dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
-    dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    target_link_libraries(dbms PUBLIC ch_contrib::wnb)
+    target_link_libraries(dbms PUBLIC ch_contrib::lemmagen)
 endif()
 
 if (TARGET ch_contrib::ulid)
-    dbms_target_link_libraries (PUBLIC ch_contrib::ulid)
+    target_link_libraries(dbms PUBLIC ch_contrib::ulid)
 endif()
 
 if (TARGET ch_contrib::bzip2)
@@ -682,46 +810,62 @@ endif ()
 
 if (TARGET ch_contrib::simdjson)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::simdjson)
-    dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
+    target_link_libraries(dbms PRIVATE ch_contrib::simdjson)
 endif()
 
 if (TARGET ch_contrib::rapidjson)
-    dbms_target_link_libraries(PRIVATE ch_contrib::rapidjson)
+    target_link_libraries(dbms PRIVATE ch_contrib::rapidjson)
 endif()
 
-dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
+target_link_libraries(dbms PUBLIC ch_contrib::consistent_hashing)
 
 if (TARGET ch_contrib::usearch)
-    dbms_target_link_libraries(PUBLIC ch_contrib::usearch)
+    target_link_libraries(dbms PUBLIC ch_contrib::usearch)
 endif()
 
 if (TARGET ch_contrib::prometheus_protobufs)
-    dbms_target_link_libraries (PUBLIC ch_contrib::prometheus_protobufs)
+    target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
 if (TARGET ch_rust::skim)
-    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    dbms_target_link_libraries(PUBLIC ch_rust::skim)
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(dbms PUBLIC ch_rust::skim)
 endif()
 
 if (TARGET ch_contrib::google_cloud_cpp)
-    dbms_target_link_libraries(PUBLIC ch_contrib::google_cloud_cpp)
+    target_link_libraries(dbms PUBLIC ch_contrib::google_cloud_cpp)
 endif()
 
-if (TARGET ch_contrib::delta_kernel_rs)
-    target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
+if (TARGET ch_rust::delta_kernel_rs)
+    # FIXME: This is a temporary hack to force cmake put delta_kernel_rs at the
+    # end of the dependencies list, so that the linker will use symbols from it
+    # only if there were no such symbols before.
+    #
+    # Without it some symbols for lz4/zstd can be used from crates instead of our contrib.
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::delta_kernel_rs)
+    target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
 if (TARGET ch_contrib::sha3iuf)
-    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
+    target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()
 
 if (TARGET ch_contrib::arrow_flight)
-    dbms_target_link_libraries(PUBLIC ch_contrib::arrow_flight)
+    target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
 if (ENABLE_BUZZHOUSE)
-    dbms_target_link_libraries(PRIVATE clickhouse_buzzhouse_proto)
+    target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
+endif()
+
+if (TARGET ch_contrib::wasmedge)
+    target_link_libraries(dbms PRIVATE ch_contrib::wasmedge)
+endif()
+
+if (TARGET ch_rust::wasmtime)
+    # FIXME: same as for ch_rust::delta_kernel_rs above
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
+    target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
 
 if (ENABLE_TESTS)
@@ -755,12 +899,16 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
     endif()
 
+    if (TARGET ch_contrib::simdcomp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
+    endif()
+
     if (TARGET ch_contrib::yaml_cpp)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::yaml_cpp)
     endif()
 
-    if (TARGET ch_contrib::delta_kernel_rs)
-        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::delta_kernel_rs)
+    if (TARGET ch_rust::delta_kernel_rs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_rust::delta_kernel_rs)
     endif ()
 
     if (TARGET ch_contrib::azure_sdk)
@@ -771,3 +919,7 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
+
+if (TARGET ch_contrib::jwt-cpp)
+    add_object_library(clickhouse_client_jwt Client/jwt)
+endif()

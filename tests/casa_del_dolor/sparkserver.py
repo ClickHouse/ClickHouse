@@ -9,9 +9,8 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import is_port_free
-from httpserver import DolorHTTPServer
+from utils.httpserver import DolorHTTPServer
 from catalogs.datalakes import SparkHandler
 
 
@@ -34,20 +33,21 @@ def create_spark_http_server(
     def datalakehandler(path, data, headers, attachment):
         res = False
         state = random.getstate()
+        saved_exception = None
+
         try:
             random.seed(data["seed"])
             if path == "/sparkdatabase":
                 res = attachment.create_lake_database(cluster, data)
             elif path == "/sparktable":
                 res = attachment.create_lake_table(cluster, data)
-            elif path in ("/sparkupdate", "/sparkcheck"):
-                res = attachment.update_or_check_table(
-                    cluster, data, path == "/sparkupdate"
-                )
-            random.setstate(state)
-        except:
-            random.setstate(state)
-            raise
+            elif path == "/sparkupdate":
+                res = attachment.update_or_check_table(cluster, data)
+        except Exception as e:
+            saved_exception = e
+        random.setstate(state)
+        if saved_exception is not None:
+            raise saved_exception
         return res
 
     catalog_server = DolorHTTPServer(
@@ -77,6 +77,7 @@ if __name__ == "__main__":
     cluster_settings = {
         "minio_ip": "127.0.0.1",
         "minio_port": 11111,
+        "minio_s3_port": 11111,
         "minio_bucket": "test",
         "minio_access_key": "clickhouse",
         "minio_secret_key": "clickhouse",
@@ -87,6 +88,11 @@ if __name__ == "__main__":
         "azure_container_name": "cont",
         "instances_dir": "/var/lib/clickhouse/user_files",
         "client_bin_path": sys.argv[1],
+        "with_kafka": False,
+        "iceberg_rest_catalog_port": 8181,
+        "glue_catalog_port": 3000,
+        "hms_catalog_port": 9083,
+        "get_instance_ip": lambda _: "127.0.0.1",
     }
     cluster = SimpleNamespace(**cluster_settings)
     os.makedirs(cluster.instances_dir, exist_ok=True)

@@ -46,8 +46,8 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
 
 void ProtobufRowInputFormat::destroyReaderAndSerializer()
 {
-    serializer.reset();
-    reader.reset();
+    serializer = nullptr;
+    reader = nullptr;
 }
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
@@ -116,6 +116,7 @@ catch (...)
     throw;
 }
 
+void registerInputFormatProtobuf(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
@@ -160,6 +161,7 @@ NamesAndTypesList ProtobufSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerProtobufSchemaReader(FormatFactory & factory);
 void registerProtobufSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("Protobuf", [](const FormatSettings & settings)
@@ -174,6 +176,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     });
 
     for (const auto & name : {"Protobuf", "ProtobufSingle"})
+    {
         factory.registerAdditionalInfoForSchemaCacheGetter(
             name,
             [](const FormatSettings & settings)
@@ -183,6 +186,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
                     settings.schema.format_schema,
                     settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
             });
+    }
 }
 
 }
@@ -192,6 +196,8 @@ void registerProtobufSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatProtobuf(FormatFactory &);
+void registerProtobufSchemaReader(FormatFactory &);
 void registerInputFormatProtobuf(FormatFactory &) {}
 void registerProtobufSchemaReader(FormatFactory &) {}
 }

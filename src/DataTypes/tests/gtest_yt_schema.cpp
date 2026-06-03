@@ -25,24 +25,24 @@ namespace DB::ErrorCodes {
 
 #define CH_TYPE(type) DB::DataTypeFactory::instance().get(type)
 
-std::string createSimpleTypeJson(const std::string & simple_type, bool required) {
+static std::string createSimpleTypeJson(const std::string & simple_type, bool required) {
     return fmt::format(
         R"({{"name": "id", "type": "{}", "required": {}}})",
         simple_type,
         required);
 }
 
-std::string createComplexTypeJson(const std::string & type_v3) {
+[[maybe_unused]] static std::string createComplexTypeJson(const std::string & type_v3) {
     return fmt::format(
         R"({{"name": "id", "type": "any", "required": false, "type_v3": {}}})",
         type_v3);
 }
 
-bool checkColumnType(const Poco::JSON::Object::Ptr & json, const DB::DataTypePtr & correct_type) {
+static bool checkColumnType(const Poco::JSON::Object::Ptr & json, const DB::DataTypePtr & correct_type) {
     return correct_type->equals(*DB::convertYTSchema(json));
 }
 
-bool checkColumnType(const String & yt_json_str, const DB::DataTypePtr & correct_type) {
+static bool checkColumnType(const String & yt_json_str, const DB::DataTypePtr & correct_type) {
     Poco::JSON::Parser parser;
     Poco::JSON::Object::Ptr json = parser.parse(yt_json_str).extract<Poco::JSON::Object::Ptr>();
     return checkColumnType(json, correct_type);
@@ -208,8 +208,21 @@ TEST(YTDataType, CheckOptional) {
             optional->set("type_name", "optional");
             optional->set("item", tuple);
             json->set("type_v3", optional);
-            
-            ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")), DB::Exception);
+
+            std::vector<std::shared_ptr<const DB::IDataType>> types;
+
+            auto tuple_type = std::make_shared<DB::DataTypeTuple>(types);
+
+            if (tuple_type->canBeInsideNullable())
+            {
+                ASSERT_TRUE(!checkColumnType(json, CH_TYPE("Tuple(String, String)")));
+                ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")));
+            }
+            else
+            {
+                ASSERT_TRUE(checkColumnType(json, CH_TYPE("Tuple(String, String)")));
+                ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")), DB::Exception);
+            }
         }
     }
 }

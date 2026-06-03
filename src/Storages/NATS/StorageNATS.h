@@ -39,6 +39,8 @@ public:
 
     std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
 
+    bool isMessageQueue() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;

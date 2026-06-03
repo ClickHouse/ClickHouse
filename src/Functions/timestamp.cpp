@@ -22,7 +22,7 @@ namespace
  * Emulates MySQL's TIMESTAMP() but supports only input format 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]' instead of
  * MySQLs possible input formats (https://dev.mysql.com/doc/refman/8.0/en/date-and-time-literals.html).
   */
-class FunctionTimestamp : public IFunction
+class FunctionTimestamp final : public IFunction
 {
 public:
     static constexpr UInt32 DATETIME_SCALE = 6;
@@ -204,7 +204,7 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimestamp>(documentation, FunctionFactory::Case::Insensitive);
 }

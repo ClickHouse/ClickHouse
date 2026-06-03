@@ -4,6 +4,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select=0"
+
 mkdir -p "${CLICKHOUSE_SCHEMA_FILES}"
 mkdir -p "${CLICKHOUSE_SCHEMA_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 SOURCE_SCHEMA_FILE="${CURDIR}/format_schemas/03234_proto_simple_nested_repeated_noexception.proto"
@@ -23,7 +25,7 @@ DROP TABLE table_file;" | $CLICKHOUSE_CLIENT -m &
 
 for i in $(seq 1 100)
 do
-    $CLICKHOUSE_CLIENT -q "SYSTEM DROP FORMAT SCHEMA CACHE"
+    $CLICKHOUSE_CLIENT -q "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 done
 
 rm -rf "${CLICKHOUSE_SCHEMA_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}"

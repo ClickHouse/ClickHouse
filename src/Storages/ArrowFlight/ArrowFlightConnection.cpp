@@ -94,6 +94,31 @@ String ArrowFlightConnection::loadCertificate(const String & path)
     return str;
 }
 
+std::shared_ptr<ArrowFlightConnection> ArrowFlightConnection::clone() const
+{
+    return std::shared_ptr<ArrowFlightConnection>{new ArrowFlightConnection(*this)};
+}
+
+std::shared_ptr<ArrowFlightConnection> ArrowFlightConnection::cloneWithHostAndPort(const String & host_, int port_) const
+{
+    auto res = clone();
+    res->host = host_;
+    res->port = port_;
+    return res;
+}
+
+ArrowFlightConnection::ArrowFlightConnection(const ArrowFlightConnection & src)
+    : host(src.host)
+    , port(src.port)
+    , use_basic_authentication(src.use_basic_authentication)
+    , username(src.username)
+    , password(src.password)
+    , enable_ssl(src.enable_ssl)
+    , ssl_ca(src.ssl_ca)
+    , ssl_override_hostname(src.ssl_override_hostname)
+{
+}
+
 }
 
 #endif

@@ -1,8 +1,9 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_lazy_materialization = 1;
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 

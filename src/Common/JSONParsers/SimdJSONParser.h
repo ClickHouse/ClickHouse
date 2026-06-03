@@ -118,7 +118,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        buffer.insert(unescaped.data(), unescaped.data() + i); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.
@@ -336,7 +336,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator begin() const { return array.begin(); }
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).value_unsafe(); }
+        ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return array.at(index).value_unsafe(); }
 
     private:
         simdjson::dom::array array;
@@ -389,7 +389,7 @@ struct SimdJSONParser
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t index) const
         {
-            assert(index < size());
+            chassert(index < size());
             auto it = object.begin();
             while (index--)
                 ++it;

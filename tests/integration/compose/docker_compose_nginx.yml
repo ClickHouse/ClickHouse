@@ -13,3 +13,4 @@ services:
             # change all the invocations inside the container network to this
             # $NGINX_EXTERNAL_PORT and simply can use "80".
             - ${NGINX_EXTERNAL_PORT}:80
+        cpus: 3

@@ -1,0 +1,11 @@
+<!-- Config for test server -->
+<!-- Same file as tests/config/config.d/query_masking_rules.xml -->
+<clickhouse>
+    <query_masking_rules>
+        <rule_topsecret>
+            <name>Detect passwords in tests</name>
+            <regexp>(?i)P@ssw0rd</regexp>
+            <throw_on_match>true</throw_on_match>
+        </rule_topsecret>
+    </query_masking_rules>
+</clickhouse>

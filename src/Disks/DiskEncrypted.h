@@ -32,6 +32,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     bool existsFile(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
@@ -122,10 +124,11 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -318,10 +321,15 @@ public:
     bool isBroken() const override { return delegate->isBroken(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override { return delegate->supportsPartitionCommand(command); }
     bool supportsStat() const override { return delegate->supportsStat(); }
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
+
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
+    bool isPlain() const override { return delegate->isPlain(); }
+
+    ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
