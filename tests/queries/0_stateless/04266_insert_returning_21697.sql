@@ -60,6 +60,20 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_memory_usage=1000000) VALUES (104, 'memlimit'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_memlimit FROM t_insert_returning WHERE id = 104;
 
+-- Temporary-data-on-disk limits in the RETURNING subquery are rejected for the same reason (the disk scope is shared
+-- with the INSERT phase), while the INSERT still completes first
+SELECT 'returning temp data limit rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_temporary_data_on_disk_size_for_query=1) VALUES (107, 'tempdisk'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_tempdisk FROM t_insert_returning WHERE id = 107;
+
+-- AST size/depth limits in the RETURNING subquery's SETTINGS are enforced when the subquery is planned (after the
+-- INSERT persists), exactly as for a standalone SELECT
+SELECT 'returning ast size limit';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_ast_elements=1) VALUES (108, 'astsize'); -- { serverError TOO_BIG_AST }
+SELECT count() AS inserted_after_returning_ast_size FROM t_insert_returning WHERE id = 108;
+
 -- A different allow_experimental_analyzer in the RETURNING subquery must not be validated before the INSERT runs
 -- (the subquery is an independent query planned only after the INSERT persists)
 SELECT 'returning analyzer setting';

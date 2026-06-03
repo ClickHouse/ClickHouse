@@ -2,18 +2,22 @@
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/IAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/StreamLocalLimits.h>
@@ -33,13 +37,13 @@ namespace ErrorCodes
 
 namespace
 {
-    /// The INSERT and RETURNING phases share one query, one `ProcessListElement` and one thread-group
-    /// `MemoryTracker`, all set up once by `ProcessList::insert` from the outer INSERT-phase settings. Query-global
-    /// resource and execution limits therefore cannot be re-applied for the RETURNING phase: memory limits would have
-    /// no effect, and the query time limit is measured from INSERT registration (so it cannot bound the subquery
-    /// alone). Rather than silently ignore such settings when they appear in the RETURNING subquery's `SETTINGS`
-    /// clause, reject them explicitly. Settings enforceable on the result pipeline (`max_result_rows`,
-    /// `max_result_bytes`, `result_overflow_mode`) remain supported.
+    /// The INSERT and RETURNING phases share one query, one `ProcessListElement`, one thread-group `MemoryTracker` and
+    /// one query/user `TemporaryDataOnDiskScope`, all set up once from the outer INSERT-phase settings. Query-global
+    /// resource and execution limits therefore cannot be re-applied for the RETURNING phase: memory and
+    /// temporary-data-on-disk limits would have no effect, and the query time limit is measured from INSERT
+    /// registration (so it cannot bound the subquery alone). Rather than silently ignore such settings when they appear
+    /// in the RETURNING subquery's `SETTINGS` clause, reject them explicitly. Settings enforceable on the result
+    /// pipeline (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) remain supported.
     void rejectUnsupportedReturningSettings(const ASTPtr & returning_select)
     {
         static const std::unordered_set<std::string_view> unsupported_settings = {
@@ -47,6 +51,8 @@ namespace
             "max_memory_usage_for_user",
             "max_execution_time",
             "timeout_overflow_mode",
+            "max_temporary_data_on_disk_size_for_query",
+            "max_temporary_data_on_disk_size_for_user",
         };
 
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();
@@ -73,6 +79,20 @@ namespace
     }
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_shared_storage_snapshot_in_query;
+    extern const SettingsBool enforce_strict_identifier_format;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsUInt64 max_result_rows;
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsSetOperationMode union_default_mode;
+}
+
 ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, ContextPtr context)
 {
     auto returning_context = Context::createCopy(context);
@@ -81,19 +101,15 @@ ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, Co
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
-    return returning_context;
-}
 
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool enable_global_with_statement;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
-    extern const SettingsUInt64 max_result_rows;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsOverflowMode result_overflow_mode;
-    extern const SettingsSetOperationMode union_default_mode;
+    /// `Context::createCopy` also shares the outer query's `QueryMetadataCache`, which caches per-storage metadata and
+    /// storage snapshots for the lifetime of a query (when `enable_shared_storage_snapshot_in_query` is set). Reusing
+    /// it would make the RETURNING subquery observe the pre-INSERT snapshot of the target table — it must instead read
+    /// the table as of after the INSERT. Give the subquery a fresh cache so it takes a new, post-INSERT snapshot.
+    if (returning_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+        returning_context->setQueryMetadataCache(std::make_shared<QueryMetadataCache>());
+
+    return returning_context;
 }
 
 QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
@@ -118,6 +134,18 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
         NormalizeSelectWithUnionQueryVisitor::Data data{returning_settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(select_to_interpret);
     }
+
+    /// `executeQueryImpl` skips these pre-execution checks for the detached RETURNING subquery (so they run with the
+    /// subquery's own settings, not the outer INSERT's). Re-run them here, exactly as for a standalone `SELECT`.
+    validateAnalyzerSettings(select_to_interpret, returning_settings[Setting::allow_experimental_analyzer]);
+    if (returning_settings[Setting::enforce_strict_identifier_format])
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings enforce_strict_identifier_format_settings(true);
+        enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
+        select_to_interpret->format(buf, enforce_strict_identifier_format_settings);
+    }
+    checkASTSizeLimits(*select_to_interpret, returning_settings);
 
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
     if (returning_settings[Setting::allow_experimental_analyzer])

@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/QueryLogElement.h>
+#include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
@@ -21,8 +22,15 @@ class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
+struct Settings;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+
+/// Validate that nested AST nodes do not contradict the enclosing query's `allow_experimental_analyzer` value.
+void validateAnalyzerSettings(ASTPtr ast, bool context_value);
+
+/// Check `max_ast_depth` / `max_ast_elements` limits against the given settings.
+void checkASTSizeLimits(const IAST & ast, const Settings & settings);
 
 struct QueryResultDetails
 {

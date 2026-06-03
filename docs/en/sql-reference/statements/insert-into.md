@@ -190,16 +190,16 @@ The parenthesized subquery is required. The client receives a single result set:
 
 The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session, can reference any table and use the full `SELECT` grammar. The subquery may carry its own `SETTINGS`, except for the query-global resource and execution limits listed under Limitations.
 
-Planning and executing the `RETURNING` subquery happens only after the `INSERT` pipeline has finished successfully, for all transports (including inlined `VALUES`/`FORMAT`). If planning the subquery fails (for example unknown column name), inserted rows remain — the insert is **not rolled back**.
+Planning and executing the `RETURNING` subquery happens only after the `INSERT` pipeline has finished successfully, for all transports (including inlined `VALUES`/`FORMAT`). If planning the subquery fails (for example unknown column name), inserted rows remain — the insert is **not rolled back**. The exception is when the statement runs inside a transaction (an explicit transaction, or `implicit_transaction=1`): there, a failure of the `RETURNING` subquery aborts the transaction and the inserted rows are rolled back together with it.
 
 This feature is **not atomic**. Concurrent writers can insert rows between the `INSERT` and the `RETURNING` subquery. Unlike PostgreSQL `RETURNING`, ClickHouse does not infer which rows were inserted by the current statement; the user must provide a subquery with filters that identify the desired rows (for example, a unique id or batch identifier).
 
 Limitations:
 
 - Not compatible with `async_insert=1`.
-- Query-global resource and execution limits cannot be set in the `RETURNING` subquery's `SETTINGS`. `max_memory_usage`, `max_memory_usage_for_user`, `max_execution_time` and `timeout_overflow_mode` are rejected with `NOT_IMPLEMENTED`, because the `INSERT` and `RETURNING` phases share a single query whose memory tracker and time limit are established once from the outer settings. Result-shaping settings such as `max_result_rows`, `max_result_bytes` and `result_overflow_mode` are applied to the subquery result.
+- Query-global resource and execution limits cannot be set in the `RETURNING` subquery's `SETTINGS`. `max_memory_usage`, `max_memory_usage_for_user`, `max_execution_time`, `timeout_overflow_mode`, `max_temporary_data_on_disk_size_for_query` and `max_temporary_data_on_disk_size_for_user` are rejected with `NOT_IMPLEMENTED`, because the `INSERT` and `RETURNING` phases share a single query whose memory tracker, time limit and temporary-data-on-disk scope are established once from the outer settings. Result-shaping settings such as `max_result_rows`, `max_result_bytes` and `result_overflow_mode` are applied to the subquery result.
 - On `Replicated` tables, the `RETURNING` subquery may read from a replica that has not yet received the insert. Use `select_sequential_consistency=1` and `insert_quorum` when read-your-own-writes semantics are required.
-- If the `INSERT` succeeds but the `RETURNING` subquery fails, the inserted data is not rolled back.
+- If the `INSERT` succeeds but the `RETURNING` subquery fails, the inserted data is not rolled back, unless the statement runs inside a transaction (explicit, or `implicit_transaction=1`), in which case the inserted rows are rolled back with the aborted transaction.
 
 ## Inserting Data from a File {#inserting-data-from-a-file}
 

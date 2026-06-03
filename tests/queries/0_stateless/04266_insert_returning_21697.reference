@@ -21,6 +21,10 @@ returning max_execution_time rejection
 1
 returning memory limit rejection
 1
+returning temp data limit rejection
+1
+returning ast size limit
+1
 returning analyzer setting
 1
 1
