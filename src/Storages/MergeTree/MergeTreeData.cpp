@@ -532,18 +532,47 @@ void MergeTreeData::loadColumnIdMappingFromDisk()
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
 
+    /// Read every non-broken copy and throw if they diverge.  Picking the
+    /// first readable copy would let a stale mapping on an earlier
+    /// (now-read-only) disk shadow the current copy on a later disk -- a
+    /// stale mapping binds live logical columns to old physical IDs after
+    /// RENAME or DROP+ADD, so this must fail closed.  Mirrors the
+    /// `format_version.txt` pattern above.
+    std::optional<String> mapping_json;
+    String first_disk;
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
             continue;
 
-        if (auto buf = disk->readFileIfExists(column_ids_path, getReadSettings()))
+        auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
+        if (!buf)
+            continue;
+
+        String contents;
+        readStringUntilEOF(contents, *buf);
+        if (!mapping_json.has_value())
         {
-            setColumnIdMapping(ColumnIdMapping::deserialize(*buf));
-            skipWhitespaceIfAny(*buf);
-            assertEOF(*buf);
-            return;
+            mapping_json = std::move(contents);
+            first_disk = disk->getName();
         }
+        else if (*mapping_json != contents)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Column ID mapping `{}` differs between disks ({} vs {}); "
+                "a stale copy on one disk would silently bind logical columns "
+                "to the wrong physical IDs.  Restore the table from backup or "
+                "re-sync the mapping copies manually.",
+                column_ids_path.string(), first_disk, disk->getName());
+        }
+    }
+
+    if (mapping_json.has_value())
+    {
+        ReadBufferFromString buf(*mapping_json);
+        setColumnIdMapping(ColumnIdMapping::deserialize(buf));
+        skipWhitespaceIfAny(buf);
+        assertEOF(buf);
     }
 }
 
@@ -560,6 +589,14 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) 
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
     const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
 
+    /// Write to EVERY writable disk in the storage policy.  Writing to only
+    /// the first writable disk leaves stale copies on other disks: if the
+    /// first writable disk later becomes read-only, the load path would
+    /// either pick the stale copy or (with the divergence check) refuse to
+    /// start.  Keeping every disk in sync mirrors the `format_version.txt`
+    /// pattern and aligns with `loadColumnIdMappingFromDisk`'s divergence
+    /// check.
+    bool wrote_any = false;
     for (const auto & disk : getStoragePolicy()->getDisks())
     {
         if (disk->isBroken())
@@ -581,6 +618,7 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) 
                     buf->sync();
             }
             disk->replaceFile(column_ids_tmp_path, column_ids_path);
+            wrote_any = true;
         }
         catch (...)
         {
@@ -594,8 +632,10 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) 
             }
             throw;
         }
-        return;
     }
+
+    if (wrote_any)
+        return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs());
 }

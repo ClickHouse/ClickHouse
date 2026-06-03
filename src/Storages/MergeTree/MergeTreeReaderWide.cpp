@@ -398,10 +398,11 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     {
         /// After DROP + re-ADD of the same column, the current mapping assigns a new
         /// column ID (e.g. b→2) but parts loaded before the ALTER still carry the
-        /// column under the old column ID (b→1). The reader resolves to the
-        /// current mapping's column ID, so streams for the new name will not
-        /// be found in the old part. Detect this mismatch and return nullptr so the
-        /// reader uses default values instead of throwing.
+        /// column under the old column ID (b→1, or for pre-activation parts under
+        /// the logical name b with no column_id at all).  The reader resolves to
+        /// the current mapping's column ID, so streams for the new name will not
+        /// be found in the old part.  Detect this mismatch and return nullptr so
+        /// the reader uses default values instead of throwing.
         if (!name_and_type.column_id.empty()
             && name_and_type.getColumnIdInStorage() != name_and_type.getNameInStorage())
         {
@@ -411,7 +412,12 @@ ReadBuffer * MergeTreeReaderWide::getStream(
 
             auto it = data_part_info_for_read->getColumns().begin();
             std::advance(it, *col_pos);
-            if (!it->column_id.empty() && it->column_id != name_and_type.column_id)
+            /// Treat an empty part-side `column_id` as the part's logical name
+            /// (pre-activation parts persist columns under their logical name
+            /// with no explicit column_id).  A non-identity new mapping that
+            /// disagrees with the part's effective ID is a stale slot.
+            const String & part_effective_id = it->column_id.empty() ? it->name : it->column_id;
+            if (part_effective_id != name_and_type.column_id)
                 return nullptr;
         }
 
