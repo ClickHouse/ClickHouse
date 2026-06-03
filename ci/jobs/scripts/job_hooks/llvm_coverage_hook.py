@@ -40,31 +40,45 @@ def check():
         pr_changed_lines_info = d.get("pr_changed_lines_info", "")
         diff_url = d.get("diff_url", "")
         uncovered_code_url = d.get("uncovered_code_url", "")
-
-        def fmt_cov(pct: float, hit: int, total: int) -> str:
-            if total > 0:
-                return f"{pct:.2f}% ({hit:,}/{total:,})"
-            return f"{pct:.2f}%"
-
-        def fmt_delta(pct_delta: float, hit_delta: int) -> str:
-            if hit_delta != 0:
-                return f"{pct_delta:+.2f}% ({hit_delta:+,})"
-            return f"{pct_delta:+.2f}%"
+        newly_covered_info = d.get("newly_covered_info", "")
+        newly_covered_url = d.get("newly_covered_url", "")
+        newly_covered_top_files = d.get("newly_covered_top_files", []) or []
 
         if info.pr_number > 0:
             body = (
                 f"### LLVM Coverage Report\n\n"
                 f"| Metric | Baseline | Current | Δ |\n"
                 f"|--------|----------|---------|---|\n"
-                f"| Lines | {fmt_cov(b_line_cov, b_line_hit, b_line_total)} | {fmt_cov(c_line_cov, c_line_hit, c_line_total)} | {fmt_delta(c_line_cov - b_line_cov, c_line_hit - b_line_hit)} |\n"
-                f"| Functions | {fmt_cov(b_function_cov, b_func_hit, b_func_total)} | {fmt_cov(c_function_cov, c_func_hit, c_func_total)} | {fmt_delta(c_function_cov - b_function_cov, c_func_hit - b_func_hit)} |\n"
-                f"| Branches | {fmt_cov(b_branch_cov, b_branch_hit, b_branch_total)} | {fmt_cov(c_branch_cov, c_branch_hit, c_branch_total)} | {fmt_delta(c_branch_cov - b_branch_cov, c_branch_hit - b_branch_hit)} |\n"
+                f"| Lines | {b_line_cov:.2f}% | {c_line_cov:.2f}% | {c_line_cov - b_line_cov:+.2f}% |\n"
+                f"| Functions | {b_function_cov:.2f}% | {c_function_cov:.2f}% | {c_function_cov - b_function_cov:+.2f}% |\n"
+                f"| Branches | {b_branch_cov:.2f}% | {c_branch_cov:.2f}% | {c_branch_cov - b_branch_cov:+.2f}% |\n"
             )
             if pr_changed_lines_info:
                 changed_line = f"\n**Changed lines:** {pr_changed_lines_info}"
                 if uncovered_code_url:
                     changed_line += f" · [Uncovered code]({uncovered_code_url})"
                 body += changed_line + "\n"
+            if newly_covered_info:
+                # For a tests-only PR: surface what previously-uncovered code the new
+                # test(s) now exercise. The table delta above is typically too small
+                # to be meaningful on its own; this section is the actionable signal.
+                nc_line = f"\n**Newly covered by added/modified tests:** {newly_covered_info}"
+                if newly_covered_url:
+                    nc_line += f" · [Details]({newly_covered_url})"
+                body += nc_line + "\n"
+                if newly_covered_top_files:
+                    body += "\n<details><summary>Top files</summary>\n\n"
+                    for f in newly_covered_top_files:
+                        rel = f.get("rel", "")
+                        lc = int(f.get("lines", 0))
+                        fc = int(f.get("fns", 0))
+                        parts = []
+                        if lc > 0:
+                            parts.append(f"{lc} line(s)")
+                        if fc > 0:
+                            parts.append(f"{fc} function(s)")
+                        body += f"- `{rel}`: {', '.join(parts)}\n"
+                    body += "\n</details>\n"
             links = []
             if coverage_report_url := d.get("coverage_report_url", ""):
                 links.append(f"[Full report]({coverage_report_url})")

@@ -292,11 +292,28 @@ if __name__ == "__main__":
             print(msg)
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 info=msg,
             )
             print_res.set_comment(msg)
-        print_res.files.append(_print_log)
+        # Append high-precision hit/total counts to the log so they are visible
+        # in the artifact without cluttering the GitHub comment.
+        if _diff_ran:
+            with open(_print_log, "a") as _f:
+                _f.write(
+                    f"\n--- Coverage counts ---\n"
+                    f"Lines     : baseline {b_line_hit:,}/{b_line_total:,}"
+                    f"  ->  current {c_line_hit:,}/{c_line_total:,}"
+                    f"  (delta {c_line_hit - b_line_hit:+,} / {c_line_total - b_line_total:+,})\n"
+                    f"Functions : baseline {b_func_hit:,}/{b_func_total:,}"
+                    f"  ->  current {c_func_hit:,}/{c_func_total:,}"
+                    f"  (delta {c_func_hit - b_func_hit:+,} / {c_func_total - b_func_total:+,})\n"
+                    f"Branches  : baseline {b_branch_hit:,}/{b_branch_total:,}"
+                    f"  ->  current {c_branch_hit:,}/{c_branch_total:,}"
+                    f"  (delta {c_branch_hit - b_branch_hit:+,} / {c_branch_total - b_branch_total:+,})\n"
+                )
+        if _diff_inputs_exist:
+            print_res.files.append(_print_log)
         results.append(print_res)
 
         if not is_local_run:
@@ -321,21 +338,162 @@ if __name__ == "__main__":
             _lbc_lines = print_res.ext.get("lbc_lines", 0)
             _lbc_fns = print_res.ext.get("lbc_fns", 0)
 
+            # Classify the changed paths so we can decide what coverage signal is most
+            # useful. Functional tests (tests/queries/...), integration tests
+            # (tests/integration/...) and unit tests (src/**/tests/...) all shift
+            # coverage even though the production binary may be unchanged, so for a
+            # tests-only PR the per-file diff report is uninformative — we want to
+            # show "which previously-uncovered code did these tests start to cover".
+            _changed_paths: set[str] = set()
+            _changes_diff = Path(TEMP_DIR) / "changes.diff"
+            if _changes_diff.exists():
+                try:
+                    _file_re = re.compile(r"^(?:--- a/|\+\+\+ b/)(.+)$")
+                    with open(_changes_diff, encoding="utf-8", errors="replace") as _df:
+                        for _ln in _df:
+                            m = _file_re.match(_ln.rstrip("\n"))
+                            if m:
+                                _path = m.group(1)
+                                if _path != "/dev/null":
+                                    _changed_paths.add(_path)
+                except Exception as _e:
+                    print(f"Warning: could not parse changes.diff for path detection: {_e}")
+
+            def _is_test_path(p: str) -> bool:
+                # Strict allowlist of paths containing runnable test
+                # definitions. `tests/ci/**`, `tests/integration/helpers/**`,
+                # `tests/clickhouse-test`, `tests/runner` and other
+                # `tests/`-prefixed *infrastructure* are deliberately NOT
+                # tests — counting them as test changes would mis-attribute
+                # coverage-build noise to PRs that only touched helpers.
+                if p.startswith("tests/queries/"):
+                    return True
+                if p.startswith("tests/performance/"):
+                    return True
+                if p.startswith("tests/stress/"):
+                    return True
+                # Integration tests live in tests/integration/test_*/.
+                # tests/integration/helpers/, tests/integration/runner, the
+                # top-level conftest.py, ... are infrastructure.
+                if p.startswith("tests/integration/test_"):
+                    return True
+                # Unit tests: C++ files under src/**/tests/.
+                if p.startswith("src/") and "/tests/" in p:
+                    return True
+                return False
+
+            # Conservative allowlist of paths that *definitely* cannot affect
+            # the compiled ClickHouse binary. Anything not in this set is
+            # assumed to potentially affect the binary, which suppresses the
+            # newly-covered analysis below — exhaustively enumerating
+            # build-affecting inputs (CMakeLists at any depth, *.cmake,
+            # *.h.in, parser/grammar files, codegen drivers, Rust sources,
+            # assembly, contrib/**, ...) is impractical, and missing one
+            # over-attributes coverage transitions to "tests catching up"
+            # when in fact the binary itself changed. Notably, `contrib/**`
+            # is absent from this list, so any contrib change correctly
+            # suppresses the newly-covered claim.
+            _NON_BINARY_TOP_LEVEL_FILES = frozenset({
+                "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+                "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+                ".gitignore", ".gitattributes", ".editorconfig",
+                ".dockerignore", ".clang-format", ".clang-tidy",
+            })
+
+            def _is_non_binary_path(p: str) -> bool:
+                # Everything under tests/ — runnable tests AND infrastructure
+                # (helpers, runners, tests/ci, conftests, jepsen.clickhouse,
+                # ...) — does not link into the production ClickHouse binary.
+                # The test-infrastructure case is intentionally broader than
+                # _is_test_path so changes to helpers don't flip
+                # _binary_unchanged to False, but they also don't flip
+                # _tests_changed to True (so no spurious comment is posted).
+                if p.startswith("tests/"):
+                    return True
+                # Unit tests under src/**/tests/.
+                if p.startswith("src/") and "/tests/" in p:
+                    return True
+                # CI infrastructure and dev tooling.
+                if p.startswith("ci/") or p.startswith(".github/"):
+                    return True
+                # Documentation.
+                if p.startswith("docs/"):
+                    return True
+                # Top-level repo metadata files.
+                if "/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES:
+                    return True
+                return False
+
+            _tests_changed = any(_is_test_path(p) for p in _changed_paths)
+            # The production binary is identical to baseline iff *every*
+            # changed path is on the conservative allowlist above. Anything
+            # outside the allowlist — a `.cmake` file, a CMakeLists.txt, an
+            # unusual codegen input, a Rust source, a `utils/` change that
+            # also rebuilds a tool, a `contrib/` bump, etc. — flips this to
+            # False and suppresses the newly-covered analysis.
+            _binary_unchanged = bool(_changed_paths) and all(
+                _is_non_binary_path(p) for p in _changed_paths
+            )
+
+            _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+            _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+            _global_stats_available = Path(_base_info).exists() and Path(_curr_info).exists()
+
+            # Newly-covered analysis: only meaningful when the production binary is
+            # unchanged (so 0->nonzero transitions can be attributed to the test
+            # change) AND at least one test file actually changed (otherwise there
+            # is no reason to expect coverage to differ). This admits PRs that mix
+            # test additions with CI script / config / doc edits, which is the
+            # common shape of a "fix CI" or "add regression test" PR.
+            _nc_info = ""
+            _nc_url = ""
+            _nc_top_files: list[dict] = []
+            if (
+                _tests_changed
+                and _binary_unchanged
+                and _global_stats_available
+            ):
+                _nc_log = f"{TEMP_DIR}{Utils.normalize_string('Newly Covered Code')}.log"
+                Shell.run(
+                    f"python3 ci/jobs/scripts/print_newly_covered_code.py 2>&1 | tee {_nc_log}",
+                    verbose=True,
+                )
+                nc_res = Result.from_fs("Newly Covered Code")
+                nc_res.files.append(_nc_log)
+                results.append(nc_res)
+                _nc_info = nc_res.ext.get("comment", "") or ""
+                _nc_top_files = list(nc_res.ext.get("newly_covered_top_files", []))
+                _nc_log_name = f"{Utils.normalize_string(nc_res.name)}.log"
+                _nc_url = (
+                    f"{_s3_base}/llvm_coverage/"
+                    f"{Utils.normalize_string(nc_res.name)}/{_nc_log_name}"
+                )
+
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # there is something coverage-related to report: either the diff HTML report
-            # was generated (C++ source files changed) or LBC was detected (tests removed).
-            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
-            # generate a comment.
-            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
+            # there is something coverage-related to report:
+            #   - the diff HTML report was generated (C/C++ source files changed), OR
+            #   - LBC was detected (tests removed -> baseline coverage lost), OR
+            #   - an actual runnable test changed AND the production binary is
+            #     unchanged AND we have both .info files. The global delta on its
+            #     own is mostly run-to-run noise (~1000 lines flicker between two
+            #     master runs); we only post the comment when there's an
+            #     attributable test change to anchor it to.
+            # PRs that don't fall in any of those buckets — contrib-only,
+            # docs-only, helper-only changes that don't alter a runnable test —
+            # get no comment.
+            _has_coverage_data = (
+                _diff_ran
+                or _lbc_lines > 0
+                or _lbc_fns > 0
+                or (_tests_changed and _binary_unchanged and _global_stats_available)
+            )
             if not _has_coverage_data:
-                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
+                print("No coverage-relevant changes detected (no C/C++ source, no runnable-test changes, no LBC) — skipping coverage comment.")
             else:
-                # When _diff_ran is False but LBC was found (test-only removal), fetch
-                # the global percentages from the .info files that were downloaded during
-                # the diff script run for LBC comparison.
-                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
-                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
-                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                # When _diff_ran is False (LBC-only or tests-only PR), fetch the global
+                # percentages from the .info files that were downloaded during the diff
+                # script run.
+                if not _diff_ran and _global_stats_available:
                     try:
                         (b_line_cov, b_line_hit, b_line_total), \
                         (b_function_cov, b_func_hit, b_func_total), \
@@ -372,7 +530,15 @@ if __name__ == "__main__":
                     "changed_lines_covered": _changed_lines_covered,
                     "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url if _diff_ran else "",
-                    "uncovered_code_url": uncovered_code_url,
+                    # The uncovered-code log is produced only when print_uncovered_code.py
+                    # actually ran (i.e. C/C++ source files changed). For tests-only PRs
+                    # the log doesn't exist on S3, so don't surface a 404 link.
+                    "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    # Newly-covered code analysis: only run (and only meaningful) for
+                    # tests-only PRs. Empty fields are gracefully ignored by the hook.
+                    "newly_covered_info": _nc_info,
+                    "newly_covered_url": _nc_url,
+                    "newly_covered_top_files": _nc_top_files,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"
