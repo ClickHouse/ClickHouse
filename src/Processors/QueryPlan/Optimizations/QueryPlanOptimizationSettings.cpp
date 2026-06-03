@@ -206,6 +206,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
 #ifdef OS_LINUX
     distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
+    if (!distributed_plan_force_exchange_kind.empty()
+        && distributed_plan_force_exchange_kind != "Persisted"
+        && distributed_plan_force_exchange_kind != "Streaming")
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `distributed_plan_force_exchange_kind` must be empty, 'Persisted', or 'Streaming', got '{}'",
+            distributed_plan_force_exchange_kind);
 #else
     if (from[Setting::distributed_plan_force_exchange_kind].changed && from[Setting::distributed_plan_force_exchange_kind].value != "Persisted")
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only Persisted exchange is supported");

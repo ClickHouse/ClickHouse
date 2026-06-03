@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 class TaskParameters : public IParameterLookup
@@ -449,6 +450,9 @@ ExchangeLookupPtr createExchangeLookup(
             "Streaming exchange requires `distributed_query.streaming_exchange_port` to be configured; "
             "set the port, force `distributed_plan_force_exchange_kind = 'Persisted'`, or enable "
             "`distributed_plan_execute_locally` for in-process testing");
+    if (streaming_exchange_port > 65535)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
 
     auto streaming_exchanges = createStreamingExchangeLookup(
         query_id, ExchangeConnections::instance(), exchange_stream_sources, static_cast<UInt16>(streaming_exchange_port));
@@ -1105,6 +1109,9 @@ protected:
         {
             auto default_port = context->getInterserverIOAddress().second;
             auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
+            if (port == 0 || port > 65535)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "`stateless_worker_client.port` must be in range 1..65535, got {}", port);
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
             auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
             Poco::URI stateless_worker_uri;

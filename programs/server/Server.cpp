@@ -2063,7 +2063,15 @@ try
     std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
     if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
     {
-        for (const auto & listen_host : {"0.0.0.0", "::"})
+        if (streaming_exchange_port > 65535)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
+
+        Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
+        if (exchange_listen_hosts.empty())
+            exchange_listen_hosts = {"0.0.0.0", "::"};
+
+        for (const auto & listen_host : exchange_listen_hosts)
         {
             try
             {
