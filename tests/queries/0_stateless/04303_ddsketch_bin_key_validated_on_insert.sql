@@ -13,6 +13,10 @@ INSERT INTO t_ddsketch_bad SELECT unhex('020000000000000040000000000000000001040
 SELECT count() FROM t_ddsketch_bad;
 SELECT quantilesDDMerge(0.01, 0.5)(s)[1] > 0 FROM t_ddsketch_bad;
 
+-- Direct finalization (no merge) must use the serialized gamma, not the aggregate type's accuracy
+-- this gamma=10 state with one bin at key 0 yields 1*(1+(10-1)/(10+1)) = 1.8181..., not 1.01
+SELECT finalizeAggregation(unhex('020000000000002440000000000000000001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64));
+
 -- Nonzero mapping offset (here -1023.5) is unsupported, merge compares mappings by gamma only and would
 -- not remap, so two same-gamma states with different offsets would merge wrong
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000000000FC8FC001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }

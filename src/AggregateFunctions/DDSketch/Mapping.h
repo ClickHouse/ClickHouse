@@ -122,6 +122,9 @@ public:
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid multiplier derived from gamma: {}", gamma);
         }
+        /// serialized gamma defines the bins, so derive accuracy from it (inverse of the constructor)
+        /// otherwise value() would mix the stored gamma with the accuracy from the aggregate type
+        relative_accuracy = (gamma - 1) / (gamma + 1);
         min_possible = std::numeric_limits<Float64>::min() * gamma;
         max_possible = std::numeric_limits<Float64>::max() / gamma;
     }
