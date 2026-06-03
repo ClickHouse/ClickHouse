@@ -1,3 +1,5 @@
+#include <type_traits>
+#include <variant>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <Common/logger_useful.h>
