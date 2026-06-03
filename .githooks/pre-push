@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Pre-push hook: prevent pushing commits with default/generic author or committer identities.
+# Install: git config core.hooksPath .githooks
+
+blocked='ubuntu|root|ec2-user|centos|fedora|debian|admin|bitnami|azureuser|gce-user|runner|jenkins|nobody|user|test|default|guest'
+# Word-boundary match mirroring `grep -w` (word chars = [A-Za-z0-9_]).
+blocked_re="(^|[^A-Za-z0-9_])($blocked)([^A-Za-z0-9_]|\$)"
+shopt -s nocasematch
+
+failed=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Skip branch deletions
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+    fi
+
+    # Exclude anything already reachable from a remote-tracking branch. Commits
+    # brought in by merging a remote-tracking ref (e.g. `git merge private/master`)
+    # are skipped because they live under `refs/remotes/`; commits authored
+    # locally are not on any remote yet and remain in scope.
+    range=("$local_sha" --not --remotes)
+
+    # One git-log call per push ref. Records are NUL-separated (-z) so identities
+    # containing tabs cannot bypass the check; fields within a record are newline-
+    # separated since `\n` cannot appear in `%an` / `%ae` / `%cn` / `%ce`.
+    while IFS=$'\n' read -r -d '' sha an ae cn ce; do
+        if [[ $an =~ $blocked_re ]]; then
+            echo "ERROR: Commit $sha has a default/generic identity: $an <$ae>" >&2
+            failed=1
+        fi
+        if [[ $cn =~ $blocked_re ]]; then
+            echo "ERROR: Commit $sha has a default/generic identity: $cn <$ce>" >&2
+            failed=1
+        fi
+    done < <(git log -z --format='%H%n%an%n%ae%n%cn%n%ce' "${range[@]}")
+done
+
+if [ "$failed" -eq 1 ]; then
+    echo >&2
+    echo "Push blocked. Please fix your git identity with:" >&2
+    echo "  git config user.name \"Your Name\"" >&2
+    echo "  git config user.email \"your@email.com\"" >&2
+    echo "Then amend the affected commits." >&2
+    exit 1
+fi

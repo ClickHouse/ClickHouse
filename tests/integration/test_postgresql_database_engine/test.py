@@ -69,13 +69,17 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
+    assert "data" in node1.query("SHOW COLUMNS FROM postgres_database.test_table")
+    assert "PRIMARY" in node1.query("SHOW INDEX FROM postgres_database.test_table")
     assert "data" in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
 
     cursor.execute("ALTER TABLE test_table DROP COLUMN data")
     assert "data" not in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
 
     node1.query("DROP DATABASE postgres_database")
@@ -285,7 +289,8 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
 
     result = node1.query(
-        "select create_table_query from system.tables where database ='postgres_database'"
+        "select create_table_query from system.tables where database ='postgres_database'",
+        settings={"show_remote_databases_in_system_tables": 1},
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
@@ -402,6 +407,72 @@ def test_datetime(started_cluster):
     node1.query("attach table pg.test")
     assert "DateTime64(6)" in node1.query("show create table pg.test")
 
+
+def test_numeric_detach_attach(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("""
+        CREATE TABLE test_table (
+            numeric_1 numeric NOT NULL,
+            numeric_2 numeric(10) NOT NULL,
+            numeric_3 numeric(10, 0) NOT NULL,
+            numeric_4 numeric(5, 2) NOT NULL,
+            numeric_5 numeric(10, 5) NOT NULL,
+            numeric_6 numeric(20, 10) NOT NULL,
+            numeric_7 numeric(50, 20) NOT NULL,
+            decimal_1 decimal NOT NULL,
+            decimal_2 decimal(10) NOT NULL,
+            decimal_3 decimal(10, 0) NOT NULL,
+            decimal_4 decimal(5, 2) NOT NULL,
+            decimal_5 decimal(10, 5) NOT NULL,
+            decimal_6 decimal(20, 10) NOT NULL,
+            decimal_7 decimal(50, 20) NOT NULL
+        )
+    """)
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    node1.query(
+        "CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)"
+    )
+
+    expected_clickhouse_column_types = {
+        "numeric_1": "Decimal(38, 19)",
+        "numeric_2": "Decimal(10, 0)",
+        "numeric_3": "Decimal(10, 0)",
+        "numeric_4": "Decimal(5, 2)",
+        "numeric_5": "Decimal(10, 5)",
+        "numeric_6": "Decimal(20, 10)",
+        "numeric_7": "Decimal(50, 20)",
+        "decimal_1": "Decimal(38, 19)",
+        "decimal_2": "Decimal(10, 0)",
+        "decimal_3": "Decimal(10, 0)",
+        "decimal_4": "Decimal(5, 2)",
+        "decimal_5": "Decimal(10, 5)",
+        "decimal_6": "Decimal(20, 10)",
+        "decimal_7": "Decimal(50, 20)",
+    }
+
+    def get_actual_clickhouse_column_types():
+        res = node1.query(
+            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'",
+            settings={"show_remote_databases_in_system_tables": 1},
+        )
+
+        return dict(line.split('\t') for line in res.splitlines())
+
+    assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
+
+    create_ddl = node1.query("SHOW CREATE TABLE postgres_database.test_table")
+    for column, expected_type in expected_clickhouse_column_types.items():
+        assert f"`{column}` {expected_type}" in create_ddl
+
+    node1.query("DETACH TABLE postgres_database.test_table")
+    node1.query("ATTACH TABLE postgres_database.test_table")
+
+    assert get_actual_clickhouse_column_types() == expected_clickhouse_column_types
+
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute(f"DROP TABLE test_table")
 
 def test_postgresql_password_leak(started_cluster):
     conn = get_postgres_conn(

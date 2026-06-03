@@ -74,7 +74,7 @@ struct MultiMatchAllIndicesImpl
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
 #if USE_VECTORSCAN
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -119,7 +119,7 @@ struct MultiMatchAllIndicesImpl
         UInt64 offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 length = haystack_offsets[i] - offset - 1;
+            UInt64 length = haystack_offsets[i] - offset;
             /// vectorscan restriction.
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception(ErrorCodes::TOO_MANY_BYTES, "Too long string to search");
@@ -191,7 +191,7 @@ struct MultiMatchAllIndicesImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -199,7 +199,7 @@ struct MultiMatchAllIndicesImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
             }
 
             if (needles.empty())
@@ -240,7 +240,7 @@ struct MultiMatchAllIndicesImpl
                 return 0;
             };
 
-            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t cur_haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             /// vectorscan restriction.
             if (cur_haystack_length > std::numeric_limits<UInt32>::max())

@@ -6,7 +6,6 @@
 -- Test for vector similarity index with binary quantization.
 -- Also has good number of calls to reinterpret() to test conversion of native floats to Array(Float32)
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS dbpedia;

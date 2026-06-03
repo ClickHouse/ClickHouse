@@ -21,9 +21,8 @@ node = cluster.add_instance(
 )
 
 
-# Data are inserted via RemoteWrite protocol to ClickHouse,
-# we need to wait a bit until we get some data.
-def wait_for_data():
+# Waits until Prometheus scrapes some data and sends it to ClickHouse via the RemoteWrite protocol.
+def wait_for_scraped_data():
     start_time = time.monotonic()
     assert_eq_with_retry(
         node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1"
@@ -40,22 +39,34 @@ def wait_for_data():
     )
 
 
+# Sends lots of data to ClickHouse via the RemoteWrite protocol.
+def send_big_data(metric_name="big_data", start_time=1724112000, end_time=1724115600, count=75000):
+    time_series = []
+    step = (end_time - start_time) / count
+    for i in range(0, count):
+        timestamp = start_time + i * step
+        value = i
+        time_series.append(({"__name__": metric_name}, {timestamp: value}))
+    protobuf = convert_time_series_to_protobuf(time_series)
+    send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+
+
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query",
         query,
         timestamp,
     )
 
 
-# Executes a query in the "prometheus_receiver" service. We send data to this service via the RemoteWrite protocol.
+# Executes a query in the "prometheus_writer" service. This service sends data to ClickHouse via the RemoteWrite protocol.
 def execute_query_in_prometheus_writer(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_writer_ip,
-        cluster.prometheus_writer_port,
+        cluster.prometheus_ip["writer"],
+        cluster.prometheus_port["writer"],
         "/api/v1/query",
         query,
         timestamp,
@@ -71,29 +82,39 @@ def execute_query_in_prometheus(query, timestamp):
     return r1
 
 
+# Executes a prometheus query in ClickHouse
+def execute_query_in_clickhouse(query, timestamp):
+    return node.query(
+        f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"
+    )
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        wait_for_scraped_data()
+        send_big_data()
         yield cluster
     finally:
         cluster.shutdown()
 
 
 def test_handle_normal_scrape():
-    wait_for_data()
     query = "up"
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
+    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
     assert re.match(pattern, result)
+    chresult = execute_query_in_clickhouse(query, evaluation_time)
+    print(f"chresult={chresult}")
+    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
+    assert re.match(chpattern, chresult)
 
 
 def test_remote_read_auth():
-    wait_for_data()
-
     read_request = convert_read_request_to_protobuf(
         "^up$", time.time() - 300, time.time()
     )
@@ -117,3 +138,19 @@ def test_remote_read_auth():
         read_request,
     )
     assert auth_fail_response.status_code == requests.codes.forbidden
+
+
+def test_remote_read_big_data():
+    read_request = convert_read_request_to_protobuf(
+        "^big_data$", 1724112000, 1724115600
+    )
+
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address,
+        9093,
+        "read_auth_ok",
+        read_request)
+
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    assert len(read_response.results[0].timeseries[0].samples) == 75000

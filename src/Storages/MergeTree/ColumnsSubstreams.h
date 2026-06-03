@@ -1,13 +1,14 @@
 #pragma once
-#include <Core/Types.h>
+#include <Core/NamesAndTypes.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadBuffer.h>
 
 namespace DB
 {
+
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 /// Class that stores the list of substreams of columns in order of their serialization/deserialization.
 /// For example:
@@ -27,11 +28,14 @@ public:
     void addSubstreamsToLastColumn(const std::vector<String> & substreams);
 
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
+    std::optional<size_t> tryGetSubstreamPosition(size_t column_position, const String & substream) const;
+    size_t getSubstreamPosition(size_t column_position, const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path, const MergeTreeSettingsPtr & storage_settings) const;
     std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
 
     const std::vector<String> & getColumnSubstreams(size_t column_position) const;
+
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
     String toString() const;
@@ -41,6 +45,13 @@ public:
 
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;
+
+    /// Check that all substream names have valid prefixes matching their column names.
+    /// Every substream for a column must start with escapeForFileName(column_name) (or
+    /// escapeForFileName(Nested::extractTableName(column_name)) for shared Nested offsets),
+    /// followed by '.', '%2E', or end-of-string.
+    /// Returns {invalid_substream, column_name} pair, or empty strings if all are valid.
+    std::pair<String, String> findInvalidSubstreamName() const;
 
     /// Merge 2 sets of columns substreams with specified columns order.
     /// If some column exists in both left and right we keep only substreams from the left.

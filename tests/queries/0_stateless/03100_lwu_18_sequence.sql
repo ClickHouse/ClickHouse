@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_lwu_sequence;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_sequence (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY a

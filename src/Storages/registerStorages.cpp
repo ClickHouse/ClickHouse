@@ -21,13 +21,13 @@ void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
-void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
+void registerStorageAlias(StorageFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerStorageArrowFlight(StorageFactory & factory);
@@ -49,6 +49,7 @@ void registerStorageDeltaLake(StorageFactory & factory);
 
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
+void registerStoragePaimon(StorageFactory & factory);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -70,6 +71,9 @@ void registerStorageMySQL(StorageFactory & factory);
 
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
+#endif
+#if USE_YTSAURUS
+void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
@@ -127,13 +131,13 @@ void registerStorages()
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
-    registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
+    registerStorageAlias(factory);
 
 #if USE_ARROWFLIGHT
     registerStorageArrowFlight(factory);
@@ -149,6 +153,7 @@ void registerStorages()
 
 #if USE_AVRO
     registerStorageIceberg(factory);
+    registerStoragePaimon(factory);
 #endif
 
 #if USE_AWS_S3
@@ -177,6 +182,7 @@ void registerStorages()
     registerStorageMongoDB(factory);
 #endif
 
+    registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
 
 #if USE_RDKAFKA

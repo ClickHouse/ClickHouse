@@ -14,7 +14,7 @@ void ASTQueryParameter::formatImplWithoutAlias(WriteBuffer & ostr, const FormatS
 
 ASTPtr ASTQueryParameter::clone() const
 {
-    auto ret = std::make_shared<ASTQueryParameter>(*this);
+    auto ret = make_intrusive<ASTQueryParameter>(*this);
     ret->cloneChildren();
     return ret;
 }

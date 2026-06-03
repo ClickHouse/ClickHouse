@@ -5,8 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/Logger.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -43,6 +42,7 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
+void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const String & name,
@@ -148,11 +149,11 @@ const std::string kValues = "values";
 
 struct MatchNode
 {
-    UInt64 id;
-    UInt64 parent_id;
+    UInt64 id{};
+    UInt64 parent_id{};
     String reg_exp;
-    std::vector<Field> keys;
-    std::vector<Field> values;
+    VectorWithMemoryTracking<Field> keys;
+    VectorWithMemoryTracking<Field> values;
 };
 
 struct ResultColumns
@@ -165,9 +166,9 @@ struct ResultColumns
     ResultColumns() = default;
 };
 
-using StringToNode = std::unordered_map<String, YAML::Node>;
+using StringToNode = UnorderedMapWithMemoryTracking<String, YAML::Node>;
 
-YAML::Node loadYAML(const String & filepath)
+static YAML::Node loadYAML(const String & filepath)
 {
     try
     {
@@ -196,7 +197,7 @@ static StringToNode parseYAMLMap(const YAML::Node & node)
     return result;
 }
 
-void insertValues(const MatchNode & node, ResultColumns & result_columns)
+static void insertValues(const MatchNode & node, ResultColumns & result_columns)
 {
     result_columns.ids->insert(node.id);
     result_columns.parent_ids->insert(node.parent_id);
@@ -211,7 +212,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 /// 1. regex, indicating a regular expression
 /// 2. attribute_name, indicating the attributes to set
 /// 3. match (optional), indicating the nested match logic under this node
-void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
+static void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
 {
     if (!node.IsMap())
     {
@@ -265,7 +266,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
     }
 }
 
-Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
+static Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
 {
     ResultColumns result_cols;
     UInt64 id = 0;
@@ -306,14 +307,16 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(const YAMLRegExpT
 {
 }
 
-QueryPipeline YAMLRegExpTreeDictionarySource::loadAll()
+BlockIO YAMLRegExpTreeDictionarySource::loadAll()
 {
     LOG_INFO(logger, "Loading regexp tree from yaml '{}'", filepath);
     last_modification = getLastModification();
 
     const auto node = loadYAML(filepath);
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(parseYAMLAsRegExpTree(node, key_name, structure))));
+    return io;
 }
 
 bool YAMLRegExpTreeDictionarySource::isModified() const

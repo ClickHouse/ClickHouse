@@ -5,9 +5,8 @@ sidebar_label: 'mergeTreeProjection'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeProjection
 title: 'mergeTreeProjection'
+doc_type: 'reference'
 ---
-
-# mergeTreeProjection Table Function
 
 Represents the contents of some projection in MergeTree tables. It can be used for introspection.
 

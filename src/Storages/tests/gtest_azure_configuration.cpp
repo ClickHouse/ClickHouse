@@ -1,8 +1,9 @@
-#include <azure/identity/managed_identity_credential.hpp>
 #include <gtest/gtest.h>
 #include <config.h>
 
 #if USE_AZURE_BLOB_STORAGE
+
+#include <azure/identity/managed_identity_credential.hpp>
 
 #define ASSERT_THROW_ERROR_CODE(statement, expected_exception, expected_code, expected_msg)     \
     ASSERT_THROW(                                                                               \
@@ -55,7 +56,7 @@ public:
     }
 };
 
-class StorageAzureConfigurationFriend : public StorageAzureConfiguration
+class StorageAzureConfigurationFriend : private StorageAzureConfiguration
 {
 public:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override
@@ -74,7 +75,7 @@ public:
     }
 };
 
-void loadNamedCollectionConfig(const String & xml)
+static void loadNamedCollectionConfig(const String & xml)
 {
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
@@ -194,7 +195,7 @@ TEST(StorageAzureConfiguration, FromNamedCollectionWithPartialExtraCredentials)
 }
 
 // Helper to get engine args from a query string
-ASTs getEngineArgs(const std::string & query)
+static ASTs getEngineArgs(const std::string & query)
 {
     ParserQuery parser(query.data() + query.size());
     ASTPtr ast = parseQuery(parser, query, 0, 0, 0);
@@ -254,6 +255,6 @@ TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentials)
     ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "'client_id' is missing");
 }
 
-#endif
-
 }
+
+#endif

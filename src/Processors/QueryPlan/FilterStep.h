@@ -1,7 +1,7 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB
 {
@@ -21,7 +21,8 @@ public:
         , actions_dag(other.actions_dag.clone())
         , filter_column_name(other.filter_column_name)
         , remove_filter_column(other.remove_filter_column)
-        , query_condition_cache_writer(other.query_condition_cache_writer)
+        , prevent_input_removal(other.prevent_input_removal)
+        , condition(other.condition)
     {}
 
     String getName() const override { return "Filter"; }
@@ -35,7 +36,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_);
+    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -49,14 +50,24 @@ public:
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
 
+    bool canRemoveUnusedColumns() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
+    void setPreventInputRemoval() { prevent_input_removal = true; }
+    bool isInputRemovalPrevented() const { return prevent_input_removal; }
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     String filter_column_name;
     bool remove_filter_column;
+    bool prevent_input_removal = false;
 
-    QueryConditionCacheWriterPtr query_condition_cache_writer;
+    std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
 };
 
 }

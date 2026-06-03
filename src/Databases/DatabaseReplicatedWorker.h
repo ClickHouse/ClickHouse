@@ -42,9 +42,13 @@ public:
 
     bool isUnsyncedAfterRecovery() const { return unsynced_after_recovery; }
 
+    static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
+
+    void scheduleTasks(bool reinitialized) override;
 
     void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
     void markReplicasActive(bool reinitialized) override;
@@ -74,6 +78,13 @@ private:
 
     std::optional<Stopwatch> initialization_duration_timer;
     mutable std::mutex initialization_duration_timer_mutex;
+
+    // When the log entry is dummy, it indicates that a replica is added or removed.
+    // We need to update the cached cluster
+    // However, we don't update it for every dummy query.
+    // We only update after processing a batch of queries to avoid sending too many requests to Keeper.
+    // Because each update calls `getClusterImpl`, which sends a request to Keeper.
+    bool need_update_cached_cluster{false};
 };
 
 }

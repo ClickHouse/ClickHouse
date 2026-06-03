@@ -3,9 +3,11 @@
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Examples/clickhouse_examples.h>
 
 
 /** This program encrypts or decrypts text values using a symmetric encryption codec like AES_128_GCM_SIV or AES_256_GCM_SIV.
@@ -42,12 +44,17 @@
   */
 
 
+namespace
+{
+
 /// Instance of EncryptDecryptApplication is needed in order to initialize Poco::Net::SSLManager for certificates loading
 class EncryptDecryptApplication : public Poco::Util::Application
 {
 };
 
-int main(int argc, char ** argv)
+}
+
+int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
 {
     try
     {
@@ -69,7 +76,7 @@ int main(int argc, char ** argv)
         std::string value = argv[4];
 
         DB::ConfigProcessor processor(argv[1], false, true);
-        bool has_zk_includes;
+        bool has_zk_includes = {};
         DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
         if (has_zk_includes)
         {
@@ -83,8 +90,8 @@ int main(int argc, char ** argv)
             Poco::Util::LayeredConfiguration & conf = Poco::Util::Application::instance().config();
             conf.add(bootstrap_configuration);
 
-            auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
-                *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+            zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+            auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
 
             zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
             config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);

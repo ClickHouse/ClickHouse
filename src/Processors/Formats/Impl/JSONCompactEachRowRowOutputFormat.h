@@ -25,6 +25,8 @@ public:
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return settings.allow_special_serialization_kinds; }
+
 protected:
     void writePrefix() override;
 

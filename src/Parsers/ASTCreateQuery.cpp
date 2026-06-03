@@ -2,12 +2,14 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -46,7 +48,7 @@ void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
 ASTPtr ASTStorage::clone() const
 {
-    auto res = std::make_shared<ASTStorage>(*this);
+    auto res = make_intrusive<ASTStorage>(*this);
     res->children.clear();
 
     if (engine)
@@ -61,6 +63,8 @@ ASTPtr ASTStorage::clone() const
         res->set(res->sample_by, sample_by->clone());
     if (ttl_table)
         res->set(res->ttl_table, ttl_table->clone());
+    if (unique_key)
+        res->set(res->unique_key, unique_key->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());
@@ -80,22 +84,42 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     if (partition_by)
     {
         ostr << s.nl_or_ws << "PARTITION BY ";
-        partition_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(partition_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        partition_by->format(ostr, s, state, nested_frame);
     }
     if (primary_key)
     {
         ostr << s.nl_or_ws << "PRIMARY KEY ";
-        primary_key->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(primary_key); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        primary_key->format(ostr, s, state, nested_frame);
     }
     if (order_by)
     {
         ostr << s.nl_or_ws << "ORDER BY ";
-        order_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(order_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        order_by->format(ostr, s, state, nested_frame);
+    }
+    if (unique_key)
+    {
+        ostr << s.nl_or_ws << "UNIQUE KEY ";
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(unique_key); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        unique_key->format(ostr, s, state, nested_frame);
     }
     if (sample_by)
     {
         ostr << s.nl_or_ws << "SAMPLE BY ";
-        sample_by->format(ostr, s, state, modified_frame);
+        auto nested_frame = modified_frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(sample_by); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        sample_by->format(ostr, s, state, nested_frame);
     }
     if (ttl_table)
     {
@@ -109,9 +133,29 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     }
 }
 
+void ASTStorage::normalizeChildrenOrder()
+{
+    /// Keep old children alive while we rebuild the vector, because the raw
+    /// member pointers (engine, primary_key, …) do not hold ownership —
+    /// the intrusive_ptrs in `children` do.  Clearing first would destroy
+    /// the objects and leave dangling raw pointers.
+    ASTs old_children;
+    old_children.swap(children);
+
+    if (engine) children.emplace_back(engine);
+    if (partition_by) children.emplace_back(partition_by);
+    if (primary_key) children.emplace_back(primary_key);
+    if (order_by) children.emplace_back(order_by);
+    if (unique_key) children.emplace_back(unique_key);
+    if (sample_by) children.emplace_back(sample_by);
+    if (ttl_table) children.emplace_back(ttl_table);
+    if (settings) children.emplace_back(settings);
+}
+
+
 bool ASTStorage::isExtendedStorageDefinition() const
 {
-    return partition_by || primary_key || order_by || sample_by || settings;
+    return partition_by || primary_key || order_by || unique_key || sample_by || settings;
 }
 
 
@@ -119,15 +163,15 @@ class ASTColumnsElement : public IAST
 {
 public:
     String prefix;
-    IAST * elem;
+    IAST * elem{};
 
     String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
 
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&elem));
+        f(&elem, nullptr);
     }
 
 protected:
@@ -136,7 +180,7 @@ protected:
 
 ASTPtr ASTColumnsElement::clone() const
 {
-    auto res = std::make_shared<ASTColumnsElement>();
+    auto res = make_intrusive<ASTColumnsElement>();
     res->prefix = prefix;
     if (elem)
         res->set(res->elem, elem->clone());
@@ -161,7 +205,7 @@ void ASTColumnsElement::formatImpl(WriteBuffer & ostr, const FormatSettings & s,
 
 ASTPtr ASTColumns::clone() const
 {
-    auto res = std::make_shared<ASTColumns>();
+    auto res = make_intrusive<ASTColumns>();
 
     if (columns)
         res->set(res->columns, columns->clone());
@@ -187,7 +231,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & column : columns->children)
         {
-            auto elem = std::make_shared<ASTColumnsElement>();
+            auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "";
             elem->set(elem->elem, column->clone());
             list.children.push_back(elem);
@@ -197,7 +241,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & index : indices->children)
         {
-            auto elem = std::make_shared<ASTColumnsElement>();
+            auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "INDEX";
             elem->set(elem->elem, index->clone());
             list.children.push_back(elem);
@@ -207,7 +251,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & constraint : constraints->children)
         {
-            auto elem = std::make_shared<ASTColumnsElement>();
+            auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "CONSTRAINT";
             elem->set(elem->elem, constraint->clone());
             list.children.push_back(elem);
@@ -217,7 +261,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         for (const auto & projection : projections->children)
         {
-            auto elem = std::make_shared<ASTColumnsElement>();
+            auto elem = make_intrusive<ASTColumnsElement>();
             elem->prefix = "PROJECTION";
             elem->set(elem->elem, projection->clone());
             list.children.push_back(elem);
@@ -236,7 +280,7 @@ void ASTColumns::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
 
 ASTPtr ASTCreateQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateQuery>(*this);
+    auto res = make_intrusive<ASTCreateQuery>(*this);
     res->children.clear();
 
     if (columns_list)
@@ -251,10 +295,16 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->table_overrides, table_overrides->clone());
     if (targets)
         res->set(res->targets, targets->clone());
+    if (sql_security)
+        res->set(res->sql_security, sql_security->clone());
+    if (watermark_function)
+        res->set(res->watermark_function, watermark_function->clone());
+    if (lateness_function)
+        res->set(res->lateness_function, lateness_function->clone());
 
     if (dictionary)
     {
-        assert(is_dictionary);
+        chassert(is_dictionary);
         res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         res->set(res->dictionary, dictionary->clone());
     }
@@ -284,8 +334,6 @@ String ASTCreateQuery::getID(char delim) const
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     if (database && !table)
     {
         ostr
@@ -334,14 +382,12 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        else if (is_live_view)
-            what = "LIVE VIEW";
         else if (is_window_view)
             what = "WINDOW VIEW";
 
         ostr << action;
         ostr << " ";
-        ostr << (temporary ? "TEMPORARY " : "")
+        ostr << (isTemporary() ? "TEMPORARY " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
            ;
@@ -358,9 +404,9 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !attach_from_path);
-        if (attach_from_path)
-            ostr << " FROM " << quoteString(*attach_from_path);
+        chassert(attach || !has_attach_from_path);
+        if (has_attach_from_path)
+            ostr << " FROM " << quoteString(attach_from_path);
 
         if (attach_as_replicated.has_value())
         {
@@ -411,6 +457,15 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
               << " "
               << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
               << backQuoteIfNeed(to_table_id.table_name);
+    }
+    else if (targets && targets->hasTableASTWithQueryParams(ViewTarget::To))
+    {
+        auto to_table_ast = targets->getTableASTWithQueryParams(ViewTarget::To);
+
+        chassert(to_table_ast);
+
+        ostr << " " << toStringView(Keyword::TO) << " ";
+        to_table_ast->format(ostr, settings, state, frame);
     }
 
     if (auto to_inner_uuid = getTargetInnerUUID(ViewTarget::To); to_inner_uuid != UUIDHelpers::Nil)
@@ -474,7 +529,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (is_ordinary_view && aliases_list && !as_table_function)
+    if ((is_ordinary_view || is_materialized_view) && aliases_list && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
         aliases_list->format(ostr, settings, state, frame);
@@ -496,20 +551,23 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (storage)
         storage->format(ostr, settings, state, frame);
 
-    if (auto inner_storage = getTargetInnerEngine(ViewTarget::Inner))
+    if (auto * inner_storage = getTargetInnerEngine(ViewTarget::Inner))
     {
         ostr << " " << toStringView(Keyword::INNER);
         inner_storage->format(ostr, settings, state, frame);
     }
 
-    if (auto to_storage = getTargetInnerEngine(ViewTarget::To))
+    if (auto * to_storage = getTargetInnerEngine(ViewTarget::To))
         to_storage->format(ostr, settings, state, frame);
 
     if (targets)
     {
-        targets->formatTarget(ViewTarget::Data, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Tags, ostr, settings, state, frame);
-        targets->formatTarget(ViewTarget::Metrics, ostr, settings, state, frame);
+        for (const auto & target : targets->targets)
+        {
+            /// `To` and `Inner` are formatted separately above (for materialized / window views).
+            if ((target.kind != ViewTarget::To) && (target.kind != ViewTarget::Inner))
+                ASTViewTargets::formatTarget(target, ostr, settings, state, frame);
+        }
     }
 
     if (dictionary)
@@ -546,19 +604,37 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         sql_security->format(ostr, settings, state, frame);
     }
 
-    if (select)
-    {
-        ostr << settings.nl_or_ws;
-        ostr << "AS "
-                      << (comment ? "(" : "");
-        select->format(ostr, settings, state, frame);
-        ostr << (comment ? ")" : "");
-    }
-
     if (comment)
     {
         ostr << settings.nl_or_ws << "COMMENT ";
         comment->format(ostr, settings, state, frame);
+    }
+
+    if (select)
+    {
+        ostr << settings.nl_or_ws;
+        ostr << "AS ";
+
+        /// When the query has trailing output options like SETTINGS, FORMAT, or INTO OUTFILE
+        /// (either from this CREATE query or from an outer query like EXPLAIN),
+        /// we must wrap the AS-select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT in the UNION/INTERSECT chain during re-parsing, instead of
+        /// remaining on the outer query — breaking the formatting roundtrip.
+        /// The outer parentheses already protect against consumption, so
+        /// clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (settings_ast || frame.has_trailing_output_options)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            frame.has_trailing_output_options = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
 }
 
@@ -616,7 +692,7 @@ bool ASTCreateQuery::hasInnerUUIDs() const
     return false;
 }
 
-std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
+ASTStorage * ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kind target_kind) const
 {
     if (targets)
         return targets->getInnerEngine(target_kind);
@@ -626,8 +702,26 @@ std::shared_ptr<ASTStorage> ASTCreateQuery::getTargetInnerEngine(ViewTarget::Kin
 void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr storage_def)
 {
     if (!targets)
-        set(targets, std::make_shared<ASTViewTargets>());
+        set(targets, make_intrusive<ASTViewTargets>());
     targets->setInnerEngine(target_kind, storage_def);
 }
 
+ASTColumns * ASTCreateQuery::getTargetInnerColumns(ViewTarget::Kind target_kind) const
+{
+    if (targets)
+        return targets->getInnerColumns(target_kind);
+    return nullptr;
+}
+
+void ASTCreateQuery::setTargetInnerColumns(ViewTarget::Kind target_kind, ASTPtr columns_ast)
+{
+    if (!targets)
+        set(targets, make_intrusive<ASTViewTargets>());
+    targets->setInnerColumns(target_kind, columns_ast);
+}
+
+bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
+{
+    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
+}
 }

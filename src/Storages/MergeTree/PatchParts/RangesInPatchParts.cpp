@@ -10,6 +10,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Interpreters/Context.h>
 
 namespace ProfileEvents
 {
@@ -226,8 +227,8 @@ MarkRanges RangesInPatchParts::getIntersectingRanges(const String & patch_name, 
 
     for (const auto & range : ranges)
     {
-        auto left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
-        auto right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
+        const auto * left = std::lower_bound(patch_ranges.begin(), patch_ranges.end(), range.begin, [](const MarkRange & r, UInt64 value) { return r.end < value; });
+        const auto * right = std::upper_bound(patch_ranges.begin(), patch_ranges.end(), range.end, [](UInt64 value, const MarkRange & r) { return value < r.begin; });
 
         res.insert(left, right);
     }
@@ -246,17 +247,17 @@ static std::pair<UInt64, UInt64> getMinMaxValues(const IMergeTreeIndexGranule & 
     return {min, max};
 }
 
-MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name)
+MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AnalyzePatchRangesMicroseconds);
 
     auto metadata_snapshot = patch_part->getMetadataSnapshot();
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
 
-    auto it = std::ranges::find_if(secondary_indices, [&](const auto & index)
-    {
-        return index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
-    });
+    auto it = std::ranges::find_if(
+        secondary_indices,
+        [&](const auto & index)
+        { return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name; });
 
     if (it == secondary_indices.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);
@@ -266,21 +267,25 @@ MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges
 
     auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
-    if (!index_ptr->getDeserializedFormat(patch_part->getDataPartStorage(), index_ptr->getFileName()))
+    if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
         return {};
 
     size_t total_marks_without_final = patch_part->index_granularity->getMarksCountWithoutFinal();
     MarkRanges index_mark_ranges = {{0, total_marks_without_final}};
+
+    auto context = Context::getGlobalContextInstance();
+    auto mark_cache = context->getIndexMarkCache();
+    auto uncompressed_cache = context->getIndexUncompressedCache();
 
     MergeTreeIndexReader reader(
         index_ptr,
         patch_part,
         total_marks_without_final,
         index_mark_ranges,
-        /*mark_cache=*/ nullptr,
-        /*uncompressed_cache=*/ nullptr,
+        mark_cache.get(),
+        uncompressed_cache.get(),
         /*vector_similarity_index_cache=*/ nullptr,
-        /*settings_=*/ {});
+        settings);
 
     MergeTreeIndexGranulePtr granule = nullptr;
     MinMaxStats result(ranges.size());
@@ -293,12 +298,12 @@ MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges
         if (ranges[i].begin == last_mark)
             continue;
 
-        reader.read(ranges[i].begin, granule);
+        reader.read(ranges[i].begin, nullptr, granule);
         std::tie(stats.min, stats.max) = getMinMaxValues(*granule);
 
         for (size_t j = ranges[i].begin + 1; j < last_mark; ++j)
         {
-            reader.read(j, granule);
+            reader.read(j, nullptr, granule);
             auto [min, max] = getMinMaxValues(*granule);
 
             stats.min = std::min(stats.min, min);
@@ -309,7 +314,7 @@ MaybeMinMaxStats getMinMaxStats(const DataPartPtr & patch_part, const MarkRanges
     return result;
 }
 
-bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
+static bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
 {
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }

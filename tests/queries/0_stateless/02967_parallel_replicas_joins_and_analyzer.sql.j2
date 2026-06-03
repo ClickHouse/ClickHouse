@@ -1,8 +1,11 @@
+-- Tags: long
+
+-- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 drop table if exists tab1 sync;
 drop table if exists tab2 sync;
 drop table if exists tab3 sync;
 
-create table tab1 (x UInt32, y UInt32, shard UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab1', 'r1') order by shard;
+create table tab1 (x UInt32, y UInt32, shard UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab1', 'r1') order by shard SETTINGS add_minmax_index_for_numeric_columns=0;
 create table tab2 (y UInt32, z UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab2', 'r1') order by tuple();
 create table tab3 (z UInt32, a UInt32) engine = ReplicatedMergeTree('/clickhouse/tables/{database}/test_02967/tab3', 'r1') order by tuple();
 
@@ -10,9 +13,15 @@ insert into tab1 select number, number, number from numbers(16);
 insert into tab2 select number * 2, number * 2 from numbers(8);
 insert into tab3 select number * 4, number * 4 from numbers(4);
 
+SET automatic_parallel_replicas_mode = 0;
 set query_plan_join_swap_table = 0; -- changes query plan
 set enable_analyzer = 1;
 set enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1;
+SET optimize_read_in_order = 1, optimize_sorting_by_input_stream_properties = 1;
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET enable_join_runtime_filters = 1; -- Changes the plan (BuildRuntimeFilter node)
+SET use_statistics = 0; -- auto_statistics_types changes the plan
 
 {% for use_global_in in [0, 1] -%}
 

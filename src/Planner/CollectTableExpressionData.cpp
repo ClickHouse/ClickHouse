@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_PREWHERE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -69,15 +70,17 @@ public:
         /// JOIN using expression
         if (column_node->hasExpression() && column_source_node_type == QueryTreeNodeType::JOIN)
         {
-            auto & columns_from_subtrees = column_node->getExpression()->as<ListNode &>().getNodes();
-            if (columns_from_subtrees.size() != 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected two columns in JOIN using expression for column {}", column_node->dumpTree());
-
-            visit(columns_from_subtrees[0]);
-            visit(columns_from_subtrees[1]);
+            if (auto * list_node = column_node->getExpression()->as<ListNode>())
+            {
+                auto & columns_from_subtrees = list_node->getNodes();
+                visit(columns_from_subtrees[0]);
+                visit(columns_from_subtrees[1]);
+            }
             return;
         }
+
+        if (column_source_node_type == QueryTreeNodeType::CROSS_JOIN)
+            return;
 
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
 
@@ -112,9 +115,13 @@ public:
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
+                /// ColumnsDescription validation (ColumnsDescription.cpp) now recursively rejects
+                /// subqueries at any depth in ALIAS expressions. This check remains as a
+                /// safety net in case any code path bypasses DDL-time validation (e.g. loading
+                /// tables from metadata created before the recursive check was added).
                 if (correlated_subtrees.notEmpty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Correlated subqueries in ALIAS column expressions are not supported. Column: {}", column_node->getColumnName());
 
                 auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
@@ -208,6 +215,9 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
+        /// Do not traverse Materialized CTE subquery, because it is executed separately.
+        if (auto * table_node = parent_node->as<TableNode>())
+            return child_node != table_node->getMaterializedCTESubquery();
         return !(checkSubquery(child_node) || isAliasColumn(parent_node));
     }
 
@@ -290,11 +300,9 @@ public:
                 column_source->formatASTForErrorMessage(),
                 query_node->formatASTForErrorMessage());
 
-        const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
-        const auto & storage_snapshot = table_column_source ? table_column_source->getStorageSnapshot() : table_function_column_source->getStorageSnapshot();
-
         if (!table_expression)
         {
+            const auto & storage = table_column_source ? table_column_source->getStorage() : table_function_column_source->getStorage();
             if (!storage->supportsPrewhere())
                 throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                     "Storage {} (table {}) does not support PREWHERE",
@@ -305,10 +313,7 @@ public:
             table_supported_prewhere_columns = storage->supportedPrewhereColumns();
         }
 
-        const bool has_table_virtual_column =
-            column_node->getColumnName() == "_table" && storage->isVirtualColumn(column_node->getColumnName(), storage_snapshot->metadata);
-
-        if ((table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName())) || has_table_virtual_column)
+        if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Table expression {} does not support column {} in PREWHERE. In query {}",
                 table_expression->formatASTForErrorMessage(),
@@ -437,9 +442,18 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
         prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
+        /// Add required input columns to outputs, but avoid duplicates
+        std::unordered_set<const ActionsDAG::Node *> existing_outputs(
+            prewhere_actions_dag.getOutputs().begin(), prewhere_actions_dag.getOutputs().end());
+
         for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
-            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
+        {
+            if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name)
+                && !existing_outputs.contains(prewhere_input_node))
+            {
                 prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
+            }
+        }
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

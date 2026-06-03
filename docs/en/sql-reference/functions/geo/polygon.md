@@ -3,6 +3,7 @@ description: 'Documentation for Polygon'
 sidebar_label: 'Polygons'
 slug: /sql-reference/functions/geo/polygons
 title: 'Functions for Working with Polygons'
+doc_type: 'reference'
 ---
 
 ## WKT {#wkt}

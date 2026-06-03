@@ -228,9 +228,14 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (!pattern)
     {
         for (const auto & child : children)
-            expected_columns.insert(child->as<const ASTIdentifier &>().name());
+        {
+            if (const auto * identifier = child->as<ASTIdentifier>())
+                expected_columns.insert(identifier->name());
+            else
+                expected_columns.insert(child->getAliasOrColumnName());
+        }
 
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -249,9 +254,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     {
         auto regexp = getMatcher();
 
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
-            if (const auto * id = it->get()->as<ASTIdentifier>())
+            if (auto * id = it->get()->as<ASTIdentifier>())
             {
                 if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
@@ -294,7 +299,7 @@ std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     children[0]->format(ostr, settings, state, frame);
     ostr << " AS " << backQuoteIfNeed(name);
@@ -302,7 +307,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
@@ -311,7 +316,7 @@ void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & o
 
 void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     hash_state.update(name.size());
     hash_state.update(name);
@@ -380,7 +385,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     for (const auto & replace_child : children)
     {
         auto & replacement = replace_child->as<Replacement &>();
-        if (replace_map.find(replacement.name) != replace_map.end())
+        if (replace_map.contains(replacement.name))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
         replace_map.emplace(replacement.name, replacement.children[0]);

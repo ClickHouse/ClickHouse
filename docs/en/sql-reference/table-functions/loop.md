@@ -3,9 +3,8 @@ description: 'The loop table function in ClickHouse is used to return query resu
   in an infinite loop.'
 slug: /sql-reference/table-functions/loop
 title: 'loop'
+doc_type: 'reference'
 ---
-
-# loop Table Function
 
 ## Syntax {#syntax}
 

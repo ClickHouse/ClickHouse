@@ -13,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 // Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-class FunctionSeriesDecomposeSTL : public IFunction
+class FunctionSeriesDecomposeSTL final : public IFunction
 {
 public:
     static constexpr auto name = "seriesDecomposeSTL";
@@ -81,7 +82,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 period;
+            UInt64 period = 0;
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();
             if (checkAndGetColumn<ColumnUInt8>(period_ptr.get())
                 || checkAndGetColumn<ColumnUInt16>(period_ptr.get())
@@ -96,9 +97,9 @@ public:
                     getName());
 
 
-            std::vector<Float32> seasonal;
-            std::vector<Float32> trend;
-            std::vector<Float32> residue;
+            VectorWithMemoryTracking<Float32> seasonal;
+            VectorWithMemoryTracking<Float32> trend;
+            VectorWithMemoryTracking<Float32> residue;
 
             ColumnArray::Offset curr_offset = src_offsets[i];
 
@@ -147,9 +148,9 @@ public:
         UInt64 period,
         ColumnArray::Offset start,
         ColumnArray::Offset end,
-        std::vector<Float32> & seasonal,
-        std::vector<Float32> & trend,
-        std::vector<Float32> & residue) const
+        VectorWithMemoryTracking<Float32> & seasonal,
+        VectorWithMemoryTracking<Float32> & trend,
+        VectorWithMemoryTracking<Float32> & residue) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -165,7 +166,7 @@ public:
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
-        std::vector<float> src(src_vec.begin() + start, src_vec.begin() + end);
+        VectorWithMemoryTracking<float> src(src_vec.begin() + start, src_vec.begin() + end);
 
         auto res = stl::params().fit(src, period);
 
@@ -180,40 +181,20 @@ public:
 };
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
-    factory.registerFunction<FunctionSeriesDecomposeSTL>(FunctionDocumentation{
-        .description = R"(
-Decomposes a time series using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
-
-**Syntax**
-
-```sql
-seriesDecomposeSTL(series, period);
-```
-
-**Arguments**
-
-- `series` - An array of numeric values
-- `period` - A positive number
-
-The number of data points in `series` should be at least twice the value of `period`.
-
-**Returned value**
-
-- An array of four arrays where the first array include seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
-
-Type: [Array](../../sql-reference/data-types/array.md).
-
-**Examples**
-
-Query:
-
-```sql
-SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0;
-```
-
-Result:
-
-```text
+    FunctionDocumentation::Description description = R"(
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+    )";
+    FunctionDocumentation::Syntax syntax = "seriesDecomposeSTL(series, period)";
+    FunctionDocumentation::Arguments arguments = {
+        {"series", "An array of numeric values", {"Array((U)Int8/16/32/64)", "Array(Float*)"}},
+        {"period", "A positive integer", {"UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of four arrays where the first array includes seasonal components, the second array - trend, the third array - residue component, and the fourth array - baseline(seasonal + trend) component.", {"Array(Array(Float32), Array(Float32), Array(Float32), Array(Float32))"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Decompose series data using STL",
+        "SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0",
+        R"(
 ┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ [[
         -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
@@ -234,7 +215,13 @@ Result:
         10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
     ]]                                                                                                                   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```)",
-        .category = FunctionDocumentation::Category::TimeSeries});
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }
 }

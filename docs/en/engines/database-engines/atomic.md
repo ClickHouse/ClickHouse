@@ -6,9 +6,8 @@ sidebar_label: 'Atomic'
 sidebar_position: 10
 slug: /engines/database-engines/atomic
 title: 'Atomic'
+doc_type: 'reference'
 ---
-
-# Atomic 
 
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse. 
 

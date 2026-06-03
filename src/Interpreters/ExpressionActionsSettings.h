@@ -31,6 +31,8 @@ struct ExpressionActionsSettings
     CompileExpressions compile_expressions = CompileExpressions::no;
 
     ShortCircuitFunctionEvaluation short_circuit_function_evaluation = ShortCircuitFunctionEvaluation::DISABLE;
+
+    bool enable_lazy_columns_replication = false;
 };
 
 }

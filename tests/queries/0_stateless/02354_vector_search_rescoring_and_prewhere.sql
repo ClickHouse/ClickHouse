@@ -2,7 +2,6 @@
 
 -- Test for setting 'vector_search_with_rescoring' with filters.
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 
@@ -118,7 +117,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
     )
-WHERE (explain LIKE '%_distance%');
+WHERE (explain LIKE '%_distance%')
+LIMIT 1;
 
 SELECT 'Just a test with 2 predicates';
 SELECT 'id 16 & 19 will be again output';

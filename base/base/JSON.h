@@ -1,8 +1,6 @@
 #pragma once
 
-#include <typeinfo>
 #include <Poco/Exception.h>
-#include <base/StringRef.h>
 #include <base/types.h>
 
 
@@ -49,9 +47,9 @@ class JSON
 {
 private:
     using Pos = const char *;
-    Pos ptr_begin;
-    Pos ptr_end;
-    unsigned level;
+    Pos ptr_begin{};
+    Pos ptr_end{};
+    unsigned level{};
 
 public:
     JSON(Pos ptr_begin_, Pos ptr_end_, unsigned level_ = 0) : ptr_begin(ptr_begin_), ptr_end(ptr_end_), level(level_)
