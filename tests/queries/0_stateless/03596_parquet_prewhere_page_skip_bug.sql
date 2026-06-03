@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 
-set output_format_parquet_use_custom_encoder = 1;
-set input_format_parquet_use_native_reader_v3 = 1;
 set engine_file_truncate_on_insert = 1;
 
 insert into function file(current_database() ||'03596_parquet_prewhere_page_skip_bug.parquet') select number as n, number*10 as n10 from numbers(200) settings output_format_parquet_data_page_size=100, output_format_parquet_batch_size=10, output_format_parquet_row_group_size=100, output_format_parquet_write_page_index=0;

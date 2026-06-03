@@ -24,7 +24,6 @@
 #include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
@@ -251,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c;
+        char c = 0;
         String sum_json;
         while (!buf->eof())
         {
@@ -492,9 +491,7 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = format_settings.parquet.use_native_reader_v3
-            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
-            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -717,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision;
-        size_t scale;
+        size_t precision = 0;
+        size_t scale = 0;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);
@@ -726,6 +723,10 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         tryReadIntText(scale, buf);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
+    /// varchar(n) and char(n) are valid Delta Lake types that map to string in Parquet.
+    /// The length constraint is a SQL-level annotation only; we ignore it and use String.
+    if ((type_name.starts_with("varchar(") || type_name.starts_with("char(")) && type_name.ends_with(')'))
+        return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }

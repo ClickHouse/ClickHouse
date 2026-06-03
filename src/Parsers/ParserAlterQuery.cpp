@@ -178,6 +178,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
     ASTPtr command_snapshot_desc;
+    ASTPtr command_refresh;
 
     if (with_round_bracket)
     {
@@ -998,7 +999,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             }
             else if (s_modify_refresh.ignore(pos, expected))
             {
-                if (!refresh_p.parse(pos, command->refresh, expected))
+                if (!refresh_p.parse(pos, command_refresh, expected))
                     return false;
                 command->type = ASTAlterCommand::MODIFY_REFRESH;
             }
@@ -1114,6 +1115,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
     if (command_snapshot_desc)
         command->snapshot_desc = command->children.emplace_back(std::move(command_snapshot_desc)).get();
+    if (command_refresh)
+        command->refresh = command->children.emplace_back(std::move(command_refresh)).get();
 
     return true;
 }
@@ -1152,7 +1155,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_alter_temporary_table(Keyword::ALTER_TEMPORARY_TABLE);
     ParserKeyword s_alter_database(Keyword::ALTER_DATABASE);
 
-    ASTAlterQuery::AlterObjectType alter_object_type;
+    ASTAlterQuery::AlterObjectType alter_object_type = {};
 
     if (s_alter_table.ignore(pos, expected) || s_alter_temporary_table.ignore(pos, expected))
     {
