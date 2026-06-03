@@ -1750,8 +1750,17 @@ void ActionsDAG::removeTrivialWrappers()
                 child = child->children[0];
 
     for (auto *& output : outputs)
-        while (is_trivial_wrapper(output))
-            output = output->children[0];
+    {
+        if (is_trivial_wrapper(output))
+        {
+            auto original_name = output->result_name;
+            while (is_trivial_wrapper(output))
+                output = output->children[0];
+
+            if (output->result_name != original_name)
+                output = &addAlias(*output, original_name);
+        }
+    }
 
     removeUnusedActions();
 }
