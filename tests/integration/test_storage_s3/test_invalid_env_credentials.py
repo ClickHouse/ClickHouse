@@ -180,6 +180,15 @@ def test_no_sign_config(started_cluster):
     assert ei.value.returncode == 243
     assert "HTTP response code: 403" in ei.value.stderr
 
+    def assert_unsigned_read_fails():
+        with pytest.raises(helpers.client.QueryRuntimeException) as read_error:
+            instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache5.jsonl')"
+            )
+
+        assert read_error.value.returncode == 243
+        assert "HTTP response code: 403" in read_error.value.stderr
+
     def assert_nosign_works():
         assert (
             "100"
@@ -200,7 +209,7 @@ def test_no_sign_config(started_cluster):
     ):
         instance.restart_clickhouse()
 
-        assert_nosign_works()
+        assert_unsigned_read_fails()
 
     with instance.with_replace_config(
         "/etc/clickhouse-server/config.d/s3_no_sign_request.xml",
