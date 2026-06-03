@@ -107,6 +107,7 @@ class RandomRestarter(ChaosThread):
         # Held while a restart cycle is in progress so stop() can wait for the
         # service to be back up before returning.
         self._restart_lock = threading.Lock()
+        self._recovery_failures = 0
 
     def _stop_hard(self) -> None:
         raise NotImplementedError
@@ -244,6 +245,7 @@ class RandomServerRestarter(RandomRestarter):
             logging.info("%s: server back up", self.NAME)
         else:
             logging.error("%s: server did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
 
 
 class RandomMinIORestarter(RandomRestarter):
@@ -320,6 +322,7 @@ class RandomMinIORestarter(RandomRestarter):
             logging.info("%s: MinIO back up", self.NAME)
         else:
             logging.error("%s: MinIO did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
 
 
 class RandomAzuriteRestarter(RandomRestarter):
@@ -390,6 +393,7 @@ class RandomAzuriteRestarter(RandomRestarter):
             logging.info("%s: Azurite back up", self.NAME)
         else:
             logging.error("%s: Azurite did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
 
 
 class RandomRedpandaRestarter(RandomRestarter):
@@ -464,6 +468,7 @@ class RandomRedpandaRestarter(RandomRestarter):
             logging.info("%s: Redpanda back up", self.NAME)
         else:
             logging.error("%s: Redpanda did not come back within timeout", self.NAME)
+            self._recovery_failures += 1
 
 
 class RandomQueryKiller(ChaosThread):
@@ -1186,6 +1191,25 @@ def main():
                 # to work with — see ClickHouse/ClickHouse#100941.
             else:
                 logging.info("No queries hung")
+
+    failed_chaos = [
+        ct
+        for ct in chaos_threads
+        if isinstance(ct, RandomRestarter) and ct._recovery_failures > 0
+    ]
+    if failed_chaos:
+        with open(
+            args.output_folder / "test_results.tsv", "a+", encoding="utf-8"
+        ) as results:
+            for ct in failed_chaos:
+                results.write(
+                    f"{ct.NAME} recovery failed {ct._recovery_failures} time(s)"
+                    "\tFAIL\t\\N\t\n"
+                )
+        logging.error(
+            "Chaos thread recovery failures: %s",
+            ", ".join(f"{ct.NAME}={ct._recovery_failures}" for ct in failed_chaos),
+        )
 
     logging.info("Stress test finished")
 
