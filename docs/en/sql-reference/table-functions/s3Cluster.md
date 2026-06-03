@@ -36,7 +36,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `extra_credentials`                   | Optional. `roleARN` can be passed via this parameter. See [here](/cloud/data-sources/secure-s3#access-your-s3-bucket-with-the-clickhouseaccess-role) for an example.                                          |
 
 Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported.
-SQL-created named collections for `s3Cluster` cannot use `use_environment_credentials` and cannot inherit top-level `<s3>` credentials from the server configuration. Use explicit credentials, `NOSIGN` for public buckets, or operator-managed endpoint-scoped `<s3>` configuration that matches the URL.
+Named collections used with `s3Cluster` cannot use `use_environment_credentials` and cannot inherit top-level `<s3>` credentials from the server configuration. Use explicit credentials, `NOSIGN` for public buckets, or operator-managed endpoint-scoped `<s3>` configuration that matches the URL.
 
 | Argument                       | Description                                                                                                                                                                                                                       |
 |--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
