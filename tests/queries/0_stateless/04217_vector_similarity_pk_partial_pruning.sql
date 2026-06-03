@@ -64,11 +64,13 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Case B: prove this query actually used the vector index path.
 SELECT 'vector_index_path_used';
-SELECT ProfileEvents['USearchSearchCount'] > 0
+SELECT max(ProfileEvents['USearchSearchCount'] > 0)
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
-    AND log_comment = '04217-vector-index-path';
+    AND log_comment = '04217-vector-index-path'
+    AND event_date >= yesterday()
+    AND event_time >= now() - 600;
 
 SELECT 'expected_top3_ids_for_reference_vec';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
