@@ -998,15 +998,22 @@ void ReaderExecutor::seek(size_t new_position)
     /// path-mismatch reset in `readFromSource`.
     releaseStalePreAcquiredSlot(new_obj ? new_obj->remote_path : String{});
 
-    /// Reset `live_buffer` when the target no longer continues from it. A
-    /// cache-hit path skips `readFromSource`'s equivalent check, so without
-    /// this the stale connection + slot would leak until EOF/destruction.
+    /// Decide the live buffer's fate across the seek. Keep it for a forward seek
+    /// small enough to bridge within its right bound: the next `readFromSource`
+    /// skips the seeked-over gap on the open GET instead of reopening (the same
+    /// rule and `min_bytes_for_seek` bound used there). A backward seek, a
+    /// different object, or a gap past that bound closes it. A cache-hit path
+    /// skips `readFromSource`'s check, so this is also where a stale connection +
+    /// slot would otherwise leak until EOF/destruction.
     if (live_buffer)
     {
-        const bool live_continues = new_obj
-            && live_buffer->slot.objectPath() == new_obj->remote_path
-            && live_buffer->current_position == new_physical - new_obj_file_offset;
-        if (!live_continues)
+        const bool same_obj = new_obj && live_buffer->slot.objectPath() == new_obj->remote_path;
+        const size_t new_local = same_obj ? new_physical - new_obj_file_offset : 0;
+        const bool keep = same_obj
+            && new_local >= live_buffer->current_position
+            && new_local - live_buffer->current_position <= min_bytes_for_seek
+            && (!live_buffer->read_until || new_local <= *live_buffer->read_until);
+        if (!keep)
         {
             LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
                 live_buffer->slot.objectPath(), live_buffer->current_position);

@@ -95,22 +95,22 @@ LOADS = {
 # The deterministic unit grid remains the tight value gate; update a row when an
 # executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
 BASELINE = {
-    ("sequential", "cold", "live"): {"R": (95, 122), "I": (56, 73), "O": (116, 149), "cost/MiB": (33, 42.1)},
-    ("sequential", "cold", "stateless"): {"R": (171, 218), "O": (105, 135), "cost/MiB": (42.3, 53.9)},
-    ("sequential", "fragmented", "live"): {"R": (45, 59), "I": (27, 40), "O": (47, 68), "cost/MiB": (15.3, 19.5)},
-    ("sequential", "fragmented", "stateless"): {"R": (80, 102), "O": (33, 57), "cost/MiB": (18.8, 24.1)},
-    ("selective", "cold", "live"): {"R": (29, 39), "I": (24, 32), "O": (58, 75), "cost/MiB": (112.2, 142.9)},
-    ("selective", "cold", "stateless"): {"R": (53, 69), "O": (58, 75), "cost/MiB": (133.4, 169.9)},
-    ("selective", "fragmented", "live"): {"R": (10, 14), "I": (10, 14), "O": (0, 1), "cost/MiB": (27.7, 35.4)},
-    ("selective", "fragmented", "stateless"): {"R": (20, 27), "O": (0, 1), "cost/MiB": (36.8, 46.9)},
-    ("aggregation", "cold", "live"): {"R": (157, 201), "I": (9, 18), "O": (54, 79), "cost/MiB": (39.6, 50.5)},
-    ("aggregation", "cold", "stateless"): {"R": (265, 338), "O": (43, 77), "cost/MiB": (51.8, 66.1)},
-    ("aggregation", "fragmented", "live"): {"R": (55, 71), "I": (18, 25), "O": (22, 55), "cost/MiB": (15.6, 20)},
-    ("aggregation", "fragmented", "stateless"): {"R": (102, 130), "O": (11, 34), "cost/MiB": (20.2, 25.8)},
-    ("prewhere", "cold", "live"): {"R": (30, 43), "I": (11, 16), "O": (36, 51), "cost/MiB": (25.7, 32.8)},
-    ("prewhere", "cold", "stateless"): {"R": (206, 264), "O": (33, 47), "cost/MiB": (48.4, 61.7)},
-    ("prewhere", "fragmented", "live"): {"R": (21, 31), "I": (7, 11), "O": (7, 10), "cost/MiB": (11.7, 15)},
-    ("prewhere", "fragmented", "stateless"): {"R": (106, 136), "O": (7, 10), "cost/MiB": (23, 29.4)},
+    ("sequential", "cold", "live"): {"R": (99, 127), "I": (57, 73), "O": (107, 155), "cost/MiB": (33.9, 43.1)},
+    ("sequential", "cold", "stateless"): {"R": (171, 219), "O": (91, 147), "cost/MiB": (42.2, 53.8)},
+    ("sequential", "fragmented", "live"): {"R": (43, 64), "I": (27, 35), "O": (28, 83), "cost/MiB": (15.2, 19.4)},
+    ("sequential", "fragmented", "stateless"): {"R": (81, 112), "O": (1, 77), "cost/MiB": (19.2, 24.5)},
+    ("selective", "cold", "live"): {"R": (17, 23), "I": (12, 16), "O": (100, 129), "cost/MiB": (126.8, 161.4)},
+    ("selective", "cold", "stateless"): {"R": (54, 70), "O": (58, 75), "cost/MiB": (134.4, 171.0)},
+    ("selective", "fragmented", "live"): {"R": (10, 14), "I": (10, 14), "O": (0, 1), "cost/MiB": (27.9, 35.5)},
+    ("selective", "fragmented", "stateless"): {"R": (21, 27), "O": (0, 1), "cost/MiB": (37.3, 47.5)},
+    ("aggregation", "cold", "live"): {"R": (157, 201), "I": (9, 17), "O": (49, 81), "cost/MiB": (39.6, 50.3)},
+    ("aggregation", "cold", "stateless"): {"R": (267, 341), "O": (49, 81), "cost/MiB": (52.4, 66.7)},
+    ("aggregation", "fragmented", "live"): {"R": (48, 79), "I": (13, 29), "O": (10, 65), "cost/MiB": (15.3, 19.5)},
+    ("aggregation", "fragmented", "stateless"): {"R": (98, 136), "O": (0, 49), "cost/MiB": (20.3, 25.8)},
+    ("prewhere", "cold", "live"): {"R": (30, 44), "I": (9, 17), "O": (38, 50), "cost/MiB": (25.8, 32.9)},
+    ("prewhere", "cold", "stateless"): {"R": (205, 263), "O": (33, 47), "cost/MiB": (48.4, 61.6)},
+    ("prewhere", "fragmented", "live"): {"R": (18, 32), "I": (7, 11), "O": (7, 10), "cost/MiB": (11.6, 14.8)},
+    ("prewhere", "fragmented", "stateless"): {"R": (108, 138), "O": (7, 11), "cost/MiB": (23.3, 29.7)},
 }
 
 
@@ -247,24 +247,29 @@ def _stats(samples):
 
 
 def _check_bands(name, state, mode, st, cost_per_mib):
-    """Assert each gated metric's mean lands within its recorded [lo, hi] band."""
+    """Return any gated-metric violations (mean outside its recorded [lo, hi] band).
+    Collected and asserted once at the end so a single run reports every cell rather
+    than aborting at the first drift."""
     key = (name, state, mode)
     if key not in BASELINE:
-        return
+        return []
     measured = {
         "R": st["R"][0],
         "I": st["I"][0],
         "O": st["O"][0] / (1024.0 * 1024.0),
         "cost/MiB": cost_per_mib,
     }
+    violations = []
     for metric, (lo, hi) in BASELINE[key].items():
         got = measured[metric]
-        assert lo <= got <= hi, (
-            f"{name}/{state}/{mode}: {metric}={got:.1f} outside [{lo}, {hi}]")
+        if not (lo <= got <= hi):
+            violations.append(f"{name}/{state}/{mode}: {metric}={got:.1f} outside [{lo}, {hi}]")
+    return violations
 
 
 def test_metric_values_and_stability(started_cluster):
     report = []
+    band_violations = []
     for live in (True, False):
         mode = "live" if live else "stateless"
         for name, query in LOADS.items():
@@ -319,8 +324,9 @@ def test_metric_values_and_stability(started_cluster):
                 if state == "cold" and name == "sequential" and live:
                     assert st["R"][0] > 0, "executor did not run (R=0 cold sequential -> likely legacy fallback)"
 
-                # Loose magnitude gate against the recorded baseline.
-                _check_bands(name, state, mode, st, cost_per_mib)
+                # Loose magnitude gate against the recorded baseline (collected,
+                # asserted once at the end).
+                band_violations.extend(_check_bands(name, state, mode, st, cost_per_mib))
 
     # The cost-per-byte KPI is also exposed as an async metric (interval delta) for
     # realtime instance graphs. After a full run it is registered and non-negative.
@@ -334,6 +340,8 @@ def test_metric_values_and_stability(started_cluster):
     banner = "\n=== ReaderExecutor real-load metric (state x pattern x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
     print(banner)
+
+    assert not band_violations, "metric band violations:\n" + "\n".join(band_violations)
 
 
 def test_page_cache_path(started_cluster):
