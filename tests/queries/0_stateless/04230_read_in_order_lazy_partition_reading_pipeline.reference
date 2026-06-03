@@ -26,3 +26,7 @@ test 12: multi-column partition key no Concat
 0
 test 13: toDate partition has Concat
 1
+test 14: reversed key DESC has Concat
+1
+test 15: reversed key DESC correctness
+202403

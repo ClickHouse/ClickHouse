@@ -498,7 +498,8 @@ private:
         ReadType read_type,
         UInt64 read_limit,
         const SortDescription & sort_description,
-        ExpressionActionsPtr sorting_key_expr);
+        ExpressionActionsPtr sorting_key_expr,
+        int partition_sort_direction);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,

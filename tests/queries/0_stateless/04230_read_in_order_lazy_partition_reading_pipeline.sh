@@ -210,3 +210,35 @@ $CLICKHOUSE_CLIENT -q "
     ORDER BY time ASC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_todate"
+
+# ============================================================================
+# Table 7: PARTITION BY toYYYYMM(time) ORDER BY time DESC (reversed key).
+# allow_experimental_reverse_key + ORDER BY time DESC query
+# ============================================================================
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lazy_pipeline_reverse_key"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_lazy_pipeline_reverse_key (time DateTime, val UInt64)
+    ENGINE = MergeTree PARTITION BY toYYYYMM(time) ORDER BY time DESC
+    SETTINGS allow_experimental_reverse_key = 1"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_reverse_key SELECT toDateTime('2024-01-01') + number * 60, number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_reverse_key SELECT toDateTime('2024-02-01') + number * 60, number + 1000 FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_lazy_pipeline_reverse_key SELECT toDateTime('2024-03-01') + number * 60, number + 2000 FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE t_lazy_pipeline_reverse_key FINAL"
+
+# -- Test 14: Optimization still applies
+echo "test 14: reversed key DESC has Concat"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    EXPLAIN PIPELINE SELECT time, val FROM t_lazy_pipeline_reverse_key
+    ORDER BY time DESC LIMIT 5 SETTINGS max_threads=1" | grep -c "Concat"
+
+# -- Test 15: Correctness — ORDER BY time DESC LIMIT 5 must return the newest rows (March 2024)
+echo "test 15: reversed key DESC correctness"
+$CLICKHOUSE_CLIENT -q "
+    $SETTINGS;
+    SELECT toYYYYMM(time) AS ym FROM t_lazy_pipeline_reverse_key
+    ORDER BY time DESC LIMIT 5" | sort -u
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_reverse_key"

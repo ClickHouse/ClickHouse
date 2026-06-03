@@ -851,7 +851,8 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
     ReadType read_type,
     UInt64 read_limit,
     const SortDescription & sort_description,
-    ExpressionActionsPtr sorting_key_expr)
+    ExpressionActionsPtr sorting_key_expr,
+    int partition_sort_direction)
 {
     if (parts_with_ranges.empty())
         return {};
@@ -876,7 +877,7 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
     if (partition_groups.size() <= 1)
         return readInOrder(std::move(partition_groups.front().second), index_build_context, column_names, pool_settings, read_type, read_limit);
 
-    if (read_type == ReadType::InReverseOrder)
+    if (partition_sort_direction < 0)
         std::sort(partition_groups.begin(), partition_groups.end(),
             [](const auto & a, const auto & b) { return a.first > b.first; });
     else
@@ -1598,11 +1599,14 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// 1. The partition key is a monotonic function of some sorting key column C_i
     /// 2. All sorting key columns C_0..C_{i-1} before C_i are fixed (pinned to
     ///    constants) by the WHERE clause.
+    int partition_sort_direction = input_order_info->direction;
     if (use_lazy_partition_reading)
     {
         auto idx = isPartitionKeyMonotonicInSortKey(storage_snapshot, input_order_info);
         if (!idx || !arePrefixSortingColumnsFixed(storage_snapshot, query_info.filter_actions_dag, context, *idx))
             use_lazy_partition_reading = false;
+        else if (!reverse_flags.empty() && reverse_flags[*idx])
+            partition_sort_direction = -partition_sort_direction;
     }
 
     Pipes pipes;
@@ -1624,7 +1628,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             read_type,
             input_order_info->limit,
             sort_description,
-            sorting_key_expr);
+            sorting_key_expr,
+            partition_sort_direction);
 
         if (pipe.empty())
             return {};
