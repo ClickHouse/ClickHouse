@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE cannot_kill_query (x UInt64) ENGINE = MergeT
 $CLICKHOUSE_CLIENT -q "INSERT INTO cannot_kill_query SELECT * FROM numbers(10000000)" &> /dev/null
 
 # This SELECT query will run for a long time. It's used as bloker for ALTER query. It will be killed with SYNC kill.
-query_for_pending="SELECT count() FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1, max_block_size = 1"
+query_for_pending="SELECT x FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads = 1, max_block_size = 1 FORMAT Null"
 $CLICKHOUSE_CLIENT -q "$query_for_pending" &>/dev/null &
 
 sleep 1 # queries should be in strict order
