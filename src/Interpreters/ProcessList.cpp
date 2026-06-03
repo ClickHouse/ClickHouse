@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -502,7 +503,7 @@ QueryStatus::~QueryStatus()
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        assert(!e->executor);
+        chassert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -594,7 +595,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    assert(!executors.contains(e));
+    chassert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
@@ -604,7 +605,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        assert(executors.contains(e));
+        chassert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
@@ -635,6 +636,12 @@ void QueryStatus::throwIfKilled()
     if (!is_killed.load())
         return;
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
+}
+
+CancelReason QueryStatus::getCancelReason() const
+{
+    std::lock_guard<std::mutex> lock(cancel_mutex);
+    return cancel_reason;
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -674,6 +681,12 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
+MemoryTracker * QueryStatus::getMemoryTracker() const
+{
+    if (!thread_group)
+        return nullptr;
+    return &thread_group->memory_tracker;
+}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {

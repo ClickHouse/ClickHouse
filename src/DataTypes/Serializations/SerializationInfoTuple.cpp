@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
 
@@ -22,7 +23,7 @@ SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_,
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
-    assert(names.size() == elems.size());
+    chassert(names.size() == elems.size());
     for (size_t i = 0; i < names.size(); ++i)
         name_to_elem[names[i]] = elems[i];
 }
@@ -51,7 +52,7 @@ void SerializationInfoTuple::add(const IColumn & column)
 
     const auto & column_tuple = assert_cast<const ColumnTuple &>(column);
     const auto & right_elems = column_tuple.getColumns();
-    assert(elems.size() == right_elems.size());
+    chassert(elems.size() == right_elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->add(*right_elems[i]);
@@ -162,6 +163,24 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
     SerializationInfo::deserializeFromKindsBinary(in);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in);
+}
+
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    SerializationInfo::writeJSONFields(out, name);
+    writeString(R"(,"subcolumns":[)", out);
+
+    bool first = true;
+    for (const auto & elem : elems)
+    {
+        if (!first)
+            writeChar(',', out);
+        first = false;
+
+        elem->writeJSON(out, nullptr);
+    }
+
+    writeChar(']', out);
 }
 
 void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const

@@ -120,6 +120,7 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -318,9 +319,10 @@ protected:
 
     String default_database;
     String query_id;
-    Int32 suggestion_limit;
+    Int32 suggestion_limit{};
     bool enable_highlight = true;
     bool multiline = false;
+    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
@@ -381,6 +383,9 @@ protected:
     std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Wrapper for hooking into the flush event.
+    std::unique_ptr<WriteBuffer> std_out_wrapper;
+
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
@@ -398,7 +403,7 @@ protected:
 
     fs::path home_path;
     fs::path history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
+    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;
@@ -472,7 +477,7 @@ protected:
         Block last_block;
     } profile_events;
 
-    QueryProcessingStage::Enum query_processing_stage;
+    QueryProcessingStage::Enum query_processing_stage{};
     ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
