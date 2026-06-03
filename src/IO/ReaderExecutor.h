@@ -422,6 +422,9 @@ private:
         /// Bytes fetched from source that did not serve the requested window
         /// (segment/block head-alignment slack + mergeRanges bridged-gap bytes).
         size_t over_read_bytes = 0;
+        /// Useful bytes delivered to read requests (the requested window payload,
+        /// excluding over-read and cache write-back): the cost-per-byte denominator.
+        size_t bytes_requested = 0;
         UInt64 cache_get_us = 0;
         UInt64 cache_populate_us = 0;
         UInt64 source_read_us = 0;
@@ -463,6 +466,7 @@ private:
             source_requests += o.source_requests;
             incomplete_connections += o.incomplete_connections;
             over_read_bytes += o.over_read_bytes;
+            bytes_requested += o.bytes_requested;
             cache_get_us += o.cache_get_us;
             cache_populate_us += o.cache_populate_us;
             source_read_us += o.source_read_us;

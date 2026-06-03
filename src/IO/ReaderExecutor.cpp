@@ -33,6 +33,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorOverReadBytes;
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+    extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCacheGetMicroseconds;
     extern const Event ReaderExecutorCachePopulateMicroseconds;
     extern const Event ReaderExecutorSourceReadMicroseconds;
@@ -225,6 +227,17 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, stats.incomplete_connections);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, stats.over_read_bytes);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, stats.bytes_requested);
+
+    /// Modeled cost in microseconds; same weights documented at the ProfileEvents declaration (ms -> us).
+    /// Bandwidth is charged on bytes_from_source (useful source payload + over-read), not over-read alone.
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds,
+        30000 * stats.source_requests
+        + 5000 * stats.incomplete_connections
+        + 20000 * stats.bytes_from_source / (1024 * 1024)
+        + 100 * stats.cache_populate_requests
+        + 50 * stats.cache_get_requests);
+
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetMicroseconds, stats.cache_get_us);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateMicroseconds, stats.cache_populate_us);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceReadMicroseconds, stats.source_read_us);
@@ -939,6 +952,7 @@ Rope ReaderExecutor::readNextWindow()
             static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
     }
 
+    stats.bytes_requested += rope.range().size;
     position += rope.range().size;
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         rope.range().size, rope.getNodes().size(), position);
