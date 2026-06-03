@@ -94,7 +94,7 @@ String formatDecimal(const Decimal<T> & x, UInt32 scale)
     return wb.str();
 }
 
-String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
+static String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
 {
     WriteBufferFromOwnString wb;
     writeDateTimeText<'-', ':', 'T', '.', true>(x, scale, wb, time_zone);
@@ -148,7 +148,7 @@ DB::Field getFieldFromBinaryRow(BinaryRow & row, Int32 pos, const DataType & dat
         case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
         case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
             const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
-            return DecimalField<DateTime64>(row.getTimestamp(pos, type->getScale()), 3);
+            return DecimalField<DateTime64>(row.getTimestamp(pos, type->getScale()), type->getScale());
         }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in BinaryRow field", data_type.root_type);
@@ -176,7 +176,7 @@ DB::Row getPartitionFields(const String & partition_string, const PaimonTableSch
     return partition_key_value;
 };
 
-String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
+static String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     auto get_partition_value = [&partition, &partition_default_name](Int32 i, Paimon::DataType & data_type) -> String
     {
