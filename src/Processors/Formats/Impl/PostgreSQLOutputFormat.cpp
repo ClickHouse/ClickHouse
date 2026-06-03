@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -43,6 +49,10 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
+        /// Check for cancellation periodically, use throw instead of return.
+        if (i % 8192 == 0 && isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
         const Columns & columns = chunk.getColumns();
         std::vector<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
