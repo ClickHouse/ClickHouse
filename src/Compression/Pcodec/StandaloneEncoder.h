@@ -61,12 +61,15 @@ inline void writeChunkLatentVarMeta(BitWriter & writer, Bitlen ans_size_log, con
 }
 
 /// Upper bound on the standalone stream size: up to two latent variables (primary + secondary),
-/// each up to L::BITS + MAX_ANS_BITS per value, plus framing and slack for the BitWriter.
+/// each up to L::BITS + MAX_ANS_BITS per value, plus framing and slack for the BitWriter. The
+/// per-value term already covers each chunk's bin metadata (bins <= values), so only the fixed
+/// per-chunk framing is added for the (rare) case of more than MAX_ENTRIES values.
 template <typename T>
 inline size_t encodeStandaloneMaxSize(size_t n)
 {
     using L = typename NumberTraits<T>::Latent;
-    return 256 + 2 * n * (sizeof(L) + MAX_ANS_BYTES + 2) + (size_t{1} << 17) + 64;
+    size_t num_chunks = (n + MAX_ENTRIES - 1) / MAX_ENTRIES;
+    return 256 + 2 * n * (sizeof(L) + MAX_ANS_BYTES + 2) + (size_t{1} << 17) + 64 + num_chunks * 256;
 }
 
 /// Encodes `n` values of type T (read from `src_bytes` via memcpy, so it need not be aligned to
@@ -96,18 +99,22 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
     uint8_t version_bytes[2] = {4, 1};
     writer.writeAlignedBytes(version_bytes, 2);
 
-    if (n > 0)
+    // The chunk count field is only BITS_TO_ENCODE_N_ENTRIES (24) bits wide, so a single chunk can
+    // hold at most MAX_ENTRIES values. A ClickHouse compression block can contain more (especially
+    // for 1-byte types), so split it into multiple chunks of the same uniform type; the decoder
+    // already loops over chunks until the termination byte. Each chunk is encoded independently.
+    auto encode_chunk = [&](const uint8_t * chunk_src, size_t chunk_n)
     {
         // --- chunk preamble ---
         writer.writeAlignedBytes(&type_byte, 1);
-        writer.writeU64(n - 1, BITS_TO_ENCODE_N_ENTRIES);
+        writer.writeU64(chunk_n - 1, BITS_TO_ENCODE_N_ENTRIES);
 
         // --- read values, detect a candidate mode (cheap, sample-based) ---
-        PcoArray<T> vals(n);
-        std::memcpy(vals.data(), src_bytes, n * sizeof(T));
+        PcoArray<T> vals(chunk_n);
+        std::memcpy(vals.data(), chunk_src, chunk_n * sizeof(T));
         ModeInfo info = detectMode<T>(vals);
 
-        Bitlen unoptimized_bins_log = chooseUnoptimizedBinsLog(compression_level, n);
+        Bitlen unoptimized_bins_log = chooseUnoptimizedBinsLog(compression_level, chunk_n);
         Bitlen sec_ubl = std::min<Bitlen>(unoptimized_bins_log, LIMITED_UNOPTIMIZED_BINS_LOG);
 
         auto make_bins = [](const TrainedBins<L> & t)
@@ -119,8 +126,8 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         };
 
         // Classic baseline latents (cheap), reused if Classic wins.
-        PcoArray<L> primary_latents(n);
-        for (size_t i = 0; i < n; ++i)
+        PcoArray<L> primary_latents(chunk_n);
+        for (size_t i = 0; i < chunk_n; ++i)
             primary_latents[i] = NumberTraits<T>::toLatentOrdered(vals[i]);
 
         // Decide the mode on cheap sample-based estimates (a detected mode is used only if it beats
@@ -152,7 +159,7 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
                 has_secondary = info.has_secondary;
                 // Now do the full split (only for the winner).
                 PcoArray<L> mode_primary;
-                splitForMode<T>(vals.data(), n, info, mode_primary, secondary);
+                splitForMode<T>(vals.data(), chunk_n, info, mode_primary, secondary);
                 primary_latents = std::move(mode_primary);
             }
         }
@@ -213,13 +220,19 @@ size_t encodeStandaloneInto(const uint8_t * src_bytes, size_t n, uint8_t * out, 
         writer.finishByte();
 
         // --- page body: per batch, primary then secondary ---
-        for (size_t batch_start = 0; batch_start < n; batch_start += FULL_BATCH_N)
+        for (size_t batch_start = 0; batch_start < chunk_n; batch_start += FULL_BATCH_N)
         {
             primary_enc.writeBatch(primary_dis, batch_start, writer);
             if (has_secondary)
                 sec_enc.writeBatch(sec_dis, batch_start, writer);
         }
         writer.finishByte();
+    };
+
+    for (size_t chunk_off = 0; chunk_off < n; chunk_off += MAX_ENTRIES)
+    {
+        size_t chunk_n = std::min<size_t>(MAX_ENTRIES, n - chunk_off);
+        encode_chunk(src_bytes + chunk_off * sizeof(T), chunk_n);
     }
 
     // --- footer ---

@@ -117,6 +117,12 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
             if (secondary)
                 secondary->readBatch(reader, lookbacks, lookbacks_len, n_remaining);
 
+            // The batch readers above advance the position positionally, reading up to
+            // DECODE_BATCH_OVERSHOOT slack bytes past the logical end (guaranteed available by the
+            // caller). Verify here, once per batch, that we have not consumed past the stream, so a
+            // truncated or malformed page fails closed rather than decoding from beyond the buffer.
+            reader.checkInBounds();
+
             join(n_processed, batch_n);
 
             n_remaining -= batch_n;
@@ -209,6 +215,12 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
         else if (meta.mode.variant == ModeVariant::FloatQuant)
         {
             Bitlen k = meta.mode.quant_k;
+            // `quant_k` comes from the stream as an 8-bit value and is used directly in shifts below.
+            // A valid FloatQuant stream never quantizes beyond the float's significand precision
+            // (23 bits for Float32, 52 for Float64); reject anything larger so `1 << k`, `y << k`
+            // and `mid >> k` can never reach undefined behavior on a malformed stream.
+            if (k > NumberTraits<T>::PRECISION_BITS)
+                throw PcodecError("pcodec: FloatQuant k exceeds the float type precision");
             L sign_cutoff = static_cast<L>(latentMid<L> >> k);
             L lowest_k_bits_max = static_cast<L>((L{1} << k) - L{1});
             run_batches(primary, sec_decode, [&](size_t off, size_t bn)
@@ -274,6 +286,19 @@ inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t f
         constexpr Bitlen l_bits = latentBits<typename NumberTraits<T>::Latent>;
         Mode mode = readMode(reader, format_major, l_bits);
         DeltaEncoding de = readDeltaEncoding(reader, format_major);
+
+        // `Conv1` widens latents into a signed accumulator; the 64-bit widening is lossy and
+        // unsupported (see ConvTypeFor), so reject it for 64-bit latent types instead of casting
+        // arbitrary latents through signed `int64_t` arithmetic.
+        if (de.variant == DeltaEncodingVariant::Conv1 && l_bits >= 64)
+            throw PcodecError("pcodec: Conv1 delta encoding is not supported for 64-bit latent types");
+
+        // The lookback window cannot reach further back than the chunk itself. A malformed stream
+        // could otherwise set `window_n_log` up to 32 and drive a multi-gigabyte scratch allocation
+        // in `LatentVarDecoder::initPage` before any value is read.
+        if (de.variant == DeltaEncodingVariant::Lookback && de.lookback.windowN() > n)
+            throw PcodecError("pcodec: lookback window exceeds the chunk size");
+
         ChunkMeta meta;
         meta.mode = std::move(mode);
         meta.delta_encoding = de;

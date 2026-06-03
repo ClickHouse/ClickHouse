@@ -178,6 +178,11 @@ inline Mode readMode(BitReader & reader, uint8_t format_major, Bitlen number_lat
             size_t n_unique = reader.readU64(BITS_TO_ENCODE_DICT_LEN);
             // byte-align so future implementations might read raw values faster
             reader.drainEmptyByte("pcodec: expected zeros between dict mode length and values");
+            // Each dict entry occupies `number_latent_bits` in the stream, so a valid length cannot
+            // exceed the remaining bits. Check before resizing to avoid a large up-front allocation
+            // driven by a tiny malformed stream.
+            if (number_latent_bits != 0 && static_cast<uint64_t>(n_unique) * number_latent_bits > reader.unpadded_bit_size - reader.bitIdx())
+                throw PcodecError("pcodec: dict length exceeds remaining stream size");
             mode.dict.resize(n_unique);
             for (size_t i = 0; i < n_unique; ++i)
                 mode.dict[i] = reader.readU64(number_latent_bits);

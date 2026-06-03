@@ -180,10 +180,13 @@ UInt32 CompressionCodecPco::getMaxCompressedDataSize(UInt32 uncompressed_size) c
     /// (primary + secondary), each using at most MAX_ANS_BITS + width*8 bits, plus up to
     /// 2^MAX_ANS_BITS bins of metadata per latent variable. This must cover the value the
     /// standalone encoder writes directly into `dest` (encodeStandaloneMaxSize), plus our 2-byte
-    /// header and the raw partial-value tail.
+    /// header and the raw partial-value tail. The encoder splits blocks larger than MAX_ENTRIES
+    /// values into several chunks, each adding a small fixed framing cost.
     UInt8 width = data_bytes_size == 0 ? 1 : data_bytes_size;
     UInt32 n = uncompressed_size / width + 1;
-    return 2 + width + 256 + 2 * n * (static_cast<UInt32>(width) + static_cast<UInt32>(Pcodec::MAX_ANS_BYTES) + 2) + (1u << 17) + 64;
+    UInt32 num_chunks = static_cast<UInt32>((n + Pcodec::MAX_ENTRIES - 1) / Pcodec::MAX_ENTRIES);
+    return 2 + width + 256 + 2 * n * (static_cast<UInt32>(width) + static_cast<UInt32>(Pcodec::MAX_ANS_BYTES) + 2) + (1u << 17) + 64
+        + num_chunks * 256;
 }
 
 UInt32 CompressionCodecPco::doCompressData(const char * source, UInt32 source_size, char * dest) const
@@ -232,9 +235,10 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     if (bytes_to_skip == uncompressed_size)
         return uncompressed_size;
 
-    /// Copy the standalone stream into a padded buffer so the bit reader can safely overshoot.
+    /// Copy the standalone stream into a padded buffer so the bit reader's per-batch positional
+    /// reads can safely overshoot past the logical end (see DECODE_BATCH_OVERSHOOT).
     size_t comp_len = source_size - 2 - bytes_to_skip;
-    Pcodec::PcoArray<uint8_t> padded(comp_len + Pcodec::OVERSHOOT_PADDING + 16, 0);
+    Pcodec::PcoArray<uint8_t> padded(comp_len + Pcodec::DECODE_BATCH_OVERSHOOT, 0);
     memcpy(padded.data(), &source[2 + bytes_to_skip], comp_len);
 
     size_t expected = uncompressed_size - bytes_to_skip;
@@ -242,11 +246,14 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     try
     {
         /// The decoder writes through a typed pointer, so the output must be aligned to the element
-        /// width. `dest` (a ClickHouse column buffer) is suitably aligned; on the common path
-        /// `bytes_to_skip == 0` we decode straight into it. When a leading partial value was skipped
-        /// the offset is misaligned, so decode into an aligned scratch buffer and copy.
+        /// width. `ICompressionCodec::decompress` does not guarantee this — e.g.
+        /// `CompressedReadBuffer::readBig` can pass an arbitrary caller-provided `char *`, and a
+        /// leading partial value (bytes_to_skip != 0) also misaligns the offset. Decode straight
+        /// into `dest` only when the resulting pointer is properly aligned; otherwise decode into an
+        /// aligned scratch buffer and copy.
         auto * out = reinterpret_cast<uint8_t *>(dest) + bytes_to_skip;
-        if (bytes_to_skip == 0)
+        bool aligned = (reinterpret_cast<uintptr_t>(out) % bytes_size) == 0;
+        if (aligned)
         {
             written = Pcodec::decodeStandalone(padded.data(), comp_len, out, expected);
         }

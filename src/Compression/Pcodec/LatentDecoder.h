@@ -428,7 +428,10 @@ private:
             L pred = static_cast<L>(clamped >> quantization);
             residuals[i] = static_cast<L>(residuals[i] + pred);
         }
-        std::copy(residuals.begin(), residuals.begin() + len, latents.begin());
+        // `residuals[0..order)` is the carried-in delta state; the reconstructed batch values are
+        // `residuals[order..order+len)`. Output those, and carry the trailing `order` of them as the
+        // next batch's state.
+        std::copy(residuals.begin() + order, residuals.begin() + order + len, latents.begin());
         std::copy(residuals.begin() + len, residuals.begin() + len + order, delta_state.begin());
     }
 };

@@ -81,6 +81,7 @@ public:
     U readUint(Bitlen n)
     {
         refill();
+        checkCanRead(n);
         U res;
         if constexpr (maxBytesFor<U> <= 4)
             res = readU32At<U>(stale_byte_idx, bits_past_byte, n);
@@ -98,6 +99,7 @@ public:
     bool readBool()
     {
         refill();
+        checkCanRead(1);
         bool res = (src[stale_byte_idx] & (1u << bits_past_byte)) != 0;
         consume(1);
         return res;
@@ -108,6 +110,8 @@ public:
     {
         size_t byte_idx = alignedByteIdx();
         size_t new_byte_idx = byte_idx + n;
+        if (new_byte_idx * 8 > unpadded_bit_size)
+            throw PcodecError("pcodec: out of bounds while reading aligned bytes");
         stale_byte_idx = new_byte_idx;
         bits_past_byte = 0;
         return src + byte_idx;
@@ -130,6 +134,15 @@ public:
     void checkInBounds() const
     {
         if (bitIdx() > unpadded_bit_size)
+            throw PcodecError("pcodec: out of bounds while reading");
+    }
+
+    /// Fail closed before a (cold-path) read would consume bits beyond the logical end of the
+    /// stream. The hot batch loops do not go through here; they are bounded once per batch via
+    /// `checkInBounds` plus `DECODE_BATCH_OVERSHOOT` of readable slack in the source buffer.
+    void checkCanRead(Bitlen n) const
+    {
+        if (bitIdx() + n > unpadded_bit_size)
             throw PcodecError("pcodec: out of bounds while reading");
     }
 

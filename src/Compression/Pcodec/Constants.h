@@ -67,6 +67,15 @@ inline constexpr size_t FULL_BATCH_N = 256;
 inline constexpr size_t MAX_BATCH_LATENT_VAR_SIZE
     = FULL_BATCH_N * (MAX_SUPPORTED_PRECISION_BYTES + MAX_ANS_BYTES) + OVERSHOOT_PADDING;
 
+/// The decoder's hot loops read whole batches positionally and only verify the reader position
+/// against `unpadded_bit_size` once per batch (a per-bit check would defeat vectorization). The
+/// source buffer must therefore tolerate the maximum overshoot of a single batch — up to one full
+/// batch read for each of the three latent variables (delta + primary + secondary), each of which
+/// may also load a trailing `u64`/15-byte word. Buffers handed to the standalone decoder must have
+/// at least this many readable slack bytes after the logical end so that a malformed stream is
+/// caught by the per-batch bounds check instead of reading out of bounds.
+inline constexpr size_t DECODE_BATCH_OVERSHOOT = 3 * MAX_BATCH_LATENT_VAR_SIZE + OVERSHOOT_PADDING + 16;
+
 /// Number-type bytes, identifying the element type in a standalone `.pco` stream
 /// (see data_types/{unsigned,signed,float}.rs).
 enum class NumberTypeByte : uint8_t
