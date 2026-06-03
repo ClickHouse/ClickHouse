@@ -2,32 +2,14 @@
 
 #if USE_SQLITE
 
-#    include <fstream>
-#    include <iostream>
-#    include <sstream>
+#    include <Columns/IColumn.h>
 #    include <Core/Block.h>
-#    include <DataTypes/DataTypeArray.h>
-#    include <DataTypes/DataTypeMap.h>
-#    include <DataTypes/DataTypeTuple.h>
-#    include <DataTypes/ObjectUtils.h>
-#    include <DataTypes/Serializations/SerializationNullable.h>
-#    include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#    include <Formats/EscapingRuleUtils.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/ReadBufferFromMemory.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/SeekableReadBuffer.h>
-#    include <Interpreters/convertFieldToType.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Parsers/TokenIterator.h>
-#    include <Processors/Formats/Impl/SQLiteInputFormat.h>
+#    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #    include <Processors/Formats/Impl/SQLiteInputVFS.h>
 #    include <arrow/result.h>
-#    include <base/find_symbols.h>
-#    include <Common/checkStackSize.h>
-#    include <Common/typeid_cast.h>
-#    include "ArrowBufferedStreams.h"
+#    include <Common/Exception.h>
 
 #    include <sqlite3.h>
 
@@ -41,24 +23,21 @@ extern const int UNKNOWN_TABLE;
 }
 
 SQLiteInputFormat::SQLiteInputFormat(
-    ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), table_name(format_settings_.sqlite.table_name), format_settings(format_settings_)
 {
-    initMemVFS();
+    initSQLiteReadVFS();
 }
 
 void SQLiteInputFormat::prepareReader()
 {
     std::atomic<int> is_stopped = 0;
     file_reader = asArrowFile(*in, format_settings, is_stopped, "sqlite3", "");
-    //file_reader = asArrowFile(*in, format_settings, is_stopped, "sqlite3", "SQLite format 3");
 
-    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << file_reader.get();
-    std::string uri = ss.str();
+    std::string uri = encodeSQLiteVFSFileName(file_reader.get());
 
     sqlite3 * db_ptr = nullptr;
-    int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, "ch_read_vfs");
+    int status = sqlite3_open_v2(uri.c_str(), &db_ptr, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, sqlite_read_vfs_name);
     if (status != SQLITE_OK)
     {
         throw Exception::createDeprecated(
@@ -111,9 +90,13 @@ void SQLiteInputFormat::readPrefix()
             throw Exception::createDeprecated(fmt::format("Failed to find SQLite {} table", table_name), ErrorCodes::UNKNOWN_TABLE);
     }
 
-    std::string select_query = fmt::format("SELECT * FROM {};", table_name);
+    std::string select_query = fmt::format("SELECT * FROM \"{}\";", table_name);
     sqlite3_stmt * stmt_ptr = nullptr;
-    sqlite3_prepare(db.get(), select_query.c_str(), static_cast<int>(select_query.size()), &stmt_ptr, nullptr);
+    int status = sqlite3_prepare_v2(db.get(), select_query.c_str(), static_cast<int>(select_query.size()), &stmt_ptr, nullptr);
+    if (status != SQLITE_OK)
+        throw Exception::createDeprecated(
+            fmt::format("Cannot read from SQLite table {}. Error status: {}. Message: {}", table_name, status, sqlite3_errmsg(db.get())),
+            ErrorCodes::SQLITE_ENGINE_ERROR);
     stmt.reset(stmt_ptr, sqlite3_finalize);
 }
 
@@ -132,23 +115,32 @@ bool SQLiteInputFormat::readRow(MutableColumns & columns, RowReadExtension & /*e
 
     for (size_t i = 0; i < serializations.size(); i++)
     {
-        auto value = reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), static_cast<int>(i)));
-        auto value_len = (value == nullptr) ? 0 : strlen(value);
-        auto stringBuffer = ReadBufferFromMemory(value, value_len);
+        int column = static_cast<int>(i);
+        if (sqlite3_column_type(stmt.get(), column) == SQLITE_NULL)
+        {
+            /// For a Nullable column this inserts NULL, otherwise the type default.
+            columns[i]->insertDefault();
+            continue;
+        }
 
-        serializations[i]->deserializeWholeText(*columns[i], stringBuffer, format_settings);
+        const auto * value = reinterpret_cast<const char *>(sqlite3_column_text(stmt.get(), column));
+        size_t value_len = sqlite3_column_bytes(stmt.get(), column);
+        ReadBufferFromMemory string_buffer(value, value_len);
+
+        serializations[i]->deserializeWholeText(*columns[i], string_buffer, format_settings);
     }
 
     return true;
 }
 
 
+void registerInputFormatSQLite(FormatFactory & factory);
 void registerInputFormatSQLite(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "SQLite",
         [](ReadBuffer & buf, const Block & header, const RowInputFormatParams & params, const FormatSettings & settings)
-        { return std::make_shared<SQLiteInputFormat>(buf, header, params, settings); });
+        { return std::make_shared<SQLiteInputFormat>(buf, std::make_shared<const Block>(header), params, settings); });
 }
 
 }

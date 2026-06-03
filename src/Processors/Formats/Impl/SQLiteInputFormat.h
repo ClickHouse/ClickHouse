@@ -23,7 +23,7 @@ class SQLiteInputFormat final : public IRowInputFormat
 {
 public:
 
-    SQLiteInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
+    SQLiteInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_,
                            const FormatSettings & format_settings_);
 
     String getName() const override { return "SQLiteInputFormat"; }

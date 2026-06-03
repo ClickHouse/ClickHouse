@@ -561,9 +561,8 @@ struct FormatSettings
 
     struct SQLite
     {
-        UInt64 row_batch_size;
         String table_name;
-    } sqlite;
+    } sqlite{};
 
     struct
     {
