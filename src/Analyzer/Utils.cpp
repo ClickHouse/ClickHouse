@@ -4,6 +4,7 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -49,7 +50,10 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
+#include <Core/Streaming/CursorTree_fwd.h>
+
 #include <ranges>
+
 namespace DB
 {
 namespace Setting
@@ -197,15 +201,25 @@ void makeUniqueColumnNamesInBlock(Block & block)
 
     for (auto & column_with_type : block)
     {
-        if (!block_column_names.contains(column_with_type.name))
-        {
-            block_column_names.insert(column_with_type.name);
+        if (block_column_names.insert(column_with_type.name).second)
             continue;
-        }
 
-        column_with_type.name += '_';
-        column_with_type.name += std::to_string(unique_column_name_counter);
-        ++unique_column_name_counter;
+        /// The base name collides with a name we have already kept or produced.
+        /// Loop until we find a suffix that is unused anywhere in the block,
+        /// including by names we are about to keep and by names we have already
+        /// renamed. Register the renamed name to prevent further collisions.
+        ///
+        /// Example: for input `a, a, a_1`, the second `a` is renamed to `a_1`
+        /// and the third column (`a_1`) is renamed to `a_2`, instead of leaving
+        /// the block with two `a_1` columns.
+        String new_name;
+        do
+        {
+            new_name = column_with_type.name + '_' + std::to_string(unique_column_name_counter);
+            ++unique_column_name_counter;
+        } while (!block_column_names.insert(new_name).second);
+
+        column_with_type.name = std::move(new_name);
     }
 }
 
@@ -448,6 +462,17 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+
+        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
+        if (stream_settings.has_value())
+        {
+            ASTStreamSettings::StreamSettings ast_stream_settings;
+            if (stream_settings->cursor_tree)
+                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
+
+            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->children.push_back(result_table_expression->stream_settings);
+        }
     }
 
     return result_table_expression;
@@ -589,6 +614,15 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
         switch (node_type)
         {
+            case QueryTreeNodeType::IDENTIFIER:
+            {
+                /** An unresolved identifier can appear in a join tree if the query tree
+                  * was not fully resolved (e.g. a subquery inside an unresolved table function
+                  * argument). Treat it like a leaf table expression.
+                  */
+                result.push_back(std::move(node_to_process));
+                break;
+            }
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -664,6 +698,8 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 
         switch (node_type)
         {
+            case QueryTreeNodeType::IDENTIFIER:
+                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::QUERY:

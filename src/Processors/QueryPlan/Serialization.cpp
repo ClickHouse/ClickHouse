@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -40,7 +41,7 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
 
 static Block deserializeHeader(ReadBuffer & in)
 {
-    UInt64 num_columns;
+    UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
 
     ColumnsWithTypeAndName columns(num_columns);
@@ -91,7 +92,8 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         auto & frame = stack.top();
         auto * node = frame.node;
 
-        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+        if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
         {
             frame.node = node->children.front();
             continue;
@@ -157,7 +159,7 @@ bool QueryPlan::isSerialized() const
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readVarUInt(version, in);
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
@@ -193,7 +195,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto & frame = stack.top();
         if (frame.next_child == 0)
         {
-            UInt64 num_children;
+            UInt64 num_children = 0;
             readVarUInt(num_children, in);
             frame.children.resize(num_children);
         }
