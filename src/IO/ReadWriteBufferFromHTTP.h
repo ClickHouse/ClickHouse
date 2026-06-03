@@ -14,7 +14,6 @@
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
-#include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -22,7 +21,6 @@
 #include <Poco/URI.h>
 #include <Poco/URIStreamFactory.h>
 #include <Common/RemoteHostFilter.h>
-#include "config.h"
 #include <Common/config_version.h>
 
 #include <filesystem>
@@ -45,7 +43,6 @@ public:
 
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
-    using CheckCancelled = std::function<bool()>;
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -96,9 +93,9 @@ private:
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
 
-    std::vector<Poco::Net::HTTPCookie> cookies;
+    std::vector<Poco::Net::HTTPCookie> cookies; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    std::map<String, String> response_headers;
+    std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
@@ -109,14 +106,11 @@ private:
 
     LoggerPtr log;
 
-    CheckCancelled cancellation_check;
-
     bool withPartialContent() const;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false,
-        CheckCancelled check_cancelled = nullptr) const;
+    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
@@ -189,10 +183,6 @@ public:
     /// NOTE: parameter on each call is not incremental -- it's all bytes count
     /// passed through the buffer
     void setNextCallback(NextCallback next_callback_);
-
-    /// Set function to check for query cancellation during HTTP retries.
-    /// If set, it will be called between retry attempts to allow faster cancellation.
-    void setCancellationCheck(CheckCancelled check_cancelled_);
 
     const std::string & getCompressionMethod() const;
 
