@@ -335,10 +335,10 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinRuntimeFilterSharedFixedHashTable() const { return enable_join_runtime_filter_shared_fixed_hash_table; }
 
-    std::vector<std::pair<String, String>> getSharedRuntimeFilterDescriptors() const
+    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
     {
-        return join_operator ? join_operator->shared_runtime_filter_descriptors
-                             : std::vector<std::pair<String, String>>{};
+        static const std::vector<std::pair<String, String>> empty;
+        return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 
     bool oneDisjunct() const;
