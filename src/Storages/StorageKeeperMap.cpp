@@ -25,6 +25,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -133,7 +134,7 @@ void verifyTableId(const StorageID & table_id)
 
 }
 
-class StorageKeeperMapSink : public SinkToStorage
+class StorageKeeperMapSink final : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
@@ -282,7 +283,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource, WithContext
+class StorageKeeperMapSource final : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -1675,7 +1676,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                     settings[Setting::keeper_retry_max_backoff_ms],
                     local_context->getProcessListElement()}};
 
-            Coordination::Error status;
+            Coordination::Error status = {};
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1707,7 +1708,8 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
@@ -1784,6 +1786,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
 
 }
 
+void registerStorageKeeperMap(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory)
 {
     factory.registerStorage(

@@ -141,7 +141,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -173,19 +173,13 @@ struct NumComparisonImpl
             vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorVectorImpl_x86_64_v3(a, b, c);
-            return;
-        }
 #endif
 
         vectorVectorImpl(a, b, c);
     }
 
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -208,12 +202,6 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -748,7 +736,7 @@ struct ComparisonParams
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
-class FunctionComparison : public IFunction
+class FunctionComparison final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1663,7 +1651,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
     {
-        assert(2 == arguments.size());
+        chassert(2 == arguments.size());
 
         llvm::Value * result = nullptr;
         castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)

@@ -12,6 +12,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -295,7 +296,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code;
+                Coordination::Error code = {};
                 zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
@@ -1023,6 +1024,8 @@ Chunk ObjectStorageQueueSource::generate()
     return chunk;
 }
 
+void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
+
 Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
@@ -1277,7 +1280,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -1289,7 +1294,8 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             return chunk;
         }
@@ -1651,7 +1657,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code;
+    Coordination::Error code = {};
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {
