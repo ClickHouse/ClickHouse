@@ -48,7 +48,7 @@ WHERE id >= 0
 ORDER BY id
 LIMIT 5000
 FORMAT Null
-SETTINGS max_threads = 1, log_comment = '04041_lazy_materialization_uncompressed_cache_run_1';
+SETTINGS max_threads = 1, log_comment = '04314_lazy_materialization_uncompressed_cache_run_1';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -58,7 +58,7 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment = '04041_lazy_materialization_uncompressed_cache_run_1'
+  AND log_comment = '04314_lazy_materialization_uncompressed_cache_run_1'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
@@ -68,7 +68,7 @@ WHERE id >= 0
 ORDER BY id
 LIMIT 5000
 FORMAT Null
-SETTINGS max_threads = 1, log_comment = '04041_lazy_materialization_uncompressed_cache_run_2';
+SETTINGS max_threads = 1, log_comment = '04314_lazy_materialization_uncompressed_cache_run_2';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -78,7 +78,7 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND current_database = currentDatabase()
-  AND log_comment = '04041_lazy_materialization_uncompressed_cache_run_2'
+  AND log_comment = '04314_lazy_materialization_uncompressed_cache_run_2'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
