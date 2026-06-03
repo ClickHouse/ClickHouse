@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_rewrite_has_to_in", false, true, "New setting"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"query_cache_herd_wait_timeout", 300, 300, "New setting: maximum wait for concurrent identical queries coalescing on query cache miss."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -151,7 +152,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"query_cache_herd_wait_timeout", 300, 300, "New setting: maximum wait for concurrent identical queries coalescing on query cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
