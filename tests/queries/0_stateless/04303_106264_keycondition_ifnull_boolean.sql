@@ -57,6 +57,21 @@ SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0);
 DROP TABLE t_ifnull_nullable;
 DROP TABLE t_ifnull_keycond;
 
+-- Value-context guard: when the wrapper is a VALUE argument of another function (not truth-tested),
+-- the boolean rewrite must NOT fire. equals(ifNull(equals(k, 0), 0), 0) keeps k = 1 and k = NULL
+-- (2 rows). If the rewrite wrongly dropped the ifNull it would become equals(equals(k, 0), 0), and
+-- KeyCondition could prune the NULL granule on the functional key equals(k, 0) and return 1. The
+-- count is the robust check: a value-preserving rewrite may still prune the k = 0 granule, but the
+-- NULL row must survive.
+DROP TABLE IF EXISTS t_ifnull_value_ctx;
+CREATE TABLE t_ifnull_value_ctx (k Nullable(UInt8)) ENGINE = MergeTree ORDER BY equals(k, 0)
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO t_ifnull_value_ctx VALUES (0)(1)(NULL);
+
+SELECT count() FROM t_ifnull_value_ctx WHERE equals(ifNull(equals(k, 0), 0), 0);
+
+DROP TABLE t_ifnull_value_ctx;
+
 -- The rewrite is applied to the shared canonicalized predicate that every secondary
 -- index consumes (ReadFromMergeTree::buildIndexes feeds `filter_dag.predicate` to each
 -- `createIndexCondition`), so skip indexes that build their own RPN from the predicate

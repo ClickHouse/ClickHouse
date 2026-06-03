@@ -785,7 +785,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
-    bool need_inversion);
+    bool need_inversion,
+    bool boolean_context);
 
 /// Rewrite `<op>(coalesce(a_1, ..., a_N), const)` (or with `ifNull`, or with the constant on the
 /// left) into
@@ -888,10 +889,10 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     std::vector<const ActionsDAG::Node *> cloned_args;
     cloned_args.reserve(m + (has_trailing_const ? 1 : 0));
     for (const auto * y : normalized_args)
-        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, inputs_mapping, context, false));
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*y, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false));
     if (has_trailing_const)
-        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
-    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
+        cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false));
+    const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
 
     auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
@@ -954,12 +955,14 @@ static bool isBooleanProducingFunction(const String & name)
 /// equivalent for filtering. Complements `tryRewriteCoalesceComparison`, which handles the other
 /// shape `<cmp>(coalesce|ifNull(col, ...), const)`.
 ///
-/// Only valid in non-inverted context (the caller checks `need_inversion == false`): under `NOT`,
-/// `ifNull(X, 0)` is not equivalent to `X` on NULL rows, so the inverted branch falls through to
-/// FUNCTION_UNKNOWN (the safe over-approximation). Two further guards:
+/// Only valid when this wrapper is itself truth-tested. The caller checks `need_inversion == false`
+/// (under `NOT`, `ifNull(X, 0)` is not equivalent to `X` on NULL rows) and `boolean_context == true`
+/// (the node is at the filter root or reached only through `and`/`or`/`not` and transparent wrappers,
+/// not a value argument of another function such as `equals(ifNull(X, 0), 0)`, where dropping the
+/// wrapper would change the value, not just the truthiness). Both inverted and value-context wrappers
+/// fall through to FUNCTION_UNKNOWN, the safe over-approximation. Two further guards:
 ///   * the fallback must be a constant that is FALSE in a boolean context (numeric zero);
-///   * the wrapped expression must itself be a boolean-producing function, which only occurs in
-///     boolean position, so a value-context wrapper is left untouched.
+///   * the wrapped expression must itself be a boolean-producing function.
 /// Returns nullptr if the pattern does not match. Handles the two-argument form (what query
 /// generators emit); multi-argument `coalesce(pred, ..., 0)` is left for a follow-up.
 static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
@@ -997,7 +1000,8 @@ static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
     if (!fallback_is_false)
         return nullptr;
 
-    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false);
+    /// The unwrapped predicate replaces the boolean wrapper, so it stays in boolean context.
+    return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
@@ -1005,7 +1009,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     ActionsDAG & inverted_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
     const ContextPtr & context,
-    const bool need_inversion)
+    const bool need_inversion,
+    const bool boolean_context)
 {
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
@@ -1043,13 +1048,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case (ActionsDAG::ActionType::ALIAS):
         {
             /// Ignore aliases
-            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+            res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false);
+            const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
@@ -1058,7 +1063,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             auto name = node.function_base->getName();
             if (name == "not")
             {
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
             else if (name == "indexHint")
@@ -1072,7 +1077,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
                     }
                 }
 
@@ -1082,7 +1087,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (name == "materialize")
             {
                 /// Remove "materialize" from index analysis.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
@@ -1091,7 +1096,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (isTrivialCast(node))
             {
                 /// Remove trivial cast and keep its first argument.
-                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion);
+                res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT CAST(x = 0, 'UInt8')` -> `not(notEquals(x, 0))`.
@@ -1102,7 +1107,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 FunctionOverloadResolverPtr function_builder;
 
@@ -1125,6 +1130,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 handled_inversion = true;
             }
             else if (!need_inversion
+                && boolean_context
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && (res = tryRewriteCoalesceBoolean(node, name, inverted_dag, inputs_mapping, context)) != nullptr)
             {
@@ -1134,8 +1140,12 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             {
                 ActionsDAG::NodeRawConstPtrs children(node.children);
 
+                /// Only `and`/`or` propagate a truth-tested (boolean) context to their children; arguments
+                /// of any other function are value context, where dropping an ifNull/coalesce wrapper is
+                /// not value-preserving and must be left alone.
+                const bool child_boolean_context = boolean_context && (name == "and" || name == "or");
                 for (auto & arg : children)
-                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false);
+                    arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
                 if (it != inverse_relations.end())
@@ -1195,7 +1205,7 @@ static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predica
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
 
-    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false);
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false, /* boolean_context */ true);
 
     res.getOutputs() = {predicate};
 
