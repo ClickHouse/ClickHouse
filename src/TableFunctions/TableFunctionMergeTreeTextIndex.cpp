@@ -99,7 +99,7 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     bool is_insert_query) const
 {
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
-    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr();
+    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
     const auto & index_desc = metadata_snapshot->getSecondaryIndices().getByName(source_index_name);
 
     if (index_desc.type != "text")
@@ -122,6 +122,7 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeTextIndex>(

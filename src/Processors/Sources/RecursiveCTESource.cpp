@@ -210,7 +210,7 @@ private:
 
         auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
             {},
-            intermediate_temporary_table_storage->getInMemoryMetadataPtr(),
+            intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false),
             recursive_query_context,
             false /*async_insert*/);
 
@@ -228,7 +228,7 @@ private:
         /// TODO: Support proper locking
         TableExclusiveLockHolder table_exclusive_lock;
         temporary_table->truncate({},
-            temporary_table->getInMemoryMetadataPtr(),
+            temporary_table->getInMemoryMetadataPtr(recursive_query_context, false),
             recursive_query_context,
             table_exclusive_lock);
     }

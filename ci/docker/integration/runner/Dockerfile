@@ -77,12 +77,13 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
 RUN packages="io.delta:delta-spark_2.12:3.1.0,\
 org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.4.3,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,\
 org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
 org.apache.hadoop:hadoop-azure:3.3.4,\
 com.microsoft.azure:azure-storage:8.6.6,\
-org.apache.spark:spark-avro_2.12:3.5.1"\
+org.apache.spark:spark-avro_2.12:3.5.1,\
+org.apache.sedona:sedona-spark-3.5_2.12:1.6.1"\
     && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
     && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
 
