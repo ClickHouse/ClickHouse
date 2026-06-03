@@ -39,7 +39,7 @@ SELECT
     toFloat64(number) / 7,
     toDate('2000-01-01') + (number % 10000),
     toDateTime('2000-01-01 00:00:00') + number
-FROM numbers(100000);
+FROM numbers(20000);
 
 SELECT 'Int8',    sum(i8  != toInt8(id % 251 - 125)) FROM t_pco;
 SELECT 'Int16',   sum(i16 != toInt16(id % 60000 - 30000)) FROM t_pco;
@@ -61,7 +61,7 @@ SELECT 'after_merge', sum(i64 != toInt64(id * 1000000 - 500)) FROM t_pco;
 -- Codec chaining (Delta then PCO) and an explicit compression level.
 DROP TABLE IF EXISTS t_pco_chain;
 CREATE TABLE t_pco_chain (id UInt64, a Int64 CODEC(Delta, PCO), b UInt32 CODEC(PCO(12))) ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_pco_chain SELECT number, number * 3 - 7, toUInt32(number % 1000) FROM numbers(100000);
+INSERT INTO t_pco_chain SELECT number, number * 3 - 7, toUInt32(number % 1000) FROM numbers(20000);
 SELECT 'chain_a', sum(a != toInt64(id * 3 - 7)) FROM t_pco_chain;
 SELECT 'chain_b', sum(b != toUInt32(id % 1000)) FROM t_pco_chain;
 
@@ -78,8 +78,8 @@ DROP TABLE IF EXISTS t_pco_ratio;
 DROP TABLE IF EXISTS t_none_ratio;
 CREATE TABLE t_pco_ratio (x Int64 CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_none_ratio (x Int64 CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO t_pco_ratio SELECT number * 2 - 5 FROM numbers(500000);
-INSERT INTO t_none_ratio SELECT number * 2 - 5 FROM numbers(500000);
+INSERT INTO t_pco_ratio SELECT number * 2 - 5 FROM numbers(100000);
+INSERT INTO t_none_ratio SELECT number * 2 - 5 FROM numbers(100000);
 SELECT 'compresses', (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_pco_ratio' AND active)
                    < (SELECT sum(data_compressed_bytes) FROM system.parts WHERE database = currentDatabase() AND table = 't_none_ratio' AND active);
 

@@ -17,12 +17,25 @@
 /// When built inside ClickHouse, CompressionCodecPco.cpp defines PCODEC_MULTITARGET so the hot
 /// decode loops get AVX2 (x86-64-v3) and AVX-512 (x86-64-v4) variants with runtime dispatch.
 /// Standalone unit tests leave it undefined and use the portable scalar path.
+///
+/// `Common/TargetSpecific.h` provides only a V4 (+ default) multi-target macro, so we define the
+/// V4+V3+default expansion the pcodec hot loops rely on locally, in terms of the per-arch attribute
+/// macros it still exposes. This keeps the codec's AVX2/AVX-512 specializations independent of the
+/// exact set of combined macros the shared header happens to define.
 #ifdef PCODEC_MULTITARGET
 #    include <Common/TargetSpecific.h>
+#    if ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__x86_64__)
+#        define PCO_MULTITARGET_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+            FUNCTION_HEADER X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE name##_x86_64_v4 FUNCTION_BODY \
+            FUNCTION_HEADER X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE name##_x86_64_v3 FUNCTION_BODY \
+            FUNCTION_HEADER name FUNCTION_BODY
+#    else
+#        define PCO_MULTITARGET_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) FUNCTION_HEADER name FUNCTION_BODY
+#    endif
 #else
 #    define MULTITARGET_FUNCTION_HEADER(...) __VA_ARGS__
 #    define MULTITARGET_FUNCTION_BODY(...) __VA_ARGS__
-#    define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) FUNCTION_HEADER name FUNCTION_BODY
+#    define PCO_MULTITARGET_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) FUNCTION_HEADER name FUNCTION_BODY
 #endif
 
 /** Per-latent-variable decoder: ANS symbol decode -> offset unpacking -> delta inversion.
@@ -48,7 +61,7 @@ template <> struct ConvTypeFor<uint64_t> { using type = int64_t; }; // unused (c
 
 /// Offset unpacking: latents[i] += read offset_bits[i] bits at offset_bits_csum[i]. The reference
 /// specifically vectorizes this loop; `read_bytes` (4/8/15) is the specialized access width.
-MULTITARGET_FUNCTION_X86_V4_V3(
+PCO_MULTITARGET_V4_V3(
     MULTITARGET_FUNCTION_HEADER(template <Latent L, size_t read_bytes> static void),
     pcoReadOffsetsImpl,
     MULTITARGET_FUNCTION_BODY((const uint8_t * src, size_t base_bit_idx, const Bitlen * offset_bits_csum,
@@ -65,7 +78,7 @@ MULTITARGET_FUNCTION_X86_V4_V3(
 
 /// The 4-way interleaved tANS decode loop. State indices are kept in 4 separate locals (not an
 /// array) so the compiler keeps them in registers, as the reference does.
-MULTITARGET_FUNCTION_X86_V4_V3(
+PCO_MULTITARGET_V4_V3(
     MULTITARGET_FUNCTION_HEADER(template <Latent L> static void),
     pcoReadFullAnsSymbolsImpl,
     MULTITARGET_FUNCTION_BODY((const uint8_t * src, size_t * stale_io, Bitlen * bpb_io, const AnsNode * nodes,
