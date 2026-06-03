@@ -37,6 +37,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/Decimal.h>
@@ -1151,11 +1152,12 @@ bool IcebergStorageSink::initializeMetadata()
         filename_generator,
         metadata_info.path,
         parent_snapshot,
-        Iceberg::SnapshotSummary::createAppend(
-            /*added_files=*/ total_data_files,
-            /*added_records=*/ total_rows,
-            /*added_files_size=*/ total_chunks_size,
-            /*num_partitions=*/ total_data_files));
+        Iceberg::SnapshotSummaryUpdateAppend{
+            .added_files = total_data_files,
+            .added_records = total_rows,
+            .added_files_size = total_chunks_size,
+            .num_partitions = total_data_files,
+        });
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 

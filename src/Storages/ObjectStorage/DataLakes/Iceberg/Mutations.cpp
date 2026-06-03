@@ -20,6 +20,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
@@ -402,11 +403,18 @@ static bool writeMetadataFiles(
             filename_generator,
             metadata_info.path,
             parent_snapshot,
-            Iceberg::SnapshotSummary::createOverwrite(
-                /*added_delete_files=*/ total_files,
-                /*added_files_size=*/ total_bytes,
-                /*num_partitions=*/ total_files,
-                /*num_deleted_rows=*/ total_rows));
+            /// FIXME: why this is an OVERWRITE?!
+            Iceberg::SnapshotSummaryUpdateOverwrite{
+                .added_files = 0,
+                .added_records = 0,
+                .added_files_size = 0,
+                .added_delete_files = total_files,
+                .added_position_deletes = total_rows,
+                .deleted_data_files = 0,
+                .removed_records = 0,
+                .removed_files_size = 0,
+                .num_partitions = total_files,
+            });
         new_snapshot = result.snapshot;
         storage_manifest_list_name = path_resolver.resolve(result.manifest_list_path);
     }
@@ -416,11 +424,12 @@ static bool writeMetadataFiles(
             filename_generator,
             metadata_info.path,
             parent_snapshot,
-            Iceberg::SnapshotSummary::createAppend(
-                /*added_files=*/ total_files,
-                /*added_records=*/ total_rows,
-                /*added_files_size=*/ total_bytes,
-                /*num_partitions=*/ total_files));
+            Iceberg::SnapshotSummaryUpdateAppend{
+                .added_files = total_files,
+                .added_records = total_rows,
+                .added_files_size = total_bytes,
+                .num_partitions = total_files,
+            });
         new_snapshot = result.snapshot;
         storage_manifest_list_name = path_resolver.resolve(result.manifest_list_path);
     }

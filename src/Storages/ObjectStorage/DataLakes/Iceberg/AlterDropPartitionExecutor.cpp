@@ -428,13 +428,13 @@ AlterDropPartitionExecutor::DropPlan::DropPlan(TargetManifests && target_manifes
     for (const auto & tm : target_manifests.partially_matched)
         apply_entries(tm.entries_to_remove);
 
-    snapshot_summary = Iceberg::SnapshotSummary::createDelete(
-        removed_data_files,
-        removed_records,
-        removed_files_size,
-        removed_position_delete_files,
-        removed_position_deletes,
-        /*num_partitions=*/changed_partitions.size());
+    snapshot_summary_update = Iceberg::SnapshotSummaryUpdateDelete{
+        .deleted_data_files = removed_data_files,
+        .removed_records = removed_records,
+        .removed_files_size = removed_files_size,
+        .removed_position_delete_files = removed_position_delete_files,
+        .removed_position_deletes = removed_position_deletes,
+        .num_partitions = static_cast<Int64>(changed_partitions.size())};
 }
 
 std::vector<AlterDropPartitionExecutor::ReplacementManifestWrite> AlterDropPartitionExecutor::writeReplacementManifests(
@@ -519,7 +519,7 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         filename_generator,
         metadata_info.path,
         parent_snapshot_id,
-        plan.snapshot_summary);
+        plan.snapshot_summary_update);
 
     const String storage_manifest_list_path = components.path_resolver.resolve(new_snapshot_result.manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
@@ -631,9 +631,9 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, DropPlan plan)
     LOG_INFO(
         log,
         "DROP PARTITION committed: removed {} data files ({} rows), {} position-delete files",
-        plan.snapshot_summary.removed_data_files,
-        plan.snapshot_summary.removed_records,
-        plan.snapshot_summary.removed_position_delete_files);
+        plan.snapshot_summary_update.deleted_data_files,
+        plan.snapshot_summary_update.removed_records,
+        plan.snapshot_summary_update.removed_position_delete_files);
     return true;
 }
 

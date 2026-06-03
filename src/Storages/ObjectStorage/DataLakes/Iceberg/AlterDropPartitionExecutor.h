@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include "config.h"
 
 #if USE_AVRO
@@ -104,7 +105,7 @@ private:
     struct DropPlan
     {
         TargetManifests target_manifests;
-        Iceberg::SnapshotSummary snapshot_summary;
+        Iceberg::SnapshotSummaryUpdateDelete snapshot_summary_update;
 
         explicit DropPlan(TargetManifests && target_manifests_);
     };
