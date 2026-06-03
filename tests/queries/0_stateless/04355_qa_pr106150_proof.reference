@@ -1,0 +1,6 @@
+create
+id_def	Nullable(UInt8)
+id_def_nn	UInt8
+alter_add
+x	Nullable(UInt8)
+y	UInt8
