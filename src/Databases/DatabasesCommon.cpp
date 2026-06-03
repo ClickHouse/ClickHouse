@@ -375,6 +375,8 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
             try
             {
                 create_query = getCreateDatabaseQueryImpl();
+                if (!create_query)
+                    throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
             }
             catch (...)
             {
@@ -383,8 +385,6 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
             }
             comment = old_comment;
         }
-        if (!create_query)
-            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
 
         auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
         query_context->setVersionToWaitSharedCatalog(version_to_wait);
