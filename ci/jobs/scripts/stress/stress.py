@@ -159,14 +159,17 @@ class RandomServerRestarter(RandomRestarter):
     graceful stops once every few minutes so that WAL replay, mark-cache
     rebuilds, merge recovery, flush paths, and distributed send draining
     all get coverage during stress.
+
+    Each SIGKILL is recorded in a marker file so that stress_job.py can
+    distinguish intentional kills from real OOM events.
     """
 
     NAME = "RandomServerRestarter"
-    PID_FILE = CLICKHOUSE_PID_FILE
+    INTENTIONAL_KILLS_FILE = "/test_output/stress_intentional_server_kills.log"
 
     def _read_pid(self) -> Optional[int]:
         try:
-            with open(self.PID_FILE, "r") as f:
+            with open(CLICKHOUSE_PID_FILE, "r") as f:
                 return int(f.read().strip())
         except (FileNotFoundError, ValueError):
             return None
@@ -197,13 +200,15 @@ class RandomServerRestarter(RandomRestarter):
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             logging.info("%s: server already dead", self.NAME)
-
+            return
         for _ in range(60):
             try:
                 os.kill(pid, 0)
                 time.sleep(0.5)
             except OSError:
                 break
+        with open(self.INTENTIONAL_KILLS_FILE, "a") as f:
+            f.write(f"{pid}\n")
 
     def _stop_graceful(self) -> None:
         logging.info("%s: graceful stop via clickhouse stop", self.NAME)

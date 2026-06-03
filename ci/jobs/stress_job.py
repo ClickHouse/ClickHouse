@@ -302,12 +302,24 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"{result_path}/dmesg.log"
         )
 
-    # Check for OOM (signal 9) in server logs
+    # Check for OOM (signal 9) in server logs, excluding intentional kills
+    # from the RandomServerRestarter chaos thread.
     if server_log_path.exists():
-        server_log_oom = Shell.check(
-            f"rg -Fqa ' <Fatal> Application: Child process was terminated by signal 9' "
-            f"{server_log_path}/clickhouse-server*.log"
+        signal9_count = int(
+            Shell.get_output(
+                f"rg -Fa ' <Fatal> Application: Child process was terminated by signal 9' "
+                f"{server_log_path}/clickhouse-server*.log 2>/dev/null | wc -l"
+            )
+            .strip()
+            or "0"
         )
+        intentional_kills_file = result_path / "stress_intentional_server_kills.log"
+        intentional_kill_count = 0
+        if intentional_kills_file.is_file():
+            intentional_kill_count = sum(
+                1 for line in intentional_kills_file.read_text().splitlines() if line.strip()
+            )
+        server_log_oom = signal9_count > intentional_kill_count
         is_oom = is_oom or server_log_oom
 
     # Generate fatal.log from all server logs
