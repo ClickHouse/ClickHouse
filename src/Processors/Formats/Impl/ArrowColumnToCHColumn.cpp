@@ -109,6 +109,155 @@ static bool isUUIDField(const arrow::Field & field)
            std::static_pointer_cast<arrow::ExtensionType>(field.type())->extension_name() == "arrow.uuid";
 }
 
+namespace
+{
+
+/// Validate that buffers[1] of an Arrow array chunk is large enough to hold
+/// elem_size * (offset + length) bytes, then throw INCORRECT_DATA if not.
+/// All readers that access buffers[1] directly must call one of these helpers
+/// before touching any raw pointer, so the check can never be silently omitted.
+void checkArrowBuffer(const arrow::Array & chunk, size_t elem_size, const String & column_name)
+{
+    const auto & buffer = chunk.data()->buffers[1];
+    const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+    const size_t required = elem_size * static_cast<size_t>(chunk.offset() + chunk.length());
+    if (unlikely(buffer_size < required))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow buffer too small for column '{}': {} bytes available, {} required",
+            column_name, buffer_size, required);
+}
+
+/// Typed wrapper: validates and returns a pointer to the first element at chunk.offset().
+/// Use for bulk-copy readers.  Per-element Value() readers call this for the validation
+/// side-effect only (discarding the returned pointer).
+template <typename T>
+const T * getValidatedBuffer(const arrow::Array & chunk, const String & column_name)
+{
+    checkArrowBuffer(chunk, sizeof(T), column_name);
+    return reinterpret_cast<const T *>(chunk.data()->buffers[1]->data()) + chunk.offset();
+}
+
+/// Boolean arrays pack 8 values per byte starting at bit chunk.offset(), so the
+/// required byte count uses ceiling division rather than a simple multiply.
+void checkBooleanBuffer(const arrow::BooleanArray & chunk, const String & column_name)
+{
+    const auto & buffer = chunk.data()->buffers[1];
+    const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+    const size_t required = (static_cast<size_t>(chunk.offset() + chunk.length()) + 7) / 8;
+    if (unlikely(buffer_size < required))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow buffer too small for column '{}': {} bytes available, {} required",
+            column_name, buffer_size, required);
+}
+
+/// Cast array to ArrowNumericArray and validate the data buffer is large enough
+/// for all declared rows.  Element size is derived from ArrowNumericArray::value_type,
+/// so this only compiles for typed numeric arrays (Date32, Date64, Timestamp,
+/// Time32/64, HalfFloat, and the plain numeric types).
+/// Use checkedCastFSB for FixedSizeBinary arrays, checkedCastBool for BooleanArray.
+template <typename ArrowNumericArray>
+const ArrowNumericArray & checkedCast(const arrow::Array & array, const String & column_name)
+{
+    static_assert(
+        requires { typename ArrowNumericArray::value_type; },
+        "use checkedCastFSB for FixedSizeBinary arrays or checkedCastBool for BooleanArray");
+    const auto & typed = assert_cast<const ArrowNumericArray &>(array);
+    checkArrowBuffer(typed, sizeof(typename ArrowNumericArray::value_type), column_name);
+    return typed;
+}
+
+/// Validate that a single BinaryView struct's data range is within its variadic buffer.
+/// Inline views store data directly inside the view struct (already covered by
+/// checkedCastView on buffers[1]); only non-inline views reference a variadic buffer.
+static void checkViewStruct(
+    const arrow::BinaryViewType::c_type & v,
+    const arrow::ArrayData & chunk_data,
+    const String & column_name,
+    int64_t row)
+{
+    if (v.is_inline())
+        return;
+
+    const int32_t buf_idx    = v.ref.buffer_index;
+    const int32_t ref_offset = v.ref.offset;
+    const int32_t ref_size   = v.ref.size;
+
+    /// variadic data buffers start at index 2 (after validity bitmap and view-struct buffer)
+    const int64_t num_variadic = static_cast<int64_t>(chunk_data.buffers.size()) - 2;
+    if (unlikely(buf_idx < 0 || buf_idx >= num_variadic))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow StringView buffer_index {} is out of range ({} variadic buffers) "
+            "for column '{}' row {}",
+            buf_idx, num_variadic, column_name, row);
+
+    const auto & vbuf = chunk_data.buffers[2 + buf_idx];
+    const size_t vbuf_size   = vbuf ? static_cast<size_t>(vbuf->size()) : 0;
+    const size_t safe_offset = static_cast<size_t>(ref_offset);
+    const size_t safe_length = static_cast<size_t>(ref_size);
+    if (unlikely(ref_offset < 0 || ref_size < 0
+               || safe_offset > vbuf_size
+               || safe_length > vbuf_size - safe_offset))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow StringView data exceeds variadic buffer bounds for column '{}' row {}: "
+            "offset {} length {} but variadic buffer {} is {} bytes",
+            column_name, row, ref_offset, ref_size, buf_idx, vbuf_size);
+}
+
+/// Cast to a view array type (StringViewArray or BinaryViewArray) and validate
+/// that the view-struct buffer (buffers[1]) has enough 16-byte view structs for
+/// all declared rows.  The actual string bytes live in variadic buffers[2..N]
+/// and are validated individually via GetView().
+template <typename ArrowViewArray>
+const ArrowViewArray & checkedCastView(const arrow::Array & array, const String & column_name)
+{
+    const auto & typed = assert_cast<const ArrowViewArray &>(array);
+    checkArrowBuffer(typed, sizeof(arrow::BinaryViewType::c_type), column_name);
+    return typed;
+}
+
+/// Validate that the offsets buffer (buffers[1]) of a BinaryArray or LargeBinaryArray
+/// holds at least (offset + length + 1) entries.  One more than length is required
+/// because value_length(i) = offset[i+1] - offset[i], so the last element needs
+/// offset[length].  This must be checked before any call to value_offset(i) or
+/// GetView(i) to prevent an over-read of the offsets buffer.
+template <typename ArrowBinaryArray>
+void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & column_name)
+{
+    const auto & buffer = chunk.data()->buffers[1];
+    const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+    const size_t required = sizeof(typename ArrowBinaryArray::offset_type)
+        * static_cast<size_t>(chunk.offset() + chunk.length() + 1);
+    if (unlikely(buffer_size < required))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Arrow buffer too small for column '{}': {} bytes available, {} required",
+            column_name, buffer_size, required);
+}
+
+/// Cast to a FixedSizeBinaryArray subclass (plain FixedSizeBinaryArray, Decimal128Array,
+/// Decimal256Array) and validate the data buffer using the runtime byte_width().
+template <typename ArrowFSBArray = arrow::FixedSizeBinaryArray>
+const ArrowFSBArray & checkedCastFSB(const arrow::Array & array, const String & column_name)
+{
+    const auto & typed = assert_cast<const ArrowFSBArray &>(array);
+    checkArrowBuffer(typed, static_cast<size_t>(typed.byte_width()), column_name);
+    return typed;
+}
+
+/// Cast to BooleanArray and validate the bit-packed data buffer.
+const arrow::BooleanArray & checkedCastBool(const arrow::Array & array, const String & column_name)
+{
+    const auto & typed = assert_cast<const arrow::BooleanArray &>(array);
+    checkBooleanBuffer(typed, column_name);
+    return typed;
+}
+
+}
+
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -125,8 +274,7 @@ static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arr
             continue;
 
         /// buffers[0] is a null bitmap and buffers[1] are actual values
-        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-        const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data()) + chunk->offset();
+        const auto * raw_data = getValidatedBuffer<NumericType>(*chunk, column_name);
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
 
         /// Values at null positions are not guaranteed to be initialized in the source buffer.
@@ -172,8 +320,7 @@ static ColumnWithTypeAndName readColumnWithDurationData(const std::shared_ptr<ar
             continue;
 
         /// buffers[0] is a null bitmap and buffers[1] are actual values
-        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-        const auto * raw_data = reinterpret_cast<const Int64 *>(buffer->data()) + chunk->offset();
+        const auto * raw_data = getValidatedBuffer<Int64>(*chunk, column_name);
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
     }
 
@@ -206,10 +353,15 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
     size_t chars_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        const ArrowArray & chunk = dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
         const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
+
+        /// Validate the offsets buffer before the first value_offset(i) call.
+        /// The offsets array needs (offset + length + 1) entries because
+        /// value_length(i) = offset[i+1] - offset[i].
+        checkBinaryOffsetsBuffer(chunk, column_name);
 
         if (chunk.null_count() == 0)
         {
@@ -252,7 +404,7 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        const ArrowArray & chunk = dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
@@ -302,20 +454,28 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
 
     for (const auto & arrow_chunk : arrow_column->chunks())
     {
-        const auto & arrow_view_chunk = assert_cast<ArrowView &>(*arrow_chunk);
-        int64_t chunk_length = arrow_view_chunk.length();
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
+        const int64_t chunk_length = arrow_view_chunk.length();
+        const auto * view_structs = reinterpret_cast<const arrow::BinaryViewType::c_type *>(
+            arrow_view_chunk.data()->buffers[1]->data()) + arrow_view_chunk.offset();
 
         if (arrow_view_chunk.null_count() == 0)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
-                total_bytes_size += arrow_view_chunk.GetView(i).length();
+            {
+                checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
+                total_bytes_size += static_cast<size_t>(view_structs[i].size());
+            }
         }
         else
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
                 if (arrow_view_chunk.IsValid(i))
-                    total_bytes_size += arrow_view_chunk.GetView(i).length();
+                {
+                    checkViewStruct(view_structs[i], *arrow_view_chunk.data(), column_name, i);
+                    total_bytes_size += static_cast<size_t>(view_structs[i].size());
+                }
             }
         }
     }
@@ -331,13 +491,14 @@ static ColumnWithTypeAndName readColumnWithViewData(const std::shared_ptr<arrow:
 
     for (const auto & arrow_chunk : arrow_column->chunks())
     {
-        const auto & arrow_view_chunk = assert_cast<ArrowView &>(*arrow_chunk);
-        int64_t chunk_length = arrow_view_chunk.length();
+        const auto & arrow_view_chunk = checkedCastView<ArrowView>(*arrow_chunk, column_name);
+        const int64_t chunk_length = arrow_view_chunk.length();
 
         if (arrow_view_chunk.null_count() == 0)
         {
             for (int64_t i = 0; i < chunk_length; ++i)
             {
+                /// view already validated in the first pass above
                 const auto & view = arrow_view_chunk.GetView(i);
                 size_t len = view.length();
 
@@ -391,12 +552,28 @@ static ColumnWithTypeAndName readColumnWithJSONData(
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const ArrowArray & chunk = dynamic_cast<ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        const ArrowArray & chunk = dynamic_cast<const ArrowArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
+
+        const size_t data_buf_size = chunk.value_data() ? static_cast<size_t>(chunk.value_data()->size()) : 0;
+
+        const auto validate_row = [&](size_t row_i)
+        {
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(row_i));
+            const size_t safe_length = static_cast<size_t>(chunk.value_length(row_i));
+            if (unlikely(safe_offset > data_buf_size || safe_length > data_buf_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray offsets exceed data buffer bounds for column '{}': "
+                    "row {} has offset {} and length {} but buffer is {} bytes",
+                    column_name, row_i, chunk.value_offset(row_i), chunk.value_length(row_i), data_buf_size);
+        };
 
         if (chunk.null_count() == 0)
         {
             for (size_t row_i = 0, num_rows = chunk.length(); row_i < num_rows; ++row_i)
             {
+                validate_row(row_i);
                 auto view = chunk.GetView(row_i);
                 ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
@@ -411,6 +588,7 @@ static ColumnWithTypeAndName readColumnWithJSONData(
                     column_object.insertDefault();
                     continue;
                 }
+                validate_row(row_i);
                 auto view = chunk.GetView(row_i);
                 ReadBufferFromMemory rb(view);
                 serialization->deserializeTextJSON(column_object, rb, format_settings);
@@ -432,7 +610,7 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::FixedSizeBinaryArray & chunk = dynamic_cast<arrow::FixedSizeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
         const uint8_t * raw_data = chunk.raw_values();
         column_chars.insert_assume_reserved(raw_data, raw_data + fixed_len * chunk.length());
     }
@@ -458,7 +636,7 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::FixedSizeBinaryArray & chunk = dynamic_cast<arrow::FixedSizeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
         const auto * raw_data = reinterpret_cast<const ValueType *>(chunk.raw_values());
         data.insert_assume_reserved(raw_data, raw_data + chunk.length());
     }
@@ -472,7 +650,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         for (size_t i = 0; i != chunk_length; ++i)
@@ -491,7 +669,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             if (chunk.IsNull(value_i))
@@ -512,10 +690,10 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BooleanArray & chunk = dynamic_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
-        if (chunk.length() == 0)
+        if (arrow_column->chunk(chunk_i)->length() == 0)
             continue;
 
+        const auto & chunk = checkedCastBool(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t bool_i = 0; bool_i != static_cast<size_t>(chunk.length()); ++bool_i)
             column_data.emplace_back(chunk.Value(bool_i));
     }
@@ -545,9 +723,8 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::Date32Array & chunk = dynamic_cast<arrow::Date32Array &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        /// Check date range only when requested type is actually Date32
         if (check_date_range)
         {
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
@@ -575,8 +752,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
         }
         else
         {
-            std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
-            const auto * raw_data = reinterpret_cast<const Int32 *>(buffer->data()) + chunk.offset();
+            const auto * raw_data = reinterpret_cast<const Int32 *>(chunk.data()->buffers[1]->data()) + chunk.offset();
             column_data.insert_assume_reserved(raw_data, raw_data + chunk.length());
         }
     }
@@ -593,7 +769,7 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::Date64Array &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCast<arrow::Date64Array>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
@@ -617,7 +793,7 @@ static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<a
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & chunk = dynamic_cast<const arrow::TimestampArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCast<arrow::TimestampArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             column_data.emplace_back(chunk.Value(value_i));
@@ -637,10 +813,10 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<TimeArray &>(*(arrow_column->chunk(chunk_i)));
-        if (chunk.length() == 0)
+        if (arrow_column->chunk(chunk_i)->length() == 0)
             continue;
 
+        const auto & chunk = checkedCast<TimeArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
@@ -670,7 +846,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(const std::shared_ptr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<DecimalArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCastFSB<DecimalArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             column_data.emplace_back(chunk.IsNull(value_i) ? DecimalType(0) : *reinterpret_cast<const DecimalType *>(chunk.Value(value_i))); // TODO: copy column
@@ -687,7 +863,7 @@ static ColumnWithTypeAndName readColumnWithFloat16Data(const std::shared_ptr<arr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::HalfFloatArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = checkedCast<arrow::HalfFloatArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             column_data.emplace_back(chunk.IsNull(value_i) ? 0 : convertFloat16ToFloat32(chunk.Value(value_i)));
     }
@@ -720,10 +896,8 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & arrow_chunk = *(arrow_column->chunk(chunk_i));
-        const auto & fixed_binary_array = assert_cast<const arrow::FixedSizeBinaryArray &>(arrow_chunk);
+        const auto & fixed_binary_array = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
 
-        // Security check: Ensure we actually got 16 bytes per row
         if (fixed_binary_array.byte_width() != sizeof(UUID))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot read UUID from Arrow FixedSizeBinary array with byte_width != {}", sizeof(UUID));
@@ -790,7 +964,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
     MutableColumnPtr column = type->createColumn();
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
         const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
@@ -853,7 +1027,7 @@ struct ArrowOffsetArray<arrow::LargeListArray>
 };
 
 template <typename ArrowListArray>
-static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column)
+static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     auto offsets_column = ColumnUInt64::create();
     ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
@@ -861,9 +1035,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowListArray & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
         auto arrow_offsets_array = list_chunk.offsets();
-        auto & arrow_offsets = dynamic_cast<typename ArrowOffsetArray<ArrowListArray>::type &>(*arrow_offsets_array);
+        /// The offsets array is a numeric Int32/Int64 array — validate its buffer before Value() calls.
+        using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
+        const auto & arrow_offsets = checkedCast<OffsetArray>(*arrow_offsets_array, column_name);
 
         /*
          * CH uses element size as "offsets", while arrow uses actual offsets as offsets.
@@ -930,8 +1106,7 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
             continue;
 
         /// buffers[0] is a null bitmap and buffers[1] are actual values
-        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-        const auto * data = reinterpret_cast<const NumericType *>(buffer->data()) + chunk->offset();
+        const auto * data = getValidatedBuffer<NumericType>(*chunk, column_name);
 
         /// Check that indexes are correct (protection against corrupted files)
         /// Note that on null values index can be arbitrary value.
@@ -1031,13 +1206,22 @@ static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> 
 }
 
 template <typename ArrowListArray>
-static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column)
+static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
     arrow::ArrayVector array_vector;
     array_vector.reserve(arrow_column->num_chunks());
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        ArrowListArray & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+
+        /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
+        /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
+        /// FixedSizeListArray uses a fixed stride instead of a variable-length offsets array.
+        if constexpr (!std::is_same_v<ArrowListArray, arrow::FixedSizeListArray>)
+        {
+            using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
+            checkedCast<OffsetArray>(*list_chunk.offsets(), column_name);
+        }
 
         /*
          * It seems like arrow::ListArray::values() (nested column data) might or might not be shared across chunks.
@@ -1064,7 +1248,7 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
     size_t total_size = 0;
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
 
         for (size_t i = 0; i != chunk_length; ++i)
@@ -1083,7 +1267,7 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             if (chunk.IsNull(value_i))
@@ -1109,8 +1293,7 @@ static ColumnWithTypeAndName readIPv4ColumnWithInt32Data(const std::shared_ptr<a
             continue;
 
         /// buffers[0] is a null bitmap and buffers[1] are actual values
-        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-        const auto * raw_data = reinterpret_cast<const IPv4 *>(buffer->data()) + chunk->offset();
+        const auto * raw_data = getValidatedBuffer<IPv4>(*chunk, column_name);
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
@@ -1355,7 +1538,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 }
             }
 
-            auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column);
+            auto arrow_nested_column = getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 full_column_name,
@@ -1371,7 +1554,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             if (!nested_column.column)
                 return {};
 
-            auto offsets_column = readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+            auto offsets_column = readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column, column_name);
 
             const auto * tuple_column = assert_cast<const ColumnTuple *>(nested_column.column.get());
             const auto * tuple_type = assert_cast<const DataTypeTuple *>(nested_column.type.get());
@@ -1452,11 +1635,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 switch (list_type)
                 {
                     case ListType::LargeList:
-                        return getNestedArrowColumn<arrow::LargeListArray>(arrow_column);
+                        return getNestedArrowColumn<arrow::LargeListArray>(arrow_column, column_name);
                     case ListType::FixedSizeList:
-                        return getNestedArrowColumn<arrow::FixedSizeListArray>(arrow_column);
+                        return getNestedArrowColumn<arrow::FixedSizeListArray>(arrow_column, column_name);
                     case ListType::List:
-                        return getNestedArrowColumn<arrow::ListArray>(arrow_column);
+                        return getNestedArrowColumn<arrow::ListArray>(arrow_column, column_name);
                 }
             }();
 
@@ -1480,14 +1663,14 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 switch (list_type)
                 {
                     case ListType::LargeList:
-                        return readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column);
+                        return readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column, column_name);
                     case ListType::FixedSizeList:
                     {
                         auto fixed_length = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get())->list_size();
                         return readOffsetsFromFixedArrowListColumn(arrow_column, fixed_length);
                     }
                     case ListType::List:
-                        return readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+                        return readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column, column_name);
                 }
             }();
             DataTypePtr array_type;
@@ -1520,7 +1703,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
             for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
-                arrow::StructArray & struct_chunk = dynamic_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
+                auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
                 for (int i = 0; i < arrow_struct_type->num_fields(); ++i)
                     nested_arrow_columns[i].emplace_back(struct_chunk.field(i));
             }
@@ -1616,7 +1799,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 arrow::ArrayVector dict_array;
                 for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
                 {
-                    arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                    auto & dict_chunk = assert_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                     dict_array.emplace_back(dict_chunk.dictionary());
                 }
 
@@ -1668,7 +1851,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             arrow::ArrayVector indexes_array;
             for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
-                arrow::DictionaryArray & dict_chunk = dynamic_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
+                auto & dict_chunk = assert_cast<arrow::DictionaryArray &>(*(arrow_column->chunk(chunk_i)));
                 indexes_array.emplace_back(dict_chunk.indices());
             }
 
