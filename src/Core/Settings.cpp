@@ -5461,7 +5461,7 @@ Threshold for compaction data files in iceberg.
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
 )", 0) \
-    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+    DECLARE(Bool, use_iceberg_metadata_files_cache, false, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
 Possible values:
