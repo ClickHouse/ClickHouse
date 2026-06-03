@@ -191,6 +191,12 @@ private:
     Rope readFromLiveBufferIntoRope(
         VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
+    /// Discard `gap` bytes from the open live source read so its frontier
+    /// advances over an already-cached gap, keeping the connection reusable
+    /// instead of reopening. Bytes cross the wire (charged as over-read); only
+    /// the source request is saved. Returns bytes skipped (< `gap` only at EOF).
+    size_t skipLiveBufferForward(size_t gap);
+
     /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ `block_size`.
     /// `splits` (sorted, relative offsets within `[0, size)`) forces a block boundary at each
     /// listed offset so the resulting `OwnedRopeBuffer` allocations don't straddle those points.

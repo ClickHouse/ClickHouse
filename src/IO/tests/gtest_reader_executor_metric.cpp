@@ -23,6 +23,7 @@
 #include <IO/ISourceReader.h>
 #include <IO/ICacheProvider.h>
 #include <IO/DiskCacheProvider.h>
+#include <IO/PageCacheProvider.h>
 #include <IO/SourceBufferLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
@@ -313,6 +314,30 @@ public:
         return std::make_shared<DiskCacheProvider>(fc, cache_settings, /*query_id_=*/"q");
     }
 
+    /// In-memory, block-granular cache (unlike the 4 MiB-aligned FileCache). When
+    /// `page_cache` is set, executeReads routes through it: cached holes can be a
+    /// single BLOCK, small enough for the live connection to bridge.
+    std::shared_ptr<PageCache> page_cache;
+
+    static std::shared_ptr<PageCache> makePageCache()
+    {
+        /// min == max: the test never runs autoResize, so fix the capacity up front.
+        constexpr size_t cap = 64ull << 20;
+        return std::make_shared<PageCache>(
+            std::chrono::milliseconds(2000), "LRU", 0.5,
+            /*min_size_in_bytes=*/cap, /*max_size_in_bytes=*/cap,
+            /*free_memory_ratio=*/0.0, /*num_shards=*/1);
+    }
+
+    std::shared_ptr<PageCacheProvider> makePageProvider(const std::shared_ptr<PageCache> & pc)
+    {
+        PageCacheFile file;
+        file.path = "obj";
+        return std::make_shared<PageCacheProvider>(
+            pc, std::move(file), /*block_size=*/BLOCK, /*inject_eviction=*/false,
+            /*bypass_if_missing=*/false, /*file_size_in_bytes=*/FILE_SIZE);
+    }
+
     /// Source-buffer slot budget for the executor: >0 -> the live path (a reusable
     /// connection across windows); 0 -> no budget, every read is a short-lived
     /// one-shot connection (the stateless path).
@@ -337,7 +362,10 @@ public:
             want_total += rd.second.value_or(FILE_SIZE - rd.first);
 
         VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-        caches.push_back(makeDiskProvider(fc));
+        if (page_cache)
+            caches.push_back(makePageProvider(page_cache));
+        else
+            caches.push_back(makeDiskProvider(fc));
         auto src = std::make_shared<MemBoundedSource>(data);
         ReaderExecutor executor(src, objects, std::move(caches), WINDOW, /*min_bytes_for_seek=*/MIN_BYTES_FOR_SEEK, BLOCK);
         executor.setBufferLimit(std::make_shared<SourceBufferLimit>(buffer_slots));
@@ -423,6 +451,34 @@ public:
         return out;
     }
 
+    /// Like runMatrix, but the cache is an in-memory block-granular PageCache (not
+    /// the 4 MiB-aligned FileCache), so a cached hole can be a single BLOCK - small
+    /// enough for the live connection to bridge. A fresh PageCache per mode.
+    std::pair<CostVector, CostVector> runMatrixPageCache(
+        const String & name, const ReadList & warm_ranges, const ReadList & reads)
+    {
+        const String content = makePattern(FILE_SIZE);
+        const std::unordered_map<String, String> data{{"obj", content}};
+        StoredObjects objects;
+        objects.emplace_back("obj", "", FILE_SIZE);
+
+        std::pair<CostVector, CostVector> out;
+        const std::array<std::pair<const char *, size_t>, 2> modes{{{"live", LIVE_SLOTS}, {"stateless", 0}}};
+        for (size_t i = 0; i < modes.size(); ++i)
+        {
+            buffer_slots = modes[i].second;
+            page_cache = makePageCache();
+            if (!warm_ranges.empty())
+                warmCache({}, data, objects, warm_ranges);
+            const CostVector r = measure({}, data, objects, reads);
+            std::cout << "[" << name << "/" << modes[i].first << "] " << r.str() << "\n";
+            (i == 0 ? out.first : out.second) = r;
+        }
+        page_cache.reset();
+        results[name] = {out.first, out.second};
+        return out;
+    }
+
     /// Per-scenario results (live, stateless), filled by runMatrix and printed as one
     /// table by TearDownTestSuite after all ReaderExecutorMetric.* tests run: a full run
     /// shows the whole matrix, a subset only its rows. Recorded BEFORE each cell's
@@ -446,7 +502,7 @@ public:
         if (results.empty())
             return;
         static const std::vector<String> order = {
-            "cold_seq", "warm_seq", "checkerboard", "prefix_hit", "suffix_hit",
+            "cold_seq", "warm_seq", "checkerboard", "small_gaps", "pc_gaps", "prefix_hit", "suffix_hit",
             "interior_hole", "sparse_cold", "midseg", "random_scattered",
             "random_runs", "reverse_seq"};
         auto print_row = [](const String & name, const std::pair<CostVector, CostVector> & r)
@@ -519,6 +575,51 @@ TEST_F(ReaderExecutorMetric, Checkerboard)
     EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
     EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
+}
+
+/// Cold scan broken by small cached holes, each <= MIN_BYTES_FOR_SEEK. The live
+/// connection skips ("ignores") each hole on the open GET instead of reopening,
+/// so the whole scan stays ONE connection: R=1, I=0, and the skipped holes show
+/// up as over-read (re-read from source and discarded). Without the bridge each
+/// hole would break the connection -> R=n_holes+1, I=n_holes (the Checkerboard
+/// mechanism, here below the seek threshold so it is bridged instead).
+TEST_F(ReaderExecutorMetric, SmallCachedGaps)
+{
+    const size_t hole = ALIGNMENT;          /// 4 KiB cached hole (<= 8 KiB seek threshold)
+    const size_t stride = 4 * SEGMENT;      /// one hole per 128 KiB of otherwise-cold data
+    ReadList warm;
+    for (size_t off = SEGMENT; off + hole <= FILE_SIZE; off += stride)
+        warm.emplace_back(off, hole);
+    const size_t n_holes = warm.size();
+    auto [live, stateless] = runMatrix("small_gaps", warm, {{0, std::nullopt}});
+
+    EXPECT_EQ(live.requests, 1u) << "live: one connection bridges every sub-threshold cached hole";
+    EXPECT_EQ(live.incomplete, 0u) << "no connection abandoned at a cached hole";
+    EXPECT_GT(live.over_read, 0u) << "the skipped cached holes are re-read from source as over-read";
+    EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each bridged gap is <= the seek threshold";
+    EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";
+}
+
+/// PageCache is block-granular and in-memory, so a cached hole can be a single
+/// BLOCK (1 MiB production) - below both the seek threshold AND the cost
+/// breakeven. The live connection bridges every such hole (R=1, I=0), and unlike
+/// the 4 MiB-aligned FileCache holes, bridging here is cost-POSITIVE: skipping a
+/// sub-breakeven gap costs less than the reopen it avoids.
+TEST_F(ReaderExecutorMetric, PageCacheGaps)
+{
+    const size_t hole = BLOCK;          /// one-block cached hole (PageCache granularity)
+    const size_t stride = 8 * BLOCK;    /// a hole every 8 blocks of otherwise-cold data
+    ReadList warm;
+    for (size_t off = BLOCK; off + hole <= FILE_SIZE; off += stride)
+        warm.emplace_back(off, hole);
+    const size_t n_holes = warm.size();
+    auto [live, stateless] = runMatrixPageCache("pc_gaps", warm, {{0, std::nullopt}});
+
+    EXPECT_EQ(live.requests, 1u) << "live: one connection bridges every block-sized cached hole";
+    EXPECT_EQ(live.incomplete, 0u) << "no connection abandoned at a cached block";
+    EXPECT_GT(live.over_read, 0u) << "skipped cached blocks are re-read from source as over-read";
+    EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each bridged gap is <= the seek threshold";
+    EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";
 }
 
 /// A small read starting mid-way into a cold segment. The cache keeps the miss

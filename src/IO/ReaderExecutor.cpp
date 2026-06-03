@@ -1106,6 +1106,31 @@ Rope ReaderExecutor::readFromLiveBufferIntoRope(
     return rope;
 }
 
+size_t ReaderExecutor::skipLiveBufferForward(size_t gap)
+{
+    chassert(live_buffer);
+    auto & buf = *live_buffer->buffer;
+
+    /// Discard `gap` bytes from the open source read so the connection's
+    /// frontier advances over an already-cached gap. Uses a scratch block
+    /// because the source is in external-buffer mode (mirrors `readIntoBlock`);
+    /// the bytes are transferred and thrown away - only the source request is
+    /// saved. Returns bytes actually skipped (< `gap` only if the source hit EOF).
+    const size_t scratch_size = std::min(gap, block_size);
+    auto scratch = std::make_shared<OwnedRopeBuffer>(scratch_size);
+
+    size_t skipped = 0;
+    while (skipped < gap)
+    {
+        const size_t chunk = std::min(gap - skipped, scratch_size);
+        const size_t got = readIntoBlock(buf, scratch->data(), chunk);
+        if (got == 0)
+            break;
+        skipped += got;
+    }
+    return skipped;
+}
+
 Rope ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
@@ -1114,25 +1139,51 @@ Rope ReaderExecutor::readFromSource(
     for (const auto & block : blocks)
         want += block->size();
 
-    /// Reuse the live connection only for a contiguous read that still fits
-    /// within its right bound; a read that would pass the bound reopens (the
-    /// bounded connection is already drained at that point and reusable).
+    /// Reuse the live connection for a contiguous read, or bridge a small
+    /// forward cached gap by discarding it on the open source read so the
+    /// connection stays reusable instead of reopening - the same over-read vs
+    /// separate-read trade `mergeRanges` makes, so it shares `min_bytes_for_seek`
+    /// as the gap bound (0 for local sources, which never bridge). A read that
+    /// would pass the right bound still reopens (the bounded connection is
+    /// already drained at that point and reusable).
     if (live_buffer
         && live_buffer->slot.objectPath() == object.remote_path
-        && live_buffer->current_position == offset
+        && offset >= live_buffer->current_position
+        && offset - live_buffer->current_position <= min_bytes_for_seek
         && (!live_buffer->read_until || offset + want <= *live_buffer->read_until))
     {
-        LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
-        ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
+        const size_t gap = offset - live_buffer->current_position;
+        bool ready = gap == 0;
+        if (gap > 0)
+        {
+            /// Skip the already-cached gap on the live connection. The bytes
+            /// cross the wire (charged as over-read); only the source request
+            /// is saved. A short skip means the source hit EOF inside the gap
+            /// (unknown size) - the connection is spent, fall through to reopen.
+            const size_t skipped = skipLiveBufferForward(gap);
+            stats.bytes_from_source += skipped;
+            stats.over_read_bytes += skipped;
+            if (skipped == gap)
+            {
+                live_buffer->current_position = offset;
+                ready = true;
+            }
+        }
 
-        Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
-        size_t total_read = rope.totalBytes();
+        if (ready)
+        {
+            LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-        ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
-        live_buffer->current_position += total_read;
-        live_buffer->slot.updatePosition(live_buffer->current_position);
-        releaseLiveBufferAtBound();
-        return rope;
+            Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
+            size_t total_read = rope.totalBytes();
+
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
+            live_buffer->current_position += total_read;
+            live_buffer->slot.updatePosition(live_buffer->current_position);
+            releaseLiveBufferAtBound();
+            return rope;
+        }
     }
 
     if (live_buffer)
@@ -1505,18 +1556,24 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
         }
     }
 
-    /// Cache-only window (no source read): if the un-advanced live buffer can't
-    /// continue the next sequential window, close it now so its slot isn't held
-    /// idle until the next miss/EOF.
+    /// Cache-only window (no source read): the un-advanced live buffer fell
+    /// behind the read frontier. Keep it while the next window start is still a
+    /// bridgeable forward gap (<= min_bytes_for_seek) within its bound - the
+    /// next miss will skip the cached gap and reuse the connection. Close it
+    /// once it has fallen too far behind to bridge, so its slot isn't held idle.
     if (live_buffer && !reached_eof && fetch_ranges.empty())
     {
         const size_t next_physical = physical_window.end();
         size_t next_obj_file_offset = 0;
         const StoredObject * next_obj = offset_map.findObjectAt(next_physical, &next_obj_file_offset);
-        const bool live_continues = next_obj
-            && live_buffer->slot.objectPath() == next_obj->remote_path
-            && live_buffer->current_position == next_physical - next_obj_file_offset;
-        if (!live_continues)
+        const bool same_object = next_obj
+            && live_buffer->slot.objectPath() == next_obj->remote_path;
+        const size_t next_local = same_object ? next_physical - next_obj_file_offset : 0;
+        const bool bridgeable = same_object
+            && next_local >= live_buffer->current_position
+            && next_local - live_buffer->current_position <= min_bytes_for_seek
+            && (!live_buffer->read_until || next_local <= *live_buffer->read_until);
+        if (!bridgeable)
         {
             accountLiveBufferDrop(/*at_eof=*/false);
             live_buffer.reset();
