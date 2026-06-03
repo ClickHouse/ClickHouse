@@ -32,6 +32,16 @@ namespace QueryPlanOptimizations
 
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 
+void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
+void optimizeExchanges(QueryPlan::Node & root);
+Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
+String dumpQueryPlanShort(const QueryPlan & query_plan);
+DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
+
 /// Replaces LogicalJoin step with a subtree like this:
 ///
 ///   GatherExchange
@@ -42,7 +52,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 ///       ScatterExchange by hash(join_key)
 ///         Expression: compute join key for left source
 ///         ...
-void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -178,7 +187,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 ///     GatherExchange
 ///       Aggregating (partial)
 ///         ScatterExchange (any)
-void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a aggregating step?
@@ -315,7 +323,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 ///       ScatterExchange (any partitioning)
 ///
 /// NOTE: GatherExchange step is aware of sort descripiton and merges multiple sorted streams into one sorted stream.
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a sorting step?
@@ -358,7 +365,6 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 ///
 ///   GatherExchange
 ///     (Distributed)ReadFromMergeTree
-void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a read from MergeTree step?
@@ -416,7 +422,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
 /// If there is a Scatter step on top of Gather step then they can be replaced with Shuffle step that just
 /// repartitions data from the source set of buckets to the destination set of buckets.
-static void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
+void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
 {
     if (node->children.size() != 1)
         return;
@@ -440,7 +446,6 @@ static void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
 /// then filter step can be moved below the exchange step to allow parallel processing.
 /// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
 /// exchange step can be removed.
-void optimizeExchanges(QueryPlan::Node & root);
 void optimizeExchanges(QueryPlan::Node & root)
 {
     Stack stack;
@@ -514,7 +519,7 @@ void optimizeExchanges(QueryPlan::Node & root)
 
 
 /// Tries to build list of possible shards for the read steps that can be processed in parallel.
-static Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
+Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
 {
     const auto * read_from_mt = dynamic_cast<const ReadFromMergeTree *>(read_step);
     if (read_from_mt)
@@ -527,7 +532,7 @@ static Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step)
     return {"0"};   /// One shard by default if read step is not distributed
 }
 
-static String dumpQueryPlanShort(const QueryPlan & query_plan)
+String dumpQueryPlanShort(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
     query_plan.explainPlan(query_plan_buffer, ExplainPlanOptions{});
@@ -539,7 +544,6 @@ static String dumpQueryPlanShort(const QueryPlan & query_plan)
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange steps are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
-DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto logger = getLogger("makeDistributedPlan");
