@@ -42,7 +42,7 @@ namespace Paimon
             DB::ContextPtr context);
 
         /// Returns true if the file can be safely pruned (filter condition is guaranteed false for all rows)
-        bool canBePruned(const DB::PaimonManifestEntry & manifest_entry);
+        bool canBePruned(const DB::PaimonManifestEntry & manifest_entry) const;
 
     private:
         struct ColumnCondition

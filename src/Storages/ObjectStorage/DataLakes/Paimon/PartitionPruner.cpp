@@ -140,7 +140,7 @@ namespace Paimon
         }
     }
 
-    bool MinMaxIndexPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
+    bool MinMaxIndexPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
     {
         if (column_conditions.empty())
             return false;
