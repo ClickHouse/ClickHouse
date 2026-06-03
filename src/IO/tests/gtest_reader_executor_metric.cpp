@@ -41,12 +41,16 @@
 #include <Core/Defines.h>
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <unordered_map>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -371,6 +375,81 @@ public:
         return m;
     }
 
+    /// Connection-budget modes for the matrix: live (slots available -> one reused
+    /// connection) and stateless (no budget -> a short-lived connection per window).
+    static constexpr size_t LIVE_SLOTS = 10;
+
+    /// Run a scenario — `warm_ranges` to initialise the cache state, then `reads` as
+    /// the read pattern — under BOTH budget modes on a fresh cache each, printing both.
+    /// This is the matrix axis: every cache-state x read-pattern case is measured live
+    /// AND stateless. Returns {live, stateless}.
+    std::pair<CostVector, CostVector> runMatrix(
+        const String & name, const ReadList & warm_ranges, const ReadList & reads)
+    {
+        const String content = makePattern(FILE_SIZE);
+        const std::unordered_map<String, String> data{{"obj", content}};
+        StoredObjects objects;
+        objects.emplace_back("obj", "", FILE_SIZE);
+
+        std::pair<CostVector, CostVector> out;
+        const std::array<std::pair<const char *, size_t>, 2> modes{{{"live", LIVE_SLOTS}, {"stateless", 0}}};
+        for (size_t i = 0; i < modes.size(); ++i)
+        {
+            buffer_slots = modes[i].second;
+            auto fc = makeFileCache(name + "_" + modes[i].first, SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+            if (!warm_ranges.empty())
+                warmCache(fc, data, objects, warm_ranges);
+            const CostVector r = measure(fc, data, objects, reads);
+            std::cout << "[" << name << "/" << modes[i].first << "] " << r.str() << "\n";
+            (i == 0 ? out.first : out.second) = r;
+        }
+        results[name] = {out.first, out.second};
+        return out;
+    }
+
+    /// Per-scenario results (live, stateless), filled by runMatrix and printed as one
+    /// table by TearDownTestSuite after all ReaderExecutorMetric.* tests run: a full run
+    /// shows the whole matrix, a subset only its rows. Recorded BEFORE each cell's
+    /// assertions, so a value that changed still appears in the table.
+    inline static std::unordered_map<String, std::pair<CostVector, CostVector>> results;
+
+    static String fmtCell(const CostVector & m)
+    {
+        const size_t o_real = m.over_read * COMPRESSION;
+        std::ostringstream s;
+        s << "R=" << std::left << std::setw(4) << m.requests
+          << " I=" << std::setw(3) << m.incomplete
+          << " O=" << std::setw(5) << (o_real == 0 ? String("0") : std::to_string(o_real >> 20) + "M")
+          << " cost=" << std::fixed << std::setprecision(0) << std::setw(6) << m.costMs() << "ms";
+        return s.str();
+    }
+
+    static void TearDownTestSuite()
+    {
+        if (results.empty())
+            return;
+        static const std::vector<String> order = {
+            "cold_seq", "warm_seq", "checkerboard", "prefix_hit", "suffix_hit",
+            "interior_hole", "sparse_cold", "midseg", "random_scattered",
+            "random_runs", "reverse_seq"};
+        auto print_row = [](const String & name, const std::pair<CostVector, CostVector> & r)
+        {
+            std::cout << std::left << std::setw(16) << name << " | "
+                      << std::setw(36) << fmtCell(r.first) << " | " << fmtCell(r.second) << "\n";
+        };
+        std::cout << "\n=== ReaderExecutorMetric: cache-state x read-pattern x budget ===\n"
+                  << std::left << std::setw(16) << "scenario" << " | "
+                  << std::setw(36) << "live" << " | stateless\n";
+        for (const auto & name : order)
+            if (auto it = results.find(name); it != results.end())
+                print_row(name, it->second);
+        for (const auto & [name, r] : results)
+            if (std::find(order.begin(), order.end(), name) == order.end())
+                print_row(name, r);
+        std::cout << std::flush;
+        results.clear();
+    }
+
 protected:
     std::optional<ThreadStatus> thread_status;
     ContextMutablePtr query_context;
@@ -378,67 +457,49 @@ protected:
     fs::path cache_root;
 };
 
-/// cold cache, full sequential scan. Round 1 fetches the whole file once and
-/// populates; round 2 should be fully warm (no source).
+/// Cold cache, full sequential scan, under both budget modes.
 TEST_F(ReaderExecutorMetric, ColdSequential)
 {
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
+    auto [live, stateless] = runMatrix("cold_seq", {}, {{0, std::nullopt}});
 
-    auto fc = makeFileCache("cold_seq", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    const CostVector r2 = measure(fc, data, objects, {{0, std::nullopt}});
-
-    std::cout << "[ColdSequential] round1: " << r1.str() << "\n"
-              << "[ColdSequential] round2: " << r2.str() << "\n"
-              << "[ColdSequential] total cost: " << (r1.costMs() + r2.costMs()) << "ms\n";
-
-    /// Round 1: one streamed GET for the whole contiguous cold file, drained, no over-read.
-    EXPECT_EQ(r1.requests, 1u) << "contiguous cold scan should be one streamed GET";
-    EXPECT_EQ(r1.incomplete, 0u) << "the connection drains to its bound";
-    EXPECT_EQ(r1.over_read, 0u) << "sequential cold scan over-reads nothing";
-    EXPECT_EQ(r1.fetched, FILE_SIZE);
-    EXPECT_GT(r1.cache_writes, 0u) << "round 1 populates the cache";
-    EXPECT_EQ(r1.cache_reads, 0u) << "nothing cached yet";
-
-    /// Round 2: fully warm.
-    EXPECT_EQ(r2.requests, 0u) << "round 2 served entirely from cache";
-    EXPECT_EQ(r2.fetched, 0u);
-    EXPECT_EQ(r2.incomplete, 0u);
-    EXPECT_EQ(r2.cache_writes, 0u) << "no misses to populate";
-    EXPECT_GT(r2.cache_reads, 0u) << "round 2 reads from cache";
+    /// Live: one streamed GET for the whole contiguous cold file, drained, no over-read.
+    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold scan is one streamed GET";
+    EXPECT_EQ(live.incomplete, 0u) << "the connection drains to its bound";
+    EXPECT_EQ(live.over_read, 0u);
+    EXPECT_EQ(live.fetched, FILE_SIZE);
+    /// Stateless: a fresh short-lived connection per window, no reuse, still bounded.
+    EXPECT_GT(stateless.requests, live.requests) << "no budget -> one connection per window";
+    EXPECT_EQ(stateless.incomplete, 0u) << "bounded one-shot reads never leave an incomplete connection";
 }
 
-/// Alternating cached/cold SEGMENTS, sequential scan. The cached segment between
-/// two cold ones breaks the live connection (it does not advance the connection's
-/// position), so each cold run is its own GET and the broken connection is dropped
-/// undrained -> incomplete. The warm-regression mechanism at production geometry.
-TEST_F(ReaderExecutorMetric, CheckerboardLive)
+/// Fully warm cache, full sequential scan -> no source requests; budget-invariant.
+TEST_F(ReaderExecutorMetric, WarmSequential)
 {
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
+    auto [live, stateless] = runMatrix("warm_seq", {{0, std::nullopt}}, {{0, std::nullopt}});
 
-    auto fc = makeFileCache("checkerboard", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
+    EXPECT_EQ(live.requests, 0u) << "fully warm -> served from cache, no GET";
+    EXPECT_EQ(stateless.requests, 0u) << "warm is budget-invariant";
+    EXPECT_EQ(live.incomplete, 0u);
+    EXPECT_EQ(stateless.incomplete, 0u);
+    EXPECT_GT(live.cache_reads, 0u) << "served from cache";
+}
 
-    /// Warm even segments; odd segments stay cold -> hit/miss/... on the scan.
+/// Alternating cached/cold segments, full scan. Live: each cold run is its own GET,
+/// broken by the next cached segment before its bound -> R + I (the warm-regression
+/// mechanism). Stateless: no reused connection to abandon -> I=0, but one short-lived
+/// connection per window -> higher R. Same fragmentation, opposite cost shape.
+TEST_F(ReaderExecutorMetric, Checkerboard)
+{
+    ReadList even;
     for (size_t s = 0; s < N_SEGMENTS; s += 2)
-        warmCache(fc, data, objects, {{s * SEGMENT, SEGMENT}});
+        even.emplace_back(s * SEGMENT, SEGMENT);
+    auto [live, stateless] = runMatrix("checkerboard", even, {{0, std::nullopt}});
 
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});   /// the checkerboard scan
-    const CostVector r2 = measure(fc, data, objects, {{0, std::nullopt}});   /// now fully warm
-
-    std::cout << "[CheckerboardLive] round1: " << r1.str() << "\n"
-              << "[CheckerboardLive] round2: " << r2.str() << "\n";
-
-    EXPECT_EQ(r1.requests, N_SEGMENTS / 2) << "one streamed GET per cold (odd) segment - not coalesced across cached holes";
-    EXPECT_EQ(r1.incomplete, N_SEGMENTS / 2 - 1) << "each cold segment's connection breaks at the next cached segment; the last drains at EOF";
-    EXPECT_EQ(r1.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
-    EXPECT_EQ(r2.requests, 0u) << "round 1 populated the odd segments";
+    EXPECT_EQ(live.requests, N_SEGMENTS / 2) << "live: one GET per cold segment, not coalesced across cached holes";
+    EXPECT_EQ(live.incomplete, N_SEGMENTS / 2 - 1) << "live: each cold run broken by the next cached segment";
+    EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
+    EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window, no reuse";
 }
 
 /// A small read starting mid-way into a cold segment. The cache keeps the miss
@@ -451,24 +512,17 @@ TEST_F(ReaderExecutorMetric, MidSegmentOverRead)
     /// cache. Probes whether the prefix over-read is bounded by `boundary_alignment`
     /// (the on-demand segment is created at the 4 KiB-aligned floor of the read) or
     /// by the 32 KiB segment max.
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("midseg", SEGMENT, ALIGNMENT, /*max_size=*/16u << 20);
-
     const size_t read_off = SEGMENT - BLOCK;   /// 31 KiB into the first 32 KiB segment
-    const CostVector r1 = measure(fc, data, objects, {{read_off, BLOCK}});
+    auto [live, stateless] = runMatrix("midseg", {}, {{read_off, BLOCK}});
 
-    std::cout << "[MidSegmentOverRead] " << r1.str()
-              << "  (read_off=" << read_off << " ALIGNMENT=" << ALIGNMENT
-              << " SEGMENT=" << SEGMENT << ")\n";
-
-    EXPECT_EQ(r1.requests, 1u);
-    EXPECT_GT(r1.over_read, 0u);
-    EXPECT_LE(r1.over_read, ALIGNMENT)
-        << "cold over-read should be bounded by boundary_alignment, not the segment size";
+    for (const CostVector & r : {live, stateless})
+    {
+        EXPECT_EQ(r.requests, 1u);
+        EXPECT_GT(r.over_read, 0u);
+        EXPECT_LE(r.over_read, ALIGNMENT)
+            << "cold over-read is bounded by boundary_alignment, not the segment size";
+        EXPECT_EQ(r.incomplete, 0u);
+    }
 }
 
 /// First half warm, second half cold, full sequential scan. The contiguous suffix
@@ -476,21 +530,13 @@ TEST_F(ReaderExecutorMetric, MidSegmentOverRead)
 TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
+    auto [live, stateless] = runMatrix("prefix_hit", {{0, half}}, {{0, std::nullopt}});
 
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("prefix_hit", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    warmCache(fc, data, objects, {{0, half}});  /// warm [0, half)
-
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    std::cout << "[PrefixHitSuffixMiss] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, 1u) << "the contiguous cold suffix is one streamed GET";
-    EXPECT_EQ(r1.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
-    EXPECT_EQ(r1.over_read, 0u);
+    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold suffix is one streamed GET";
+    EXPECT_EQ(live.incomplete, 0u) << "the miss runs to EOF and drains cleanly";
+    EXPECT_EQ(live.over_read, 0u);
+    EXPECT_EQ(stateless.incomplete, 0u);
+    EXPECT_GT(stateless.requests, live.requests) << "stateless: one connection per window";
 }
 
 /// First half cold, second half warm. The miss run is followed by cached data, so
@@ -501,21 +547,12 @@ TEST_F(ReaderExecutorMetric, PrefixHitSuffixMiss)
 TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
 {
     constexpr size_t half = FILE_SIZE / 2;
+    auto [live, stateless] = runMatrix("suffix_hit", {{half, half}}, {{0, std::nullopt}});
 
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("suffix_hit", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    warmCache(fc, data, objects, {{half, half}});  /// warm [half, end)
-
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    std::cout << "[SuffixHitPrefixMiss] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, 1u) << "the contiguous cold prefix is one streamed GET";
-    EXPECT_EQ(r1.incomplete, 1u) << "the connection is abandoned when the read switches to the cached suffix";
-    EXPECT_EQ(r1.over_read, 0u);
+    EXPECT_EQ(live.requests, 1u) << "live: the contiguous cold prefix is one streamed GET";
+    EXPECT_EQ(live.incomplete, 1u) << "live: connection abandoned when the read switches to the cached suffix";
+    EXPECT_EQ(live.over_read, 0u);
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
 /// All warm except one interior block. The single miss's connection is broken by
@@ -523,22 +560,14 @@ TEST_F(ReaderExecutorMetric, SuffixHitPrefixMiss)
 TEST_F(ReaderExecutorMetric, InteriorHole)
 {
     constexpr size_t hole = 3;   /// interior cold segment index
+    auto [live, stateless] = runMatrix("interior_hole",
+        {{0, hole * SEGMENT}, {(hole + 1) * SEGMENT, FILE_SIZE - (hole + 1) * SEGMENT}},
+        {{0, std::nullopt}});
 
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("interior_hole", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    warmCache(fc, data, objects, {{0, hole * SEGMENT},
-                                  {(hole + 1) * SEGMENT, FILE_SIZE - (hole + 1) * SEGMENT}});
-
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    std::cout << "[InteriorHole] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, 1u);
-    EXPECT_EQ(r1.incomplete, 1u) << "the single cold segment's connection is broken by the following hit";
-    EXPECT_EQ(r1.over_read, 0u);
+    EXPECT_EQ(live.requests, 1u);
+    EXPECT_EQ(live.incomplete, 1u) << "live: the single cold segment's connection is broken by the following hit";
+    EXPECT_EQ(live.over_read, 0u);
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
 /// Scattered point reads, each mid-way into a distinct cold segment. Each point is
@@ -552,23 +581,19 @@ TEST_F(ReaderExecutorMetric, RandomScattered)
     constexpr size_t off_in_seg = SEGMENT / 2 - BLOCK;    /// 15 KiB: mid-segment, NOT alignment-aligned
     constexpr size_t over_per = off_in_seg % ALIGNMENT;   /// 3 KiB prefix slack per point
 
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("random_scattered", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-
     ReadList reads;
     for (size_t i = 0; i < n_points; ++i)
         reads.emplace_back(i * SEGMENT + off_in_seg, point);
+    auto [live, stateless] = runMatrix("random_scattered", {}, reads);
 
-    const CostVector r1 = measure(fc, data, objects, reads);
-    std::cout << "[RandomScattered] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, n_points) << "one GET per scattered point (seeks break reuse)";
-    EXPECT_EQ(r1.incomplete, 0u) << "each point drains at its own extent";
-    EXPECT_EQ(r1.over_read, n_points * over_per) << "per point, the alignment-bounded prefix slack";
+    /// Seeks break reuse in BOTH modes, so R / I / O match: one GET per point, drained,
+    /// alignment-bounded prefix slack each.
+    for (const CostVector & r : {live, stateless})
+    {
+        EXPECT_EQ(r.requests, n_points) << "one GET per scattered point (seeks break reuse)";
+        EXPECT_EQ(r.incomplete, 0u) << "each point drains at its own extent";
+        EXPECT_EQ(r.over_read, n_points * over_per) << "per point, the alignment-bounded prefix slack";
+    }
 }
 
 /// Random starts, each followed by a short SEQUENTIAL run (mid-segment, cold). Same
@@ -582,23 +607,17 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
     constexpr size_t off_in_seg = SEGMENT / 2 - BLOCK;    /// 15 KiB: mid-segment, NOT alignment-aligned
     constexpr size_t over_per = off_in_seg % ALIGNMENT;   /// 3 KiB prefix slack per run
 
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("random_runs", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-
     ReadList reads;
     for (size_t i = 0; i < n_runs; ++i)
         reads.emplace_back(i * SEGMENT + off_in_seg, run);
+    auto [live, stateless] = runMatrix("random_runs", {}, reads);
 
-    const CostVector r1 = measure(fc, data, objects, reads);
-    std::cout << "[RandomPartialSequences] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, n_runs) << "one streamed GET per run";
-    EXPECT_EQ(r1.incomplete, 0u) << "each run drains at its extent";
-    EXPECT_EQ(r1.over_read, n_runs * over_per) << "per run, the alignment-bounded prefix slack (same as scattered)";
+    for (const CostVector & r : {live, stateless})
+    {
+        EXPECT_EQ(r.requests, n_runs) << "one streamed GET per run";
+        EXPECT_EQ(r.incomplete, 0u) << "each run drains at its extent";
+        EXPECT_EQ(r.over_read, n_runs * over_per) << "per run, the alignment-bounded prefix slack (same as scattered)";
+    }
 }
 
 /// Mostly-warm cache with a few scattered cold segments — the realistic production
@@ -607,13 +626,6 @@ TEST_F(ReaderExecutorMetric, RandomPartialSequences)
 /// worst case.
 TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 {
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("sparse_cold", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-
     /// Warm every segment except 4 scattered cold ones (each followed by a warm segment).
     const std::vector<size_t> cold = {6, 13, 20, 27};
     ReadList warm_ranges;
@@ -626,14 +638,12 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
     }
     if (prev < N_SEGMENTS)
         warm_ranges.emplace_back(prev * SEGMENT, (N_SEGMENTS - prev) * SEGMENT);
-    warmCache(fc, data, objects, warm_ranges);
+    auto [live, stateless] = runMatrix("sparse_cold", warm_ranges, {{0, std::nullopt}});
 
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    std::cout << "[SparseScatteredCold] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, cold.size()) << "one GET per cold segment";
-    EXPECT_EQ(r1.incomplete, cold.size()) << "each cold segment's connection is broken by the next warm segment";
-    EXPECT_EQ(r1.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
+    EXPECT_EQ(live.requests, cold.size()) << "live: one GET per cold segment";
+    EXPECT_EQ(live.incomplete, cold.size()) << "live: each cold segment broken by the next warm segment";
+    EXPECT_EQ(live.over_read, 0u) << "segment-aligned cold runs, no prefix over-read";
+    EXPECT_EQ(stateless.incomplete, 0u) << "stateless: no reused connection to abandon";
 }
 
 /// Cold cache, read SEGMENT-sized chunks in DESCENDING order. Backward seeks defeat
@@ -642,73 +652,13 @@ TEST_F(ReaderExecutorMetric, SparseScatteredCold)
 /// is extent-bounded, so it drains cleanly (I=0); the cost is pure R.
 TEST_F(ReaderExecutorMetric, ReverseSequential)
 {
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("reverse_seq", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-
     ReadList reads;
     for (size_t s = N_SEGMENTS; s-- > 0;)
         reads.emplace_back(s * SEGMENT, SEGMENT);
+    auto [live, stateless] = runMatrix("reverse_seq", {}, reads);
 
-    const CostVector r1 = measure(fc, data, objects, reads);
-    std::cout << "[ReverseSequential] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.requests, N_SEGMENTS) << "one GET per chunk - backward seeks defeat forward streaming (vs 1 for forward cold)";
-    EXPECT_EQ(r1.incomplete, 0u) << "each extent-bounded chunk drains cleanly";
-    EXPECT_EQ(r1.over_read, 0u) << "segment-aligned chunks, no prefix over-read";
-}
-
-/// Live path (slot budget) vs no-budget path on the SAME contiguous cold scan. The
-/// live path streams the whole scan on ONE reused connection (R=1); with no budget
-/// every window is a fresh short-lived one-shot connection (R = one per window), i.e.
-/// the connection-pool churn that exhausting `max_remote_read_connections` produces.
-/// Both stay bounded on a known-size source, so neither leaves an incomplete (I=0).
-TEST_F(ReaderExecutorMetric, LiveVsStatelessConnections)
-{
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    buffer_slots = 10;  // live: budget for a reusable connection
-    auto fc_live = makeFileCache("live", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    const CostVector live = measure(fc_live, data, objects, {{0, std::nullopt}});
-
-    buffer_slots = 0;   // no budget: every read is a short-lived one-shot connection
-    auto fc_sl = makeFileCache("stateless", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    const CostVector stateless = measure(fc_sl, data, objects, {{0, std::nullopt}});
-
-    std::cout << "[LiveVsStateless] live:      " << live.str() << "\n"
-              << "[LiveVsStateless] stateless: " << stateless.str() << "\n";
-
-    EXPECT_EQ(live.requests, 1u) << "live path streams the contiguous cold scan on one reused connection";
-    EXPECT_GT(stateless.requests, live.requests) << "no-budget path opens one short-lived connection per window";
-    EXPECT_EQ(live.incomplete, 0u);
-    EXPECT_EQ(stateless.incomplete, 0u) << "bounded reads on a known-size source never leave an incomplete connection";
-}
-
-/// The checkerboard from CheckerboardLive but with NO connection budget: each cold run
-/// is short-lived one-shot reads, so there is no reused connection to abandon at a
-/// cached gap -> I=0 (vs CheckerboardLive's I=15). The cost shifts entirely into the
-/// request count - the live-vs-stateless trade-off (reuse + possible incomplete vs
-/// no reuse + connection churn).
-TEST_F(ReaderExecutorMetric, CheckerboardStateless)
-{
-    const String content = makePattern(FILE_SIZE);
-    const std::unordered_map<String, String> data{{"obj", content}};
-    StoredObjects objects;
-    objects.emplace_back("obj", "", FILE_SIZE);
-
-    auto fc = makeFileCache("checkerboard_sl", SEGMENT, ALIGNMENT, /*max_size=*/64u << 20);
-    for (size_t s = 0; s < N_SEGMENTS; s += 2)  // warm even segments (default budget)
-        warmCache(fc, data, objects, {{s * SEGMENT, SEGMENT}});
-
-    buffer_slots = 0;  // no budget for the measured checkerboard scan
-    const CostVector r1 = measure(fc, data, objects, {{0, std::nullopt}});
-    std::cout << "[CheckerboardStateless] " << r1.str() << "\n";
-
-    EXPECT_EQ(r1.incomplete, 0u) << "no reused connection to abandon at a cached gap -> no incomplete connections";
+    EXPECT_EQ(live.requests, N_SEGMENTS) << "backward seeks defeat forward streaming -> one GET per chunk (vs 1 forward)";
+    EXPECT_EQ(live.incomplete, 0u) << "each extent-bounded chunk drains cleanly";
+    EXPECT_EQ(live.over_read, 0u) << "segment-aligned chunks, no prefix over-read";
+    EXPECT_EQ(stateless.incomplete, 0u);
 }
