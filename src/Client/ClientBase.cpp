@@ -2749,13 +2749,13 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 }
 
 
-void ClientBase::setupEchoAndHighlightSettings()
+void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
 {
     const auto & config = getClientConfiguration();
 
     /// By default, echoing and formatting are enabled in interactive mode and disabled in batch mode.
-    /// `--verbose` enables echoing as well.
-    const bool echo_default = is_interactive || config.getBool("verbose", false);
+    /// In `clickhouse-local`, `--verbose` enables echoing as well (historical behavior, opt-in here).
+    const bool echo_default = is_interactive || (verbose_implies_echo && config.getBool("verbose", false));
     echo_queries = config.getBool("echo", echo_default);
     echo_query_formatted = config.getBool("echo-formatted", is_interactive);
     echo_query_id = config.getBool("echo-query-id", is_interactive);

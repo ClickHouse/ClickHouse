@@ -844,7 +844,8 @@ void LocalServer::processConfig()
         query_id = getClientConfiguration().getString("query_id", "");
     }
 
-    setupEchoAndHighlightSettings();
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing.
+    setupEchoAndHighlightSettings(/* verbose_implies_echo */ true);
 
     print_stack_trace = getClientConfiguration().getBool("stacktrace", false);
     const std::string clickhouse_dialect{"clickhouse"};

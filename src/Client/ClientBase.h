@@ -160,7 +160,9 @@ protected:
 
     /// Resolve echo, echo-formatted, echo-query-id and highlight settings from the configuration,
     /// using interactive-mode-aware defaults. Must be called after is_interactive is determined.
-    void setupEchoAndHighlightSettings();
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing; other clients do not,
+    /// so the implication is opt-in via `verbose_implies_echo`.
+    void setupEchoAndHighlightSettings(bool verbose_implies_echo = false);
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(

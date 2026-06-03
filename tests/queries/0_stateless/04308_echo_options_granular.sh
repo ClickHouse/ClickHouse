@@ -28,6 +28,14 @@ ${CLICKHOUSE_CLIENT} --echo --echo-formatted=false --query="select 1+1"
 echo '--- echo-query-id (count) ---'
 ${CLICKHOUSE_CLIENT} --echo-query-id --query="select 1+1" 2>&1 | grep -c '^Query id:'
 
+# --verbose does not imply query echoing in clickhouse-client (only the result is printed).
+echo '--- client: verbose does not echo ---'
+${CLICKHOUSE_CLIENT} --verbose --query="select 1+1" 2>/dev/null
+
+# --verbose implies query echoing in clickhouse-local (historical behavior).
+echo '--- local: verbose echoes ---'
+${CLICKHOUSE_LOCAL} --verbose --query="select 1+1" 2>/dev/null
+
 # A user-fixed --query_id must be preserved (printed before execution and used for execution),
 # including in clickhouse-local. See https://github.com/ClickHouse/ClickHouse/pull/106191.
 echo '--- local: fixed query_id is preserved with echo-query-id ---'
