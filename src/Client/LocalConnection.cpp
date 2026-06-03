@@ -410,6 +410,10 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
                     state->block = state->io.pipeline.getHeader();
                     state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
                     state->io.pipeline.setConcurrencyControl(false);
+                    /// Announce the result header as the next packet, exactly as the pulling path in `sendQuery` does.
+                    /// `ClientBase::onData` uses this zero-row header to initialize the output format; without it the
+                    /// header is dropped (overwritten by the first result block, or never sent for an empty result).
+                    next_packet_type = Protocol::Server::Data;
                 }
             }
             catch (const Exception & e)
