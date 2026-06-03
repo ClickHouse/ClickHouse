@@ -55,7 +55,7 @@ UInt64 safeIncrementColumnId(UInt64 max_id)
 /// Pathological inputs like "18446744073709551615.x" still parse to
 /// UInt64::max here; `safeIncrementColumnId` then throws a clear
 /// "counter overflow" error instead of silently wrapping.
-static UInt64 extractNumericCounter(const String & s)
+UInt64 extractNumericCounter(const String & s)
 {
     UInt64 value = 0;
     const auto * begin = s.data();

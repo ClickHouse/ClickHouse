@@ -1374,7 +1374,9 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 By default, MergeTree stores each column's data in files named after the column itself (e.g. `name.bin`, `name.mrk2`).
 This means that schema changes such as `RENAME COLUMN` or `DROP COLUMN` require rewriting every data part on disk through a mutation, which can be expensive for large tables.
 
-When the `serialization_info_version` setting is set to `with_column_ids`, each column is assigned a stable, counter-allocated column ID (e.g. `1`, `2`, `3`) that is used for on-disk file names.
+When the `serialization_info_version` setting is set to `with_column_ids`, the table uses a stable column ID for each column's on-disk file names.
+Columns that exist at `CREATE TABLE` time (or at activation time for existing tables) keep an identity mapping where the column ID equals the logical name; columns added later via `ADD COLUMN` get counter-allocated IDs like `1`, `2`, `3`.
+For example, after `CREATE TABLE t (a UInt64, b String)` followed by `ALTER TABLE t ADD COLUMN c UInt64`, the mapping is `a -> a`, `b -> b`, `c -> 1` (visible in `system.parts_columns.column_id`).
 A persistent mapping from logical column names to column IDs is stored in a `column_ids.json` file alongside the table metadata.
 This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
 
@@ -1456,4 +1458,4 @@ The `column_id` field is a stable identifier that does not change across renames
 
 - **`ReplicatedMergeTree`** is not yet supported. Only non-replicated `MergeTree` tables can use column IDs.
 
-- **Single-child flattened `Nested` cross-parent rename**: when a flattened `Nested` column is added via `ALTER TABLE ADD COLUMN` as the only child of its parent (e.g. `ADD COLUMN n.x Array(UInt64)` with no sibling `n.y`), it receives a plain-counter column ID (e.g. `5`) rather than a compound one (e.g. `5.x`). Renaming such a column to a different `Nested` parent (e.g. `n.x` → `m.x`) is rejected because the shared array offset stream name is derived from the logical parent, and changing it would break reads of existing parts. Multi-child flattened `Nested` columns with compound column IDs can be renamed across parents without restriction.
+- **Cross-parent flattened `Nested` rename requires moving the whole group**: when a flattened `Nested` column is added via `ALTER TABLE ADD COLUMN` as the only child of its parent (e.g. `ADD COLUMN n.x Array(UInt64)` with no sibling `n.y`), it receives a plain-counter column ID (e.g. `5`) rather than a compound one (e.g. `5.x`), and renaming it to a different `Nested` parent (e.g. `n.x` → `m.x`) is rejected outright because the shared array offset stream name is derived from the logical parent. Multi-child flattened `Nested` columns with compound column IDs can be renamed across parents, but **all siblings sharing the same physical Nested prefix must move to the same new parent in the same `ALTER`** — a partial move like `RENAME COLUMN n.x TO m.x` while leaving `n.y` behind is rejected with `NOT_IMPLEMENTED` because the two logical parents would otherwise share one offsets stream.
