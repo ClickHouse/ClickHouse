@@ -154,6 +154,7 @@ namespace ProfileEvents
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
 }
 
 namespace CurrentMetrics
@@ -10928,7 +10929,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
                 *flag = false;
             };
         });
-        watch.setKind(Coordination::WatchCallbackKind::ReplicatedMergeTreeLeaderElection);
+        watch.setTriggeredEvent(ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection);
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
         if (exists)

@@ -356,34 +356,11 @@ using namespace DB;
 namespace
 {
 
-ProfileEvents::Event watchTriggeredProfileEvent(WatchCallbackKind kind)
-{
-    switch (kind)
-    {
-        case WatchCallbackKind::Other: return ProfileEvents::ZooKeeperWatchTriggeredOther;
-        case WatchCallbackKind::ReplicatedMergeTreeQueue: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeQueue;
-        case WatchCallbackKind::ReplicatedMergeTreeLog: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
-        case WatchCallbackKind::ReplicatedMergeTreeMutations: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
-        case WatchCallbackKind::ReplicatedMergeTreeLeaderElection: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
-        case WatchCallbackKind::DistributedDDL: return ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL;
-        case WatchCallbackKind::KeeperMap: return ProfileEvents::ZooKeeperWatchTriggeredKeeperMap;
-        case WatchCallbackKind::ReplicatedAccessControl: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl;
-        case WatchCallbackKind::UserDefinedSQLObjects: return ProfileEvents::ZooKeeperWatchTriggeredUserDefinedSQLObjects;
-        case WatchCallbackKind::BackupCoordination: return ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination;
-        case WatchCallbackKind::ObjectStorageQueue: return ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue;
-        case WatchCallbackKind::ClusterDiscovery: return ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery;
-        case WatchCallbackKind::MaterializedViewRefresh: return ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh;
-        case WatchCallbackKind::PartMovesBetweenShards: return ProfileEvents::ZooKeeperWatchTriggeredPartMovesBetweenShards;
-    }
-    return ProfileEvents::ZooKeeperWatchTriggeredOther;
-}
-
 void triggerWatchCallback(
     const WatchCallbackPtrOrEventPtr & event_or_callback,
-    const WatchResponse & response,
-    const LoggerPtr & log)
+    const WatchResponse & response)
 {
-    ProfileEvents::increment(watchTriggeredProfileEvent(event_or_callback.getKind()));
+    ProfileEvents::increment(event_or_callback.getTriggeredEvent());
 
     DB::ProfileEventTimeIncrement<DB::Microseconds> watch_callback_duration(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds);
     try
@@ -393,10 +370,7 @@ void triggerWatchCallback(
     catch (...)
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackErrors);
-        if (log)
-            tryLogCurrentException(log);
-        else
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+        throw;
     }
 }
 
@@ -1099,7 +1073,7 @@ void ZooKeeper::receiveEvent()
                 for (const auto & [event_or_callback, _] : it->second)
                 {
                     if (event_or_callback)
-                        triggerWatchCallback(event_or_callback, watch_response, log);
+                        triggerWatchCallback(event_or_callback, watch_response);
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
@@ -1450,7 +1424,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         watch_callback_count += 1;
                         // TODO: there is impossible to have watch which will be "nullptr"
                         if (event_or_callback)
-                            triggerWatchCallback(event_or_callback, response, log);
+                        {
+                            try
+                            {
+                                triggerWatchCallback(event_or_callback, response);
+                            }
+                            catch (...)
+                            {
+                                /// We must continue to all other callbacks, because the user is waiting for them.
+                                tryLogCurrentException(log);
+                            }
+                        }
                     }
                 }
 
@@ -1496,7 +1480,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
-                triggerWatchCallback(info.watch, response, log);
+                try
+                {
+                    triggerWatchCallback(info.watch, response);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
             }
         }
     }

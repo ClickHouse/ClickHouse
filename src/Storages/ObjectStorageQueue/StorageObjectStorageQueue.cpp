@@ -58,6 +58,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
 
@@ -1814,7 +1815,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, Coordination::WatchCallbackKind::ObjectStorageQueue};
+                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
                 const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
                 if (!node_exists)
                     zk->existsWatch(processed_node_path, nullptr, labelled_event);
@@ -1824,13 +1825,13 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 /// Unordered: each file gets its own processed node; watch for its creation.
                 zk->existsWatch(
                     processed_node_path, nullptr,
-                    Coordination::WatchCallbackPtrOrEventPtr{event, Coordination::WatchCallbackKind::ObjectStorageQueue});
+                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
             zk->existsWatch(
                 failed_node_path, nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{event, Coordination::WatchCallbackKind::ObjectStorageQueue});
+                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
         });
 
         std::string failure_message;

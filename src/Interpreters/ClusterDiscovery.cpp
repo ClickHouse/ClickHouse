@@ -36,6 +36,11 @@
 #include <fmt/ranges.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredClusterDiscovery;
+}
+
 namespace DB
 {
 
@@ -305,7 +310,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
         nodes = zk->getChildrenWatch(
             getShardsListPath(zk_root),
             &stat,
-            Coordination::WatchCallbackPtrOrEventPtr{callback->second, Coordination::WatchCallbackKind::ClusterDiscovery});
+            Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
     }
     else
         nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
@@ -594,7 +599,7 @@ void ClusterDiscovery::findDynamicClusters(
         auto clusters = zk->getChildrenWatch(
             path.zk_path,
             nullptr,
-            Coordination::WatchCallbackPtrOrEventPtr{path.watch_callback, Coordination::WatchCallbackKind::ClusterDiscovery});
+            Coordination::WatchCallbackPtrOrEventPtr{path.watch_callback, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
 
         for (const auto & cluster : clusters)
         {

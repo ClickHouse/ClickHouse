@@ -41,6 +41,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -1183,7 +1184,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
 
     /// Set watches. (This is a lot of code, is there a better way?)
     Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
-        watch_callback, Coordination::WatchCallbackKind::MaterializedViewRefresh};
+        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
     if (!coordination.watches->root_watch_active.load())
     {
         coordination.watches->root_watch_active.store(true);
