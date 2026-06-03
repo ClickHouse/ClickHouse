@@ -1511,7 +1511,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     The OOM response requires cgroup v2 `memory.events` OOM-kill evidence and may run global query
     cancellation, merge cancellation, and `system.crash_log` writes. Behavior may change between
     ClickHouse versions until production validation is complete.
-    )", 0) \
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, oom_canary_size, 104857600, R"(
     Size in bytes of the memory region that the OOM canary child process allocates and locks.
     Default is 100 MB (104857600). Larger values make the canary a more attractive OOM target.

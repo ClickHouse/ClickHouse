@@ -1,7 +1,10 @@
 #include <Common/OOMCanaryExitCodes.h>
 
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
+
 #if defined(OS_LINUX)
 
+#include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -68,9 +71,10 @@ namespace
         DB::writeString("1000", out);
         out.finalize();
     }
-    catch (const std::exception & e)
+    catch (...)
     {
-        fmt::print(stderr, "OOM canary child: writing /proc/self/oom_score_adj failed: {}\n", e.what());
+        fmt::print(stderr, "OOM canary child: writing /proc/self/oom_score_adj failed: {}\n",
+            DB::getCurrentExceptionMessage(true));
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 

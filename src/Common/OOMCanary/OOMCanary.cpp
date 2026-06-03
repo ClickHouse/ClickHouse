@@ -184,7 +184,7 @@ std::optional<OOMCanary::OOMKillCounter> OOMCanary::readOOMKillCounter()
         static constexpr std::string_view prefix = "oom_kill ";
         if (!line.starts_with(prefix))
             continue;
-        uint64_t value;
+        uint64_t value = 0;
         const char * begin = line.data() + prefix.size();
         const char * end = line.data() + line.size();
         if (std::from_chars(begin, end, value).ec == std::errc{})
@@ -231,30 +231,56 @@ void OOMCanary::monitorThread()
             break;
         }
 
-        /// Wait for either the canary to die or `stop()` to signal shutdown.
-        epoll.add(pidfd, EPOLLIN);
-        epoll_event events[2];
-        events[0].data.fd = events[1].data.fd = -1;
-        const size_t n = epoll.getManyReady(2, events, -1);
-
-        bool canary_died = false;
+        /// From here the canary child and its `pidfd` are live and must be
+        /// reaped and closed on every path. `Epoll::add` / `getManyReady` /
+        /// `remove` can throw (e.g. `ENOMEM` under memory pressure); without
+        /// cleanup the child would be left alive and unmonitored and the
+        /// `pidfd` would leak in the server process, breaking the canary
+        /// ownership invariant. Wrap the whole per-child section so a throw
+        /// best-effort kills, reaps, and closes before disabling the canary.
+        int status = 0;
+        bool reaped = false;
         bool shutdown_requested = false;
-        for (size_t i = 0; i < n; ++i)
+        try
         {
-            if (events[i].data.fd == pidfd)
-                canary_died = true;
-            else if (events[i].data.fd == shutdown_fd.fd)
-                shutdown_requested = true;
-        }
+            /// Wait for either the canary to die or `stop()` to signal shutdown.
+            epoll.add(pidfd, EPOLLIN);
+            epoll_event events[2];
+            events[0].data.fd = events[1].data.fd = -1;
+            const size_t n = epoll.getManyReady(2, events, -1);
 
-        if (shutdown_requested && !canary_died)
+            bool canary_died = false;
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (events[i].data.fd == pidfd)
+                    canary_died = true;
+                else if (events[i].data.fd == shutdown_fd.fd)
+                    shutdown_requested = true;
+            }
+
+            if (shutdown_requested && !canary_died)
+            {
+                if (syscall_pidfd_send_signal(pidfd, SIGKILL) != 0)
+                    ::kill(pid, SIGKILL);
+            }
+
+            status = reapChild(pid);
+            reaped = true;
+            epoll.remove(pidfd);
+        }
+        catch (...)
         {
-            if (syscall_pidfd_send_signal(pidfd, SIGKILL) != 0)
+            LOG_WARNING(log, "Error while monitoring OOM canary pid {}: {}; killing it and disabling the canary",
+                pid, getCurrentExceptionMessage(true));
+            if (!reaped)
+            {
                 ::kill(pid, SIGKILL);
+                reapChild(pid);
+            }
+            (void)::close(pidfd);
+            break;
         }
 
-        int status = reapChild(pid);
-        epoll.remove(pidfd);
         if (::close(pidfd) != 0)
             LOG_WARNING(log, "close(pidfd) failed for canary pid {}: {}", pid, errnoToString());
 
@@ -313,7 +339,7 @@ void OOMCanary::monitorThread()
         }
 
         /// Sleep for `backoff_milliseconds`, break early if `stop()` signals shutdown.
-        epoll_event ev;
+        epoll_event ev{};
         if (epoll.getManyReady(1, &ev, static_cast<int>(backoff_milliseconds)) > 0)
             break;
     }
