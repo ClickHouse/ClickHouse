@@ -4,17 +4,20 @@
 /// ProfileEvents per consumer pass, over two rounds (round 2 re-reads to measure how
 /// well round 1 populated the cache). These are the executor's production counters
 /// (so the same numbers are computable on real load via system.reader_executor_log):
-///   Cost_ms = 30*R + 5*I + 20*O_MiB + 0.1*Wc + 0.05*Rc
+///   Cost_ms = 30*R + 5*I + 20*S_MiB + 0.1*Wc + 0.05*Rc   (S = bytes from source)
 ///     R  = remote GET requests              (ReaderExecutorSourceRequests)
 ///     I  = connections left not-fully-read  (ReaderExecutorIncompleteConnections)
 ///     O  = over-read bytes                  (ReaderExecutorOverReadBytes)
+///     S  = bytes fetched from source        (ReaderExecutorBytesFromSource; the bandwidth base)
 ///     Wc = cache writes                     (ReaderExecutorCachePopulateRequests)
 ///     Rc = cache reads                      (ReaderExecutorCacheGetRequests)
+/// The load-independent KPI is cost per MiB requested: costMs / (ReaderExecutorRequestedBytes MiB).
 ///
 /// Geometry is production sizes compressed by COMPRESSION (see the constants): all
 /// ratios (segment / window / block / alignment / min_bytes_for_seek) preserved, so
-/// the COUNTS (R, I, Wc, Rc) match production; over-read bytes are at the compressed
-/// scale and costMs() rescales them by COMPRESSION. The FileCache is real.
+/// the COUNTS (R, I, Wc, Rc) match production; the BYTE counters (over-read, bytes-from-
+/// source, requested) are at the compressed scale and costMs()/costPerMiB() rescale them
+/// by COMPRESSION. The FileCache is real.
 
 #include <IO/ReaderExecutor.h>
 #include <IO/ISourceReader.h>
@@ -71,6 +74,7 @@ namespace ProfileEvents
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorCacheGetRequests;
 }
@@ -165,23 +169,33 @@ struct CostVector
     size_t over_read = 0;     /// O (bytes)
     size_t cache_writes = 0;  /// Wc
     size_t cache_reads = 0;   /// Rc
-    size_t fetched = 0;       /// bytes from source
+    size_t fetched = 0;       /// S = bytes from source (the bandwidth base)
+    size_t requested = 0;     /// useful bytes delivered (cost-per-MiB denominator)
 
     double costMs() const
     {
-        /// over_read is measured at the compressed geometry; scale to real bytes
-        /// (R/I/Wc/Rc are counts and already match production).
+        /// Byte counters are at the compressed geometry; scale to real bytes (R/I/Wc/Rc
+        /// are counts and already match production). Bandwidth is charged on bytes-from-
+        /// source (useful payload + over-read), matching the production cost model.
         return 30.0 * static_cast<double>(requests) + 5.0 * static_cast<double>(incomplete)
-             + 20.0 * (static_cast<double>(over_read * COMPRESSION) / (1024.0 * 1024.0))
+             + 20.0 * (static_cast<double>(fetched * COMPRESSION) / (1024.0 * 1024.0))
              + 0.1 * static_cast<double>(cache_writes) + 0.05 * static_cast<double>(cache_reads);
+    }
+
+    /// Load-independent KPI: modeled ms per MiB requested. requested is at the compressed
+    /// geometry, so scale it by COMPRESSION too (it mostly cancels costMs's scaled bytes).
+    double costPerMiB() const
+    {
+        const double req_mib = static_cast<double>(requested * COMPRESSION) / (1024.0 * 1024.0);
+        return req_mib > 0.0 ? costMs() / req_mib : 0.0;
     }
 
     String str() const
     {
         return "R=" + std::to_string(requests) + " I=" + std::to_string(incomplete)
              + " O=" + std::to_string(over_read * COMPRESSION) + "B(real) Wc=" + std::to_string(cache_writes)
-             + " Rc=" + std::to_string(cache_reads) + " fetched=" + std::to_string(fetched)
-             + "B cost=" + std::to_string(costMs()) + "ms";
+             + " Rc=" + std::to_string(cache_reads) + " S=" + std::to_string(fetched * COMPRESSION)
+             + "B cost=" + std::to_string(costMs()) + "ms cost/MiB=" + std::to_string(costPerMiB());
     }
 };
 
@@ -202,10 +216,11 @@ public:
         out.cache_writes = now[3] - base[3];
         out.cache_reads  = now[4] - base[4];
         out.fetched      = now[5] - base[5];
+        out.requested    = now[6] - base[6];
     }
 
 private:
-    static std::array<UInt64, 6> read()
+    static std::array<UInt64, 7> read()
     {
         auto & c = CurrentThread::getProfileEvents();
         return {
@@ -215,11 +230,12 @@ private:
             c[ProfileEvents::ReaderExecutorCachePopulateRequests].load(std::memory_order_relaxed),
             c[ProfileEvents::ReaderExecutorCacheGetRequests].load(std::memory_order_relaxed),
             c[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed),
+            c[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed),
         };
     }
 
     CostVector & out;
-    std::array<UInt64, 6> base;
+    std::array<UInt64, 7> base;
 };
 
 String makePattern(size_t size)
@@ -420,7 +436,8 @@ public:
         s << "R=" << std::left << std::setw(4) << m.requests
           << " I=" << std::setw(3) << m.incomplete
           << " O=" << std::setw(5) << (o_real == 0 ? String("0") : std::to_string(o_real >> 20) + "M")
-          << " cost=" << std::fixed << std::setprecision(0) << std::setw(6) << m.costMs() << "ms";
+          << " cost=" << std::fixed << std::setprecision(0) << std::setw(6) << m.costMs() << "ms"
+          << " /MiB=" << std::setprecision(1) << std::setw(6) << m.costPerMiB();
         return s.str();
     }
 
@@ -435,11 +452,13 @@ public:
         auto print_row = [](const String & name, const std::pair<CostVector, CostVector> & r)
         {
             std::cout << std::left << std::setw(16) << name << " | "
-                      << std::setw(36) << fmtCell(r.first) << " | " << fmtCell(r.second) << "\n";
+                      << std::setw(50) << fmtCell(r.first) << " | " << fmtCell(r.second) << "\n";
         };
         std::cout << "\n=== ReaderExecutorMetric: cache-state x read-pattern x budget ===\n"
+                  << "cost = 30ms*R + 5ms*I + 20ms*S_MiB + 0.1ms*Wc + 0.05ms*Rc (S = bytes from source,\n"
+                  << "byte counters rescaled by COMPRESSION); /MiB = cost per MiB requested (load-independent KPI)\n"
                   << std::left << std::setw(16) << "scenario" << " | "
-                  << std::setw(36) << "live" << " | stateless\n";
+                  << std::setw(50) << "live" << " | stateless\n";
         for (const auto & name : order)
             if (auto it = results.find(name); it != results.end())
                 print_row(name, it->second);
