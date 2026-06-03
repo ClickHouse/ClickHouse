@@ -187,26 +187,32 @@ Float64 parseRealNumber(std::string_view token, const String & line)
 
 /// Converts a `realnumber` timestamp token to `Int64` without `Float64` boundary ambiguity.
 ///
-/// `Float64` cannot distinguish adjacent integers near `Int64` limits (e.g. `Int64::max` and
-/// `Int64::max + 1` both round to the same `Float64`). Doing the range check directly on
-/// `Float64` therefore lets out-of-range tokens reach `static_cast<Int64>` (undefined behavior).
+/// `Float64` has only 53 mantissa bits, so it cannot distinguish adjacent integers near `Int64`
+/// limits (`Int64::max`, `Int64::max + 1`, and `Int64::min - 1` all round to the same `Float64`
+/// as `±2^63`). A range check done on `Float64` alone therefore both lets out-of-range tokens
+/// through (silent data corruption) and may produce `static_cast<Int64>` undefined behavior.
 ///
-/// Strategy:
-///   1. If the token has no fractional/exponent part, parse it exactly as `Int64` (this catches
-///      both valid and overflowing integers without relying on `Float64`).
-///   2. Otherwise, the already-parsed `Float64` value is checked against exact boundaries:
-///      `[-2^63, 2^63)` (`2^63` is exactly representable in `Float64`; `Int64::max == 2^63 - 1`).
+/// Strategy (exact textual checks first, `Float64` only when unambiguous):
+///   1. Integer-shaped tokens (no `.`, no exponent) are parsed exactly as `Int64` via
+///      `tryParseInt<Int64>` with overflow detection.
+///   2. Decimal-shaped tokens (`.`, no exponent) are validated by exact-parsing the integer
+///      prefix (substring before `.`) as `Int64`; the integer prefix is the toward-zero
+///      truncation, so we return it directly without relying on the imprecise `Float64`.
+///      Tokens with no integer prefix (`.5`, `+.5`, `-.5`) fall back to `static_cast<Int64>` of
+///      the `Float64`, which is unambiguous because |value| < 1.
+///   3. Tokens with an exponent are checked against exact `Float64` boundaries: strict
+///      `(-2^63, 2^63)`. Equality with `±2^63` is rejected because the original token could
+///      represent `±2^63 ± k` for any small `k` that `Float64` cannot resolve; users who really
+///      want `Int64::min` should write it in the integer-shaped or decimal-shaped form.
 Int64 timestampTokenToInt64(std::string_view token, Float64 ts_value, const String & line)
 {
-    bool integer_shaped = !token.empty();
-    for (char c : token)
-        if (c == '.' || c == 'e' || c == 'E')
-        {
-            integer_shaped = false;
-            break;
-        }
+    const size_t dot_pos = token.find('.');
+    const size_t e_pos = token.find('e');
+    const size_t E_pos = token.find('E');
+    const bool has_dot = dot_pos != std::string_view::npos;
+    const bool has_exp = e_pos != std::string_view::npos || E_pos != std::string_view::npos;
 
-    if (integer_shaped)
+    if (!has_dot && !has_exp)
     {
         std::string_view body = token;
         if (!body.empty() && body.front() == '+')
@@ -218,8 +224,23 @@ Int64 timestampTokenToInt64(std::string_view token, Float64 ts_value, const Stri
         throwIncorrect("Timestamp value out of Int64 range", line);
     }
 
+    if (has_dot && !has_exp)
+    {
+        std::string_view int_part = token.substr(0, dot_pos);
+        if (!int_part.empty() && int_part.front() == '+')
+            int_part.remove_prefix(1);
+
+        if (int_part.empty() || int_part == "-")
+            return static_cast<Int64>(ts_value);
+
+        Int64 int_value = 0;
+        if (!tryParseInt<>(int_value, int_part))
+            throwIncorrect("Timestamp value out of Int64 range", line);
+        return int_value;
+    }
+
     const Float64 upper = std::ldexp(1.0, 63);
-    if (!(ts_value >= -upper && ts_value < upper))
+    if (!(ts_value > -upper && ts_value < upper))
         throwIncorrect("Timestamp value out of Int64 range", line);
     return static_cast<Int64>(ts_value);
 }

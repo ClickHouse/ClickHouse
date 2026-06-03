@@ -168,3 +168,32 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullabl
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775809', char(10))); -- { serverError INCORRECT_DATA }
 -- Fractional timestamp that exceeds Int64 range after truncation must also be rejected.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1e20', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Decimal-token boundary: `-9223372036854775809.0` rounds to exactly `-2^63` in Float64, so a
+-- Float64 range check would accept it as `INT64_MIN`. The decimal path validates the integer
+-- prefix exactly to catch this asymmetric leak. The symmetric in-range case `-9223372036854775808.5`
+-- (truncation == `INT64_MIN`) must still be accepted.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775809.0', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775808.0', char(10))); -- { serverError INCORRECT_DATA }
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 -9223372036854775808.5', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 9223372036854775807.5', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+-- Decimal tokens with no integer prefix (`.5`, `-.5`) truncate to 0 / -0 and must still parse.
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 -.5', char(10), '# EOF', char(10))
+)
+FORMAT TSV;

@@ -18,3 +18,6 @@ http_requests_total_sum	1			{}	\N
 http_request_duration_seconds	5	help	histogram	{'sum':''}	\N	
 rpc_duration_seconds	3	help	histogram	{'le':'0.5'}	\N	
 m	1	9223372036854775807
+m	1	-9223372036854775808
+m	1	9223372036854775807
+m	1	0
