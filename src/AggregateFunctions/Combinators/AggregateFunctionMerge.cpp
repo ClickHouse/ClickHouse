@@ -129,6 +129,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMerge>(), Documentation{

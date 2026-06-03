@@ -33,6 +33,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorState>(), Documentation{

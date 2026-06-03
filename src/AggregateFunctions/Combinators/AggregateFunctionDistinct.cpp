@@ -59,6 +59,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorDistinct>(), Documentation{

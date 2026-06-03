@@ -351,7 +351,7 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
-Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
+static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
 {
     if (!metadata_object->has(f_snapshots))
