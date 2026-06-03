@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 
 #include <filesystem>
+#include <functional>
 
 namespace fs = std::filesystem;
 
@@ -30,17 +31,32 @@ namespace
     /// The same holder is also stored in `BorrowFromCacheObjectStorage::entries`. Sharing ownership
     /// ensures the segment outlives both the buffer and concurrent removals from `entries`,
     /// avoiding a use-after-free of the raw `FileSegment *` held inside `WriteBufferToFileSegment`.
+    ///
+    /// The segment is published into `entries` only when the write finalizes successfully (via
+    /// `publish_on_finalize`). A cancelled write -- which happens for an empty write when the
+    /// metadata storage supports empty files without blobs, as well as on any error -- never
+    /// publishes, so its ephemeral cache reservation is released when this buffer is destroyed
+    /// instead of staying pinned in `entries` until shutdown with no metadata owner.
     class HoldingWriteBuffer : public WriteBufferFromFileDecorator
     {
     public:
-        HoldingWriteBuffer(std::unique_ptr<WriteBuffer> impl_, std::shared_ptr<FileSegmentsHolder> holder_)
+        HoldingWriteBuffer(std::unique_ptr<WriteBuffer> impl_, std::shared_ptr<FileSegmentsHolder> holder_, std::function<void()> publish_on_finalize_)
             : WriteBufferFromFileDecorator(std::move(impl_))
             , holder(std::move(holder_))
+            , publish_on_finalize(std::move(publish_on_finalize_))
         {
+        }
+
+    protected:
+        void finalizeImpl() override
+        {
+            WriteBufferFromFileDecorator::finalizeImpl();
+            publish_on_finalize();
         }
 
     private:
         std::shared_ptr<FileSegmentsHolder> holder;
+        std::function<void()> publish_on_finalize;
     };
 
     /// Decorator that keeps a shared `FileSegmentsHolder` alive for the lifetime of the read buffer.
@@ -143,14 +159,17 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
     LOG_TEST(log, "Write object: {} -> {}", object.remote_path, cache_path);
 
     auto inner_buffer = std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), buf_size);
-    auto write_buffer = std::make_unique<HoldingWriteBuffer>(std::move(inner_buffer), segment_holder);
 
+    /// Publish the segment into `entries` only after a successful finalize. Publishing eagerly here
+    /// would leak the reservation for empty (or failed) writes, which are cancelled rather than
+    /// finalized and so never get a metadata blob that a later `removeObject` could clean up.
+    auto publish_on_finalize = [this, remote_path = object.remote_path, segment_holder, cache_path]()
     {
         std::lock_guard lock(mutex);
-        entries[object.remote_path] = SegmentEntry{segment_holder, cache_path};
-    }
+        entries[remote_path] = SegmentEntry{segment_holder, cache_path};
+    };
 
-    return write_buffer;
+    return std::make_unique<HoldingWriteBuffer>(std::move(inner_buffer), segment_holder, std::move(publish_on_finalize));
 }
 
 void BorrowFromCacheObjectStorage::removeObjectIfExists(const StoredObject & object)
