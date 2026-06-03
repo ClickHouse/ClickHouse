@@ -7,6 +7,13 @@ detect the truncation and either:
   - switch to bypass-cache mode (predownloadForFileSegment path), or
   - return a short read (readBigAt path), or
   - treat it as legitimate EOF (readFromFileSegment path).
+
+NOTE: the MergeTree-based tests below exercise the sequential cached-read
+paths (predownloadForFileSegment / readFromFileSegment). `readBigAt` is the
+random-access path used by Parquet over object storage; it is NOT reached by
+a MergeTree SELECT and would need a separate test reading a Parquet file via
+the s3() table function. The `Cannot read all data` assertion below is kept
+as a guard but is not actually exercised by these queries.
 """
 
 import io
@@ -89,11 +96,12 @@ def test_truncated_object_no_logical_error(started_cluster):
         # Force data to be flushed to S3
         node.query("OPTIMIZE TABLE t_trunc FINAL")
 
-        # Find the largest data object — most likely to trigger predownload
+        # Find the largest data object. With wide parts (min_bytes_for_wide_part = 0)
+        # every column is a separate .bin object, and the largest one is the data
+        # for the `s` String column — by far bigger than the UInt64 `x` column.
         objects = _get_data_objects(minio)
         assert len(objects) > 0, "No S3 objects found for the table"
 
-        # Pick the largest object (most likely a column data file)
         objects.sort(key=lambda x: x[1], reverse=True)
         target_name, target_size = objects[0]
         logger.info(
@@ -107,11 +115,13 @@ def test_truncated_object_no_logical_error(started_cluster):
         # Truncate the S3 object to 50% of its original size
         _truncate_s3_object(minio, target_name, target_size, keep_fraction=0.5)
 
-        # Read the data — this should NOT throw LOGICAL_ERROR about
-        # predownload or readBigAt. Other errors are acceptable (broken part,
-        # checksum mismatch, etc.)
+        # Read the data. The query MUST read the `s` column so it actually hits
+        # the truncated object (the largest one) — reading only `x`/count() would
+        # never touch it and the test would pass even on the unpatched code.
+        # This should NOT throw LOGICAL_ERROR about predownload. Other errors are
+        # acceptable (broken part, checksum mismatch, etc.).
         try:
-            node.query("SELECT sum(x), count() FROM t_trunc")
+            node.query("SELECT sum(cityHash64(s)), count() FROM t_trunc")
             logger.info("Query succeeded despite truncated object (bypass-cache worked)")
         except Exception as e:
             error_msg = str(e)
@@ -162,15 +172,17 @@ def test_truncated_object_during_merge_read(started_cluster):
         # Drop cache
         _drop_cache(node)
 
-        # Truncate the largest object
+        # Truncate the largest object (the `s` String column data).
         objects_before.sort(key=lambda x: x[1], reverse=True)
         target_name, target_size = objects_before[0]
         _truncate_s3_object(minio, target_name, target_size, keep_fraction=0.3)
 
-        # Try reading — same assertion: no LOGICAL_ERROR from predownload/readBigAt
+        # Try reading the `s` column so the read actually touches the truncated
+        # object — a bare count() reads only metadata and would never hit it.
+        # Same assertion: no LOGICAL_ERROR from predownload.
         try:
-            result = node.query("SELECT count() FROM t_trunc_merge")
-            logger.info("Read succeeded: %s rows", result.strip())
+            result = node.query("SELECT sum(cityHash64(s)) FROM t_trunc_merge")
+            logger.info("Read succeeded: %s", result.strip())
         except Exception as e:
             error_msg = str(e)
             assert "Failed to predownload remaining" not in error_msg, (
