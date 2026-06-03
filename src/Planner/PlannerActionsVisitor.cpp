@@ -752,32 +752,10 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
 
     if (auto * expression_list_node = expression_node->as<ListNode>())
     {
-        /// When two projection items resolve to the same DAG node (e.g. two ALIAS
-        /// columns expanding to the same expression in a Distributed query), downstream
-        /// code deduplicates outputs by name, shrinking the column count.  To prevent
-        /// this, add ALIAS nodes with unique names for the duplicates.
-        std::unordered_map<const ActionsDAG::Node *, size_t> seen_nodes;
-
         for (auto & node : expression_list_node->getNodes())
         {
             auto [node_name, _] = visitImpl(node);
-            const auto * dag_node = actions_stack.front().getNodeOrThrow(node_name);
-
-            auto [it, inserted] = seen_nodes.emplace(dag_node, 0);
-            if (!inserted)
-            {
-                ++it->second;
-                String unique_name;
-                for (size_t suffix = it->second;; ++suffix)
-                {
-                    unique_name = node_name + "_" + std::to_string(suffix);
-                    if (!actions_stack.front().containsNode(unique_name))
-                        break;
-                }
-                dag_node = actions_stack.front().addAliasIfNecessary(unique_name, dag_node);
-            }
-
-            result.push_back(dag_node);
+            result.push_back(actions_stack.front().getNodeOrThrow(node_name));
         }
     }
     else
