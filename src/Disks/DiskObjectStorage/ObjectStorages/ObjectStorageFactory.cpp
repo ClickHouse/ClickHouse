@@ -128,7 +128,7 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
-void registerS3ObjectStorage(ObjectStorageFactory & factory)
+static void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
      auto creator = [](
         const std::string & name,
@@ -157,7 +157,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_HDFS
-void registerHDFSObjectStorage(ObjectStorageFactory & factory)
+static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
         "hdfs",
@@ -181,7 +181,7 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerAzureObjectStorage(ObjectStorageFactory & factory)
+static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
@@ -219,7 +219,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-void registerWebObjectStorage(ObjectStorageFactory & factory)
+static void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
         const std::string & /* name */,
@@ -246,7 +246,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
     });
 }
 
-void registerLocalObjectStorage(ObjectStorageFactory & factory)
+static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
@@ -256,7 +256,7 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
@@ -274,7 +274,7 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
 
-void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
+static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("borrow_from_cache", [](
         const std::string & name,
@@ -292,6 +292,8 @@ void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
         return std::make_shared<BorrowFromCacheObjectStorage>(name, file_cache);
     });
 }
+
+void registerObjectStorages();
 
 void registerObjectStorages()
 {
