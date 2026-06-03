@@ -7,10 +7,6 @@ title: 'clickhousectl'
 doc_type: 'reference'
 ---
 
-import BetaBadge from '@theme/badges/BetaBadge';
-
-<BetaBadge/>
-
 `clickhousectl` is the CLI for ClickHouse: local and cloud.
 
 With `clickhousectl` you can:
@@ -19,6 +15,7 @@ With `clickhousectl` you can:
 - Execute queries against ClickHouse servers
 - Set up ClickHouse Cloud and create cloud-managed ClickHouse clusters
 - Manage ClickHouse Cloud resources
+- Run a local Postgres alongside ClickHouse and manage ClickHouse Cloud Postgres services
 - Install the official ClickHouse agent skills into supported coding agents
 - Push your local ClickHouse development to cloud
 
@@ -151,6 +148,38 @@ All server data lives inside `.clickhousectl/` in your project directory:
 ```
 
 Each named server has its own data directory, so servers are fully isolated from each other. Data persists between restarts — stop and start a server by name to pick up where you left off. Use `clickhousectl local server remove <name>` to permanently delete a server's data.
+
+### Local Postgres (Docker-backed) {#local-postgres}
+
+When you also need a local Postgres, use `local postgres`. It requires Docker to be installed and running. Each instance is keyed on `(name, major version)`, so the same name can host multiple Postgres majors with isolated data.
+
+```bash
+# Pre-pull a Postgres image (optional; start pulls on demand).
+# Supported majors: 17, 18 (and sub-tags like 17.0, 18-bookworm).
+clickhousectl local install postgres@18
+
+# Start a Postgres instance (defaults: postgres:18, port 5432, user "postgres", db "postgres")
+clickhousectl local postgres start
+clickhousectl local postgres start --name dev --version 18 --port 5433
+clickhousectl local postgres start --user app --password s3cret --database myapp
+
+# ClickHouse and Postgres instances are listed together
+clickhousectl local server list
+
+# Connect with psql (uses host psql if installed; otherwise falls back to docker exec)
+clickhousectl local postgres client --name dev
+clickhousectl local postgres client --name dev --query "SELECT 1"
+
+# Write POSTGRES_HOST/PORT/USER/PASSWORD/DATABASE into .env
+clickhousectl local postgres dotenv --name dev
+
+# Stop / remove. Pass --version when more than one major shares a name.
+clickhousectl local postgres stop dev
+clickhousectl local postgres stop dev --version 17        # disambiguate
+clickhousectl local postgres remove dev
+```
+
+Stopping a Postgres instance preserves the container and metadata so the next `start` resumes it; only `remove` tears down the container and deletes its data directory.
 
 ## Authentication {#authentication}
 
@@ -326,6 +355,78 @@ clickhousectl cloud service backup-config update <service-id> \
   --backup-retention-period-hours 720 \
   --backup-start-time 02:00
 ```
+
+### Postgres (beta) {#cloud-postgres}
+
+Create and manage [ClickHouse Cloud Postgres](/cloud/managed-postgres) services. All write commands require API key authentication.
+
+```bash
+# List / get
+clickhousectl cloud postgres list
+clickhousectl cloud postgres list --filter state=running
+clickhousectl cloud postgres get <pg-id>
+
+# Create
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18
+
+# Create with HA, tags, and advanced config
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18 \
+  --ha-type sync \
+  --tag env=prod \
+  --pg-config-file ./pg.json
+
+# Update metadata (all flags optional)
+clickhousectl cloud postgres update <pg-id> \
+  --name renamed \
+  --size c6gd.2xlarge \
+  --add-tag env=prod --remove-tag legacy
+
+# Delete
+clickhousectl cloud postgres delete <pg-id>
+
+# CA certificates
+clickhousectl cloud postgres certs get <pg-id>                   # raw PEM to stdout
+clickhousectl cloud postgres certs get <pg-id> --output ca.pem   # write to a file
+
+# Runtime configuration
+clickhousectl cloud postgres config get <pg-id>
+clickhousectl cloud postgres config replace <pg-id> --file cfg.json
+clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
+
+# Reset the password
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Read replicas and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Lifecycle
+clickhousectl cloud postgres restart <pg-id>
+clickhousectl cloud postgres promote <pg-id>
+clickhousectl cloud postgres switchover <pg-id>
+```
+
+#### Postgres create options {#postgres-create-options}
+
+| Option | Description |
+|--------|-------------|
+| `--name` | Service name (required) |
+| `--region` | Cloud region, e.g. `us-east-1` (required) |
+| `--size` | Instance size, e.g. `c6gd.xlarge` (required; server-validated) |
+| `--provider` | Cloud provider (default: `aws`) |
+| `--pg-version` | Postgres major version: `18`, `17` |
+| `--ha-type` | High-availability: `none`, `async`, `sync` |
+| `--tag` | Resource tag `key` or `key=value` (repeatable) |
+| `--pg-config-file` | Path to a JSON file with a `PgConfig` object |
+| `--pg-bouncer-config-file` | Path to a JSON file with a `PgBouncerConfig` object |
 
 ### Backups {#backups}
 
