@@ -103,6 +103,16 @@ praktika infrastructure --deploy --instance i-0123456789abcdef0
 praktika infrastructure --deploy --instance i-0123456789abcdef0 i-0fedcba9876543210
 ```
 
+Stopping a macOS instance to update its `user_data` puts its EC2 Mac dedicated
+host into a multi-hour scrub, so the restart fails with
+`InsufficientHostCapacity` until the host is `available` again. Add `--wait` to
+block on the scrub (polling `DescribeHosts`) and start the instance once the
+host recovers, instead of leaving it stopped:
+
+```bash
+praktika infrastructure --deploy --instance i-0123456789abcdef0 --wait
+```
+
 This command:
 1. Loads configuration from `Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH`
 2. Deploys all Dedicated Hosts defined in `CLOUD.dedicated_hosts`

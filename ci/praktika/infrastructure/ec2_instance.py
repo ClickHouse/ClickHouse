@@ -405,7 +405,7 @@ class EC2Instance:
                 self.ext["launch_time"] = inst.get("LaunchTime")
             return self
 
-        def deploy(self, only_instance_ids: Optional[List[str]] = None):
+        def deploy(self, only_instance_ids: Optional[List[str]] = None, wait=False):
             import boto3
 
             if not self.image_id or not self.instance_type:
@@ -430,7 +430,7 @@ class EC2Instance:
 
             # Reconcile user_data after any (slow) create, so one deploy does both.
             self._reconcile_user_data_and_start(
-                ec2, existing_instances, only_instance_ids
+                ec2, existing_instances, only_instance_ids, wait=wait
             )
             return self
 
@@ -566,10 +566,11 @@ class EC2Instance:
             )
 
         def _reconcile_user_data_and_start(
-            self, ec2, existing_instances, only_instance_ids
+            self, ec2, existing_instances, only_instance_ids, wait=False
         ):
             """Reconcile user_data on existing instances (optionally restricted to
-            `only_instance_ids`) and start the ones that ended up stopped.
+            `only_instance_ids`) and start the ones that ended up stopped. With
+            `wait`, block on the dedicated-host scrub instead of warning.
             """
             if not existing_instances:
                 return
@@ -593,13 +594,16 @@ class EC2Instance:
                 if (inst.get("State") or {}).get("Name") == "stopped"
                 and (not only or inst.get("InstanceId") in only)
             ]
-            self._start_instances(ec2, stopped_ids)
+            self._start_instances(ec2, stopped_ids, wait=wait)
 
-        def _start_instances(self, ec2, instance_ids):
-            """Start the given instances, tolerating the dedicated-host scrub
-            cooldown (EC2 Mac hosts raise `InsufficientHostCapacity` for a while
-            after a stop - we warn and leave them stopped for a later deploy), then
-            re-sync the IAM instance profile, which is skipped while stopped.
+        def _start_instances(self, ec2, instance_ids, wait=False):
+            """Start the given instances. On EC2 Mac dedicated hosts a stop puts the
+            host into a multi-hour scrub (state `pending`), so `StartInstances` is
+            rejected with `InsufficientHostCapacity` until the host returns to
+            `available`. Without `wait` we warn and leave the instance stopped for a
+            later deploy; with `wait` we block on the host scrub (see
+            `_wait_for_hosts_available`) and retry. On success the IAM instance
+            profile is re-synced, which is skipped while an instance is stopped.
             """
             from botocore.exceptions import ClientError
 
@@ -612,12 +616,18 @@ class EC2Instance:
             try:
                 ec2.start_instances(InstanceIds=instance_ids)
             except ClientError as e:
-                if e.response.get("Error", {}).get("Code") == "InsufficientHostCapacity":
+                if e.response.get("Error", {}).get("Code") != "InsufficientHostCapacity":
+                    raise
+                if not wait:
                     print(
                         f"EC2Instance '{self.name}': WARNING no host capacity to start {instance_ids}: {e}"
                     )
                     return
-                raise
+                self._wait_for_hosts_available(ec2, instance_ids)
+                ec2.start_instances(InstanceIds=instance_ids)
+
+            if wait:
+                ec2.get_waiter("instance_running").wait(InstanceIds=instance_ids)
 
             started = ec2.describe_instances(InstanceIds=instance_ids)
             started_instances = [
@@ -626,6 +636,65 @@ class EC2Instance:
                 for inst in r.get("Instances", [])
             ]
             self._sync_iam_instance_profile(ec2, started_instances)
+
+        def _wait_for_hosts_available(self, ec2, instance_ids):
+            """Block until the Dedicated Host(s) backing `instance_ids` finish the
+            EC2 Mac scrub workflow and return to `available`. boto3 has no built-in
+            host waiter, so define one over `DescribeHosts` (poll every 60s for up
+            to 3h, the worst-case Mac scrub window).
+            """
+            from botocore.waiter import WaiterModel, create_waiter_with_client
+
+            resp = ec2.describe_instances(InstanceIds=instance_ids)
+            host_ids = sorted(
+                {
+                    inst.get("Placement", {}).get("HostId")
+                    for r in resp.get("Reservations", [])
+                    for inst in r.get("Instances", [])
+                    if inst.get("Placement", {}).get("HostId")
+                }
+            )
+            if not host_ids:
+                raise Exception(
+                    f"EC2Instance '{self.name}': cannot wait for host capacity - no "
+                    f"dedicated host associated with {instance_ids}"
+                )
+
+            print(
+                f"EC2Instance '{self.name}': waiting for dedicated host(s) {host_ids} "
+                f"to finish scrubbing (state 'available')"
+            )
+            model = WaiterModel(
+                {
+                    "version": 2,
+                    "waiters": {
+                        "HostAvailable": {
+                            "operation": "DescribeHosts",
+                            "delay": 60,
+                            "maxAttempts": 180,
+                            "acceptors": [
+                                {
+                                    "state": "success",
+                                    "matcher": "pathAll",
+                                    "argument": "Hosts[].State",
+                                    "expected": "available",
+                                },
+                                {
+                                    "state": "failure",
+                                    "matcher": "pathAny",
+                                    "argument": "Hosts[].State",
+                                    "expected": "permanent-failure",
+                                },
+                            ],
+                        }
+                    },
+                }
+            )
+            waiter = create_waiter_with_client("HostAvailable", model, ec2)
+            waiter.wait(HostIds=host_ids)
+            print(
+                f"EC2Instance '{self.name}': dedicated host(s) {host_ids} are available"
+            )
 
         def shutdown(self, force: bool = True):
             """
