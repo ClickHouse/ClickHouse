@@ -170,9 +170,9 @@ void writeImageSixel(WriteBuffer & out, const UInt8 * pixels, size_t width, size
     auto pixel_color = [&](size_t x, size_t y) -> int
     {
         const UInt8 * p = pixels + (y * width + x) * channels;
-        UInt8 r;
-        UInt8 g;
-        UInt8 b;
+        UInt8 r = 0;
+        UInt8 g = 0;
+        UInt8 b = 0;
         if (channels == 1)
         {
             r = g = b = p[0];

@@ -74,7 +74,7 @@ void PNGWriter::writeImage(const unsigned char * pixels)
 
     png_set_write_fn(png_ptr, this, &PNGWriter::writeDataCallback, &PNGWriter::flushDataCallback);
 
-    int color_type;
+    int color_type = 0;
     switch (channels)
     {
         case 1: color_type = PNG_COLOR_TYPE_GRAY; break;

@@ -69,6 +69,7 @@ void PNGOutputFormat::finalizeImpl()
     }
 }
 
+void registerOutputFormatPNG(FormatFactory & factory);
 void registerOutputFormatPNG(FormatFactory & factory)
 {
     factory.registerOutputFormat(
