@@ -23,6 +23,50 @@ const DB::Strings compressionMethods
 const DB::Strings codecs
     = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
 
+String escapeSQLString(const String & s, const char escape_char)
+{
+    String out;
+    out.reserve(s.size());
+    for (const char c : s)
+    {
+        if (c == escape_char)
+            out += escape_char;
+        out += c;
+    }
+    return out;
+}
+
+String urlEncodeQueryParam(const String & s)
+{
+    String out;
+    out.reserve(s.size() * 3);
+    for (const unsigned char c : s)
+    {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            out += static_cast<char>(c);
+        }
+        else if (c == ' ')
+        {
+            out += '+';
+        }
+        else
+        {
+            static constexpr const char hex[] = "0123456789ABCDEF";
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 0xF];
+        }
+    }
+    return out;
+}
+
+void SystemTable::setName(ExprSchemaTable * est) const
+{
+    est->mutable_database()->set_value(schema_name);
+    est->mutable_table()->set_value(table_name);
+}
+
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
@@ -194,7 +238,7 @@ static std::function<void(const JSONObjectType &)> parseErrorCodes(std::unordere
 
         for (auto word : std::views::split(String(value.getString()), delim))
         {
-            uint32_t result;
+            uint32_t result = {};
             const std::string_view sv(word.begin(), word.end());
             const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 
@@ -302,6 +346,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"icebergs3", allow_icebergS3},
            {"icebergazure", allow_icebergAzure},
            {"iceberglocal", allow_icebergLocal},
+           {"paimon", allow_paimon},
+           {"paimons3", allow_paimonS3},
+           {"paimonazure", allow_paimonAzure},
+           {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
            {"dictionary", allow_dictionary},
@@ -383,10 +431,13 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"enable_time_settings", [&](const JSONObjectType & value) { enable_time_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
+        {"enable_sync_settings", [&](const JSONObjectType & value) { enable_sync_settings = value.getBool(); }},
         {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
         {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
+        {"allow_nasty_identifiers", [&](const JSONObjectType & value) { allow_nasty_identifiers = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -520,6 +571,321 @@ void FuzzConfig::loadServerSettings(std::vector<T> & out, const String & desc, c
     LOG_INFO(log, "Found {} entries for {}", found, desc);
 }
 
+void FuzzConfig::loadFunctions()
+{
+    static const String query = R"sql(WITH
+args_by_function AS
+(
+    SELECT
+        name,
+        min(args_min) AS min_arguments,
+        if (max(args_variadic) = 1, NULL, max(args_max)) AS max_arguments,
+        max(lambda_syntax) AS lambda_syntax
+    FROM
+    (
+        SELECT
+            name,
+            syntax_line,
+            replaceRegexpOne(syntax_line, '^[^\\(]*\\((.*)\\)[^)]*$', '\\1') AS args_raw,
+            match(args_raw, '(\\.\\.\\.|…)') AS args_variadic,
+            multiIf(match(trim(args_raw), '^(func|λ)'), 2, 0) AS lambda_syntax,
+            replaceRegexpAll(args_raw, '\\[[^\\]]*\\]', '') AS args_required_raw,
+            replaceRegexpAll(args_raw, '[\\[\\]]', '') AS args_all_raw,
+            if (
+                trim(args_required_raw) = '',
+                0,
+                length(arrayFilter(
+                    x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$') AND position(x, '->') = 0,
+                    splitByChar(',', args_required_raw)))
+            ) AS args_min,
+            if (
+                args_variadic, NULL,
+                if (
+                    trim(args_all_raw) = '',
+                    0,
+                    length(arrayFilter(
+                        x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$') AND position(x, '->') = 0,
+                        splitByChar(',', args_all_raw)))
+                )
+            ) AS args_max
+        FROM system.functions
+        ARRAY JOIN splitByRegexp('\\n+', syntax) AS syntax_line
+        WHERE syntax != '' AND match(syntax_line, '\\(.*\\)')
+    )
+    GROUP BY name
+),
+params_by_function AS
+(
+    SELECT
+        name,
+        min(params_min) AS min_parameters,
+        if (max(params_variadic) = 1, NULL, max(params_max)) AS max_parameters
+    FROM
+    (
+        SELECT
+            name,
+            parameter_line,
+            match(parameter_line, '(\\.\\.\\.|…)') AS params_variadic,
+            replaceRegexpAll(parameter_line, '\\[[^\\]]*\\]', '') AS params_required_raw,
+            replaceRegexpAll(parameter_line, '[\\[\\]]', '') AS params_all_raw,
+            if (
+                trim(params_required_raw) = '',
+                0,
+                length(arrayFilter(
+                    x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$'),
+                    splitByChar(',', params_required_raw)))
+            ) AS params_min,
+            if (
+                params_variadic, NULL,
+                if (
+                    trim(params_all_raw) = '',
+                    0,
+                    length(arrayFilter(
+                        x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$'),
+                        splitByChar(',', params_all_raw)))
+                )
+            ) AS params_max
+        FROM system.functions
+        ARRAY JOIN if (parameters = '', [''], splitByRegexp('\\n+', parameters)) AS parameter_line
+    )
+    GROUP BY name
+)
+SELECT
+    f.name,
+    f.is_aggregate,
+    f.deterministic,
+    multiIf(
+        coalesce(a.lambda_syntax, pa.lambda_syntax, 0) = 2, 2,
+        coalesce(a.lambda_syntax, pa.lambda_syntax, 0) = 1, 1,
+        f.higher_order = 1, 1,
+        0) AS lambda_kind,
+    coalesce(a.min_arguments, pa.min_arguments, 0),
+    coalesce(a.max_arguments, pa.max_arguments),
+    coalesce(p.min_parameters, pp.min_parameters, 0),
+    coalesce(p.max_parameters, pp.max_parameters)
+FROM system.functions AS f
+LEFT JOIN args_by_function AS a ON f.name = a.name
+LEFT JOIN args_by_function AS pa ON f.alias_to != '' AND f.alias_to = pa.name
+LEFT JOIN params_by_function AS p ON f.name = p.name
+LEFT JOIN params_by_function AS pp ON f.alias_to != '' AND f.alias_to = pp.name
+ORDER BY f.name)sql";
+
+    String buf;
+    static const std::unordered_set<String> nulls_clause_funcs = {"any", "anyLast", "first_value", "last_value"};
+    static const std::unordered_set<String> common_func_names = {"arrayJoin", "if", "materialize", "toNullable", "toLowCardinality"};
+    static const std::unordered_set<String> two_arg_aggrs
+        = {"analysisOfVariance",
+           "approx_top_count",
+           "approx_top_k",
+           "approx_top_sum",
+           "argMax",
+           "argMin",
+           "avgWeighted",
+           "boundingRatio",
+           "contingency",
+           "corr",
+           "corrStable",
+           "covarPop",
+           "covarPopStable",
+           "covarSamp",
+           "covarSampStable",
+           "cramersV",
+           "cramersVBiasCorrected",
+           "deltaSumTimestamp",
+           "exponentialMovingAverage",
+           "exponentialTimeDecayedAvg",
+           "exponentialTimeDecayedMax",
+           "exponentialTimeDecayedSum",
+           "groupArrayInsertAt",
+           "intervalLengthSum",
+           "kolmogorovSmirnovTest",
+           "largestTriangleThreeBuckets",
+           "mannWhitneyUTest",
+           "maxIntersections",
+           "maxIntersectionsPosition",
+           "meanZTest",
+           "medianDeterministic",
+           "medianExactWeighted",
+           "medianTDigestWeighted",
+           "medianTimingWeighted",
+           "quantileDeterministic",
+           "quantileExactWeighted",
+           "quantileExactWeightedInterpolated",
+           "quantileInterpolatedWeighted",
+           "quantileTDigestWeighted",
+           "quantileTimingWeighted",
+           "quantilesDeterministic",
+           "quantilesExactWeighted",
+           "quantilesExactWeightedInterpolated",
+           "quantilesInterpolatedWeighted",
+           "rankCorr",
+           "sequenceNextNode",
+           "simpleLinearRegression",
+           "sparkBar",
+           "studentTTest",
+           "sumMapFiltered",
+           "sumMapFilteredWithOverflow",
+           "theilsU",
+           "topKWeighted",
+           "welchTTest"};
+
+    if (processServerQuery(
+            false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzzer_out_file.generic_string())))
+    {
+        std::ifstream infile(fuzzer_out_file);
+        uint64_t found = 0;
+
+        det_funcs.clear();
+        nondet_funcs.clear();
+        common_funcs.clear();
+        det_aggrs.clear();
+        simple_det_aggrs.clear();
+        nondet_aggrs.clear();
+        while (std::getline(infile, buf))
+        {
+            if (!buf.empty() && buf.back() == '\r')
+                buf.pop_back();
+            if (buf.empty())
+                break;
+
+            /// Parse tab-separated fields: name, is_aggregate, deterministic, lambda_kind,
+            /// min_args, max_args, min_params, max_params
+            const auto tab1 = buf.find('\t');
+            if (tab1 == String::npos)
+                continue;
+            const auto tab2 = buf.find('\t', tab1 + 1);
+            if (tab2 == String::npos)
+                continue;
+            const auto tab3 = buf.find('\t', tab2 + 1);
+            if (tab3 == String::npos)
+                continue;
+            const auto tab4 = buf.find('\t', tab3 + 1);
+            if (tab4 == String::npos)
+                continue;
+            const auto tab5 = buf.find('\t', tab4 + 1);
+            if (tab5 == String::npos)
+                continue;
+            const auto tab6 = buf.find('\t', tab5 + 1);
+            if (tab6 == String::npos)
+                continue;
+            const auto tab7 = buf.find('\t', tab6 + 1);
+            if (tab7 == String::npos)
+                continue;
+
+            const String name = buf.substr(0, tab1);
+            const bool is_aggregate = buf.substr(tab1 + 1, tab2 - tab1 - 1) == "1";
+            const String det_str = buf.substr(tab2 + 1, tab3 - tab2 - 1);
+            const String ho_str = buf.substr(tab3 + 1, tab4 - tab3 - 1);
+            const String min_args_str = buf.substr(tab4 + 1, tab5 - tab4 - 1);
+            const String max_args_str = buf.substr(tab5 + 1, tab6 - tab5 - 1);
+            const String min_params_str = buf.substr(tab6 + 1, tab7 - tab6 - 1);
+            const String max_params_str = buf.substr(tab7 + 1);
+
+            found++;
+
+            const bool is_deterministic = (det_str != "0");
+            const uint8_t lk_val = (ho_str != "\\N") ? static_cast<uint8_t>(std::stoul(ho_str)) : 0;
+            const LambdaKind lambda_kind = lk_val <= 2 ? static_cast<LambdaKind>(lk_val) : LambdaKind::None;
+            const uint32_t min_args = min_args_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_args_str));
+            const uint32_t max_args = max_args_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_args_str));
+            const uint32_t min_params = min_params_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_params_str));
+            const uint32_t max_params = max_params_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_params_str));
+
+            if (is_aggregate)
+            {
+                const bool snc = nulls_clause_funcs.contains(name);
+                uint32_t aggr_min_args = 1;
+                uint32_t aggr_max_args = 1;
+                if (name == "count")
+                {
+                    aggr_min_args = 0;
+                }
+                else if (two_arg_aggrs.contains(name))
+                {
+                    aggr_min_args = 2;
+                    aggr_max_args = 2;
+                }
+                CHAggregate agg(name, min_params, max_params, aggr_min_args, aggr_max_args, snc);
+                if (is_deterministic)
+                    det_aggrs.push_back(agg);
+                else
+                    nondet_aggrs.push_back(agg);
+            }
+            else
+            {
+                CHFunction func(name, lambda_kind, min_args, max_args);
+                /// arrayJoin may not be deterministic
+                if (common_func_names.contains(name))
+                    common_funcs.push_back(func);
+                if (is_deterministic)
+                    det_funcs.push_back(func);
+                else
+                    nondet_funcs.push_back(func);
+            }
+        }
+
+        if (found > 0)
+        {
+            LOG_INFO(
+                log,
+                "Loaded {} functions from system.functions: {} det funcs, {} nondet funcs, {} common funcs, {} det aggrs, {} nondet aggrs",
+                found,
+                det_funcs.size(),
+                nondet_funcs.size(),
+                common_funcs.size(),
+                det_aggrs.size(),
+                nondet_aggrs.size());
+        }
+        else
+        {
+            LOG_WARNING(log, "No functions loaded from system.functions out of {} found", found);
+        }
+    }
+    else
+    {
+        LOG_WARNING(log, "Failed to load functions from system.functions, keeping previous catalog");
+    }
+    static const std::unordered_set<String> simple_aggregate_allowlist = {
+        "any",
+        "any_respect_nulls",
+        "anyLast",
+        "anyLast_respect_nulls",
+        "min",
+        "max",
+        "sum",
+        "sumWithOverflow",
+        "groupBitAnd",
+        "groupBitOr",
+        "groupBitXor",
+        "sumMap",
+        "minMap",
+        "maxMap",
+        "groupArrayArray",
+        "groupArrayLastArray",
+        "groupUniqArrayArray",
+        "groupUniqArrayArrayMap",
+        "sumMappedArrays",
+        "minMappedArrays",
+        "maxMappedArrays",
+    };
+    simple_det_aggrs.clear();
+    for (const auto & agg : det_aggrs)
+    {
+        if (simple_aggregate_allowlist.contains(agg.fname))
+            simple_det_aggrs.push_back(agg);
+    }
+
+    if (det_funcs.empty())
+    {
+        det_funcs.emplace_back("abs", LambdaKind::None, 1, 1);
+        det_funcs.emplace_back("plus", LambdaKind::None, 2, 2);
+    }
+    if (det_aggrs.empty())
+        det_aggrs.emplace_back("count", 0, 0, 0, 1, false);
+    if (simple_det_aggrs.empty())
+        simple_det_aggrs.emplace_back("any", 0, 0, 1, 1, false);
+}
+
 void FuzzConfig::loadServerConfigurations()
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
@@ -566,6 +932,7 @@ void FuzzConfig::loadServerConfigurations()
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    loadFunctions();
 }
 
 String FuzzConfig::getConnectionHostAndPort(const bool secure) const
@@ -639,7 +1006,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
 {
     String buf;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     if (processServerQuery(
             true,
@@ -647,7 +1014,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
                 R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file);
@@ -744,7 +1111,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     /// The system.parts table doesn't support sampling, so pick up a random part with a window function
     if (processServerQuery(
@@ -756,11 +1123,11 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 rand_val,
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
@@ -774,7 +1141,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
 uint32_t FuzzConfig::tableCountSystemRows(const String & system_table, const String & database, const String & table)
 {
     String buf;
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     if (processServerQuery(
             false,
@@ -782,7 +1149,7 @@ uint32_t FuzzConfig::tableCountSystemRows(const String & system_table, const Str
                 R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file);
@@ -798,7 +1165,7 @@ String
 FuzzConfig::tableGetRandomSystemName(const uint64_t rand_val, const String & system_table, const String & database, const String & table)
 {
     String res;
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     /// These system tables don't support sampling, so pick a random row with a window function
     if (processServerQuery(
@@ -809,11 +1176,11 @@ FuzzConfig::tableGetRandomSystemName(const uint64_t rand_val, const String & sys
                 "{} \"table\" = '{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 rand_val,
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
@@ -854,8 +1221,17 @@ void FuzzConfig::validateClickHouseHealth()
                 " UNION ALL "
                 "(SELECT ifNull(sum(\"lost_part_count\"), 0) x, 2 y FROM \"system\".\"replicas\")"
                 " UNION ALL "
-                "(SELECT count() x, 3 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))"
+                /// Single scan of text_log for all pattern-based checks (3, 8, 10, 11, 12).
+                /// arrayZip + arrayJoin emits one row per pattern while reading text_log only once.
+                "(SELECT t.1 x, t.2 y FROM ("
+                "SELECT arrayJoin(arrayZip("
+                "[countIf(message ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),"
+                " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
+                " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
+                " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
+                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],"
+                "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12)])) AS t"
+                " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
                 " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
@@ -868,16 +1244,7 @@ void FuzzConfig::validateClickHouseHealth()
                 "(SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, \"system\".\"part_log\")"
                 " WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)"
                 " UNION ALL "
-                "(SELECT count() x, 8 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))"
-                " UNION ALL "
                 "(SELECT count() x, 9 y FROM \"system\".\"replication_queue\" WHERE \"last_exception\" != '')"
-                " UNION ALL "
-                "(SELECT count() x, 10 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'LOGICAL', '_ERROR', '%'))"
-                " UNION ALL "
-                "(SELECT count() x, 11 y FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE "
-                "concat('%', 'CORRUPTED', '_DATA', '%'))"
                 ") tx ORDER BY y SETTINGS use_query_cache = 0, use_query_condition_cache = 0 INTO OUTFILE '{}' TRUNCATE FORMAT "
                 "TabSeparated;",
                 fuzzer_out_file.generic_string())))
@@ -896,7 +1263,8 @@ void FuzzConfig::validateClickHouseHealth()
                "replica(s) with REPLICA_ALREADY_EXISTS errors",
                "replication queue exception(s)",
                "LOGICAL_ERROR(s) in text_log",
-               "CORRUPTED_DATA(s) in text_log"};
+               "CORRUPTED_DATA(s) in text_log",
+               "CHECKSUM_DOESNT_MATCH error(s) in text_log"};
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
@@ -908,7 +1276,8 @@ void FuzzConfig::validateClickHouseHealth()
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
             R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)"};
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
         {
@@ -967,7 +1336,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, Performan
             {
                 if (val.minimum < server.metrics.at(key)
                     && server.metrics.at(key) > static_cast<uint64_t>(
-                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                           static_cast<double>(peer.metrics.at(key)) * (1 + (static_cast<double>(val.threshold) / 100.0))))
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::BUZZHOUSE,

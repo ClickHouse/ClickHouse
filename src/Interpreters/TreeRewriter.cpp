@@ -55,6 +55,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageView.h>
 
@@ -723,7 +724,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
 void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                           const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
 {
-    assert(tables.size() >= 2);
+    chassert(tables.size() >= 2);
 
     if (table_join.using_expression_list)
     {
@@ -749,13 +750,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
                 analyzed_join.addDisjunct();
                 CollectJoinOnKeysVisitor(data).visit(disjunct);
             }
-            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+            chassert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
         }
         else
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            assert(analyzed_join.oneDisjunct());
+            chassert(analyzed_join.oneDisjunct());
         }
 
         auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
@@ -1060,7 +1061,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         else
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1203,28 +1204,13 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     /// in columns list, so that when further processing they are also considered.
     if (storage_snapshot)
     {
-        const auto & virtuals = storage_snapshot->virtual_columns;
-        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
+        const auto & virtuals = storage_snapshot->metadata->virtuals;
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (auto column = virtuals->tryGet(*it))
+            if (auto column = virtuals.tryGet(*it, VirtualsKind::All, VirtualsMaterializationPlace::All))
             {
                 source_columns.push_back(*column);
                 it = unknown_required_source_columns.erase(it);
-            }
-            else if (const auto * common_column_desc = common_virtual_columns.tryGetDescription(*it))
-            {
-                /// Ephemeral common virtual columns (e.g. `_table`) are only supported
-                /// by the analyzer which fills them via ExpressionStep.
-                /// The old analyzer has no mechanism to fill them, so skip them here
-                /// to avoid a type mismatch between the header and the actual data.
-                if (!common_column_desc->isEphemeral())
-                {
-                    source_columns.emplace_back(common_column_desc->name, common_column_desc->type);
-                    it = unknown_required_source_columns.erase(it);
-                }
-                else
-                    ++it;
             }
             else
             {
@@ -1233,7 +1219,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
 
         has_virtual_shard_num
-            = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
+            = is_remote_storage && storage_snapshot->metadata->isVirtualColumn("_shard_num") && virtuals.has("_shard_num");
     }
 
     /// Check for subcolumns in unknown required columns.

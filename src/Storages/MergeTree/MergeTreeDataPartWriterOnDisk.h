@@ -54,7 +54,6 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
-        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -95,11 +94,18 @@ protected:
 
     virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
-    /// On first block create all required streams for columns with dynamic subcolumns and remember the block sample.
-    /// On each next block check if dynamic structure of the columns equals to the dynamic structure of the same
-    /// columns in the sample block. If for some column dynamic structure is different, adjust it so it matches
-    /// the structure from the sample.
-    void initOrAdjustDynamicStructureIfNeeded(Block & block);
+    /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
+    /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
+    /// set of streams.
+    void prepareBlockForWriting(Block & block);
+
+    /// Initialize all streams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initStreamsIfNeeded();
+
+    /// Initialize columns_substreams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initColumnsSubstreamsIfNeeded();
+
+    virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
@@ -133,8 +139,9 @@ protected:
     /// Data is already written up to this mark.
     size_t current_mark = 0;
 
-    bool is_dynamic_streams_initialized = false;
     Block block_sample;
+
+    bool streams_initialized = false;
 
     /// List of substreams for each column in order of serialization.
     ColumnsSubstreams columns_substreams;

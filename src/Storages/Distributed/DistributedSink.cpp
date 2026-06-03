@@ -30,6 +30,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -506,7 +507,7 @@ void DistributedSink::writeSync(const Block & block)
         if (!throttler && (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes]))
         {
             throttler = std::make_shared<Throttler>(
-                "network_distributed_query", settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
+                settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
         }
 
         watch.restart();
@@ -830,7 +831,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     };
 
     auto sleep_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms].totalMilliseconds();
-    size_t file_size;
+    size_t file_size = 0;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent

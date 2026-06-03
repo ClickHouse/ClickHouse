@@ -108,7 +108,9 @@ Here are the amounts that can be restricted:
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
-`failed_sequential_authentications` - The total number of sequential authentication errors. 
+`failed_sequential_authentications` - The total number of sequential authentication errors.
+
+`queries_per_normalized_hash` – The maximum number of executions of any single normalized query. Normalized queries are queries with literals replaced by placeholders, so `SELECT 1` and `SELECT 2` are considered the same normalized query. This limit is tracked per distinct normalized query pattern independently.
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
@@ -128,6 +130,14 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
     -->
     <keyed />
 ```
+
+When using the DDL syntax, you can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+In this example, the user can execute up to 100 instances of each distinct normalized query per hour. `SELECT number FROM numbers(1)` and `SELECT number FROM numbers(2)` share the same bucket (because they have the same normalized form), but `SELECT number, number FROM numbers(1)` uses a separate bucket.
 
 The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
 

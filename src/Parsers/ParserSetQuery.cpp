@@ -151,7 +151,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -212,12 +212,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value = createFieldFromAST(function_ast);
+        auto pos_before_func = pos;
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        {
+            tryGetIdentifierNameInto(name, change.name);
+            change.value = createFieldFromAST(function_ast);
 
-        return true;
+            return true;
+        }
+        pos = pos_before_func;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -239,7 +243,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq;
+    bool have_eq = false;
 
     if (!name_p.parse(pos, node, expected))
         return false;
@@ -281,12 +285,16 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         }
 
         /// Setting
-        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
         {
-            change.name = name;
-            change.value = createFieldFromAST(function_ast);
+            auto pos_before_func = pos;
+            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+            {
+                change.name = name;
+                change.value = createFieldFromAST(function_ast);
 
-            return true;
+                return true;
+            }
+            pos = pos_before_func;
         }
 
         if (!value_p.parse(pos, node, expected))

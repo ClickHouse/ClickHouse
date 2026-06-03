@@ -9,6 +9,7 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Databases/DatabaseFactory.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -21,7 +22,6 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <cassert>
 #include <unordered_set>
 
 
@@ -63,8 +63,8 @@ namespace
             return element;
 
         // Columns imply a resolved table and database (current DB is already substituted upstream).
-        assert(!element.table.empty());
-        assert(!element.database.empty());
+        chassert(!element.table.empty());
+        chassert(!element.database.empty());
 
         if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
             return element;
@@ -284,6 +284,28 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         }
     }
 
+    /// Database engines are registered in DatabaseFactory, not StorageFactory, but
+    /// CREATE DATABASE checks TABLE_ENGINE in InterpreterCreateQuery. Apply the same
+    /// source_access_type logic as the StorageFactory loop above.
+    ///
+    /// Engines that share names with StorageFactory (PostgreSQL, MySQL, SQLite, S3, etc.)
+    /// are processed by both loops with the same source_access_type — grant() is idempotent,
+    /// so duplicates are harmless.
+    for (const auto & [name, creator] : DatabaseFactory::instance().getDatabaseEngines())
+    {
+        if (!creator.features.source_access_type)
+        {
+            if (!access_control.doesTableEnginesRequireGrant())
+                res.grant(AccessType::TABLE_ENGINE, name);
+        }
+        else
+        {
+            auto source_name = AccessTypeObjects::toStringSource(*creator.features.source_access_type);
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, source_name))
+                res.grant(AccessType::TABLE_ENGINE, name);
+        }
+    }
+
     return res;
 }
 
@@ -418,10 +440,13 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
 void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const
 {
-    assert(roles_info_);
+    chassert(roles_info_);
     roles_info = roles_info_;
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
+#if CLICKHOUSE_CLOUD
+    enabled_masking_policies = access_control->getEnabledMaskingPolicies(*params.user_id, roles_info->enabled_roles);
+#endif
 
     enabled_settings = access_control->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
@@ -494,6 +519,13 @@ std::shared_ptr<const EnabledRolesInfo> ContextAccess::getRolesInfo() const
     static const auto no_roles = std::make_shared<EnabledRolesInfo>();
     return no_roles;
 }
+#if CLICKHOUSE_CLOUD
+std::shared_ptr<const EnabledMaskingPolicies> ContextAccess::getEnabledMaskingPolicies() const
+{
+    std::lock_guard lock{mutex};
+    return enabled_masking_policies;
+}
+#endif
 
 RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
@@ -644,8 +676,11 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     auto access_granted = [&]
     {
-        if constexpr (throw_if_denied)
-            context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
+        /// Record every granted access, regardless of whether the caller is the throwing entry point
+        /// (`checkAccess` / `checkGrantOption`) or the non-throwing one (`isGranted`, used internally by
+        /// `checkAccessWithFilter`). Without this, an `isGranted`-driven success leaves no trace in
+        /// system.query_log.used_privileges even though the privilege was effectively required by the query.
+        context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
         return true;
     };
 
@@ -680,7 +715,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted;
+    bool granted = false;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)
@@ -821,7 +856,7 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
 template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())

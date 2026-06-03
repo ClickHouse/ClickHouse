@@ -126,7 +126,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
 size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, istr);
 
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
@@ -177,7 +177,9 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
 
     /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
     dst.resize(dimension);
-    writeVectorBinary(dst, ostr);
+    writeVarUInt(dst.size(), ostr);
+    for (const auto & element : dst)
+        writeBinaryLittleEndian(element, ostr);
 }
 
 template <typename FloatType>
@@ -198,7 +200,7 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 
     for (size_t i = 0; i < dimension; i++)
     {
-        readFloatBinary(v, istr);
+        readBinaryLittleEndian(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
         transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
     }
@@ -288,7 +290,12 @@ void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, cons
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// Lambda to write the vector of floats to the output buffer
-    auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
+    auto write_binary = [&ostr](const auto & dst)
+    {
+        writeVarUInt(dst.size(), ostr);
+        for (const auto & element : dst)
+            writeBinaryLittleEndian(element, ostr);
+    };
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
@@ -297,7 +304,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
 {
     validateAndReadQBitSize(istr, settings);
 
-    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinaryLittleEndian(v, istr); };
 
     auto deserialize = [&]() -> bool
     {
@@ -459,7 +466,7 @@ DECLARE_DEFAULT_CODE(
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -486,7 +493,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     })
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    static void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -547,7 +554,7 @@ namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
-    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    static void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);
