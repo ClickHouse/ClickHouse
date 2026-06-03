@@ -306,8 +306,14 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer)
+size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point)
 {
+    size_t result = 0;
+    /// Whether the produced representation is a bare integer (no '.', exponent or inf/nan),
+    /// i.e. one of the itoa-based fast paths. Only such a representation may need a forced
+    /// trailing decimal point; the zmij path always emits '.', an exponent, or inf/nan.
+    bool integer_representation = false;
+
     if constexpr (std::is_same_v<T, Float64>)
     {
         DecomposedFloat64 decomposed(x);
@@ -320,12 +326,17 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         ///   exp < 0:    |value| < 1, not an integer.
         ///   exp > 62:   |value| >= 2^63, overflows Int64.
         if (decomposed.isIntegerInRepresentableRange() || exp == 53)
-            return itoa(Int64(x), buffer) - buffer;
-
-        if (exp > 53 && exp <= 62)
-            return writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
-
-        return zmij::detail::write(x, buffer) - buffer;
+        {
+            result = itoa(Int64(x), buffer) - buffer;
+            integer_representation = true;
+        }
+        else if (exp > 53 && exp <= 62)
+        {
+            result = writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
+            integer_representation = true;
+        }
+        else
+            result = zmij::detail::write(x, buffer) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -357,18 +368,33 @@ size_t writeFloatTextFastPath(T x, char * buffer)
 
         /// Most common fast path first: exp 0..24, exact integers.
         if (decomposed.isIntegerInRepresentableRange() || exp == 24)
-            return itoa(Int32(f32), buffer) - buffer;
-
+        {
+            result = itoa(Int32(f32), buffer) - buffer;
+            integer_representation = true;
+        }
         /// Extended fast path: exp 25..30, round to "roundest" decimal then itoa.
-        if (exp > 24 && exp <= 30)
-            return writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
-
+        else if (exp > 24 && exp <= 30)
+        {
+            result = writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
+            integer_representation = true;
+        }
         /// Not an integer, or exp out of range: use zmij.
-        return zmij::detail::write(f32, buffer) - buffer;
+        else
+            result = zmij::detail::write(f32, buffer) - buffer;
     }
+
+    /// The caller guarantees at least DoubleConverter<false>::MAX_REPRESENTATION_LENGTH bytes,
+    /// which leaves room for the extra '.' after an integer representation.
+    if (force_decimal_point && integer_representation)
+    {
+        buffer[result] = '.';
+        ++result;
+    }
+
+    return result;
 }
 
-template size_t writeFloatTextFastPath(Float64 x, char * buffer);
-template size_t writeFloatTextFastPath(Float32 x, char * buffer);
-template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
+template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
+template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
 }

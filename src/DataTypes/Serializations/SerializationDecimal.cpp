@@ -55,7 +55,9 @@ template <typename T>
 void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros,
+              /* fixed_fractional_length= */ false, /* fractional_length= */ 0,
+              settings.approximate_numbers_with_decimal_point);
 }
 
 template <typename T>

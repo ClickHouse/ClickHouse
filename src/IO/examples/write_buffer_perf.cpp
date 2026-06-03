@@ -26,7 +26,7 @@ int mainEntryExampleWriteBufferPerf(int, char **)
             DB::writeIntText(a, out);
             DB::writeChar(' ', out);
 
-            DB::writeFloatText(b, out, false);
+            DB::writeFloatText(b, out);
             DB::writeChar(' ', out);
 
             DB::writeEscapedString(c, out);
