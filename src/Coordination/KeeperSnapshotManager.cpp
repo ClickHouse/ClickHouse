@@ -19,6 +19,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <base/sort.h>
+#include <base/scope_guard.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
@@ -193,7 +194,7 @@ namespace
         else if (version >= SnapshotVersion::V1)
         {
             /// V1-V6 stored acl_id as uint64_t
-            uint64_t acl_id_64;
+            uint64_t acl_id_64 = 0;
             readBinary(acl_id_64, in);
 
             /// Some strange ACL ID during deserialization from ZooKeeper
@@ -209,7 +210,7 @@ namespace
         else if (version == SnapshotVersion::V0)
         {
             /// Deserialize ACL
-            size_t acls_size;
+            size_t acls_size = 0;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
             for (size_t i = 0; i < acls_size; ++i)
@@ -236,7 +237,7 @@ namespace
         /// Deserialize stat
         readBinary(node.stats.czxid, in);
         readBinary(node.stats.mzxid, in);
-        int64_t ctime;
+        int64_t ctime = 0;
         readBinary(ctime, in);
         node.stats.setCtime(ctime);
         readBinary(node.stats.mtime, in);
@@ -290,7 +291,7 @@ namespace
 
     SnapshotMetadataPtr deserializeSnapshotMetadata(ReadBuffer & in)
     {
-        size_t data_size;
+        size_t data_size = 0;
         readVarUInt(data_size, in);
         auto buffer = nuraft::buffer::alloc(data_size);
         in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
@@ -411,10 +412,14 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
     }
 }
 
-template<typename Storage>
-void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
+template <typename Storage>
+void KeeperStorageSnapshot<Storage>::deserialize(
+    SnapshotDeserializationResult<Storage> & deserialization_result,
+    ReadBuffer & in,
+    KeeperContextPtr keeper_context,
+    bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    uint8_t version;
+    uint8_t version = 0;
     readBinary(version, in);
     SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
     if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
@@ -427,11 +432,11 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     if (version >= SnapshotVersion::V5)
     {
         readBinary(storage.zxid, in);
-        uint8_t digest_version;
+        uint8_t digest_version = 0;
         readBinary(digest_version, in);
         if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
         {
-            uint64_t nodes_digest;
+            uint64_t nodes_digest = 0;
             readBinary(nodes_digest, in);
             if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
             {
@@ -448,7 +453,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         storage.old_snapshot_zxid = storage.zxid;
     }
 
-    int64_t session_id;
+    int64_t session_id = 0;
     readBinary(session_id, in);
 
     storage.session_id_counter = session_id;
@@ -456,13 +461,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     /// Before V1 we serialized ACL without acl_map
     if (current_version >= SnapshotVersion::V1)
     {
-        size_t acls_map_size;
+        size_t acls_map_size = 0;
 
         readBinary(acls_map_size, in);
         size_t current_map_size = 0;
         while (current_map_size < acls_map_size)
         {
-            ACLId acl_id;
+            ACLId acl_id = 0;
             if (current_version >= SnapshotVersion::V7)
             {
                 readBinary(acl_id, in);
@@ -470,13 +475,13 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
             else
             {
                 /// V1-V6 stored acl_id as uint64_t (8 bytes)
-                uint64_t acl_id_64;
+                uint64_t acl_id_64 = 0;
                 readBinary(acl_id_64, in);
                 chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
                 acl_id = static_cast<ACLId>(acl_id_64);
             }
 
-            size_t acls_size;
+            size_t acls_size = 0;
             readBinary(acls_size, in);
             Coordination::ACLs acls;
             for (size_t i = 0; i < acls_size; ++i)
@@ -494,7 +499,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         }
     }
 
-    size_t snapshot_container_size;
+    size_t snapshot_container_size = 0;
     readBinary(snapshot_container_size, in);
     if constexpr (!use_rocksdb)
         storage.container.reserve(snapshot_container_size);
@@ -629,21 +634,21 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         }
     }
 
-    size_t active_sessions_size;
+    size_t active_sessions_size = 0;
     readBinary(active_sessions_size, in);
 
     size_t current_session_size = 0;
     while (current_session_size < active_sessions_size)
     {
-        int64_t active_session_id;
-        int64_t timeout;
+        int64_t active_session_id = 0;
+        int64_t timeout = 0;
         readBinary(active_session_id, in);
         readBinary(timeout, in);
         storage.addSessionID(active_session_id, timeout);
 
         if (current_version >= SnapshotVersion::V1)
         {
-            size_t session_auths_size;
+            size_t session_auths_size = 0;
             readBinary(session_auths_size, in);
 
             typename Storage::AuthIDs ids;
@@ -668,7 +673,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     ClusterConfigPtr cluster_config = nullptr;
     if (!in.eof())
     {
-        size_t data_size;
+        size_t data_size = 0;
         readVarUInt(data_size, in);
         auto buffer = nuraft::buffer::alloc(data_size);
         in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
@@ -997,6 +1002,12 @@ template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const
 {
     const auto & snapshot_info = *existing_snapshots.at(up_to_log_idx);
+    return deserializeSnapshotBufferFromDisk(snapshot_info);
+}
+
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager<Storage>::deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const
+{
     WriteBufferFromNuraftBuffer writer;
     auto reader = snapshot_info.disk->readFile(snapshot_info.path, getReadSettings());
     copyData(*reader, writer);
@@ -1050,6 +1061,32 @@ SnapshotDeserializationResult<Storage> KeeperSnapshotManager<Storage>::deseriali
     if (load_full_storage)
         result.storage->initializeSystemNodes();
     return result;
+}
+
+template<typename Storage>
+SnapshotMetadataPtr KeeperSnapshotManager<Storage>::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+{
+    /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
+    /// buffer at offset `0` on success and on throw.
+    SCOPE_EXIT({ buffer->pos(0); });
+
+    bool is_zstd_compressed = isZstdCompressed(buffer);
+
+    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
+    std::unique_ptr<ReadBuffer> compressed_reader;
+
+    if (is_zstd_compressed)
+        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
+    else
+        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
+
+    uint8_t version = 0;
+    readBinary(version, *compressed_reader);
+    SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
+    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+
+    return deserializeSnapshotMetadata(*compressed_reader);
 }
 
 template<typename Storage>
