@@ -209,8 +209,8 @@ int mainEntryExampleStringPool(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(elem), inserted_it, inserted);
         }
 
@@ -236,8 +236,8 @@ int mainEntryExampleStringPool(int argc, char ** argv)
 
         for (const auto & elem : vec)
         {
-            RefsHashMap::LookupResult inserted_it;
-            bool inserted;
+            RefsHashMap::LookupResult inserted_it = {};
+            bool inserted = {};
             set.emplace(std::string_view(pool.insert(elem.data(), elem.size()), elem.size()), inserted_it, inserted);
         }
 

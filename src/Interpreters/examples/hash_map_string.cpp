@@ -110,9 +110,9 @@ struct FastHash64
         const UInt64    m = 0x880355f21e6d1965ULL;
         const UInt64 *pos = reinterpret_cast<const UInt64 *>(buf);
         const UInt64 *end = pos + (len / 8);
-        const unsigned char *pos2;
+        const unsigned char *pos2 = nullptr;
         UInt64 h = len * m;
-        UInt64 v;
+        UInt64 v = {};
 
         while (pos != end)
         {
@@ -343,8 +343,8 @@ int mainEntryExampleHashMapString(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, DefaultHash<Key>, Grower>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -372,8 +372,8 @@ int mainEntryExampleHashMapString(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, FastHash64, Grower>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -432,8 +432,8 @@ int mainEntryExampleHashMapString(int argc, char ** argv)
         using Map = HashMapWithSavedHash<Key, Value, SimpleHash, Grower>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

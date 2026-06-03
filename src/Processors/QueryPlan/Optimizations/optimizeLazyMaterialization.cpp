@@ -74,7 +74,7 @@ static std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPosi
 /// Step is always Filter or Expression
 struct PlanStepWithRequiredDAGPositions
 {
-    IQueryPlanStep * step;
+    IQueryPlanStep * step = nullptr;
     /// Positions correspond to the outputs of the internal DAG.
     /// For the FilterStep, it is before the removal of filter columns.
     std::vector<bool> required_positions;
@@ -360,8 +360,8 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
 
 static ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
-    bool added_part_starting_offset;
-    bool added_part_offset;
+    bool added_part_starting_offset = false;
+    bool added_part_offset = false;
     reading_step.addStartingPartOffsetAndPartOffset(added_part_starting_offset, added_part_offset);
     ActionsDAG dag;
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();

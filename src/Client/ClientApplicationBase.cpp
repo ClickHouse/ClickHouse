@@ -88,7 +88,7 @@ void ClientApplicationBase::setupSignalHandler()
 {
     ClientApplicationBase::getInstance().stopQuery();
 
-    struct sigaction new_act;
+    struct sigaction new_act{};
     memset(&new_act, 0, sizeof(new_act));
 
 #pragma clang diagnostic push

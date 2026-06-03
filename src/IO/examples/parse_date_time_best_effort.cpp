@@ -20,7 +20,7 @@ try
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-    time_t res;
+    time_t res = {};
     parseDateTimeBestEffort(res, in, local_time_zone, utc_time_zone);
     writeDateTimeText(res, out);
     writeChar('\n', out);

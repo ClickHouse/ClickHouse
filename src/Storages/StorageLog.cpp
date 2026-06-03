@@ -844,7 +844,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         {
             for (auto & data_file : data_files)
             {
-                Mark mark;
+                Mark mark{};
                 mark.read(*marks_rb);
                 data_file.marks[i] = mark;
             }
@@ -1306,7 +1306,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             {
                 for (size_t j = 0; j != num_data_files; ++j)
                 {
-                    Mark mark;
+                    Mark mark{};
                     mark.read(*marks_rb);
                     mark.rows += old_num_rows[j];     /// Adjust the number of rows.
                     mark.offset += old_data_sizes[j]; /// Adjust the offset.

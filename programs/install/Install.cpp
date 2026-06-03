@@ -1025,7 +1025,7 @@ namespace
         if (fs::exists(pid_file))
         {
             ReadBufferFromFile in(pid_file.string());
-            Int32 pid;
+            Int32 pid = {};
             if (tryReadIntText(pid, in))
             {
                 fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
