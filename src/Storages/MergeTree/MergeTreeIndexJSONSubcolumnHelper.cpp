@@ -29,22 +29,24 @@ static String extractPathFromSubcolumn(std::string_view subcolumn_name)
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
-    const Block & header)
+    const Block & header,
+    const String & json_function_name)
 {
-    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames());
+    return tryMatchJSONSubcolumnToIndex(column_name, header.getNames(), json_function_name);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
-    const Names & index_columns)
+    const Names & index_columns,
+    const String & json_function_name)
 {
     /// Try all possible dot splits of the column name.
     /// For "t.json.some.path" this produces:
     ///   ("t", "json.some.path"), ("t.json", "some.path"), ("t.json.some", "path")
     for (auto [candidate_col, subcolumn_part] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
-        auto json_all_paths_name = fmt::format("JSONAllPaths({})", candidate_col);
-        auto it = std::find(index_columns.begin(), index_columns.end(), json_all_paths_name);
+        auto index_column_name = fmt::format("{}({})", json_function_name, candidate_col);
+        auto it = std::find(index_columns.begin(), index_columns.end(), index_column_name);
         if (it == index_columns.end())
             continue;
 
@@ -60,7 +62,6 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
 
         return JSONSubcolumnIndexInfo{
             .json_column_name = String(candidate_col),
-            .json_all_paths_column = std::move(json_all_paths_name),
             .path = std::move(path),
             .header_position = position,
         };
@@ -71,16 +72,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
-    const Block & header)
+    const Block & header,
+    const String & json_function_name)
 {
-    return tryMatchNodeToJSONIndex(node, header.getNames());
+    return tryMatchNodeToJSONIndex(node, header.getNames(), json_function_name);
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
-    const Names & index_columns)
+    const Names & index_columns,
+    const String & json_function_name)
 {
-    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns);
+    auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, json_function_name);
 
     /// Try CAST unwrapping: CAST(json.path, 'Type') or _CAST(json.path, 'Type')
     if (!json_info && node.isFunction())
@@ -89,7 +92,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
         auto fname = func.getFunctionName();
         if ((fname == "CAST" || fname == "_CAST") && func.getArgumentsSize() == 2)
             json_info = tryMatchJSONSubcolumnToIndex(
-                func.getArgumentAt(0).getColumnName(), index_columns);
+                func.getArgumentAt(0).getColumnName(), index_columns, json_function_name);
     }
 
     return json_info;
