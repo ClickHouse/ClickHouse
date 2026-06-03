@@ -52,7 +52,7 @@ std::vector<String> listFiles(
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
     auto base = std::filesystem::path(table_path);
-    auto combined = (base / relative_path).lexically_normal();
+    auto combined = base / relative_path;
 
     if (!pathStartsWith(combined, base))
         throw Exception(

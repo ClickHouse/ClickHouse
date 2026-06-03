@@ -450,6 +450,7 @@ public:
             /// We cannot allow to throw exceptions from ScanCallback,
             /// otherwise delta-kernel will panic and call terminate.
             context->setScanException();
+            context->data_files_cv.notify_all();
 
             return false;  /// Stop iteration on exception
         }
