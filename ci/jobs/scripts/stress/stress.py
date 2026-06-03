@@ -15,6 +15,9 @@ from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
 
+CLICKHOUSE_PID_FILE = "/var/run/clickhouse-server/clickhouse-server.pid"
+
+
 class ServerDied(Exception):
     pass
 
@@ -34,6 +37,158 @@ def escape_tsv_info(text: str) -> str:
         .replace("\r", "\\r")
         .replace("\n", "\\n")
     )
+
+
+class RandomServerRestarter:
+    """Background thread that periodically stops and restarts clickhouse-server.
+
+    Today the server only goes down at the start/end of the stress run, so
+    recovery and shutdown code paths under heavy load are never exercised.
+    This thread randomly alternates between hard crashes (SIGKILL) and
+    graceful stops once every few minutes so that WAL replay, mark-cache
+    rebuilds, merge recovery, flush paths, and distributed send draining
+    all get coverage during stress.
+    """
+
+    PID_FILE = CLICKHOUSE_PID_FILE
+
+    def __init__(self, min_interval: float = 120.0, max_interval: float = 300.0):
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._min_interval = min_interval
+        self._max_interval = max_interval
+        # Held while a restart cycle is in progress so stop() can wait for the
+        # server to be back up before returning.
+        self._restart_lock = threading.Lock()
+
+    def _read_pid(self) -> Optional[int]:
+        try:
+            with open(self.PID_FILE, "r") as f:
+                return int(f.read().strip())
+        except (FileNotFoundError, ValueError):
+            return None
+
+    def _wait_server_up(self, timeout: float = 120.0) -> bool:
+        """Block until SELECT 1 succeeds or *timeout* seconds elapse."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    "clickhouse client -q 'SELECT 1'",
+                    shell=True,
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                time.sleep(1)
+        return False
+
+    @staticmethod
+    def _wait_port_free(port: int, timeout: float = 60.0) -> None:
+        """Wait until *port* is no longer in LISTEN state."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ret = subprocess.run(
+                f"ss -tlnp | grep -q ':{port}\\b'",
+                shell=True,
+                capture_output=True,
+            )
+            if ret.returncode != 0:
+                return
+            time.sleep(1)
+        logging.warning("RandomServerRestarter: port %d still in use after %.0fs", port, timeout)
+
+    def _stop_server_hard(self, pid: int) -> None:
+        logging.info("RandomServerRestarter: sending SIGKILL to server (pid %d)", pid)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            logging.info("RandomServerRestarter: server already dead")
+
+        for _ in range(60):
+            try:
+                os.kill(pid, 0)
+                time.sleep(0.5)
+            except OSError:
+                break
+
+    def _stop_server_graceful(self) -> None:
+        logging.info("RandomServerRestarter: graceful stop via clickhouse stop")
+        subprocess.run(
+            "clickhouse stop --max-tries 60",
+            shell=True,
+            capture_output=True,
+            timeout=90,
+        )
+
+    def _restart_once(self) -> None:
+        with self._restart_lock:
+            pid = self._read_pid()
+            if pid is None:
+                logging.warning("RandomServerRestarter: no PID file, skipping cycle")
+                return
+
+            if random.random() < 0.5:
+                self._stop_server_hard(pid)
+            else:
+                self._stop_server_graceful()
+
+            # After shutdown the kernel may still be cleaning up sockets
+            self._wait_port_free(9000)
+            self._wait_port_free(9009)
+            self._wait_port_free(9181)
+
+            logging.info("RandomServerRestarter: starting server")
+            subprocess.run(
+                "clickhouse start --user root "
+                ">>/var/log/clickhouse-server/stdout.log "
+                "2>>/var/log/clickhouse-server/stderr.log",
+                shell=True,
+                timeout=30,
+            )
+
+            if self._wait_server_up():
+                logging.info("RandomServerRestarter: server back up")
+            else:
+                logging.error("RandomServerRestarter: server did not come back within timeout")
+
+    def _run(self) -> None:
+        logging.info(
+            "RandomServerRestarter started (interval: %.0f-%.0fs)",
+            self._min_interval,
+            self._max_interval,
+        )
+        while not self._stop_event.is_set():
+            delay = random.uniform(self._min_interval, self._max_interval)
+            if self._stop_event.wait(delay):
+                break
+            if self._stop_event.is_set():
+                break
+            try:
+                self._restart_once()
+            except Exception as e:
+                logging.error("RandomServerRestarter: restart cycle failed: %s", e)
+        logging.info("RandomServerRestarter stopped")
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=10)
+        # If a restart cycle is in progress, wait for it to finish so the
+        # server is guaranteed to be up when we return.
+        with self._restart_lock:
+            pass
+        self._thread = None
 
 
 class RandomQueryKiller:
@@ -258,6 +413,7 @@ def run_func_test(
     upgrade_check: bool,
     encrypted_storage: bool,
     query_killer: Optional["RandomQueryKiller"] = None,
+    server_restarter: Optional["RandomServerRestarter"] = None,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
@@ -317,9 +473,11 @@ def run_func_test(
                 f"stderr:\n{e.stderr}"
             ) from e
 
-    # Start the query killer after smoke check completes, before actual stress test
+    # Start chaos threads after smoke check completes, before actual stress test
     if query_killer is not None:
         query_killer.start()
+    if server_restarter is not None:
+        server_restarter.start()
 
     logging.info("Run stress tests")
     for i, path in enumerate(output_paths):
@@ -416,7 +574,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Ensure that process exists
     if (
         call(
-            "kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)",
+            f"kill -0 $(cat {CLICKHOUSE_PID_FILE})",
             shell=True,
         )
         != 0
@@ -424,7 +582,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
-        "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
+        f"kill -CONT $(cat {CLICKHOUSE_PID_FILE}) && clickhouse client -q 'SELECT 1 FORMAT Null'"
     )
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
@@ -561,6 +719,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Disable random query/client killer during stress test",
     )
+    parser.add_argument(
+        "--no-random-server-restart",
+        action="store_true",
+        default=False,
+        help="Disable random kill -9 / restart of clickhouse-server during stress test",
+    )
     return parser.parse_args()
 
 
@@ -583,6 +747,10 @@ def main():
     if not args.no_random_query_killer and not args.upgrade_check:
         query_killer = RandomQueryKiller(interval=3.0)
 
+    server_restarter = None
+    if not args.no_random_server_restart and not args.upgrade_check:
+        server_restarter = RandomServerRestarter(min_interval=60.0, max_interval=300.0)
+
     try:
         func_pipes = run_func_test(
             args.test_cmd,
@@ -593,9 +761,13 @@ def main():
             args.upgrade_check,
             args.encrypted_storage,
             query_killer,
+            server_restarter,
         )
     finally:
-        # Stop the query killer when tests are done
+        # Stop the server restarter first so the server is guaranteed to be up
+        # before the query killer or hung check tries to talk to it.
+        if server_restarter is not None:
+            server_restarter.stop()
         if query_killer is not None:
             query_killer.stop()
 
