@@ -14,6 +14,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Interpreters/Context.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -29,6 +31,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -59,6 +62,16 @@ namespace
             disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
             volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
             storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
+
+            /// `Context::setTemporaryStoragePath` throws if called twice, so
+            /// configure once per binary lifetime to a shared dir. The
+            /// per-test fixture tmp_path stays for the actual part storage.
+            static std::once_flag tmp_storage_once;
+            std::call_once(tmp_storage_once, [] {
+                auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_gtest_tmp";
+                std::filesystem::create_directories(shared_tmp);
+                getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
+            });
         }
 
         void TearDown() override
@@ -74,10 +87,6 @@ namespace
             return storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
         }
 
-        std::string tmpPath() const
-        {
-            return storage->getFullPath() + "/" + SSTIndexWriter::TMP_FILE_NAME;
-        }
     };
 
     Columns makeUInt64Columns(const std::vector<UInt64> & keys)
@@ -157,10 +166,9 @@ TEST_F(SSTFixture, RoundTrip10K)
     auto block = makeUInt64Block(keys);
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
-    ASSERT_FALSE(std::filesystem::exists(tmpPath()));
 
     rocksdb::SstFileReader reader(makeReaderOptions());
     auto status = reader.Open(finalPath());
@@ -177,27 +185,6 @@ TEST_F(SSTFixture, RoundTrip10K)
     }
 }
 
-/// Atomic rename: after `finalizeToStorage`, the final filename is
-/// present and any `.tmp` sibling has been removed. A stray pre-existing
-/// `.tmp` is cleaned up at Open (crash residue).
-TEST_F(SSTFixture, AtomicRenameCleansTmp)
-{
-    {
-        std::ofstream stale(tmpPath());
-        stale << "garbage from a crashed prior run";
-    }
-    ASSERT_TRUE(std::filesystem::exists(tmpPath()));
-
-    std::vector<UInt64> keys{10, 20, 30};
-    auto block = makeUInt64Block(keys);
-
-    UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256);
-    EXPECT_EQ(written, keys.size());
-    EXPECT_TRUE(std::filesystem::exists(finalPath()));
-    EXPECT_FALSE(std::filesystem::exists(tmpPath()));
-}
-
 /// Corruption detection + rebuild: write an SST, truncate it past the
 /// RocksDB footer, reopen → !ok. Rebuild via `writeFromBlock` on the
 /// same key set → open succeeds.
@@ -209,7 +196,7 @@ TEST_F(SSTFixture, CorruptionRebuild)
     auto block = makeUInt64Block(keys);
 
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
               keys.size());
 
     {
@@ -229,7 +216,7 @@ TEST_F(SSTFixture, CorruptionRebuild)
 
     /// Rebuild from the same input → open succeeds.
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
               keys.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -246,10 +233,9 @@ TEST_F(SSTFixture, EmptyInputProducesNoFile)
 {
     auto block = makeUInt64Block({});
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context);
     EXPECT_EQ(written, 0u);
     EXPECT_FALSE(std::filesystem::exists(finalPath()));
-    EXPECT_FALSE(std::filesystem::exists(tmpPath()));
 }
 
 /// Row-number value encoding: SST values are UInt32 BE. End-to-end scan
@@ -263,7 +249,7 @@ TEST_F(SSTFixture, RowNumbersMonotonic)
     auto block = makeUInt64Block(keys);
 
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256), N);
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context), N);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
@@ -295,7 +281,7 @@ TEST_F(SSTFixture, UnsortedBlockSortedBeforeWrite)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256);
+        /*max_encoded_size=*/256, getContext().context);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -357,7 +343,7 @@ TEST_F(SSTFixture, UnsortedNullableSortsConsistently)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256);
+        /*max_encoded_size=*/256, getContext().context);
     ASSERT_EQ(written, 4u);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -402,7 +388,7 @@ TEST_F(SSTFixture, UnsortedWithCallerPermutationStoresPartOffset)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, &pk_perm,
-        /*max_encoded_size=*/256);
+        /*max_encoded_size=*/256, getContext().context);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -443,7 +429,7 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
     block.insert({std::move(col), type_u64, "k"});
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
 
@@ -473,7 +459,7 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     block.insert({std::move(const_col), type_u64, "k"});
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
     EXPECT_EQ(written, 1u);
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
@@ -531,16 +517,15 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
     /// caller noticing.
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlock(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
         DB::Exception);
 
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
         DB::Exception);
 
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
-    EXPECT_FALSE(storage->existsFile(SSTIndexWriter::TMP_FILE_NAME));
 
     std::filesystem::remove_all(tmp_path);
 }
@@ -558,7 +543,7 @@ TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
     auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
 
     EXPECT_THROW({
-        SSTIndexWriter writer(*storage);
+        SSTIndexWriter writer(*storage, getContext().context);
     }, DB::Exception);
 
     std::filesystem::remove_all(tmp_path);

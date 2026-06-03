@@ -2,6 +2,9 @@
 
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
@@ -9,7 +12,12 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteSettings.h>
+#include <IO/copyData.h>
 
 namespace ProfileEvents
 {
@@ -46,7 +54,6 @@ namespace ErrorCodes
 }
 
 const char * const SSTIndexWriter::FILE_NAME = "unique_key_index.sst";
-const char * const SSTIndexWriter::TMP_FILE_NAME = "unique_key_index.sst.tmp";
 
 #if USE_ROCKSDB
 
@@ -84,6 +91,7 @@ struct SSTIndexWriter::Impl
 {
     rocksdb::SstFileWriter writer;
     std::string tmp_full_path;
+    WriteSettings write_settings;
     bool opened = false;
     Stopwatch lifetime_watch;
 
@@ -102,17 +110,28 @@ struct SSTIndexWriter::Impl
 #endif
 
 
-SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_)
+SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr context)
     : impl(std::make_unique<Impl>())
     , part_storage(part_storage_)
 {
 #if USE_ROCKSDB
-    /// Merge path creates the part directory lazily — make sure it exists
-    /// before SstFileWriter::Open hits ENOENT.
-    part_storage.createDirectories();
-    part_storage.removeFileIfExists(TMP_FILE_NAME);
-
-    impl->tmp_full_path = (std::filesystem::path(part_storage.getFullPath()) / TMP_FILE_NAME).string();
+    /// RocksDB SstFileWriter requires a real local filesystem path. Stage
+    /// the SST under ClickHouse's configured temporary volume so it honors
+    /// `tmp_path` / `tmp_policy` / reservations rather than going to the
+    /// host's `/tmp`. `finalizeToStorage` then streams the bytes through
+    /// `part_storage.writeFile`, routing through the IDisk abstraction
+    /// (correct for `DiskObjectStorage` / transactional part builds).
+    auto tmp_volume = context->getGlobalTemporaryVolume();
+    if (!tmp_volume || tmp_volume->getDisks().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SSTIndexWriter: no temporary volume configured");
+    auto tmp_disk = tmp_volume->getDisks().front();
+    /// `tmp` prefix is required: `Context::setupTmpPath` only sweeps names
+    /// starting with `tmp` on startup, so an unclean exit before the dtor
+    /// would otherwise leak the staging file.
+    impl->tmp_full_path = (std::filesystem::path(tmp_disk->getPath())
+        / ("tmp_uk_index_" + getRandomASCIIString(8) + ".sst")).string();
+    impl->write_settings = context->getWriteSettings();
     auto status = impl->writer.Open(impl->tmp_full_path);
     if (!status.ok())
         throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
@@ -121,7 +140,7 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_)
     impl->opened = true;
     LOG_DEBUG(getWriterLogger(), "Opened SST tmp file {}", impl->tmp_full_path);
 #else
-    (void)part_storage;
+    (void)part_storage; (void)context;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter requires RocksDB support (USE_ROCKSDB=1)");
 #endif
@@ -150,13 +169,12 @@ void SSTIndexWriter::finish()
 SSTIndexWriter::~SSTIndexWriter()
 {
 #if USE_ROCKSDB
-    /// Covers all non-finalized exits, including manual `finish()` without
-    /// the matching `finalizeToStorage` rename and `replaceFile` throwing
-    /// mid-`finalizeToStorage`.
-    if (impl && !finalized)
+    /// Best-effort: remove the local-temp SST if the writer was dropped
+    /// before `finalizeToStorage` copied the bytes through `writeFile`.
+    if (impl && !finalized && !impl->tmp_full_path.empty())
     {
-        try { part_storage.removeFileIfExists(TMP_FILE_NAME); }
-        catch (...) { tryLogCurrentException(__PRETTY_FUNCTION__); }
+        std::error_code ec;
+        std::filesystem::remove(impl->tmp_full_path, ec);
     }
 #endif
 }
@@ -195,13 +213,19 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     if (!impl->opened)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::finalizeToStorage on closed writer");
 
+    auto cleanup_local_tmp = [&]
+    {
+        std::error_code ec;
+        std::filesystem::remove(impl->tmp_full_path, ec);
+    };
+
     try
     {
         finish();
     }
     catch (...)
     {
-        part_storage.removeFileIfExists(TMP_FILE_NAME);
+        cleanup_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         throw;
@@ -210,14 +234,54 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     if (entries_added == 0)
     {
         finalized = true;
-        part_storage.removeFileIfExists(TMP_FILE_NAME);
+        cleanup_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         LOG_DEBUG(getWriterLogger(), "Finalized empty SST (no .sst produced) at {}", impl->tmp_full_path);
         return 0;
     }
 
-    part_storage.replaceFile(TMP_FILE_NAME, FILE_NAME);
+    /// Stream the locally-built SST through `part_storage.writeFile` so the
+    /// IDisk abstraction records it (matters for `DiskObjectStorage` and
+    /// transactional part builds). Stage to a per-part temp name first, then
+    /// `replaceFile` into place so a mid-copy failure cannot truncate an
+    /// existing `unique_key_index.sst`.
+    static constexpr std::string_view STAGING_SUFFIX = ".tmp";
+    const std::string staging_name = std::string(FILE_NAME) + std::string(STAGING_SUFFIX);
+    auto cleanup_staging = [&]
+    {
+        try { part_storage.removeFileIfExists(staging_name); }
+        catch (...) { tryLogCurrentException(getWriterLogger(), "SSTIndexWriter cleanup staging"); }
+    };
+    part_storage.createDirectories();
+    try
+    {
+        ReadBufferFromFile in(impl->tmp_full_path);
+        auto out = part_storage.writeFile(staging_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, impl->write_settings);
+        copyData(in, *out);
+        out->finalize();
+    }
+    catch (...)
+    {
+        cleanup_staging();
+        cleanup_local_tmp();
+        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
+            impl->lifetime_watch.elapsedMicroseconds());
+        throw;
+    }
+    try
+    {
+        part_storage.replaceFile(staging_name, FILE_NAME);
+    }
+    catch (...)
+    {
+        cleanup_staging();
+        cleanup_local_tmp();
+        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
+            impl->lifetime_watch.elapsedMicroseconds());
+        throw;
+    }
+    cleanup_local_tmp();
     ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
         impl->lifetime_watch.elapsedMicroseconds());
 
@@ -236,7 +300,8 @@ UInt64 SSTIndexWriter::writeFromBlock(
     const Block & block,
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
-    size_t max_encoded_size)
+    size_t max_encoded_size,
+    ContextPtr context)
 {
 #if USE_ROCKSDB
     if (unique_key_column_names.empty())
@@ -248,11 +313,10 @@ UInt64 SSTIndexWriter::writeFromBlock(
     if (block.rows() == 0)
         return 0;
 
-    /// ColumnConst lies about dynamic type; materialize before encoder dispatch.
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
     for (const auto & name : unique_key_column_names)
-        uk_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst());
+        uk_columns.push_back(block.getByName(name).column);
 
     const size_t num_rows = block.rows();
     if (permutation && permutation->size() != num_rows)
@@ -267,12 +331,13 @@ UInt64 SSTIndexWriter::writeFromBlock(
     std::vector<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, permutation, max_encoded_size, encoded);
 
-    SSTIndexWriter writer(part_storage);
+    SSTIndexWriter writer(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
         writer.addEncoded(encoded[i], static_cast<UInt32>(i));
     return writer.finalizeToStorage();
 #else
-    (void)part_storage; (void)block; (void)unique_key_column_names; (void)permutation; (void)max_encoded_size;
+    (void)part_storage; (void)block; (void)unique_key_column_names;
+    (void)permutation; (void)max_encoded_size; (void)context;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlock requires RocksDB support (USE_ROCKSDB=1)");
 #endif
@@ -284,7 +349,8 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     const Block & block,
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
-    size_t max_encoded_size)
+    size_t max_encoded_size,
+    ContextPtr context)
 {
 #if USE_ROCKSDB
     if (unique_key_column_names.empty())
@@ -308,7 +374,7 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     Columns uk_columns;
     uk_columns.reserve(unique_key_column_names.size());
     for (const auto & name : unique_key_column_names)
-        uk_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst());
+        uk_columns.push_back(block.getByName(name).column);
 
     /// nulls_direction=1 matches the encoder: NULL flag 0x01 sorts after
     /// non-NULL 0x00, and Float NaN-as-0xFF sorts after non-NaN.
@@ -333,13 +399,13 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
         for (size_t i = 0; i < num_rows; ++i)
             source_to_part_offset[i] = static_cast<UInt32>(i);
 
-    SSTIndexWriter writer(part_storage);
+    SSTIndexWriter writer(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
         writer.addEncoded(encoded[i], source_to_part_offset[uk_perm[i]]);
     return writer.finalizeToStorage();
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
-    (void)permutation; (void)max_encoded_size;
+    (void)permutation; (void)max_encoded_size; (void)context;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlockUnsorted requires RocksDB support (USE_ROCKSDB=1)");
 #endif

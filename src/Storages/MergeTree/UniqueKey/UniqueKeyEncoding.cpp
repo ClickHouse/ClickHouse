@@ -455,7 +455,14 @@ void encodeBlock(
     if (num_rows == 0)
         return;
 
-    for (const auto & col_ptr : columns)
+    /// Materialize any ColumnConst wrappers — `dispatchNonNullableColumnWise`
+    /// static_casts based on `getDataType()`, which lies for ColumnConst.
+    Columns materialized;
+    materialized.reserve(columns.size());
+    for (const auto & col : columns)
+        materialized.push_back(col->convertToFullColumnIfConst());
+
+    for (const auto & col_ptr : materialized)
     {
         const IColumn * col = col_ptr.get();
 
