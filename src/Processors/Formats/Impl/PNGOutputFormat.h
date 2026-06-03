@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_LIBPNG
+
 #include <Core/Block_fwd.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
@@ -27,3 +31,5 @@ private:
 };
 
 }
+
+#endif

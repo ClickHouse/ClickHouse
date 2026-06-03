@@ -1,5 +1,7 @@
 #include <Formats/PNGWriter.h>
 
+#if USE_LIBPNG
+
 #include <png.h>
 #include <vector>
 
@@ -150,3 +152,5 @@ void PNGWriter::flushDataCallback(png_struct_def * png_ptr_)
 }
 
 }
+
+#endif

@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/PNGOutputFormat.h>
 
+#if USE_LIBPNG
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PNGSerializer.h>
@@ -85,3 +87,16 @@ void registerOutputFormatPNG(FormatFactory & factory)
 }
 
 }
+
+#else
+
+namespace DB
+{
+class FormatFactory;
+void registerOutputFormatPNG(FormatFactory &);
+void registerOutputFormatPNG(FormatFactory &)
+{
+}
+}
+
+#endif

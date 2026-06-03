@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_LIBPNG
+
 #include <exception>
 #include <string>
 
@@ -58,3 +62,5 @@ private:
 };
 
 }
+
+#endif
