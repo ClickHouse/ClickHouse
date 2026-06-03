@@ -1,7 +1,13 @@
-/// `wait4` is declared under `_DEFAULT_SOURCE` on Linux glibc.
-/// The define must appear before the first system header that guards it.
+/// `wait4` is declared under `_DEFAULT_SOURCE` on Linux glibc, which the
+/// `-std=c++23` strict mode otherwise hides. Define it before the first system
+/// header that guards it. It is a libc feature-test macro, hence the reserved
+/// name; suppress the diagnostics that would otherwise reject our own define.
 #if defined(OS_LINUX) && !defined(_DEFAULT_SOURCE)
-#   define _DEFAULT_SOURCE
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#   define _DEFAULT_SOURCE // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+#   pragma clang diagnostic pop
 #endif
 
 #include <sys/resource.h>
@@ -33,7 +39,7 @@ struct LastChildResourceUsage
     ::rusage rusage{};
 };
 
-}  // namespace DB
+}
 
 
 namespace
