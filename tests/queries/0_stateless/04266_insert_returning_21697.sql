@@ -88,6 +88,17 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_ast_elements=1) VALUES (108, 'astsize'); -- { serverError TOO_BIG_AST }
 SELECT count() AS inserted_after_returning_ast_size FROM t_insert_returning WHERE id = 108;
 
+-- A small outer/session AST size limit must not reject a RETURNING subquery that raises the limit in its own SETTINGS:
+-- the subquery is detached from the INSERT before the outer checkASTSizeLimits, so the INSERT runs and the subquery is
+-- size-checked later with its own settings. Without the fix the combined AST trips the outer max_ast_elements and the
+-- row is never inserted.
+SELECT 'returning delayed ast size limit';
+TRUNCATE TABLE t_insert_returning;
+SET max_ast_elements = 20;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 SETTINGS max_ast_elements = 100000) VALUES (111, 'astdelay');
+SET max_ast_elements = 0;
+SELECT count() AS inserted_after_returning_delayed_ast FROM t_insert_returning WHERE id = 111;
+
 -- A different allow_experimental_analyzer in the RETURNING subquery must not be validated before the INSERT runs
 -- (the subquery is an independent query planned only after the INSERT persists)
 SELECT 'returning analyzer setting';

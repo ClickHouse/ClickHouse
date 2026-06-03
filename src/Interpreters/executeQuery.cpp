@@ -1474,9 +1474,10 @@ static BlockIO executeQueryImpl(
             /// The RETURNING subquery is an independent `SELECT` that must be validated and normalized with its own
             /// `SETTINGS`, which are applied only after the INSERT runs (see `buildReturningSelectPipeline`). Detach it
             /// from the INSERT's child list before the pre-execution checks and global AST visitors below, so they do
-            /// not process it with the outer INSERT settings (for example the strict-identifier format check below, or
-            /// resolving its `UNION` with the outer `union_default_mode` instead of the subquery's own). The same checks
-            /// are re-run for the subquery with its own settings in `buildReturningSelectPipeline`.
+            /// not process it with the outer INSERT settings (for example the strict-identifier format check below,
+            /// resolving its `UNION` with the outer `union_default_mode` instead of the subquery's own, or rejecting it
+            /// with the outer `max_ast_elements` / `max_ast_depth` in `checkASTSizeLimits`). The same checks are re-run
+            /// for the subquery with its own settings in `buildReturningSelectPipeline`.
             ASTPtr detached_returning_select;
             if (auto * insert_with_returning = out_ast->as<ASTInsertQuery>(); insert_with_returning && insert_with_returning->returning_select)
             {
@@ -1519,11 +1520,15 @@ static BlockIO executeQueryImpl(
                 NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
             }
 
+            /// Check the limits. The RETURNING subquery is still detached, so an outer/session `max_ast_elements` or
+            /// `max_ast_depth` does not reject it before the INSERT runs — its own size/depth limits are checked later
+            /// with the subquery's settings in `buildReturningSelectPipeline`.
+            checkASTSizeLimits(*out_ast, settings);
+
+            /// Reattach the RETURNING subquery now that every pre-execution step that must run with the outer INSERT
+            /// settings (strict-identifier check, global AST visitors, size/depth limits) is done.
             if (detached_returning_select)
                 out_ast->as<ASTInsertQuery>()->children.push_back(detached_returning_select);
-
-            /// Check the limits.
-            checkASTSizeLimits(*out_ast, settings);
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
