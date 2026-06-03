@@ -70,10 +70,14 @@ class GH:
             repo_name = info.repo_name
             sha = info.sha
         else:
-            repo_name = Shell.get_output(
-                rf"git config --get remote.origin.url | sed -E 's#(git@|https://)[^/:]+[:/](.*)\.git#\\2#'",
-                strict=True,
+            repo_url = Shell.get_output(
+                "git config --get remote.origin.url", strict=True
             )
+            repo_name = cls._repo_name_from_git_remote_url(repo_url)
+            if not repo_name:
+                raise RuntimeError(
+                    f"Failed to extract repository name from remote URL [{repo_url}]"
+                )
             sha = Shell.get_output(f"git rev-parse HEAD", strict=True)
 
         assert repo_name
@@ -110,6 +114,14 @@ class GH:
 
         return res
 
+    @staticmethod
+    def _repo_name_from_git_remote_url(repo_url: str) -> str:
+        match = re.match(
+            r"^(?:https?://[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/\s]+/[^/\s]+?)(?:\.git)?/?$",
+            repo_url,
+        )
+        return match.group(1) if match else ""
+
     @classmethod
     def do_command_with_retries(cls, command, verbose=False):
         res = False
@@ -140,6 +152,45 @@ class GH:
         return res
 
     @classmethod
+    def get_output_with_retries(cls, command, verbose=False):
+        """Run a read-style ``gh`` command and return its stdout.
+
+        Mirrors :meth:`do_command_with_retries` but returns the captured
+        stdout instead of a boolean. Use this for any GitHub API read
+        (``gh api ...``, ``gh pr view ...``, ``gh pr diff ...``) that
+        previously used :meth:`Shell.get_output` without retries — those
+        calls would silently return an empty string on a transient 5xx
+        and propagate as ``json.loads('')`` errors or empty-result bugs.
+
+        Returns the trimmed stdout on success; an empty string if the
+        command keeps failing after ``MAX_RETRIES_GH`` attempts.
+        """
+        retry_count = 0
+        out, err, ret_code = "", "", -1
+        while retry_count < Settings.MAX_RETRIES_GH:
+            ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
+            if ret_code == 0:
+                return out
+            # Same non-retryable error classes as do_command_with_retries.
+            if "Validation Failed" in err:
+                print(f"ERROR: GH command validation error {[err]}")
+                break
+            if "Bad credentials" in err:
+                print("ERROR: GH credentials/auth failure")
+                break
+            if "Resource not accessible" in err:
+                print("ERROR: GH permissions failure")
+                break
+            retry_count += 1
+            delay = min(2 ** (retry_count + 1), 60)
+            time.sleep(delay)
+
+        print(
+            f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+        )
+        return ""
+
+    @classmethod
     def post_pr_comment(
         cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
@@ -158,7 +209,7 @@ class GH:
                     f'"/repos/{repo}/issues/{pr}/comments" '
                     f"--jq '.[] | {{id: .id, body: .body}}' | grep -F {safe_substr}"
                 )
-                output = Shell.get_output(cmd_check_created)
+                output = cls.get_output_with_retries(cmd_check_created)
                 if output:
                     comment_ids = []
                     try:
@@ -191,7 +242,7 @@ class GH:
                 temp_file.write(comment_body)
                 temp_file_path = temp_file.name
 
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -200,9 +251,204 @@ class GH:
                 except Exception:
                     pass
 
+    @classmethod
+    def post_pr_line_comment(
+        cls,
+        body_file,
+        commit_id=None,
+        path=None,
+        line=None,
+        side="RIGHT",
+        in_reply_to=None,
+        pr=None,
+        repo=None,
+    ):
+        """Post an inline review comment on a specific line of a PR diff,
+        or a reply on an existing inline thread.
+
+        When ``in_reply_to`` is set, the comment is posted as a reply on
+        the thread whose parent comment has that database id, and
+        ``commit_id``/``path``/``line``/``side`` are ignored. Otherwise a
+        new top-level inline comment is created at the given location and
+        all four are required.
+
+        The body is read from ``body_file`` and passed via ``-F body=@<file>``,
+        which avoids two classes of bugs we have hit before:
+          1) Newlines collapsing to literal `\\n` when the body is inlined.
+          2) The body being posted as the literal `@<file>` string when a
+             caller mistakenly uses `-f` (raw field) instead of `-F` (typed
+             field with `@file` expansion).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        if not os.path.exists(body_file):
+            raise FileNotFoundError(f"Body file [{body_file}] not found")
+        if os.path.getsize(body_file) == 0:
+            raise ValueError(f"Body file [{body_file}] is empty")
+
+        if in_reply_to is not None:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments/{int(in_reply_to)}/replies" '
+                f"-F body=@{shlex.quote(body_file)}"
+            )
+        else:
+            if commit_id is None or path is None or line is None:
+                raise ValueError(
+                    "post_pr_line_comment requires commit_id, path, and line "
+                    "when in_reply_to is not set"
+                )
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments" '
+                f"-F body=@{shlex.quote(body_file)} "
+                f"-f commit_id={shlex.quote(commit_id)} "
+                f"-f path={shlex.quote(path)} "
+                f"-F line={int(line)} "
+                f"-f side={shlex.quote(side)}"
+            )
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def _gh_graphql_json(cls, query, variables, verbose=False):
+        """Run a GraphQL query via ``gh api graphql`` and return parsed JSON.
+
+        ``variables`` is a mapping of name to value: ``int`` and ``bool``
+        values use ``-F`` (typed), everything else uses ``-f`` (raw string).
+        Raises ``RuntimeError`` on transport failure (empty output after
+        retries) or if the response cannot be parsed; the caller is
+        responsible for checking GraphQL ``errors`` if any. Failing loud
+        is intentional: a silent empty result is indistinguishable from
+        "no data" and causes the reviewer to lose prior context.
+        """
+        parts = [f"gh api graphql -f query={shlex.quote(query)}"]
+        for k, v in variables.items():
+            if isinstance(v, bool):
+                parts.append(f"-F {k}={'true' if v else 'false'}")
+            elif isinstance(v, int):
+                parts.append(f"-F {k}={int(v)}")
+            else:
+                parts.append(f"-f {k}={shlex.quote(str(v))}")
+        cmd = " ".join(parts)
+        out = cls.get_output_with_retries(cmd, verbose=verbose)
+        if not out:
+            raise RuntimeError(f"gh api graphql failed (no output) for cmd [{cmd}]")
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"gh api graphql returned non-JSON output [{out[:200]}]: {e}")
+        if "errors" in data and data["errors"]:
+            raise RuntimeError(f"gh api graphql returned errors: {data['errors']}")
+        return data
+
+    @classmethod
+    def list_pr_review_threads(cls, pr=None, repo=None, verbose=False):
+        """Return all review threads on a PR via GraphQL.
+
+        Each thread carries its node ``id`` (the value to pass to the
+        resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
+        ``resolvedBy`` (``{login}`` of the user who most recently
+        resolved the thread, or ``null`` if never resolved -- consumers
+        use this to tell apart bot-resolved from author-resolved
+        threads in stateless CI runs), ``path``, ``line``, and the
+        full list of comments under it (with ``databaseId`` for use as
+        ``in_reply_to`` when replying, and ``createdAt`` for per-comment
+        timestamps). Both the thread list and each thread's comments
+        are paginated, so long PRs do not silently truncate. Raises
+        ``RuntimeError`` on any transport / parse failure: a failure
+        to read prior discussion must not be confused with "no prior
+        discussion".
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+        owner, name = repo.split("/", 1)
+
+        thread_query = (
+            "query($owner:String!,$name:String!,$pr:Int!,$after:String){"
+            "repository(owner:$owner,name:$name){"
+            "pullRequest(number:$pr){"
+            "reviewThreads(first:100,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{id isResolved isOutdated resolvedBy{login} path line "
+            "comments(first:50){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
+            "}}}}}}"
+        )
+        comments_query = (
+            "query($id:ID!,$after:String!){"
+            "node(id:$id){... on PullRequestReviewThread{"
+            "comments(first:50,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
+            "}}}}"
+        )
+
+        threads = []
+        thread_cursor = None
+        while True:
+            variables = {"owner": owner, "name": name, "pr": int(pr)}
+            if thread_cursor is not None:
+                variables["after"] = thread_cursor
+            data = cls._gh_graphql_json(thread_query, variables, verbose=verbose)
+            page = data["data"]["repository"]["pullRequest"]["reviewThreads"]
+            for thread in page["nodes"]:
+                comments = thread["comments"]
+                while comments["pageInfo"]["hasNextPage"]:
+                    sub = cls._gh_graphql_json(
+                        comments_query,
+                        {"id": thread["id"], "after": comments["pageInfo"]["endCursor"]},
+                        verbose=verbose,
+                    )
+                    next_page = sub["data"]["node"]["comments"]
+                    comments["nodes"].extend(next_page["nodes"])
+                    comments["pageInfo"] = next_page["pageInfo"]
+                threads.append(thread)
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            thread_cursor = page["pageInfo"]["endCursor"]
+        return threads
+
+    @classmethod
+    def _set_review_thread_resolution(cls, thread_id, resolve, verbose=False):
+        mutation_name = "resolveReviewThread" if resolve else "unresolveReviewThread"
+        query = (
+            f"mutation($threadId:ID!){{"
+            f"{mutation_name}(input:{{threadId:$threadId}}){{thread{{isResolved}}}}"
+            f"}}"
+        )
+        cmd = (
+            f"gh api graphql "
+            f"-f query={shlex.quote(query)} "
+            f"-f threadId={shlex.quote(thread_id)}"
+        )
+        return cls.do_command_with_retries(cmd, verbose=verbose)
+
+    @classmethod
+    def resolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Mark a PR review thread as resolved (GraphQL ``resolveReviewThread``).
+
+        ``thread_id`` is the GraphQL node id from
+        :meth:`list_pr_review_threads`, not the REST comment id.
+        """
+        return cls._set_review_thread_resolution(thread_id, resolve=True, verbose=verbose)
+
+    @classmethod
+    def unresolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Re-open a previously resolved PR review thread
+        (GraphQL ``unresolveReviewThread``)."""
+        return cls._set_review_thread_resolution(thread_id, resolve=False, verbose=verbose)
+
     '''
     TODO: @maxknv
-    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    The fact that a comment can get lost is also an issue for other CI automated comments.
     I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
     '''
     @classmethod
@@ -233,7 +479,7 @@ class GH:
             f'"/repos/{repo}/issues/{pr}/comments" '
             f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
         )
-        output = Shell.get_output(cmd_list, verbose=verbose)
+        output = cls.get_output_with_retries(cmd_list, verbose=verbose)
         if output:
             try:
                 for comment in json.loads(output):
@@ -259,7 +505,9 @@ class GH:
             ) as temp_file:
                 temp_file.write(full_body)
                 temp_file_path = temp_file.name
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            # Pass --repo so gh does not probe git remotes (Docker mounts can hit
+            # "detected dubious ownership" and fail comment creation).
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -287,9 +535,15 @@ class GH:
         cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
             "/repos/{repo}/issues/{pr}/comments" \
             --jq \'[.[] | {{id: .id, body: .body}}]\' --paginate'
-        output = Shell.get_output(cmd_check_created, verbose=verbose)
+        output = cls.get_output_with_retries(cmd_check_created, verbose=verbose)
 
-        comments = json.loads(output)
+        try:
+            comments = json.loads(output) if output else []
+        except json.JSONDecodeError as e:
+            print(
+                f"ERROR: Failed to parse gh comments JSON: {e}. Treating as no existing comments."
+            )
+            comments = []
 
         comment_to_update = None
         id_to_update = None
@@ -356,7 +610,9 @@ class GH:
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+                # Pass --repo so gh does not probe git remotes (Docker mounts can hit
+                # "detected dubious ownership" and fail comment creation).
+                cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
                 print(f"Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
@@ -377,7 +633,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json commits --jq '[.commits[].authors[].login]'"
-        contributors_str = Shell.get_output(cmd, verbose=True)
+        contributors_str = cls.get_output_with_retries(cmd, verbose=True)
         res = []
         if contributors_str:
             try:
@@ -397,7 +653,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json labels --jq '.labels[].name'"
-        output = Shell.get_output(cmd, verbose=True)
+        output = cls.get_output_with_retries(cmd, verbose=True)
         res = []
         if output:
             res = output.splitlines()
@@ -411,7 +667,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --json title,body,labels --repo {repo}"
-        output = Shell.get_output(cmd, verbose=True)
+        output = cls.get_output_with_retries(cmd, verbose=True)
         try:
             pr_data = json.loads(output)
             title = pr_data["title"]
@@ -432,7 +688,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login\''
-        return Shell.get_output(cmd, verbose=True)
+        return cls.get_output_with_retries(cmd, verbose=True)
 
     @classmethod
     def get_pr_diff(cls, pr=None, repo=None):
@@ -442,7 +698,7 @@ class GH:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr diff {pr} --repo {repo}"
-        return Shell.get_output(cmd, verbose=True)
+        return cls.get_output_with_retries(cmd, verbose=True)
 
     @classmethod
     def update_pr_body(cls, new_body=None, body_file=None, pr=None, repo=None):
@@ -552,15 +808,15 @@ class GH:
         cmd = f"gh pr merge {pr} --repo {repo} {extra_args}"
         return cls.do_command_with_retries(cmd)
 
-    @staticmethod
-    def pr_has_conflicts(pr=None, repo=None, verbose=False):
+    @classmethod
+    def pr_has_conflicts(cls, pr=None, repo=None, verbose=False):
         if not repo:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
         cmd = f"gh pr view {pr} --repo {repo} --json mergeable --jq .mergeable"
-        output = Shell.get_output(cmd, verbose=verbose)
+        output = cls.get_output_with_retries(cmd, verbose=verbose)
         return output == "CONFLICTING"
 
     @classmethod
@@ -776,13 +1032,61 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
-            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana links).
-            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            # Collect links from jobs that have labels with links (e.g. keeper-stress Grafana
+            # links, perf-comparison combined dashboard). Include regardless of success/failure
+            # so links always appear when the job runs.
+            #
+            # Dedup key = the URL set (sorted tuple of label links), not the rendered markdown.
+            # We group by *destination*: jobs that point at the same set of URLs are collapsed
+            # into one PR-comment row regardless of label text or ordering. This is what makes
+            # the 6 (or 12) `Performance Comparison` shards collapse to a single row, while
+            # `keeper-stress` jobs — whose `Grafana: Run details` URL embeds a per-run time
+            # window — stay distinct because their URL sets differ.
+            #
+            # The collapsed row's label is the longest common prefix of the job names trimmed
+            # at a natural break (`(` or `,`), so `Performance Comparison (arm_release,
+            # master_head, 1/6)` ... `6/6` becomes `Performance Comparison`.
+            def _shared_job_label(names):
+                if len(names) == 1:
+                    return names[0]
+                common = os.path.commonprefix(names)
+                for sep in (" (", ", ", "("):
+                    idx = common.rfind(sep)
+                    if idx > 0:
+                        common = common[:idx]
+                        break
+                common = common.rstrip(" ,(-")
+                return common or f"{names[0]} (+{len(names) - 1} more)"
+
+            def _url_key(res):
+                """Sorted tuple of label link URLs (the dedup key)."""
+                urls = []
+                for item in (getattr(res, "ext", {}) or {}).get("labels", []) or []:
+                    if isinstance(item, dict) and item.get("link"):
+                        urls.append(item["link"])
+                for item in (getattr(res, "ext", {}) or {}).get("hlabels", []) or []:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+                        urls.append(item[1])
+                return tuple(sorted(urls))
+
+            groups = {}
+            group_order = []
             for job_result in getattr(result, "results", []) or []:
-                if has_label_links(job_result):
-                    links_md = extract_label_links_md(job_result)
-                    if links_md:
-                        summary.extra_links.append((job_result.name, links_md))
+                if not has_label_links(job_result):
+                    continue
+                links_md = extract_label_links_md(job_result)
+                if not links_md:
+                    continue
+                key = _url_key(job_result)
+                if key not in groups:
+                    groups[key] = {"names": [], "links_md": links_md}
+                    group_order.append(key)
+                groups[key]["names"].append(job_result.name)
+            for key in group_order:
+                group = groups[key]
+                summary.extra_links.append(
+                    (_shared_job_label(group["names"]), group["links_md"])
+                )
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -798,14 +1102,20 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            if self.extra_links:
-                for job_name, links_md in self.extra_links:
-                    body += f"**{job_name}:** {links_md}\n"
+            # Render each extra_links group as a plain bullet under the Summary
+            # line. Keeping the (un-bolded) job-name prefix tells the reader
+            # which job(s) the labels came from without adding extra weight.
+            for name, links_md in self.extra_links:
+                body += f"- {name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
@@ -875,6 +1185,80 @@ if __name__ == "__main__":
         help="Only update an existing comment; do not create a new one",
     )
 
+    line_parser = subparsers.add_parser(
+        "post-pr-line-comment",
+        help="Post an inline review comment on a specific line of a PR diff",
+    )
+    line_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body (read via -F body=@<file>)",
+    )
+    line_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the comment refers to (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--path",
+        default=None,
+        help="Path of the file to comment on (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--line",
+        type=int,
+        default=None,
+        help="Line number in the PR diff (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--side", default="RIGHT", choices=["RIGHT", "LEFT"], help="Diff side"
+    )
+    line_parser.add_argument(
+        "--reply-to",
+        type=int,
+        default=None,
+        dest="reply_to",
+        help="databaseId of the parent comment to reply to. "
+        "When set, the comment is posted as a reply on the existing thread "
+        "and --commit/--path/--line are ignored.",
+    )
+    line_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    line_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    threads_parser = subparsers.add_parser(
+        "list-pr-review-threads",
+        help="List PR review threads via GraphQL (prints JSON to stdout)",
+    )
+    threads_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    threads_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    resolve_parser = subparsers.add_parser(
+        "resolve-pr-review-thread",
+        help="Resolve a PR review thread via GraphQL",
+    )
+    resolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
+    unresolve_parser = subparsers.add_parser(
+        "unresolve-pr-review-thread",
+        help="Re-open (unresolve) a PR review thread via GraphQL",
+    )
+    unresolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "post-or-update":
@@ -889,6 +1273,36 @@ if __name__ == "__main__":
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-line-comment":
+        kwargs = dict(
+            body_file=args.body_file,
+            commit_id=args.commit,
+            path=args.path,
+            line=args.line,
+            side=args.side,
+            in_reply_to=args.reply_to,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_line_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "list-pr-review-threads":
+        kwargs = {}
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        threads = GH.list_pr_review_threads(**kwargs)
+        print(json.dumps(threads, indent=2))
+        sys.exit(0)
+    elif args.command == "resolve-pr-review-thread":
+        ok = GH.resolve_pr_review_thread(args.thread_id)
+        sys.exit(0 if ok else 1)
+    elif args.command == "unresolve-pr-review-thread":
+        ok = GH.unresolve_pr_review_thread(args.thread_id)
         sys.exit(0 if ok else 1)
     else:
         parser.print_help()

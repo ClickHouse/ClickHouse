@@ -440,7 +440,7 @@ void ConfigProcessor::doIncludesRecursive(
             std::string value = node->nodeValue();
 
             bool replace_occurred = false;
-            size_t pos;
+            size_t pos = 0;
             while ((pos = value.find(substitution.first)) != std::string::npos)
             {
                 value.replace(pos, substitution.first.length(), substitution.second);
@@ -804,24 +804,27 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 include_from_path = default_path;
         }
 
-        if (!throw_on_bad_include_from && !fs::exists(include_from_path))
+        /// When --try is passed and the include_from file is missing, drop the path so that
+        /// processIncludes does not try to parse it. We must still call processIncludes
+        /// because it also performs from_env/from_zk/incl substitutions on the rest of the
+        /// config; skipping it would silently strip those values (issue #101704).
+        if (!throw_on_bad_include_from && !include_from_path.empty() && !fs::exists(include_from_path))
         {
             LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
+            include_from_path.clear();
         }
-        else
-        {
-            processIncludes(
-                config,
-                substitutions,
-                include_from_path,
-                throw_on_bad_incl,
-                dom_parser,
-                log,
-                &contributing_zk_paths,
-                &contributing_files,
-                zk_node_cache,
-                zk_changed_event);
-        }
+
+        processIncludes(
+            config,
+            substitutions,
+            include_from_path,
+            throw_on_bad_incl,
+            dom_parser,
+            log,
+            &contributing_zk_paths,
+            &contributing_files,
+            zk_node_cache,
+            zk_changed_event);
     }
     catch (Exception & e)
     {
@@ -889,7 +892,7 @@ void ConfigProcessor::processIncludes(
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
-    bool has_zk_includes;
+    bool has_zk_includes = false;
     XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
 
     if (has_zk_includes && !allow_zk_includes)
@@ -907,7 +910,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool is_config_changed)
 {
     XMLDocumentPtr config_xml;
-    bool has_zk_includes;
+    bool has_zk_includes = false;
     bool processed_successfully = false;
     try
     {
