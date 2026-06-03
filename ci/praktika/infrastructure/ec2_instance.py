@@ -286,17 +286,24 @@ class EC2Instance:
 
             return instances[0]
 
-        def _reconcile_user_data(self, ec2, existing_instances) -> List[str]:
+        def _reconcile_user_data(self, ec2, existing_instances, force=False) -> List[str]:
             """If `update_user_data_on_change` is set, compare live UserData on each
             existing instance with `self.user_data`. For mismatches, stop the
             instance (waiting until it is fully stopped) and call
             ModifyInstanceAttribute to install the new UserData. Returns the list
             of instance IDs whose UserData was updated; the caller is responsible
             for starting them back up if needed.
+
+            `force` ignores the `update_user_data_on_change` opt-in (used by the
+            `--instance` debug path, where the explicit instance id is itself the
+            opt-in); the content comparison still applies, so an instance whose
+            live UserData already matches is left running.
             """
             import base64
 
-            if not self.update_user_data_on_change or not self.user_data:
+            if not self.user_data:
+                return []
+            if not force and not self.update_user_data_on_change:
                 return []
 
             to_update: List[str] = []
@@ -380,7 +387,7 @@ class EC2Instance:
                 self.ext["launch_time"] = inst.get("LaunchTime")
             return self
 
-        def deploy(self):
+        def deploy(self, only_instance_id: Optional[str] = None):
             import boto3
             import os
 
@@ -409,6 +416,42 @@ class EC2Instance:
 
             existing_instances = self._find_existing_instances()
             ec2 = boto3.client("ec2", region_name=self.region)
+
+            # Debug path: update user_data on a single, explicitly named instance.
+            # Skip create / quantity / tag / IAM reconciliation entirely so the
+            # rest of the fleet is left untouched.
+            if only_instance_id:
+                target = [
+                    inst
+                    for inst in existing_instances
+                    if inst.get("InstanceId") == only_instance_id
+                ]
+                if not target:
+                    print(
+                        f"EC2Instance '{self.name}': instance {only_instance_id} is "
+                        f"not one of its instances - skip"
+                    )
+                    return self
+
+                print(
+                    f"EC2Instance '{self.name}': --instance {only_instance_id} - "
+                    f"updating user_data on this instance only"
+                )
+                updated_ids = self._reconcile_user_data(ec2, target, force=True)
+                if not updated_ids:
+                    print(
+                        f"EC2Instance '{self.name}': user_data on {only_instance_id} "
+                        f"already up to date - nothing to do"
+                    )
+                elif self.start_on_deploy:
+                    # _reconcile_user_data left the instance stopped; start it again.
+                    print(
+                        f"EC2Instance '{self.name}': starting {only_instance_id} after "
+                        f"user_data update"
+                    )
+                    ec2.start_instances(InstanceIds=updated_ids)
+                return self
+
             if existing_instances:
                 instance_ids = [inst.get("InstanceId") for inst in existing_instances]
                 states = [

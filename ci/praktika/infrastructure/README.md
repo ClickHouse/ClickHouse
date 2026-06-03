@@ -94,6 +94,13 @@ praktika infrastructure --deploy --only ImageBuilder LaunchTemplate
 praktika infrastructure --deploy --only DedicatedHost
 ```
 
+Debug a single instance's `user_data` without touching the rest of the fleet
+(stops the instance, installs the configured `user_data`, and starts it again):
+
+```bash
+praktika infrastructure --deploy --instance i-0123456789abcdef0
+```
+
 This command:
 1. Loads configuration from `Settings.CLOUD_INFRASTRUCTURE_CONFIG_PATH`
 2. Deploys all Dedicated Hosts defined in `CLOUD.dedicated_hosts`

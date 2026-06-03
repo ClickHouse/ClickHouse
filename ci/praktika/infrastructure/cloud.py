@@ -43,6 +43,7 @@ class CloudInfrastructure:
             self,
             all=False,
             only: Optional[List[str]] = None,
+            instance: Optional[str] = None,
         ):
             """
             Deploy Lambda functions.
@@ -51,7 +52,14 @@ class CloudInfrastructure:
                 all: If False, only deploy code (skip settings validation and IAM policies).
                      If True, deploy everything (validate settings, deploy code, attach IAM policies).
                 only: If set, deploy only selected component types by name.
+                instance: Debug helper. If set to an EC2 instance id, only that single
+                     instance has its user_data updated; all other EC2 instances and
+                     other component types are left untouched.
             """
+            # --instance is a targeted EC2 user_data update; it makes no sense for
+            # the other component types, so restrict the deploy to EC2 instances.
+            if instance and not only:
+                only = ["EC2Instance"]
             only_set = {
                 s.strip().lower()
                 for s in (only or [])
@@ -134,7 +142,7 @@ class CloudInfrastructure:
                     print("\n" + "=" * 60)
                     print(f"Deploying EC2 Instance: {instance_config.name}")
                     print("=" * 60)
-                    instance_config.deploy()
+                    instance_config.deploy(only_instance_id=instance)
 
             # Deploy Image Builder pipelines
             if _wants("ImageBuilder", "ImageBuilders"):

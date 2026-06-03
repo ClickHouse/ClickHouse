@@ -288,6 +288,17 @@ def create_parser():
         action="store_true",
         default=False,
     )
+    _infra_parser.add_argument(
+        "--instance",
+        help=(
+            "Debug helper for --deploy: update user_data on only this single EC2 "
+            "instance id (e.g. i-0123456789abcdef0) instead of all configured "
+            "instances. Stops the instance, installs the configured user_data, and "
+            "starts it again. Other instances are left untouched."
+        ),
+        type=str,
+        default=None,
+    )
     return parser
 
 
@@ -324,6 +335,7 @@ def main():
                     _get_infra_config().deploy(
                         all=args.all,
                         only=remaining_components,
+                        instance=args.instance,
                     )
             else:
                 from .mangle import _get_infra_config
@@ -331,6 +343,7 @@ def main():
                 _get_infra_config().deploy(
                     all=args.all,
                     only=args.only,
+                    instance=args.instance,
                 )
 
         if args.shutdown:
