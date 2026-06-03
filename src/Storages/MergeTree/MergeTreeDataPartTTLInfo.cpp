@@ -249,7 +249,7 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
     {
         for (const auto & [name, info] : map)
         {
-            if (!info.finished())
+            if (info.max && !info.finished())
                 return true;
         }
         return false;
@@ -288,7 +288,7 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowsAffectingTTLs() const
     {
         for (const auto & [name, info] : map)
         {
-            if (!info.finished())
+            if (info.max && !info.finished())
                 return true;
         }
         return false;
