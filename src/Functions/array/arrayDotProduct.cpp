@@ -135,7 +135,7 @@ struct DotProduct
 /// The implementation is modeled after the implementation of distance functions arrayL1Distance, arrayL2Distance, etc.
 /// The main difference is that arrayDotProduct() interferes the result type differently.
 template <typename Kernel>
-class FunctionArrayScalarProduct : public IFunction
+class FunctionArrayScalarProduct final : public IFunction
 {
 public:
     static constexpr auto name = Kernel::name;
@@ -450,6 +450,7 @@ The return type is determined by the type of the arguments. If Arrays or Tuples 
 }
 
 // These functions are used by TupleOrArrayFunction in Function/vectorFunctions.cpp
+FunctionPtr createFunctionArrayDotProduct(ContextPtr context_);
 FunctionPtr createFunctionArrayDotProduct(ContextPtr context_)
 {
     return FunctionArrayDotProduct::create(context_);
