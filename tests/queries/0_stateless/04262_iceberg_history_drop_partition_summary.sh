@@ -53,7 +53,7 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE database = currentDatabase() AND table = '${TABLE}' AND operation = 'DELETE'
 "
 
-echo "=== operation key must not also appear inside summary map ==="
+echo "=== operation key is also included in summary map ==="
 ${CLICKHOUSE_CLIENT} --query "
     SELECT mapContains(summary, 'operation')
     FROM system.iceberg_history

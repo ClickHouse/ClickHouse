@@ -1,10 +1,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+
 #include <Common/logger_useful.h>
 
 #if USE_AVRO
 
 #include <optional>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -16,6 +17,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+
 #include <base/types.h>
 
 namespace DB::ErrorCodes
@@ -141,7 +144,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
-    auto generate_snapshot_summary = [&]() -> Iceberg::SnapshotSummary
+    const auto snapshot_summary = [&]() -> Iceberg::SnapshotSummary
     {
         Iceberg::SnapshotSummaryTotals previous_totals;
 
@@ -171,7 +174,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         return Iceberg::SnapshotSummary{std::move(snapshot_summary_update), std::move(previous_totals)};
     }();
 
-    new_snapshot->set(Iceberg::f_summary, generate_snapshot_summary.toJSON());
+    new_snapshot->set(Iceberg::f_summary, snapshot_summary.toJSON());
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
@@ -216,7 +219,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
     }
 
-    if (generate_snapshot_summary.added_delete_files > 0)
+    /// Position deletes
+    if (const auto * summary_overwrite = snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
+        summary_overwrite && summary_overwrite->added_delete_files > 0)
     {
         if (!metadata_object->has(Iceberg::f_properties))
         {
