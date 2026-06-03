@@ -236,13 +236,13 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
     if (socket)
     {
         LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
-        return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
+        return {socket->sockfd(), EPOLLOUT | EPOLLERR};
     }
 
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
-    return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
+    return {fd, EPOLLIN | EPOLLERR};
 }
 
 void StreamingExchangeSink::consume(Chunk chunk)
