@@ -103,14 +103,6 @@ ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, Co
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
-
-    /// `Context::createCopy` also shares the outer query's `QueryMetadataCache`, which caches per-storage metadata and
-    /// storage snapshots for the lifetime of a query (when `enable_shared_storage_snapshot_in_query` is set). Reusing
-    /// it would make the RETURNING subquery observe the pre-INSERT snapshot of the target table — it must instead read
-    /// the table as of after the INSERT. Give the subquery a fresh cache so it takes a new, post-INSERT snapshot.
-    if (returning_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        returning_context->setQueryMetadataCache(std::make_shared<QueryMetadataCache>());
-
     return returning_context;
 }
 
@@ -151,6 +143,19 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
         select_to_interpret->checkDepth(returning_settings[Setting::max_ast_depth]);
     if (returning_settings[Setting::max_ast_elements])
         select_to_interpret->checkSize(returning_settings[Setting::max_ast_elements]);
+
+    /// The RETURNING subquery must read each table as of *after* the INSERT, not the pre-INSERT snapshot the INSERT
+    /// phase may have pinned. With `enable_shared_storage_snapshot_in_query`, storage snapshots are cached per table
+    /// for the query's lifetime in the query context's `QueryMetadataCache`, which is a weak pointer owned by whoever
+    /// drives the query (see `executeQueryImpl`). Install a fresh cache on the query context and keep it alive while
+    /// the subquery is planned (snapshots are taken during planning, in `buildQueryPipeline`), so the subquery sees a
+    /// new, post-INSERT snapshot. The INSERT phase has finished, so the previous cache is no longer needed.
+    QueryMetadataCachePtr returning_metadata_cache;
+    if (returning_settings[Setting::enable_shared_storage_snapshot_in_query] && returning_context->hasQueryContext())
+    {
+        returning_metadata_cache = std::make_shared<QueryMetadataCache>();
+        returning_context->getQueryContext()->setQueryMetadataCache(returning_metadata_cache);
+    }
 
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
     if (returning_settings[Setting::allow_experimental_analyzer])
