@@ -942,6 +942,7 @@ static bool isBooleanProducingFunction(const String & name)
         "in", "notIn", "globalIn", "globalNotIn",
         "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
         "like", "notLike", "ilike", "notILike", "match",
+        "startsWith", "startsWithUTF8", "endsWith",
         "isNull", "isNotNull", "empty", "notEmpty",
         "and", "or", "not",
     };

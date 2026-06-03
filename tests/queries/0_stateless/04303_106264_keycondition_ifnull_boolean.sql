@@ -121,3 +121,17 @@ SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'G
 SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
     EXPLAIN indexes = 1 SELECT * FROM t_ifnull_tx WHERE coalesce(equals(x, '100'), 0));
 DROP TABLE t_ifnull_tx;
+
+-- LIKE affix: with the analyzer, optimize_rewrite_like_perfect_affix (default on) rewrites
+-- `s LIKE 'foo%'` to startsWith(s, 'foo') before key analysis, so the wrapped form must prune the
+-- primary key like the bare predicate. 1 = pruned.
+SET enable_analyzer = 1;
+DROP TABLE IF EXISTS t_ifnull_affix;
+CREATE TABLE t_ifnull_affix (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 8192;
+INSERT INTO t_ifnull_affix SELECT toString(number) FROM numbers(100000);
+
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_affix WHERE s LIKE 'foo%');
+SELECT countIf(explain LIKE '%Granules:%' AND toUInt32OrZero(extract(explain, 'Granules: ([0-9]+)')) < toUInt32OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)'))) FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_affix WHERE ifNull(like(s, 'foo%'), 0));
+DROP TABLE t_ifnull_affix;
