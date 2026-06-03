@@ -43,6 +43,7 @@ namespace ErrorCodes
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
     M(Bool, internal) \
+    M(String, s3_endpoint_credentials_authorized_endpoint) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \

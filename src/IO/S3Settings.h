@@ -74,6 +74,11 @@ public:
         const std::string & user,
         bool ignore_user = false) const;
 
+    std::optional<String> getMatchedEndpoint(
+        const std::string & endpoint,
+        const std::string & user,
+        bool ignore_user = false) const;
+
 private:
     mutable std::mutex mutex;
     MapWithMemoryTracking<const String, const S3Settings> s3_settings;

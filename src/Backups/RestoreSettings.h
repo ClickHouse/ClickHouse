@@ -151,6 +151,10 @@ struct RestoreSettings
     bool internal = false;
 
     /// Internal, should not be specified by user.
+    /// `S3` endpoint config whose credentials were authorized by the initiator.
+    String s3_endpoint_credentials_authorized_endpoint;
+
+    /// Internal, should not be specified by user.
     /// The current host's ID in the format 'escaped_host_name:port'.
     String host_id;
 

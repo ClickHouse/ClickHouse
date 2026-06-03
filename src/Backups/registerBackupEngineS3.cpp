@@ -10,6 +10,7 @@
 #include <Backups/BackupInfo.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
+#include <IO/S3Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <filesystem>
@@ -71,9 +72,6 @@ void registerBackupEngineS3(BackupFactory & factory)
         String role_arn;
         String role_session_name;
         const bool allow_config_credentials = params.is_internal_backup && !params.is_user_controlled_backup_destination;
-        /// Internal `ON CLUSTER` subqueries run after the initiator has checked endpoint user filters.
-        /// They may use that endpoint config, but user-controlled destinations still must not inherit top-level credentials.
-        const bool ignore_endpoint_user_filter = params.is_internal_backup;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -140,6 +138,19 @@ void registerBackupEngineS3(BackupFactory & factory)
                         "Using `role_arn` without user-supplied `access_key_id` and `secret_access_key` "
                         "in BACKUP S3 arguments is not allowed");
             }
+        }
+
+        bool ignore_endpoint_user_filter = allow_config_credentials;
+        if (!ignore_endpoint_user_filter
+            && params.is_internal_backup
+            && !params.s3_endpoint_credentials_authorized_endpoint.empty())
+        {
+            /// The initiator stores the endpoint config key it was allowed to use.
+            /// Internal hosts may ignore user filters only for that same block.
+            const auto matched_endpoint = params.context->getStorageS3Settings().getMatchedEndpoint(
+                s3_uri, params.context->getUserName(), /* ignore_user */ true);
+            ignore_endpoint_user_filter
+                = matched_endpoint && (*matched_endpoint == params.s3_endpoint_credentials_authorized_endpoint);
         }
 
         BackupImpl::ArchiveParams archive_params;

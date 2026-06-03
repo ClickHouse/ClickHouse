@@ -25,6 +25,7 @@ BackupFactory::CreateParams BackupFactory::CreateParams::getCreateParamsForBaseB
     read_params.allow_azure_native_copy = allow_azure_native_copy;
     read_params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
     read_params.use_same_password_for_base_backup = use_same_password_for_base_backup;
+    read_params.s3_endpoint_credentials_authorized_endpoint = s3_endpoint_credentials_authorized_endpoint;
     if (read_params.use_same_password_for_base_backup)
         read_params.password = old_password;
     return read_params;

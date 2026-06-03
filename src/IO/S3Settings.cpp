@@ -208,6 +208,34 @@ std::optional<S3Settings> S3SettingsByEndpoint::getSettings(
     return {};
 }
 
+std::optional<String> S3SettingsByEndpoint::getMatchedEndpoint(
+    const String & endpoint,
+    const String & user,
+    bool ignore_user) const
+{
+    std::lock_guard lock(mutex);
+    Poco::URI endpoint_uri(endpoint);
+
+    const String * matched_endpoint = nullptr;
+    size_t matched_prefix_size = 0;
+
+    for (const auto & [endpoint_prefix, settings] : s3_settings)
+    {
+        if (endpoint_prefix.size() > matched_prefix_size
+            && endpointMatches(endpoint_uri, endpoint_prefix)
+            && (ignore_user || settings.auth_settings.canBeUsedByUser(user)))
+        {
+            matched_endpoint = &endpoint_prefix;
+            matched_prefix_size = endpoint_prefix.size();
+        }
+    }
+
+    if (matched_endpoint)
+        return *matched_endpoint;
+
+    return {};
+}
+
 void S3Settings::serialize(WriteBuffer & os, ContextPtr context) const
 {
     auth_settings.serialize(os, context);

@@ -171,6 +171,7 @@ namespace
     M(Bool, use_same_password_for_base_backup) \
     M(Bool, restore_broken_parts_as_detached) \
     M(Bool, internal) \
+    M(String, s3_endpoint_credentials_authorized_endpoint) \
     M(String, host_id) \
     M(OptionalString, storage_policy) \
     M(OptionalUUID, restore_uuid)

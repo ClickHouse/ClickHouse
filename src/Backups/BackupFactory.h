@@ -47,6 +47,7 @@ public:
         bool allow_azure_native_copy = true;
         bool use_same_s3_credentials_for_base_backup = false;
         bool use_same_password_for_base_backup = false;
+        String s3_endpoint_credentials_authorized_endpoint;
         bool azure_attempt_to_create_container = true;
         ReadSettings read_settings;
         WriteSettings write_settings;

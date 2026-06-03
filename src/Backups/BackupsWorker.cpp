@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Backups/BackupsWorker.h>
 
 #include <Backups/BackupConcurrencyCheck.h>
@@ -42,8 +44,16 @@
 #include <Common/ThrottlerArray.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#if USE_AWS_S3
+#include <Common/NamedCollections/NamedCollections.h>
+#include <IO/S3Settings.h>
+#endif
 
 #include <boost/range/adaptor/map.hpp>
+
+#if USE_AWS_S3
+#include <filesystem>
+#endif
 
 
 #include <Parsers/ASTAlterQuery.h>
@@ -184,6 +194,45 @@ namespace
         write_settings.enable_filesystem_cache_on_write_operations = false;
         return write_settings;
     }
+
+#if USE_AWS_S3
+    String getS3BackupURLForEndpointAuthorization(const BackupInfo & backup_info, ContextPtr context)
+    {
+        if (backup_info.backup_engine_name != "S3")
+            return {};
+
+        const auto & args = backup_info.args;
+        if (auto collection = backup_info.getNamedCollection(context))
+        {
+            String s3_uri = collection->get<String>("url");
+            if (collection->has("filename"))
+                s3_uri = std::filesystem::path(s3_uri) / collection->get<String>("filename");
+
+            if (args.size() == 1)
+                s3_uri = std::filesystem::path(s3_uri) / args[0].safeGet<String>();
+
+            return s3_uri;
+        }
+
+        if (args.empty())
+            return {};
+
+        return args[0].safeGet<String>();
+    }
+
+    String getS3EndpointCredentialsAuthorizedEndpoint(const BackupInfo & backup_info, ContextPtr context)
+    {
+        String s3_uri = getS3BackupURLForEndpointAuthorization(backup_info, context);
+        if (s3_uri.empty())
+            return {};
+
+        if (auto matched_endpoint = context->getStorageS3Settings().getMatchedEndpoint(
+                s3_uri, context->getUserName(), /* ignore_user */ false))
+            return *matched_endpoint;
+
+        return {};
+    }
+#endif
 }
 
 
@@ -403,6 +452,9 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+        if (!backup_settings.s3_endpoint_credentials_authorized_endpoint.empty() && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 's3_endpoint_credentials_authorized_endpoint' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -476,6 +528,9 @@ struct BackupsWorker::BackupStarter
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
+#if USE_AWS_S3
+            backup_settings.s3_endpoint_credentials_authorized_endpoint = getS3EndpointCredentialsAuthorizedEndpoint(backup_info, backup_context);
+#endif
         }
 
         /// Check access rights before opening the backup destination (e.g., S3).
@@ -621,6 +676,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_user_controlled_backup_destination = !backup_settings.internal || !backup_settings.cluster_host_ids.empty();
+    backup_create_params.s3_endpoint_credentials_authorized_endpoint = backup_settings.s3_endpoint_credentials_authorized_endpoint;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
     chassert(backup_settings.data_file_name_prefix_length);
@@ -880,6 +936,9 @@ struct BackupsWorker::RestoreStarter
         if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+        if (!restore_settings.s3_endpoint_credentials_authorized_endpoint.empty() && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 's3_endpoint_credentials_authorized_endpoint' cannot be set explicitly");
+
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
         /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
         /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
@@ -933,6 +992,9 @@ struct BackupsWorker::RestoreStarter
             restore_query->cluster = restore_context->getMacros()->expand(restore_query->cluster);
             cluster = restore_context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
+#if USE_AWS_S3
+            restore_settings.s3_endpoint_credentials_authorized_endpoint = getS3EndpointCredentialsAuthorizedEndpoint(backup_info, restore_context);
+#endif
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();
@@ -1046,6 +1108,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
     backup_open_params.is_internal_backup = restore_settings.internal;
     backup_open_params.is_user_controlled_backup_destination = !restore_settings.internal || !restore_settings.cluster_host_ids.empty();
+    backup_open_params.s3_endpoint_credentials_authorized_endpoint = restore_settings.s3_endpoint_credentials_authorized_endpoint;
     auto backup = BackupFactory::instance().createBackup(backup_open_params);
     LOG_TRACE(log, "Opened backup for reading");
     return backup;
