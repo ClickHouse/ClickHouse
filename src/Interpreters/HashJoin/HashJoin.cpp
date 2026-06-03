@@ -3,12 +3,17 @@
 #include <memory>
 #include <vector>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -50,6 +55,22 @@ extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int INVALID_JOIN_ON_EXPRESSION;
+}
+
+size_t getMinBytesForPrefetchInJoin()
+{
+    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
+    static const size_t result = []
+    {
+        size_t l2_size = 0;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    }();
+    return result;
 }
 
 namespace
@@ -154,6 +175,7 @@ HashJoin::HashJoin(
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
+    , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -224,7 +246,7 @@ HashJoin::HashJoin(
 
         if (strictness == JoinStrictness::Asof)
         {
-            assert(disjuncts_num == 1);
+            chassert(disjuncts_num == 1);
 
             /// @note ASOF JOIN is not INNER. It's better avoid use of 'INNER ASOF' combination in messages.
             /// In fact INNER means 'LEFT SEMI ASOF' while LEFT means 'LEFT OUTER ASOF'.
@@ -234,7 +256,7 @@ HashJoin::HashJoin(
             if (key_columns.size() <= 1)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join with hash algorithm needs at least one equi-join column");
 
-            size_t asof_size;
+            size_t asof_size = 0;
             asof_type = SortedLookupVectorBase::getTypeSize(*key_columns.back(), asof_size);
             key_columns.pop_back();
 
@@ -1389,9 +1411,9 @@ void HashJoin::updateNonJoinedRowsStatus()
 }
 
 template <typename Mapped>
-struct AdderNonJoined
+struct CollectorNonJoined
 {
-    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
+    static void collect(const Mapped & mapped, VectorWithMemoryTracking<const ColumnsInfo *> & columns_infos, VectorWithMemoryTracking<UInt32> & row_numbers)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
@@ -1402,29 +1424,15 @@ struct AdderNonJoined
         }
         else if constexpr (mapped_one)
         {
-            for (size_t j = 0; j < columns_right.size(); ++j)
-            {
-                if (const auto * replicated_column = mapped.columns_info->replicated_columns[j])
-                    columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
-                else
-                    columns_right[j]->insertFrom(*mapped.columns_info->columns[j], mapped.row_num);
-            }
-
-            ++rows_added;
+            columns_infos.push_back(mapped.columns_info);
+            row_numbers.push_back(mapped.row_num);
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                {
-                    if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
-                    else
-                        columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
-                }
-
-                ++rows_added;
+                columns_infos.push_back(it->columns_info);
+                row_numbers.push_back(it->row_num);
             }
         }
     }
@@ -1566,7 +1574,11 @@ private:
     template <typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
-        size_t rows_added = 0;
+        ColumnsWithRowNumbers columns_with_row_numbers;
+        auto & many_columns = columns_with_row_numbers.columns;
+        auto & row_nums = columns_with_row_numbers.row_numbers;
+        many_columns.reserve(max_block_size);
+        row_nums.reserve(max_block_size);
 
         if (flag_per_row)
         {
@@ -1574,14 +1586,14 @@ private:
             /// the data in parent.data->columns is not partitioned by hash buckets, so we can't
             /// distribute it across streams without additional per-row bucket lookups
             if (bucket_idx != 0)
-                return rows_added;
+                return row_nums.size();
 
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
             auto end = parent.data->columns.end();
 
-            for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
+            for (auto & it = *used_position; it != end && row_nums.size() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
                 size_t rows = mapped_block.columns_info.columns.at(0)->size();
@@ -1590,14 +1602,8 @@ private:
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
-                        {
-                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
-                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                            else
-                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
-                        }
-                        ++rows_added;
+                        many_columns.push_back(&mapped_block.columns_info);
+                        row_nums.push_back(static_cast<UInt32>(row));
                     }
                 }
             }
@@ -1633,15 +1639,15 @@ private:
 
                 /// position at the first bucket owned by this stream
                 if (!skipToNextOwnedBucket())
-                    return rows_added;
+                    return row_nums.size();
 
-                while (it != end && rows_added < max_block_size)
+                while (it != end && row_nums.size() < max_block_size)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                        CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
                     }
 
                     ++it;
@@ -1661,9 +1667,9 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                    CollectorNonJoined<Mapped>::collect(mapped, many_columns, row_nums);
 
-                    if (rows_added >= max_block_size)
+                    if (row_nums.size() >= max_block_size)
                     {
                         ++it;
                         break;
@@ -1672,7 +1678,10 @@ private:
             }
         }
 
-        return rows_added;
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+
+        return row_nums.size();
     }
 
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
@@ -1686,7 +1695,13 @@ private:
 
         auto end = parent.data->nullmaps.end();
 
-        for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
+        ColumnsWithRowNumbers columns_with_row_numbers;
+        auto & many_columns = columns_with_row_numbers.columns;
+        auto & row_nums = columns_with_row_numbers.row_numbers;
+        many_columns.reserve(max_block_size);
+        row_nums.reserve(max_block_size);
+
+        for (auto & it = *nulls_position; it != end && rows_added + row_nums.size() < max_block_size; ++it)
         {
             const auto * columns = it->columns;
             ConstNullMapPtr nullmap = nullptr;
@@ -1698,17 +1713,15 @@ private:
             {
                 if (nullmap && (*nullmap)[row])
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                    {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
-                    }
-                    ++rows_added;
+                    many_columns.push_back(&columns->columns_info);
+                    row_nums.push_back(static_cast<UInt32>(row));
                 }
             }
         }
+
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+        rows_added += row_nums.size();
     }
 };
 
@@ -2108,7 +2121,7 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
         for (auto source_map_it = source_map.begin(); source_map_it != source_map.end(); ++source_map_it)
         {
             typename RangeMap::LookupResult res;
-            bool inserted;
+            bool inserted = false;
             range_map->emplace(source_map_it->getKey() - min_key, res, inserted);
             if (inserted)
                 res->getMapped() = source_map_it->getMapped();

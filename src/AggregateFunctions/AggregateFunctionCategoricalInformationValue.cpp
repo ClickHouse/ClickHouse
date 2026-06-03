@@ -180,6 +180,7 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
 
 }
 
+void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

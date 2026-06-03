@@ -331,7 +331,7 @@ void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *
 
 void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -346,7 +346,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
 void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t string_size;
+    size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
     in.ignore(string_size);
 }
@@ -359,7 +359,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 
