@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the rope-node / block size of the ReaderExecutor."},
             {"reader_executor_min_bytes_for_seek", 8388608, 8388608, "New experimental setting to configure the minimum gap between miss ranges before the ReaderExecutor issues a separate source read."},
+            {"reader_executor_use_live_connections", true, true, "New experimental setting to reuse a live source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"ai_function_embedding_max_batch_size", 100, 100, "New setting"},
             {"enable_sharding_aggregator", false, false, "New setting to enable sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase; this is efficient for high cardinality keys with evenly distributed data."},
             {"allow_experimental_text_index_lazy_apply", false, false, "New setting to gate experimental lazy posting list apply mode"},

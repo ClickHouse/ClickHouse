@@ -763,6 +763,8 @@ Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_execut
 Rope-node / block size for the experimental `ReaderExecutor`; also the window used for live and local reads.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_min_bytes_for_seek, 8388608, R"(
 Minimum gap between miss ranges before the `ReaderExecutor` issues a separate source read instead of merging.)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_live_connections, true, R"(
+Reuse a bounded live source connection across windows in the experimental `ReaderExecutor`. When disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 

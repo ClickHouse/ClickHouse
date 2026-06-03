@@ -159,6 +159,7 @@ struct ReadSettings
     size_t reader_executor_window_size = 8388608;
     size_t reader_executor_block_size = 1048576;
     size_t reader_executor_min_bytes_for_seek = 8388608;
+    bool reader_executor_use_live_connections = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 
