@@ -27,7 +27,8 @@ enum class JoinMethod : UInt8
 template <std::unsigned_integral T>
 inline String toBinaryString(T value)
 {
-    return std::bitset<sizeof(T) * 8>(value).to_string();
+    // return std::bitset<sizeof(T) * 8>(value).to_string();
+    return std::bitset<8>(value).to_string(); // TODO:  remove this like and uncomment the above line 
 }
 
 struct DPJoinEntry
@@ -163,11 +164,12 @@ public:
             for (auto relation : edge_sources)
                 relations.push_back(static_cast<UInt32>(relation));
 
-            LOG_TEST(log, "Initializing DP table with edge between relations {} and {}",
-                 toBinaryString(relations[0]), toBinaryString(relations[1]));
 
             UInt32 left_mask = (1u << relations[0]);
             UInt32 right_mask = (1u << relations[1]);
+
+            LOG_TEST(log, "Initializing DP table with edge between relations {} and {}",
+                 toBinaryString(left_mask), toBinaryString(right_mask));
 
             dp_table[left_mask].neighbor |= right_mask;
             dp_table[right_mask].neighbor |= left_mask;
@@ -200,8 +202,6 @@ public:
             if (std::popcount(s) <= 1)
                 continue;
 
-            LOG_TEST(log, "Considering subset S: {}", toBinaryString(s));
-
             for (NonEmptySubsetIterator<uint_t> s_iter(s); s_iter.isValid(); ++s_iter)
             {
                 const Tuint lhs = s_iter.get();
@@ -230,6 +230,12 @@ public:
                     setTableNeighbor(consumer.dptable(), lhs, rhs);
                     (consumer.*acceptor)(lhs | rhs, lhs, rhs);
                     LOG_TEST(log, "accepted lhs-rhs connected.");
+                }
+                else if (query_graph.areTransitivelyConnected(BitSet::fromUint(lhs), BitSet::fromUint(rhs)))
+                {
+                    setTableNeighbor(consumer.dptable(), lhs, rhs);
+                    (consumer.*acceptor)(lhs | rhs, lhs, rhs);
+                    LOG_TEST(log, "lhs-rhs transitively connected through equivalences, but not directly connected.");
                 }
                 else
                 {
