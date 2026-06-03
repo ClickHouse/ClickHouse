@@ -49,6 +49,28 @@ SELECT count(), countIf(path < prev_path) AS violations FROM (
     )
 );
 
+-- Distinct-in-order runs a parallel pre-distinct transform per stream. PrefetchingConcat
+-- must NOT collapse those streams into one (it would serialize the deduplication), even when
+-- the read order is applied from plan sorting properties (the `applyOrder` path) rather than by
+-- `optimizeDistinctInOrder`. Here the prefix for ORDER BY and DISTINCT is the same, so the order
+-- is satisfied via `applyOrder`. Expect no PrefetchingConcat, parallel pre-distinct, sorted output.
+SELECT 'no_prefetching_distinct_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT DISTINCT path FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
+    ORDER BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS optimize_distinct_in_order = 1;
+
+SELECT 'distinct_correctness';
+SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
+    SELECT groupArray(path) AS arr FROM (
+        SELECT DISTINCT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+        ORDER BY path
+    )
+) SETTINGS optimize_distinct_in_order = 1;
+
 DROP TABLE t_prefetching_concat;
 
 -- PrefetchingConcat should NOT be used with multiple parts whose ranges

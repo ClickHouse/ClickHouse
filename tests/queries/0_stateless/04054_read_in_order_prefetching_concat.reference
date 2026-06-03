@@ -2,5 +2,9 @@ has_prefetching_concat
 1
 correctness
 1000000	0
+no_prefetching_distinct_in_order
+0
+distinct_correctness
+1	100000
 no_prefetching_multi_part
 0

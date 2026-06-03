@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -38,6 +40,41 @@ struct SortingProperty
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
 };
+
+/// Distinct-in-order can be installed either here (from plan sorting properties) or by
+/// `optimizeDistinctInOrder`. The latter sets `prefer_multiple_streams` on the underlying
+/// `ReadFromMergeTree` so that the parallel pre-distinct transforms (one per input stream)
+/// are not collapsed into a single stream by `PrefetchingConcatProcessor`. When distinct order
+/// is applied from sorting properties instead, the reading step does not get that signal, so we
+/// propagate it here as well by descending through order-preserving steps to the reading step.
+static void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        IQueryPlanStep * step = node->step.get();
+
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+        {
+            reading->setPreferMultipleStreams();
+            return;
+        }
+
+        if (node->children.size() != 1)
+            return;
+
+        /// Only descend through steps that keep a single underlying reading pipeline
+        /// and preserve its per-stream order, mirroring `findReadingStep` in `optimizeReadInOrder`.
+        if (!typeid_cast<ExpressionStep *>(step)
+            && !typeid_cast<FilterStep *>(step)
+            && !typeid_cast<ArrayJoinStep *>(step)
+            && !typeid_cast<DistinctStep *>(step)
+            && !typeid_cast<CreatingSetsStep *>(step)
+            && !typeid_cast<DelayedCreatingSetsStep *>(step))
+            return;
+
+        node = node->children.front();
+    }
+}
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
@@ -84,6 +121,9 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
             }
 
             distinct_step->applyOrder(std::move(prefix_sort_description));
+
+            /// Keep parallel pre-distinct streams from being collapsed by `PrefetchingConcatProcessor`.
+            preferMultipleStreamsForReadingBelow(parent);
         }
 
         /// Distinct never breaks global order
