@@ -7,7 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <arrow/table.h>
-
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -57,13 +57,11 @@ ArrowFlightSource::ArrowFlightSource(
     const String & dataset_name_,
     const Block & sample_block_,
     const Block & virtual_header_,
-    StorageID storage_id_,
     ContextPtr context_)
     : ISource(std::make_shared<const Block>(buildOutputHeader(sample_block_, virtual_header_)))
     , connection(connection_)
     , sample_block(sample_block_)
     , virtual_header(virtual_header_)
-    , storage_id(std::move(storage_id_))
     , context(context_)
 {
     initializeEndpoints(dataset_name_);
@@ -77,7 +75,6 @@ ArrowFlightSource::ArrowFlightSource(
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
     , sample_block(sample_block_)
-    , storage_id(StorageID::createEmpty())
     , context(context_)
     , endpoints(std::move(endpoints_))
 {
@@ -89,7 +86,6 @@ ArrowFlightSource::ArrowFlightSource(
     ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , sample_block(sample_block_)
-    , storage_id(StorageID::createEmpty())
     , context(context_)
     , stream_reader(std::move(stream_reader_))
 {
@@ -171,13 +167,8 @@ void ArrowFlightSource::initializeSchema()
 
 Block ArrowFlightSource::fillVirtualColumns(Block result_block)
 {
-    for (const auto & [name, type] : virtual_header.getNamesAndTypes())
-    {
-        if (name == "_table")
-            result_block.insert({type->createColumnConst(result_block.rows(), storage_id.empty() ? "" : storage_id.getTableName()), type, name});
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", name);
-    }
+    if (!virtual_header.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_header.getNames());
 
     return result_block;
 }
