@@ -1695,6 +1695,7 @@ const char * ParserAlias::restricted_keywords[] =
     "INTERSECT",
     "EXCEPT",
     "ELSE",
+    "RETURNING", /// Otherwise `INSERT INTO t SELECT ... FROM x RETURNING (...)` parses RETURNING as an alias of `x`.
     nullptr
 };
 
