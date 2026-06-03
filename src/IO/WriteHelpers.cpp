@@ -400,8 +400,8 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
     char default_buf[64];
     const size_t default_len = writeFloatTextFastPath(x, default_buf);
 
-    /// Count decimal places in the default representation.
-    /// Scientific notation (containing 'e'/'E') gets default_decimals = -1 so it is always used as-is.
+    /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
+    /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
     int default_decimals;
     if (memchr(default_buf, 'e', default_len) || memchr(default_buf, 'E', default_len))
         default_decimals = -1;
