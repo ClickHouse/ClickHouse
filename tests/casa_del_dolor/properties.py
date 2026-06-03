@@ -391,7 +391,7 @@ object_storages_properties = {
         "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
         "s3_max_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 5 * 1024 * 1024 * 1024, 33
+            0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
         "s3_strict_upload_part_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
@@ -501,7 +501,6 @@ policy_properties = {
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": true_false_lambda,
     "prefer_not_to_merge": true_false_lambda,
-    "volume_priority": threshold_generator(0.2, 0.2, 1, 10),
 }
 
 
@@ -855,11 +854,12 @@ class DiskPropertiesGroup(PropertiesGroup):
                 possible_types.extend(
                     ["s3_with_keeper", "s3_with_keeper", "s3_with_keeper"]
                 )
+            disk_xml_elem = ET.SubElement(disk_element, f"disk{i}")
             next_created_disk_pair = add_single_disk(
                 i,
                 args,
                 cluster,
-                ET.SubElement(disk_element, f"disk{i}"),
+                disk_xml_elem,
                 backups_element,
                 random.choice(possible_types),
                 created_disks_types,
@@ -872,11 +872,14 @@ class DiskPropertiesGroup(PropertiesGroup):
                 is_private_binary
                 and args.set_shared_mergetree_disk
                 and next_created_disk_pair[2] == "s3_with_keeper"
+                and disk_xml_elem.findtext("readonly") != "1"
             ):
                 created_keeper_disks.append(i)
-            if next_created_disk_pair[3] == "local" and next_created_disk_pair[
-                2
-            ] not in ("cache", "encrypted"):
+            if (
+                next_created_disk_pair[3] == "local"
+                and next_created_disk_pair[2] not in ("cache", "encrypted")
+                and disk_xml_elem.findtext("readonly") != "1"
+            ):
                 safe_for_database_disk.append(i)
 
         # Allow any disk in any table engine
@@ -919,6 +922,13 @@ class DiskPropertiesGroup(PropertiesGroup):
                     disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
                     apply_properties_recursively(main_xml, policy_properties)
+                # Assign volume_priority as a valid permutation of 1..N (no gaps allowed)
+                if volume_counter > 0 and random.randint(1, 100) <= 20:
+                    priorities = list(range(1, volume_counter + 1))
+                    random.shuffle(priorities)
+                    for idx, vol_xml in enumerate(volumes_xml):
+                        prio_xml = ET.SubElement(vol_xml, "volume_priority")
+                        prio_xml.text = str(priorities[idx])
                 if random.randint(1, 100) <= 70:
                     apply_properties_recursively(next_policy_xml, policy_properties)
 
@@ -956,15 +966,23 @@ class DiskPropertiesGroup(PropertiesGroup):
                 tmp_path_xml = ET.SubElement(top_root, "tmp_path")
                 tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
         # Set disk for SMTs
-        if len(created_keeper_disks) > 0:
+        if top_root.find("shared_merge_tree") is None and len(created_keeper_disks) > 0:
             smt_element = ET.SubElement(top_root, "shared_merge_tree")
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if len(safe_for_database_disk) > 0 and random.randint(1, 100) <= 30:
+        if (
+            top_root.find("database_disk") is None
+            and len(safe_for_database_disk) > 0
+            and random.randint(1, 100) <= 30
+        ):
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
             disk_element.text = f"disk{random.choice(safe_for_database_disk)}"
+        # Add custom_local_disks_base_directory
+        if top_root.find("custom_local_disks_base_directory") is None:
+            clddb_element = ET.SubElement(top_root, "custom_local_disks_base_directory")
+            clddb_element.text = "/var/lib/clickhouse/disks/"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):

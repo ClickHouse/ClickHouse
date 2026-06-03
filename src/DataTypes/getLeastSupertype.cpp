@@ -706,108 +706,124 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         size_t have_date32 = type_ids.count(TypeIndex::Date32);
         size_t have_datetime = type_ids.count(TypeIndex::DateTime);
         size_t have_datetime64 = type_ids.count(TypeIndex::DateTime64);
+        size_t have_time = type_ids.count(TypeIndex::Time);
+        size_t have_time64 = type_ids.count(TypeIndex::Time64);
 
-        if (have_date || have_date32 || have_datetime || have_datetime64)
+        if (have_date || have_date32 || have_datetime || have_datetime64 || have_time || have_time64)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
-            if (!all_date_or_datetime)
+            bool all_date_time_family = type_ids.size()
+                == (have_date + have_date32 + have_datetime + have_datetime64 + have_time + have_time64);
+            if (!all_date_time_family)
                 return throwOrReturn<on_error>(types,
-                    "because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
+                    "because some of them are Date/Date32/DateTime/DateTime64/Time/Time64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
-            if (have_datetime64 == 0 && have_date32 == 0)
+            if ((have_date || have_date32) && (have_time || have_time64))
+                return throwOrReturn<on_error>(types,
+                    "because Date/Date32 and Time/Time64 are incompatible",
+                    ErrorCodes::NO_COMMON_TYPE);
+
+            /// only Time/Time64 types
+            if (!have_date && !have_date32 && !have_datetime && !have_datetime64)
             {
-                for (const auto & type : types)
+                if (!have_time64)
+                    return std::make_shared<DataTypeTime>();
+
+                UInt8 max_scale = 0;
+                size_t max_scale_time64_index = 0;
+                for (size_t i = 0; i < types.size(); ++i)
                 {
-                    if (isDateTime(type))
-                        return type;
+                    if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(types[i].get()))
+                    {
+                        const auto scale = time64_type->getScale();
+                        if (scale >= max_scale)
+                        {
+                            max_scale_time64_index = i;
+                            max_scale = static_cast<UInt8>(scale);
+                        }
+                    }
                 }
 
-                return std::make_shared<DataTypeDateTime>();
+                if (have_time && have_time64)
+                    return std::make_shared<DataTypeTime64>(max_scale);
+                return types[max_scale_time64_index];
             }
 
-            /// For Date and Date32, the common type is Date32
-            if (have_datetime == 0 && have_datetime64 == 0)
+            /// Only Date/Date32 types (no DateTime, no Time)
+            if (!have_datetime && !have_datetime64 && !have_time && !have_time64)
             {
                 for (const auto & type : types)
                 {
                     if (isDate32(type))
                         return type;
                 }
+                return std::make_shared<DataTypeDate>();
+            }
+
+            /// Time/Time64 mixed with DateTime/DateTime64: promote to DateTime/DateTime64
+            /// (Time gets epoch date 1970-01-01 prepended, analogous to Date getting midnight appended).
+            /// Time/Time64 mixed with only Date/Date32 (no DateTime): also promote to DateTime/DateTime64.
+            /// From here on, the result is always DateTime or DateTime64.
+
+            if (!have_datetime64 && !have_date32 && !have_time64)
+            {
+                for (const auto & type : types)
+                {
+                    if (isDateTime(type))
+                        return type;
+                }
+                return std::make_shared<DataTypeDateTime>();
             }
 
             /// For Datetime and Date32, the common type is Datetime64
-            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0)
+            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0
+                && !have_time && !have_time64)
             {
                 return std::make_shared<DataTypeDateTime64>(0);
             }
 
+            /// Find max scale across DateTime64 and Time64 types
             UInt8 max_scale = 0;
             size_t max_scale_date_time_index = 0;
 
             for (size_t i = 0; i < types.size(); ++i)
             {
                 const auto & type = types[i];
+                UInt8 scale = 0;
+                bool is_scaled = false;
 
                 if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(type.get()))
                 {
-                    const auto scale = date_time64_type->getScale();
-                    if (scale >= max_scale)
-                    {
-                        max_scale_date_time_index = i;
-                        max_scale = static_cast<UInt8>(scale);
-                    }
+                    scale = static_cast<UInt8>(date_time64_type->getScale());
+                    is_scaled = true;
                 }
-            }
-
-            return types[max_scale_date_time_index];
-        }
-    }
-
-    {
-        size_t have_time = type_ids.count(TypeIndex::Time);
-        size_t have_time64 = type_ids.count(TypeIndex::Time64);
-
-        if (have_time || have_time64)
-        {
-            bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
-
-            if (!all_time_or_time64)
-                return throwOrReturn<on_error>(types,
-                    "because some of them are Time/Time64 and some of them are not",
-                    ErrorCodes::NO_COMMON_TYPE);
-
-            if (have_time && !have_time64)
-            {
-                return std::make_shared<DataTypeTime>();
-            }
-
-            /// find the maximum scale
-            UInt8 max_scale = 0;
-            size_t max_scale_time64_index = 0;
-
-            for (size_t i = 0; i < types.size(); ++i)
-            {
-                const auto & type = types[i];
-
-                if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
+                else if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(type.get()))
                 {
-                    const auto scale = time64_type->getScale();
+                    scale = static_cast<UInt8>(time64_type->getScale());
+                    is_scaled = true;
+                }
 
-                    if (scale >= max_scale)
-                    {
-                        max_scale_time64_index = i;
-                        max_scale = static_cast<UInt8>(scale);
-                    }
+                if (is_scaled && scale >= max_scale)
+                {
+                    max_scale = scale;
+                    max_scale_date_time_index = i;
                 }
             }
 
-            if (have_time && have_time64)
+            /// If the max-scale type is already DateTime64, return it (preserves timezone)
+            if (typeid_cast<const DataTypeDateTime64 *>(types[max_scale_date_time_index].get()))
+                return types[max_scale_date_time_index];
+
+            /// max scale came from Time64, find a DateTime[64] to preserve its timezone
+            for (const auto & type : types)
             {
-                return std::make_shared<DataTypeTime64>(max_scale);
+                if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt64);
+                if (const auto * dt = typeid_cast<const DataTypeDateTime *>(type.get()))
+                    return std::make_shared<DataTypeDateTime64>(max_scale, *dt);
             }
 
-            return types[max_scale_time64_index];
+            return std::make_shared<DataTypeDateTime64>(max_scale);
         }
     }
 

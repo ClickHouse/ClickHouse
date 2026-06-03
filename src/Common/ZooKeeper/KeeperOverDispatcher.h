@@ -25,7 +25,7 @@ public:
         const Poco::Timespan & session_timeout_);
     ~KeeperOverDispatcher() override;
 
-    bool isExpired() const override { return expired; }
+    bool isExpired() const override { return callback_state->expired; }
     std::optional<int8_t> getConnectedNodeIdx() const override { return 0; }
     String getConnectedHostPort() const override { return "KeeperOverDispatcher:0000"; }
     int64_t getConnectionXid() const override { return 0; }
@@ -109,13 +109,26 @@ public:
 private:
     void pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback);
 
+    /// Shared state that outlives KeeperOverDispatcher itself.
+    /// The response callback registered with KeeperDispatcher captures this by
+    /// shared_ptr, so the state remains valid even after ~KeeperOverDispatcher
+    /// has run and finishSession has been called. This prevents a use-after-free
+    /// race between setResponse (which invokes callbacks outside its mutex) and
+    /// finishSession (which may destroy this object).
+    struct CallbackState
+    {
+        std::atomic<bool> expired{false};
+        std::mutex callbacks_mutex;
+        std::unordered_map<XID, ResponseCallback> callbacks;
+    };
+
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
     Poco::Timespan session_timeout;
     int64_t session_id;
-    std::atomic<bool> expired{false};
+    std::shared_ptr<CallbackState> callback_state = std::make_shared<CallbackState>();
 
-    std::mutex callbacks_mutex;
-    std::unordered_map<XID, ResponseCallback> callbacks;
+    /// Intentionally lock-free (not protected by callbacks_mutex) to avoid contention
+    /// on xid allocation. Uniqueness is guaranteed by std::atomic increment.
     std::atomic<XID> next_xid{1};
 };
 

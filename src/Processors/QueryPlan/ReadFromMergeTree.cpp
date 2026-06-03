@@ -2457,7 +2457,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .indexes = *indexes,
         .top_k_filter_info = top_k_filter_info,
         .reader_settings = reader_settings,
-        .storage_id = data.getStorageID(),
         .log = log,
         .num_streams = num_streams,
         .find_exact_ranges = find_exact_ranges,

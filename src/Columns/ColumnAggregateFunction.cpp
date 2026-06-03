@@ -727,12 +727,11 @@ MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColum
 
     size_t num_rows = size();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / static_cast<double>(num_columns) * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)

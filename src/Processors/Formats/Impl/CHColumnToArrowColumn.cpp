@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Port.h>
@@ -228,6 +229,50 @@ namespace DB
                 status = builder.Append(value);
                 checkStatus(status, write_column->getName(), format_name);
             }
+        }
+    }
+
+    static void fillArrowArrayWithUUIDColumnData(
+        const ColumnPtr & column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder * array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto * col_uuid = assert_cast<const ColumnVector<UUID> *>(column.get());
+
+        if (array_builder->type()->id() != arrow::Type::FIXED_SIZE_BINARY)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot fill arrow array with {} data for format {}", column->getName(), format_name);
+
+        auto * fixed_builder = assert_cast<arrow::FixedSizeBinaryBuilder *>(array_builder);
+        const auto & uuid_data = col_uuid->getData();
+
+        for (size_t i = start; i < end; ++i)
+        {
+            if (null_bytemap && (*null_bytemap)[i])
+            {
+                arrow::Status status = fixed_builder->AppendNull();
+                checkStatus(status, column->getName(), format_name);
+                continue;
+            }
+
+            UUID res = uuid_data[i];
+            auto * bytes = reinterpret_cast<uint8_t *>(&res);
+
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                std::reverse(bytes, bytes + 8);
+                std::reverse(bytes + 8, bytes + 16);
+            }
+            else
+            {
+                std::swap_ranges(bytes, bytes + 8, bytes + 8);
+            }
+
+            arrow::Status status = fixed_builder->Append(reinterpret_cast<const uint8_t *>(&res));
+            checkStatus(status, column->getName(), format_name);
         }
     }
 
@@ -912,6 +957,9 @@ namespace DB
             case TypeIndex::UInt256:
                 fillArrowArrayWithBigIntegerColumnData<ColumnUInt256>(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::UUID:
+                fillArrowArrayWithUUIDColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                break;
 #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
             case TypeIndex::CPP_NUMERIC_TYPE: \
                 fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
@@ -1080,6 +1128,9 @@ namespace DB
         if (isIPv4(column_type))
             return arrow::uint32();
 
+        if (isUUID(column_type))
+            return arrow::fixed_size_binary(sizeof(UUID));
+
         if (isDate(column_type) && settings.output_date_as_uint16)
             return arrow::uint16();
 
@@ -1158,13 +1209,27 @@ namespace DB
                 format_name,
                 settings,
                 &is_column_nullable);
+
+            std::shared_ptr<arrow::KeyValueMetadata> field_metadata = nullptr;
+
             if (column_to_field_id && column_to_field_id->contains(header_column.name))
             {
                 Int64 field_id = column_to_field_id->at(header_column.name);
-                auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
-                            {std::to_string(field_id)});
-                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
+                field_metadata = arrow::key_value_metadata({"PARQUET:field_id"}, {std::to_string(field_id)});
             }
+
+            // Inject our UUID metadata if it's a root UUID column
+            if (isUUID(removeNullable(header_column.type)))
+            {
+                auto ext_metadata = arrow::key_value_metadata(
+                    {"ARROW:extension:name", "ARROW:extension:metadata", "PARQUET:logical_type"},
+                    {"arrow.uuid", "", "UUID"}
+                );
+                field_metadata = field_metadata ? field_metadata->Merge(*ext_metadata) : ext_metadata;
+            }
+
+            if (field_metadata)
+                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, field_metadata));
             else
                 arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
         }
