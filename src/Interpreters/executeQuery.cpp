@@ -541,7 +541,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -594,7 +594,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -602,7 +602,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -631,7 +631,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
         .pipeline_dump = std::move(pipeline_dump)};
 }
 
-void logQueryFinishImpl(
+static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -987,7 +987,7 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1126,8 +1126,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().tryGetQueryContext());
-    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    chassert(internal || CurrentThread::get().tryGetQueryContext());
+    chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1138,7 +1138,7 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
-    UInt64 normalized_query_hash;
+    UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -1421,9 +1421,9 @@ static BlockIO executeQueryImpl(
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
         /// (subqueries on remote nodes will receive these "collapsed" settings)
-        if (settings[Setting::log_queries] && settings[Setting::log_queries_probability] < 1.0)
+        if (settings[Setting::log_queries] && static_cast<double>(settings[Setting::log_queries_probability]) < 1.0)
         {
-            std::bernoulli_distribution should_write_log{settings[Setting::log_queries_probability]};
+            std::bernoulli_distribution should_write_log{static_cast<double>(settings[Setting::log_queries_probability])};
 
             context->setSetting("log_queries", should_write_log(thread_local_rng));
             context->setSetting("log_queries_probability", 1.0);
@@ -2011,7 +2011,14 @@ static BlockIO executeQueryImpl(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
 {
     static std::mutex mutex;
+#if WITH_COVERAGE
+    /// Under LLVM coverage builds we use a fixed seed so that the set of AST mutations
+    /// (and therefore the set of branches taken inside `QueryFuzzer`) is stable run-to-run.
+    /// Without this, coverage of `QueryFuzzer.cpp` and friends flickers between coverage runs.
+    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(pcg64(0xC0FFEEULL));
+#else
     static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
+#endif
     return {fuzzer, std::unique_lock(mutex)};
 }
 
@@ -2177,8 +2184,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
+            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
             /*should_throw*/ true);
 
     ASTPtr ast;
@@ -2234,7 +2241,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (!flags.internal && ast)
     {
-        Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
         if (ast_fuzzer_runs_value > 0)
         {
             bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
@@ -2287,8 +2294,8 @@ void executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     PODArray<char> parse_buf;
-    const char * begin;
-    const char * end;
+    const char * begin = nullptr;
+    const char * end = nullptr;
 
     try
     {
@@ -2304,8 +2311,8 @@ void executeQuery(
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
+            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
             /*should_throw*/ true);
 
     if (istr->available() > max_query_size || http_continue_callback)
@@ -2535,7 +2542,7 @@ void executeQuery(
 
         if (!flags.internal && ast)
         {
-            Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
             if (ast_fuzzer_runs_value > 0)
             {
                 bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];

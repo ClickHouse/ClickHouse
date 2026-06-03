@@ -255,7 +255,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-        const ActionsDAG::Node * result_node;
+        const ActionsDAG::Node * result_node = nullptr;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)

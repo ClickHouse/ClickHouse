@@ -250,14 +250,14 @@ RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBu
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
-    assert(dag_node);
+    chassert(dag_node);
 }
 
 RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
-    assert(ast_node);
+    chassert(ast_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnName() const

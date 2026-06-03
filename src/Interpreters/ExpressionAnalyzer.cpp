@@ -806,7 +806,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
     for (const ASTPtr & ast : syntax->window_function_asts)
     {
         const ASTFunction & function_node = typeid_cast<const ASTFunction &>(*ast);
-        assert(function_node.isWindowFunction());
+        chassert(function_node.isWindowFunction());
 
         WindowFunctionDescription window_function;
         window_function.function_node = &function_node;
@@ -885,7 +885,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)
 
             if (!inserted)
             {
-                assert(it->second.full_sort_description == full_sort_description);
+                chassert(it->second.full_sort_description == full_sort_description);
             }
 
             it->second.window_functions.push_back(window_function);
@@ -1867,7 +1867,7 @@ ActionsAndProjectInputsFlagPtr SelectQueryExpressionAnalyzer::appendProjectResul
             if (const auto * as_literal = ast->as<ASTLiteral>())
             {
                 source_name = as_literal->unique_column_name;
-                assert(!source_name.empty());
+                chassert(!source_name.empty());
             }
 
             result_columns.emplace_back(source_name, result_name);

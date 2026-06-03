@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -38,7 +39,7 @@ struct NamePair
 
 using NamePairs = std::vector<NamePair>;
 
-InConversion buildInConversion(
+static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,

@@ -794,6 +794,7 @@ void ValuesSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::Data
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
+void registerInputFormatValues(FormatFactory & factory);
 void registerInputFormatValues(FormatFactory & factory)
 {
     factory.registerInputFormat("Values", [](
@@ -806,6 +807,7 @@ void registerInputFormatValues(FormatFactory & factory)
     });
 }
 
+void registerValuesSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Values", [](ReadBuffer & buf, const FormatSettings & settings)

@@ -572,22 +572,6 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
     return required_nodes;
 }
 
-ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(NameMultiSet possible_output_names) const
-{
-    SplitPossibleOutputNamesResult result;
-    for (const auto * output : outputs)
-    {
-        if (auto it = possible_output_names.find(output->result_name); it != possible_output_names.end())
-        {
-            auto extracted_node = possible_output_names.extract(it);
-            result.output_names.insert(std::move(extracted_node.value()));
-        }
-    }
-    result.not_output_names.reserve(possible_output_names.size());
-    result.not_output_names.assign(std::make_move_iterator(possible_output_names.begin()), std::make_move_iterator(possible_output_names.end()));
-    return result;
-}
-
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
     bool replaced = false;
@@ -1116,6 +1100,55 @@ Block ActionsDAG::updateHeader(const Block & header) const
     return res;
 }
 
+ActionsDAG::MatchedInputPositions ActionsDAG::matchInputNodesToHeader(const NodeRawConstPtrs & input_nodes, const Block & header)
+{
+    MatchedInputPositions result;
+
+    using inline_vector = absl::InlinedVector<size_t, 7>;
+    absl::flat_hash_map<std::string_view, inline_vector> input_positions;
+
+    for (size_t pos = input_nodes.size(); pos != 0; pos--)
+        input_positions[input_nodes[pos - 1]->result_name].emplace_back(pos - 1);
+
+    for (size_t pos = 0; pos < header.columns(); ++pos)
+    {
+        const auto & col = header.getByPosition(pos);
+        auto it = input_positions.find(col.name);
+        if (it != input_positions.end() && !it->second.empty())
+        {
+            result.matched.push_back(pos);
+            it->second.pop_back();
+        }
+        else
+        {
+            result.passthrough.push_back(pos);
+        }
+    }
+
+    return result;
+}
+
+ActionsDAG::MatchedInputPositions ActionsDAG::matchInputPositionsToHeader(const Block & header) const
+{
+    return matchInputNodesToHeader(inputs, header);
+}
+
+ActionsDAG::SplitOutputPositions ActionsDAG::splitOutputPositions(const std::vector<size_t> & output_positions) const
+{
+    SplitOutputPositions result;
+    const size_t num_dag_outputs = outputs.size();
+
+    for (size_t pos : output_positions)
+    {
+        if (pos < num_dag_outputs)
+            result.dag_indices.push_back(pos);
+        else
+            result.passthrough_indices.push_back(pos - num_dag_outputs);
+    }
+
+    return result;
+}
+
 ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
@@ -1225,92 +1258,6 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
 
     return result_columns;
 }
-
-NameSet ActionsDAG::foldActionsByProjection(
-    const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name, bool add_missing_keys)
-{
-    std::unordered_set<const Node *> visited_nodes;
-    std::unordered_set<std::string_view> visited_output_nodes_names;
-    std::stack<Node *> stack;
-
-    /// Record all needed output nodes to start folding.
-    for (const auto & output_node : outputs)
-    {
-        if (required_columns.contains(output_node->result_name) || output_node->result_name == predicate_column_name)
-        {
-            visited_nodes.insert(output_node);
-            visited_output_nodes_names.insert(output_node->result_name);
-            stack.push(const_cast<Node *>(output_node));
-        }
-    }
-
-    /// If some required columns are not in any output node, try searching from all projection key
-    /// columns. If still missing, return empty set which means current projection fails to match
-    /// (missing columns).
-    if (add_missing_keys)
-    {
-        for (const auto & column : required_columns)
-        {
-            if (!visited_output_nodes_names.contains(column))
-            {
-                if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
-                {
-                    const auto * node = &addInput(*column_with_type_name);
-                    visited_nodes.insert(node);
-                    outputs.push_back(node);
-                    visited_output_nodes_names.insert(column);
-                }
-                else
-                {
-                    // Missing column
-                    return {};
-                }
-            }
-        }
-    }
-
-    /// Traverse the DAG from root to leaf. Substitute any matched node with columns in projection_block_for_keys.
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-
-        if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(node->result_name))
-        {
-            if (node->type != ActionsDAG::ActionType::INPUT)
-            {
-                /// Projection folding.
-                node->type = ActionsDAG::ActionType::INPUT;
-                node->result_type = column_with_type_name->type;
-                node->result_name = column_with_type_name->name;
-                node->children.clear();
-                inputs.push_back(node);
-            }
-        }
-
-        for (const auto * child : node->children)
-        {
-            if (!visited_nodes.contains(child))
-            {
-                stack.push(const_cast<Node *>(child));
-                visited_nodes.insert(child);
-            }
-        }
-    }
-
-    /// Clean up unused nodes after folding.
-    std::erase_if(inputs, [&](const Node * node) { return !visited_nodes.contains(node); });
-    std::erase_if(outputs, [&](const Node * node) { return !visited_output_nodes_names.contains(node->result_name); });
-    nodes.remove_if([&](const Node & node) { return !visited_nodes.contains(&node); });
-
-    /// Calculate the required columns after folding.
-    NameSet next_required_columns;
-    for (const auto & input_node : inputs)
-        next_required_columns.insert(input_node->result_name);
-
-    return next_required_columns;
-}
-
 
 ActionsDAG ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, const Node *> & new_inputs, const NodeRawConstPtrs & required_outputs)
 {
@@ -1555,7 +1502,7 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
     /// Find column in output nodes and remove.
-    const Node * col;
+    const Node * col = nullptr;
     {
         auto it = outputs.begin();
         for (; it != outputs.end(); ++it)
@@ -1777,7 +1724,7 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
-void ActionsDAG::decorrelate() noexcept
+void ActionsDAG::decorrelate()
 {
     for (auto & node : nodes)
     {
@@ -1829,8 +1776,17 @@ void ActionsDAG::removeTrivialWrappers()
                 child = child->children[0];
 
     for (auto *& output : outputs)
-        while (is_trivial_wrapper(output))
-            output = output->children[0];
+    {
+        if (is_trivial_wrapper(output))
+        {
+            auto original_name = output->result_name;
+            while (is_trivial_wrapper(output))
+                output = output->children[0];
+
+            if (output->result_name != original_name)
+                output = &addAlias(*output, original_name);
+        }
+    }
 
     removeUnusedActions();
 }
@@ -2202,7 +2158,7 @@ void ActionsDAG::unite(ActionsDAG && second)
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
-    /// (first_nodes, first_outputs) is a part which will have split_list in result.
+    /// (first_nodes, first_outputs) is a part which will have split_nodes in result.
     /// (second_nodes, second_outputs) is a part which will have same outputs as current actions.
     Nodes first_nodes;
     NodeRawConstPtrs first_outputs;
@@ -2351,7 +2307,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                     for (auto & child : copy.children)
                     {
                         child = data[child].to_first;
-                        assert(child != nullptr);
+                        chassert(child != nullptr);
                     }
 
                     if (cur_data.used_in_result)
@@ -2853,7 +2809,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     for (const auto & col : all_inputs)
     {
-        const Node * input;
+        const Node * input = nullptr;
         auto & list = required_inputs[col.name];
         if (list.empty())
             input = &actions.addInput(col);
@@ -3137,7 +3093,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
         for (const auto & input_column : stream_header.getColumnsWithTypeAndName())
         {
-            const Node * input;
+            const Node * input = nullptr;
             auto & list = updated_filter_inputs[input_column.name];
             if (list.empty())
             {
@@ -3292,109 +3248,6 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
     return is_filter_const;
 }
-
-static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)
-{
-    /// only function node can several children
-    /// but we support monotonicity check only for functions with one argument
-    /// so, currently we consider just first child - it covers majority of cases
-    /// TODO: if one parameter is variable and other are constant then we can try to check monotonicity as well
-
-    /// first find the column
-    const ActionsDAG::Node * node = start_node;
-    bool found = false;
-    while (node)
-    {
-        /// if column found
-        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == sorted_column)
-        {
-            found = true;
-            break;
-        }
-
-        if (node->children.empty())
-            break; /// column not found
-
-        node = node->children.front();
-    }
-    if (!found)
-        return false;
-
-    /// if column found, check if sorting is preserved
-    const Field field{};
-    node = start_node;
-    while (node)
-    {
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
-        {
-            auto func = node->function_base;
-            if (func)
-            {
-                if (!func->hasInformationAboutMonotonicity())
-                    return false;
-
-                const auto & types = func->getArgumentTypes();
-                if (types.empty())
-                    return false;
-
-                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-                if (!monotonicity.is_always_monotonic)
-                    return false;
-            }
-        }
-
-        if (node->children.empty())
-            break;
-
-        node = node->children.front();
-    }
-    return true;
-}
-
-bool ActionsDAG::isSortingPreserved(
-    const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column) const
-{
-    if (sort_description.empty())
-        return true;
-
-    if (hasArrayJoin())
-        return false;
-
-    const Block & output_header = updateHeader(input_header);
-    for (const auto & desc : sort_description)
-    {
-        /// header contains column with the same name
-        if (output_header.findByName(desc.column_name))
-        {
-            /// find the corresponding node in output
-            const auto * output_node = tryFindInOutputs(desc.column_name);
-            if (!output_node)
-            {
-                /// sorted column name in header but NOT in expression output -> no expression is applied to it -> sorting preserved
-                continue;
-            }
-        }
-
-        /// check if any output node is related to the sorted column and sorting order is preserved
-        bool preserved = false;
-        for (const auto * output_node : outputs)
-        {
-            if (output_node->result_name == ignore_output_column)
-                continue;
-
-            if (isColumnSortingPreserved(output_node, desc.column_name))
-            {
-                preserved = true;
-                break;
-            }
-        }
-        if (!preserved)
-            return false;
-    }
-
-    return true;
-}
-
 namespace
 {
 
@@ -3572,8 +3425,16 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
     bool single_output_condition_node)
 {
+    /// Only INPUT nodes should be replaced from the map.  Non-INPUT nodes (ALIAS,
+    /// FUNCTION, etc.) represent computed values — replacing them with a raw INPUT
+    /// would discard the computation chain (e.g. a CAST inserted by an
+    /// ExpressionStep when a MaterializedView maps one column type to another).
+    /// Discarding the chain leads to incorrect key extraction in storage filter
+    /// push-down and therefore to wrong query results (see #83894).
     auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
     {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return nullptr;
         auto it = node_name_to_input_node_column.find(node->result_name);
         if (it == node_name_to_input_node_column.end())
             return nullptr;
@@ -3610,67 +3471,6 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::extractConjunctionAtoms(const Node * pr
     }
 
     return atoms;
-}
-
-ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
-    NodeRawConstPtrs nodes,
-    const std::unordered_set<const Node *> & allowed_inputs)
-{
-    size_t result_size = 0;
-
-    std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
-    struct Frame
-    {
-        const ActionsDAG::Node * node;
-        size_t next_child_to_visit = 0;
-        bool can_compute_all_childern = true;
-    };
-
-    std::stack<Frame> stack;
-
-    for (const auto * node : nodes)
-    {
-        if (!can_compute.contains(node))
-            stack.push({node});
-
-        while (!stack.empty())
-        {
-            auto & frame = stack.top();
-            bool need_visit_child = false;
-            while (frame.next_child_to_visit < frame.node->children.size())
-            {
-                auto it = can_compute.find(frame.node->children[frame.next_child_to_visit]);
-                if (it == can_compute.end())
-                {
-                    stack.push({frame.node->children[frame.next_child_to_visit]});
-                    need_visit_child = true;
-                    break;
-                }
-
-                frame.can_compute_all_childern &= it->second;
-                ++frame.next_child_to_visit;
-            }
-
-            if (need_visit_child)
-                continue;
-
-            if (frame.node->type == ActionsDAG::ActionType::INPUT)
-                can_compute[frame.node] = allowed_inputs.contains(frame.node);
-            else
-                can_compute[frame.node] = frame.can_compute_all_childern;
-
-            stack.pop();
-        }
-
-        if (can_compute.at(node))
-        {
-            nodes[result_size] = node;
-            ++result_size;
-        }
-    }
-
-    nodes.resize(result_size);
-    return nodes;
 }
 
 ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
@@ -3851,19 +3651,19 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     readStringBinary(capture.return_name, in);
     capture.return_type = decodeDataType(in);
 
-    UInt64 num_names;
+    UInt64 num_names = 0;
     readVarUInt(num_names, in);
     capture.captured_names.resize(num_names);
     for (auto & name : capture.captured_names)
         readStringBinary(name, in);
 
-    UInt64 num_types;
+    UInt64 num_types = 0;
     readVarUInt(num_types, in);
     capture.captured_types.resize(num_types);
     for (auto & type : capture.captured_types)
         type = decodeDataType(in);
 
-    UInt64 num_args;
+    UInt64 num_args = 0;
     readVarUInt(num_args, in);
     capture.lambda_arguments.clear();
     for (size_t i = 0; i < num_args; ++i)
@@ -3967,7 +3767,7 @@ static ColumnConst::Ptr deserializeConstant(
 {
     if (WhichDataType(type).isSet())
     {
-        UInt8 flags;
+        UInt8 flags = 0;
         readBinary(flags, in);
 
         /// is_constant flag is read for backward compatibility but no longer used;
@@ -3989,7 +3789,7 @@ static ColumnConst::Ptr deserializeConstant(
         deserializeCapture(capture, in);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
-        UInt64 num_captured_columns;
+        UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
         ColumnsWithTypeAndName captured_columns(num_captured_columns);
 
@@ -4147,7 +3947,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
 ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
 {
-    size_t nodes_size;
+    size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
 
     std::list<Node> nodes;
@@ -4168,11 +3968,11 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         readStringBinary(node.result_name, in);
         node.result_type = decodeDataType(in);
 
-        size_t children_size;
+        size_t children_size = 0;
         readVarUInt(children_size, in);
         for (size_t j = 0; j < children_size; ++j)
         {
-            size_t child_id;
+            size_t child_id = 0;
             readVarUInt(child_id, in);
             node.children.push_back(id_to_node.at(child_id));
         }
@@ -4277,14 +4077,14 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         }
     }
 
-    size_t inputs_size;
+    size_t inputs_size = 0;
     readVarUInt(inputs_size, in);
     std::vector<const Node *> inputs;
     std::unordered_set<const Node *> inputs_set;
     inputs.reserve(inputs_size);
     for (size_t i = 0; i < inputs_size; ++i)
     {
-        size_t input_id;
+        size_t input_id = 0;
         readVarUInt(input_id, in);
         const auto * input = id_to_node.at(input_id);
 
@@ -4300,13 +4100,13 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         inputs.push_back(input);
     }
 
-    size_t outputs_size;
+    size_t outputs_size = 0;
     readVarUInt(outputs_size, in);
     std::vector<const Node *> outputs;
     outputs.reserve(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i)
     {
-        size_t output_id;
+        size_t output_id = 0;
         readVarUInt(output_id, in);
         outputs.push_back(id_to_node.at(output_id));
     }
@@ -4323,38 +4123,6 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     dag.outputs = std::move(outputs);
 
     return dag;
-}
-
-Names getRequiredOutputNamesInOrder(NameMultiSet required_outputs, const ActionsDAG & actions_dag)
-{
-    Names new_required_outputs;
-    new_required_outputs.reserve(required_outputs.size());
-    for (const auto & output: actions_dag.getOutputs())
-    {
-        if (auto it = required_outputs.find(output->result_name); it != required_outputs.end())
-        {
-            auto node = required_outputs.extract(it);
-            new_required_outputs.push_back(std::move(node.value()));
-        }
-    }
-    return new_required_outputs;
-}
-
-bool hasDuplicatedNames(const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    NameSet unique_names;
-    for (const auto * node: nodes)
-    {
-        auto [_, inserted] = unique_names.insert(node->result_name);
-        if (!inserted)
-            return true;
-    }
-    return false;
-}
-
-bool hasDuplicatedNamesInInputOrOutputs(const ActionsDAG & actions_dag)
-{
-    return hasDuplicatedNames(actions_dag.getInputs()) || hasDuplicatedNames(actions_dag.getOutputs());
 }
 
 }

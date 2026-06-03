@@ -123,7 +123,7 @@ class  EngineIterator : public ffi::EngineIterator
 public:
     static constexpr uint64_t VISITOR_FAILED_OR_UNSUPPORTED = ~0;
 
-    explicit EngineIterator(EngineIteratorData & data_)
+    explicit EngineIterator(EngineIteratorData & data_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         data = &data_;
         get_next = &getNext;

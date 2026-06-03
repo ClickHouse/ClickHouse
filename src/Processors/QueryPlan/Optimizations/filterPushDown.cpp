@@ -368,7 +368,7 @@ struct JoinActionRefPairHash
     }
 };
 
-std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
     std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
@@ -391,7 +391,7 @@ std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & jo
     return joining_keys;
 }
 
-std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
     const std::vector<QueryPlan::Node *> & child_nodes,

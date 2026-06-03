@@ -81,7 +81,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
 }
 
-const ActionsDAG::Node * appendExpression(
+static const ActionsDAG::Node * appendExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
@@ -193,7 +193,7 @@ struct JoinCondition
     }
 };
 
-std::unordered_map<String, const ActionsDAG::Node *>
+static std::unordered_map<String, const ActionsDAG::Node *>
 buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context)
 {
     JoinActionRef::AddFunction operator_function(JoinConditionOperator::Equals);
@@ -257,7 +257,7 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     return changed_types;
 }
 
-void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context, JoinCondition & join_condition)
+static void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context, JoinCondition & join_condition)
 {
     std::string function_name;
     const auto * function_node = node->as<FunctionNode>();
@@ -282,7 +282,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     join_condition.conjuncts.push_back(builder_context.addExpression(node).getNode());
 }
 
-void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context, std::vector<JoinCondition> & join_conditions)
+static void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorBuildContext & builder_context, std::vector<JoinCondition> & join_conditions)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -302,7 +302,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorB
 }
 
 
-void addConditionsToJoinOperator(JoinOperatorBuildContext & build_context, std::vector<JoinCondition> join_conditions)
+static void addConditionsToJoinOperator(JoinOperatorBuildContext & build_context, std::vector<JoinCondition> join_conditions)
 {
     if (join_conditions.size() == 1)
     {
@@ -320,7 +320,7 @@ void addConditionsToJoinOperator(JoinOperatorBuildContext & build_context, std::
 }
 
 
-void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorBuildContext & build_context)
+static void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorBuildContext & build_context)
 {
     std::vector<JoinCondition> join_conditions;
     buildDisjunctiveJoinConditions(node, build_context, join_conditions);
@@ -340,7 +340,7 @@ static bool hasEquiConditions(const JoinCondition & condition)
 }
 
 
-JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
+static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
 {
     JoinCondition result = lhs;
     result.conjuncts.insert(result.conjuncts.end(), rhs.conjuncts.begin(), rhs.conjuncts.end());
@@ -361,7 +361,7 @@ static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinConditi
 }
 
 
-void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context)
+static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinOperatorBuildContext & builder_context)
 {
     using JoinConditions = std::vector<JoinCondition>;
     if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
@@ -483,7 +483,7 @@ String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal
     return {};
 }
 
-bool shouldForbidReordering(const JoinOperatorBuildContext & build_context)
+static bool shouldForbidReordering(const JoinOperatorBuildContext & build_context)
 {
     /// Swapping sides with totals can affect the result
     return std::ranges::any_of(build_context.left_table_expression_set, queryTreeHasWithTotalsInAnySubqueryInJoinTree) ||

@@ -1289,7 +1289,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
-UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
       * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
@@ -1311,6 +1311,7 @@ UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
+void registerStorageBuffer(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory)
 {
     /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
