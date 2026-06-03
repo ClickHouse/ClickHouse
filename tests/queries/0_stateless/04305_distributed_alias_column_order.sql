@@ -246,6 +246,41 @@ SELECT ab, ab_alias, b FROM dist_prefix_collision ORDER BY dt DESC LIMIT 1;
 DROP TABLE dist_prefix_collision;
 DROP TABLE local_prefix_collision;
 
+-- Duplicate alias in projection mixed with a distinct alias that needs reordering.
+-- Ensures the reorder is not disabled when only some names are duplicated.
+DROP TABLE IF EXISTS local_dup_mixed;
+DROP TABLE IF EXISTS dist_dup_mixed;
+
+CREATE TABLE local_dup_mixed
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag_a` String ALIAS concat(toString(x), '_suffix'),
+    `flag_b` String ALIAS toString(x)
+)
+ENGINE = MergeTree()
+ORDER BY dt;
+
+CREATE TABLE dist_dup_mixed
+(
+    `dt` DateTime,
+    `x` UInt8,
+    `flag_a` String ALIAS concat(toString(x), '_suffix'),
+    `flag_b` String ALIAS toString(x)
+)
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_dup_mixed, rand());
+
+INSERT INTO local_dup_mixed VALUES ('2024-01-01 00:00:00', 42);
+
+SELECT 'local_dup_mixed';
+SELECT flag_a, flag_b, flag_b FROM local_dup_mixed ORDER BY dt DESC LIMIT 1;
+
+SELECT 'distributed_dup_mixed';
+SELECT flag_a, flag_b, flag_b FROM dist_dup_mixed ORDER BY dt DESC LIMIT 1;
+
+DROP TABLE dist_dup_mixed;
+DROP TABLE local_dup_mixed;
+
 -- Two aliases using the same underlying expression (both expand to toString(x)).
 -- CSE deduplicates the computation; both output columns should still get correct values.
 DROP TABLE IF EXISTS local_same_expr;

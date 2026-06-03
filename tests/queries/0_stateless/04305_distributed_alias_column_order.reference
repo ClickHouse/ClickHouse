@@ -26,6 +26,10 @@ local_prefix_collision
 5	105	205
 distributed_prefix_collision
 5	105	205
+local_dup_mixed
+42_suffix	42	42
+distributed_dup_mixed
+42_suffix	42	42
 local_same_expr
 7	7
 distributed_same_expr
