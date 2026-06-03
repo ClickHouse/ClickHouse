@@ -192,6 +192,21 @@ def test_backup_endpoint_partial_config_does_not_inherit_admin_keys():
         _remove_minio_prefix(backup_prefix)
 
 
+def test_backup_endpoint_gcp_oauth_adc_fields_are_forwarded():
+    table_name = "backup_gcp_oauth_adc_credentials"
+    backup_prefix = f"backup_gcp_oauth_partial_adc/{uuid.uuid4().hex}/"
+    backup_url = f"http://minio1:9001/root/{backup_prefix}backup"
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"CREATE TABLE {table_name} (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    try:
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            node.query(f"BACKUP TABLE {table_name} TO S3('{backup_url}')")
+        assert "GCP OAuth ADC credentials must be specified together" in exc_info.value.stderr
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        _remove_minio_prefix(backup_prefix)
+
+
 def test_s3_storage_refresh_does_not_inherit_server_headers():
     node.query("DROP TABLE IF EXISTS s3_refresh")
     node.query(

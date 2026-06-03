@@ -27,5 +27,10 @@
             <endpoint>http://minio1:9001/root/backup_public/</endpoint>
             <header>X-Revoked-Endpoint-Header: TRUSTED_HEADER</header>
         </backup_public_endpoint>
+        <backup_gcp_oauth_partial_adc_endpoint>
+            <endpoint>http://minio1:9001/root/backup_gcp_oauth_partial_adc/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <google_adc_client_id>ADC_CLIENT_ID</google_adc_client_id>
+        </backup_gcp_oauth_partial_adc_endpoint>
     </s3>
 </clickhouse>
