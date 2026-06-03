@@ -15,6 +15,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
 namespace DB
@@ -90,9 +91,9 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr(context, false);
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
@@ -102,7 +103,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     PrometheusQueryTree promql_query{promql_query_field.safeGet<String>(), timestamp_scale};
 
-    PrometheusQueryEvaluationMode mode;
+    PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
