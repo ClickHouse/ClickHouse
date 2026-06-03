@@ -5,8 +5,8 @@ namespace DB
 
 bool CompressedReadBuffer::nextImpl()
 {
-    size_t size_decompressed;
-    size_t size_compressed_without_checksum;
+    size_t size_decompressed = 0;
+    size_t size_compressed_without_checksum = 0;
     size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
     if (!size_compressed)
         return false;
@@ -35,8 +35,8 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
     /// If you need to read more - we will, if possible, uncompress at once to `to`.
     while (bytes_read < n)
     {
-        size_t size_decompressed;
-        size_t size_compressed_without_checksum;
+        size_t size_decompressed = 0;
+        size_t size_compressed_without_checksum = 0;
 
         if (!readCompressedData(size_decompressed, size_compressed_without_checksum, false))
             return bytes_read;
