@@ -23,7 +23,7 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 
 /// NOTE When using ThreadPoolCallbackRunnerUnsafe you MUST ensure that all async tasks are finished
 /// before any objects they may use are destroyed.
-/// A common mistake is capturing some some local objects in lambda and passing it to the runner.
+/// A common mistake is capturing some local objects in lambda and passing it to the runner.
 /// In case of exception, these local objects will be destroyed before scheduled tasks are finished.
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
@@ -108,7 +108,7 @@ private:
         "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
     PoolT & pool;
-    ThreadName thread_name;
+    ThreadName thread_name{};
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -336,7 +336,7 @@ private:
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
     size_t max_threads = 0;
-    ThreadName thread_name;
+    ThreadName thread_name{};
     ThreadGroupPtr thread_group;
 
     std::mutex mutex;

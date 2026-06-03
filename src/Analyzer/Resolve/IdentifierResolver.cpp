@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -5,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Interpreters/MaterializedCTE.h>
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -232,6 +234,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
             storage = database->tryGetTable(table_name, context);
+        /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
+        if (storage)
+            storage_id = storage->getStorageID();
     }
     if (!storage)
         return {};
@@ -240,8 +245,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-    auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    /// Pass the user-requested storage_id explicitly instead of letting the
+    /// TableNode ctor read storage->getStorageID(), which can be mutated by
+    /// a concurrent renameInMemory between tryGetTable and this point.
+    auto result = std::make_shared<TableNode>(std::move(storage), storage_id, std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 
@@ -396,8 +404,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
-    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
+    const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
+    auto it = node_map.find(identifier_full_name);
+    if (it != node_map.end())
         return it->second;
 
     /// Check if it's a subcolumn
@@ -538,7 +547,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    const auto & node_map = table_expression_data.getColumnNodeMap();
+    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
     {
         result_expression = it->second;
     }
@@ -607,8 +617,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             if (prefix_size != 1)
                 continue;
 
-            auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
-            if (column_node_it == table_expression_data.column_name_to_column_node.end())
+            auto column_node_it = node_map.find(column_name);
+            if (column_node_it == node_map.end())
                 continue;
 
             const auto & column_node = column_node_it->second;
@@ -781,6 +791,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
+    if (table_expression_node_type == QueryTreeNodeType::TABLE)
+    {
+        auto * table_node = table_expression_node->as<TableNode>();
+        if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+    }
+
     if (identifier.getPartsSize() == 2)
         return {};
 
@@ -791,7 +808,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     return {};
 }
 
-QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
+static QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
                                                   const QueryTreeNodePtr & right_resolved_identifier)
 {
     if (left_resolved_identifier && right_resolved_identifier && left_resolved_identifier->getNodeType() == QueryTreeNodeType::CONSTANT
@@ -906,7 +923,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
 }
 
 /// Compare resolved identifiers considering columns that become nullable after JOIN
-bool resolvedIdenfiersFromJoinAreEquals(
+static bool resolvedIdenfiersFromJoinAreEquals(
     const QueryTreeNodePtr & left_resolved_identifier,
     const QueryTreeNodePtr & right_resolved_identifier,
     const IdentifierResolveScope & scope)
@@ -936,6 +953,8 @@ bool resolvedIdenfiersFromJoinAreEquals(
  * Example, for "SELECT id FROM t1 FULL JOIN t2 USING (id)"
  * this creates "SELECT firstNonDefault(t1.id, t2.id) AS id FROM ..." to coalesce the values appropriately.
  */
+QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope);
+
 QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, JoinKind join_kind, IdentifierResolveScope & scope)
 {
     const auto & using_expression = using_column_node.getExpression();
@@ -1523,7 +1542,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode
         default:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Scope FROM section expected table, table function, query, union, join or array join. Actual {}. In scope {}",
+                "Scope FROM section expected table, table function, query, union, join or array join. Actual {}: {}. In scope {}",
+                join_tree_node->getNodeTypeName(),
                 join_tree_node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
