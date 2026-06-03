@@ -1,9 +1,7 @@
 -- Tags: no-random-settings, no-parallel-replicas
+-- add_minmax_index_for_numeric_columns=0: We don't want to use implicit indexes since we are checking the one created manually
 
 set enable_analyzer=1;
-
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-set use_skip_indexes_on_data_read=0;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
@@ -13,7 +11,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test SELECT number FROM numbers(1000);
 EXPLAIN indexes = 1 SELECT * FROM test WHERE CAST(x, 'String') = '100';
 DROP TABLE test;
@@ -25,7 +23,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test SELECT number FROM numbers(1000);
 EXPLAIN indexes = 1 SELECT * FROM test WHERE CAST(x, 'String') = '100';
 DROP TABLE test;
@@ -37,7 +35,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test SELECT number FROM numbers(1000);
 EXPLAIN indexes = 1 SELECT * FROM test WHERE CAST(x, 'String') = '100';
 DROP TABLE test;
@@ -49,7 +47,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test SELECT number FROM numbers(1000);
 EXPLAIN indexes = 1 SELECT * FROM test WHERE CAST(x, 'String') = '100';
 DROP TABLE test;
@@ -61,7 +59,7 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS index_granularity=1;
+SETTINGS index_granularity=1, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test SELECT number FROM numbers(1000);
 EXPLAIN indexes = 1 SELECT * FROM test WHERE CAST(x, 'String') = '100';
 DROP TABLE test;

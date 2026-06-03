@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from . import Artifact, Job
 from .docker import Docker
@@ -52,6 +52,16 @@ class Workflow:
         enable_dockers_manifest_merge: bool = False
         # If latest tag shpuld be added for merged docker manifest, enable with .enable_dockers_manifest_merge
         set_latest_for_docker_merged_manifest: bool = False
+        # if enabled, Finish job will fetch open gh issues and match failed tests with them
+        enable_open_issues_check: bool = False
+        # If enabled, CI events will be accumulated and stored, allowing users to subscribe to notifications via the Slack Praktika app
+        enable_slack_feed: bool = False
+        # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
+        job_aliases: Dict[str, str] = field(default_factory=dict)
+        # If set, every runs_on label (across user-defined and praktika-injected jobs) is
+        # prefixed with this string, except "self-hosted". The intent is to route the
+        # workflow to an isolated fleet of runners that carry the prefixed labels.
+        runs_on_label_prefix: str = ""
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -75,6 +85,11 @@ class Workflow:
             return jobs[0]
 
         def find_jobs(self, name, lazy=False):
+            if self.job_aliases and name in self.job_aliases:
+                print(
+                    f"NOTE: job alias [{name}] refers to job [{self.job_aliases[name]}]"
+                )
+                name = self.job_aliases[name]
             name = str(name)
             res = []
             for job in self.jobs:
@@ -104,8 +119,12 @@ class Workflow:
                 if secret.name == name:
                     return secret
                 names.append(secret.name)
-            print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
-            raise
+            message = (
+                f"Failed to find secret [{name}] in workflow [{self.name}]. "
+                f"Available workflow secrets: [{names}]"
+            )
+            print(f"ERROR: {message}")
+            raise RuntimeError(message)
 
         def _enabled_workflow_config(self):
             return (

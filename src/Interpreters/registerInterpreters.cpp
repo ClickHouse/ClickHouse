@@ -38,6 +38,7 @@ void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
+void registerInterpreterCreateMaskingPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterMoveAccessEntityQuery(InterpreterFactory & factory);
@@ -63,7 +64,9 @@ void registerInterpreterBackupQuery(InterpreterFactory & factory);
 void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
+void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 
+void registerInterpreters();
 void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
@@ -103,6 +106,7 @@ void registerInterpreters()
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);
     registerInterpreterCreateRowPolicyQuery(factory);
+    registerInterpreterCreateMaskingPolicyQuery(factory);
     registerInterpreterCreateSettingsProfileQuery(factory);
     registerInterpreterDropAccessEntityQuery(factory);
     registerInterpreterMoveAccessEntityQuery(factory);
@@ -128,6 +132,7 @@ void registerInterpreters()
     registerInterpreterDeleteQuery(factory);
     registerInterpreterUpdateQuery(factory);
     registerInterpreterParallelWithQuery(factory);
+    registerInterpreterExecuteAsQuery(factory);
 }
 
 }

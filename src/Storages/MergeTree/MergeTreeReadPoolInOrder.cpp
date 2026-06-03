@@ -9,26 +9,30 @@ namespace ErrorCodes
 }
 
 MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
-    bool has_limit_below_one_block_,
+    bool has_hard_limit_below_one_block_,
+    bool has_soft_limit_below_one_block_,
     MergeTreeReadType read_type_,
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
         index_read_tasks_,
         storage_snapshot_,
+        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -36,8 +40,10 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         settings_,
         params_,
         context_)
-    , has_limit_below_one_block(has_limit_below_one_block_)
+    , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
+    , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
     , read_type(read_type_)
+    , updater(std::move(updater_))
 {
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
@@ -62,9 +68,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.back()));
         all_mark_ranges.pop_back();
     }
-    else if (has_limit_below_one_block)
+    else if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
     {
         /// If we need to read few rows, set one range per task to reduce number of read data.
+        /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
+        /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
+        /// so apply this only to the first task: if it didn't reach the limit, the filter is
+        /// likely selective and we should continue with regular block size.
         mark_ranges_for_task.emplace_back(std::move(all_mark_ranges.front()));
         all_mark_ranges.pop_front();
     }
@@ -73,7 +83,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         mark_ranges_for_task = std::move(all_mark_ranges);
     }
 
-    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task);
+    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
 }
 
 }

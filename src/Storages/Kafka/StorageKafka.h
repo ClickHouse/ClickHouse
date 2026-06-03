@@ -51,10 +51,14 @@ public:
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
 
+    bool isMessageQueue() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     void read(
         QueryPlan & query_plan,
@@ -91,7 +95,7 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
@@ -159,6 +163,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     bool streamToViews();
 

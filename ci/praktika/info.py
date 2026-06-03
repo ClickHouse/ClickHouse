@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import Optional
 
 from .settings import Settings
-from .utils import Utils
-
 
 class Info:
 
@@ -33,6 +31,11 @@ class Info:
         """
         return self.env.LINKED_PR_NUMBER
 
+    def set_parent_pr_number(self, pr_number):
+        self.env.JOB_KV_DATA["parent_pr_number"] = pr_number
+        self.env.dump()
+        return self
+
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
@@ -56,6 +59,10 @@ class Info:
     @property
     def pr_title(self):
         return self.env.PR_TITLE
+
+    @property
+    def updated_at(self):
+        return self.env.EVENT_TIME
 
     @property
     def pr_url(self):
@@ -94,12 +101,24 @@ class Info:
         return self.env.FORK_NAME
 
     @property
+    def commit_message(self):
+        return self.env.COMMIT_MESSAGE
+
+    @property
     def user_name(self):
         return self.env.USER_LOGIN
 
     @property
+    def commit_authors(self):
+        return self.env.COMMIT_AUTHORS or []
+
+    @property
     def run_url(self):
         return self.env.RUN_URL
+
+    @property
+    def run_id(self):
+        return self.env.RUN_ID
 
     @property
     def pr_labels(self):
@@ -141,6 +160,11 @@ class Info:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
         return self.workflow.get_secret(name)
 
+    def get_job_url(self):
+        if not self.env.WORKFLOW_JOB_DATA:
+            return ""
+        return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
+
     def get_job_report_url(self, latest=False):
         url = self.get_report_url(latest=latest)
         return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
@@ -166,12 +190,31 @@ class Info:
         else:
             assert branch
             ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
+        path = Settings.S3_REPORT_BUCKET
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
         workflow_name = workflow_name or self.env.WORKFLOW_NAME
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
+        if job_name:
+            res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
+        return res
+
+    @staticmethod
+    def get_specific_report_url_static(pr_number, branch, sha, job_name, workflow_name):
+        from .settings import Settings
+
+        if pr_number:
+            ref_param = f"PR={pr_number}"
+        else:
+            assert branch
+            ref_param = f"REF={branch}"
+        path = Settings.S3_REPORT_BUCKET
+        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
+            if bucket in path:
+                path = path.replace(bucket, endpoint)
+                break
         res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
         if job_name:
             res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
@@ -189,22 +232,36 @@ class Info:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
 
+    @staticmethod
+    def set_workflow_inputs(inputs: dict) -> None:
+        """Persist workflow_dispatch inputs for jobs to read via
+        `get_workflow_input_value`.
+
+        Mirrors the heredoc the YAML generator emits in CI; used by the
+        praktika `--workflow-input` CLI flag for local job runs.
+        """
+        from .settings import _Settings
+
+        os.makedirs(_Settings.TEMP_DIR, exist_ok=True)
+        with open(_Settings.WORKFLOW_INPUTS_FILE, "w", encoding="utf8") as f:
+            json.dump(inputs, f)
+
+    def set_pr_labels(self, labels, reset=False):
+        self.env.set_pr_labels(labels, reset=reset)
+
+    def add_pr_label(self, label):
+        self.env.add_pr_label(label)
+
+    def remove_pr_label(self, label):
+        self.env.remove_pr_label(label)
+
     def store_kv_data(self, key, value):
         print(f"Store workflow kv data: key [{key}], value [{value}]")
         self.env.JOB_KV_DATA[key] = value
         self.env.dump()
 
-    def get_kv_data(self, key=None, source_job="config_workflow"):
-        if Utils.normalize_string(self.env.JOB_NAME) == Utils.normalize_string(
-            source_job
-        ):
-            kv_data = self.env.JOB_KV_DATA
-        else:
-            kv_data = json.loads(
-                self.env.WORKFLOW_DATA.get(Utils.normalize_string(source_job), {})
-                .get("outputs", {})
-                .get("data", {})
-            )
+    def get_kv_data(self, key=None):
+        kv_data = self.env.JOB_KV_DATA
         if key:
             return kv_data.get(key, None)
         return kv_data
@@ -216,9 +273,36 @@ class Info:
         self.env.TRACEBACKS.append(traceback.format_exc())
         self.env.dump()
 
-    def add_workflow_report_message(self, message):
-        self.env.add_info(message)
-        self.env.dump()
+    def add_workflow_warning(self, message):
+        """
+        Add a warning visible on both the job report page and the workflow
+        report page.
+
+        The message is stored as ``{"message": str, "from": str}`` in both the
+        current job's ``Result.ext["warnings"]`` and the workflow-level
+        ``Result.ext["warnings"]``.  If the same message is posted by multiple
+        jobs, the report page groups them into a single entry at render time.
+
+        Unlike ``Result.add_warning``, which only affects the specific result
+        it is called on, this method ensures the message appears at both levels.
+        """
+        self.env.add_workflow_warning(message)
+
+    def add_workflow_error(self, message):
+        """
+        Add an error visible on both the job and workflow report pages.
+
+        See ``add_workflow_warning`` for propagation semantics.
+        """
+        self.env.add_workflow_error(message)
+
+    def add_workflow_note(self, message):
+        """
+        Add a note visible on both the job and workflow report pages.
+
+        See ``add_workflow_warning`` for propagation semantics.
+        """
+        self.env.add_workflow_note(message)
 
     def is_workflow_ok(self):
         """
@@ -235,3 +319,10 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
+
+    def docker_tag(self, image_name):
+        if self.env.WORKFLOW_CONFIG:
+            digest_dockers = self.env.WORKFLOW_CONFIG.get("digest_dockers", None)
+            if digest_dockers:
+                return digest_dockers.get(image_name, None)
+        return None

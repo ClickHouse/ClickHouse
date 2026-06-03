@@ -8,13 +8,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <ranges>
 
@@ -70,7 +70,7 @@ public:
         for (size_t i = 0; i < num_args; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+        VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
         for (auto & argument_column : preprocessed_columns)
         {

@@ -36,6 +36,8 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     std::optional<UInt64> getTotalSpace() const override;
     std::optional<UInt64> getAvailableSpace() const override;
     std::optional<UInt64> getUnreservedSpace() const override;
@@ -51,8 +53,6 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
-
-    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -78,10 +78,11 @@ public:
 
     void listFiles(const String & path, std::vector<String> & file_names) const override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -161,7 +162,7 @@ protected:
     void checkAccessImpl(const String & path) override;
 
 private:
-    std::optional<UInt64> tryReserve(UInt64 bytes);
+    std::optional<UInt64> tryReserve(UInt64 bytes, const std::optional<ReservationConstraints> & constraints = std::nullopt);
 
     /// Setup disk for healthy check.
     /// Throw exception if it's not possible to setup necessary files and directories.

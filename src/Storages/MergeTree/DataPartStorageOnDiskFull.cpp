@@ -122,12 +122,13 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
+void DataPartStorageOnDiskFull::prepareRead(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
 {
-    return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
+    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
@@ -145,7 +146,7 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const WriteSettings & settings)
 {
     if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, /* autocommit = */ false);
+        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
     return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
 }
 

@@ -36,6 +36,7 @@ public:
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
+        REWRITE_PARTS,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
@@ -87,6 +88,8 @@ public:
         MODIFY_SQL_SECURITY,
 
         UNLOCK_SNAPSHOT,
+
+        EXECUTE_COMMAND,
     };
 
     Type type = NO_TYPE;
@@ -176,7 +179,7 @@ public:
     IAST * rename_to = nullptr;
 
     /// For MODIFY REFRESH
-    ASTPtr refresh;
+    IAST * refresh = nullptr;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -196,7 +199,7 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
-    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -220,7 +223,11 @@ public:
     String to_table;
 
     String snapshot_name;
-    IAST * snapshot_desc;
+    IAST * snapshot_desc{};
+
+    /// For EXECUTE command (e.g. expire_snapshots)
+    String execute_command_name;
+    IAST * execute_args = nullptr;
 
     /// Which property user want to remove
     String remove_property;
@@ -232,7 +239,7 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -281,7 +288,7 @@ protected:
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

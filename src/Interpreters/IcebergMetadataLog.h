@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 
 namespace DB
 {
@@ -15,6 +18,7 @@ struct IcebergMetadataLogElement
     String file_path;
     String metadata_content;
     std::optional<UInt64> row_in_file;
+    std::optional<Iceberg::PruningReturnStatus> pruning_status;
 
     static std::string name() { return "IcebergMetadataLog"; }
 
@@ -28,8 +32,9 @@ void insertRowToLogTable(
     String row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
-    const String & file_path,
-    std::optional<UInt64> row_in_file);
+    const Iceberg::IcebergPathFromMetadata & file_path,
+    std::optional<UInt64> row_in_file,
+    std::optional<Iceberg::PruningReturnStatus> pruning_status);
 
 class IcebergMetadataLog : public SystemLog<IcebergMetadataLogElement>
 {

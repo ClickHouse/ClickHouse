@@ -1,3 +1,4 @@
+#include <Functions/multiMatchAny.h>
 #include <Functions/FunctionsMultiStringSearch.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/MultiMatchAnyImpl.h>
@@ -53,7 +54,7 @@ If you only want to search multiple substrings in a string, you can use function
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiMatchAny>(documentation);
 }

@@ -109,8 +109,21 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    std::function<void(const Progress&)> createProgressCallback(
+        ContextMutablePtr query_context,
+        std::atomic<UInt64>& result_rows,
+        std::atomic<UInt64>& written_rows);
+
+    UInt64 executeQueryWithTracking(
+        String && sql_query,
+        ContextMutablePtr query_context,
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command);
+
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
+
+    void initializeSystemTables(ContextMutablePtr query_context);
+    bool should_init_system_tables = true;
 };
 
 }

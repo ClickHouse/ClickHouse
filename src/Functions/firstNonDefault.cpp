@@ -8,14 +8,15 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -25,7 +26,7 @@ namespace
 /// returns the value of the leftmost non-falsey argument.
 /// If all arguments are falsey, returns the default value for the result type.
 /// Result type is the supertype of all arguments.
-class FunctionFirstNonDefault : public IFunction
+class FunctionFirstNonDefault final : public IFunction
 {
 public:
     static constexpr auto name = "firstNonDefault";
@@ -81,7 +82,7 @@ public:
 
         /// Cast all arguments to the result type
         /// Use this columns to insert values into the result column
-        std::vector<ColumnPtr> casted_columns;
+        VectorWithMemoryTracking<ColumnPtr> casted_columns;
         casted_columns.reserve(num_columns);
         for (const auto & arg : arguments)
         {
@@ -132,6 +133,7 @@ REGISTER_FUNCTION(FirstNonDefault)
 {
     FunctionDocumentation doc;
     doc.description = "Returns the first non-default value from a set of arguments";
+    doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
         {"arg1", "The first argument to check"},
         {"arg2", "The second argument to check"},
@@ -147,7 +149,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     };
     doc.category = {FunctionDocumentation::Category::Null};
 
-    doc.introduced_in = {25, 7};
+    doc.introduced_in = {25, 9};
     factory.registerFunction<FunctionFirstNonDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 

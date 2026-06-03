@@ -1,9 +1,12 @@
 #pragma once
+#include <Common/Logger.h>
 #include <Core/Block.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -59,15 +62,31 @@ struct PrewhereExprInfo
 struct ReadStepPerformanceCounters
 {
     std::atomic<UInt64> rows_read = 0;
+    std::atomic<UInt64> rows_passed_filter = 0;
 };
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
 
+/// Thread-safe, logically const container for read performance counters of multiple steps.
+///
+/// Design Notes:
+/// 1. All public methods are `const`, so the object can be used in const contexts.
+/// 2. Internal state is mutable and lazily initialized. This allows caching and on-demand creation of counters
+///    while still presenting a logically const interface to the caller.
+/// 3. Thread safety:
+///    - Access to the internal vector or the index counter pointer is protected by a mutex.
+///    - Individual counters themselves are atomic and can be updated concurrently without locking.
+/// 4. This class maintains state: it's not purely stateless; it stores the step counters and index counter.
+///    The const interface ensures the object can be passed around as const without preventing internal updates.
+/// 5. Use Cases:
+///    - MergeTreeSelectProcessor::readCurrentTask can safely access step counters concurrently.
+///    - Provides a clear and const-correct API for reading/updating performance counters.
 class ReadStepsPerformanceCounters final
 {
 public:
-    ReadStepPerformanceCountersPtr getCountersForStep(size_t step)
+    ReadStepPerformanceCountersPtr getCountersForStep(size_t step) const
     {
+        std::lock_guard lock{mutex};
         if (step >= performance_counters.size())
             performance_counters.resize(step + 1);
         if (!performance_counters[step])
@@ -75,19 +94,30 @@ public:
         return performance_counters[step];
     }
 
-    ReadStepPerformanceCountersPtr getCounterForIndexStep()
+    ReadStepPerformanceCountersPtr getCounterForIndexStep() const
     {
+        std::lock_guard lock{mutex};
         if (!index_performance_counter)
             index_performance_counter = std::make_shared<ReadStepPerformanceCounters>();
         return index_performance_counter;
     }
 
-    const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-    const ReadStepPerformanceCountersPtr & getIndexCounter() const { return index_performance_counter; }
+    std::vector<ReadStepPerformanceCountersPtr> getCounters() const
+    {
+        std::lock_guard lock{mutex};
+        return performance_counters;
+    }
+
+    ReadStepPerformanceCountersPtr getIndexCounter() const
+    {
+        std::lock_guard lock{mutex};
+        return index_performance_counter;
+    }
 
 private:
-    std::vector<ReadStepPerformanceCountersPtr> performance_counters;
-    ReadStepPerformanceCountersPtr index_performance_counter;
+    mutable std::mutex mutex;
+    mutable std::vector<ReadStepPerformanceCountersPtr> performance_counters TSA_GUARDED_BY(mutex);
+    mutable ReadStepPerformanceCountersPtr index_performance_counter TSA_GUARDED_BY(mutex);
 };
 
 class FilterWithCachedCount
@@ -140,7 +170,8 @@ public:
         Block prev_reader_header_,
         const PrewhereExprStep * prewhere_info_,
         ReadStepPerformanceCountersPtr performance_counters_,
-        bool main_reader_);
+        bool main_reader_,
+        bool can_read_incomplete_granules_);
 
     MergeTreeRangeReader() = default;
 
@@ -167,10 +198,14 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
+        size_t numDelayedRows() const { return num_delayed_rows; }
+
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
+
+        size_t currentTaskLastMark() const { return current_task_last_mark; }
 
     private:
         size_t current_mark = 0;
@@ -233,6 +268,8 @@ private:
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
+        void checkNoDelayedRows() const;
+
         size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
@@ -253,6 +290,14 @@ public:
         size_t numReadRows() const { return num_read_rows; }
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
+
+        /// Compute mark ranges for granules where all rows were filtered out by PREWHERE.
+        /// Provides fine-grained QueryConditionCache updates: captures individual filtered-out
+        /// granules even when other granules in the same batch pass the filter.
+        /// Safe to call only when use_query_condition_cache is enabled, because that flag
+        /// forces complete-granule reads (via ceilRowsToCompleteGranules), ensuring that
+        /// rows_per_granule[i] == 0 reliably means the full granule was read and filtered.
+        MarkRanges computeUnmatchedMarkRanges() const;
 
     private:
         friend class MergeTreeRangeReader;
@@ -295,7 +340,7 @@ public:
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
-        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules);
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules_, bool must_apply_filter);
 
         /// Remove all rows from granules.
         void clear();
@@ -330,6 +375,13 @@ public:
         /// Used to compute _part_offset and align continueReadingChain streams accordingly.
         RangesInfo started_ranges;
 
+        /// When startReadingChain begins with an unfinished stream (a continued read), this holds
+        /// the stream's current mark at that point. The first
+        /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule come
+        /// from that in-progress range; their marks are in_progress_start_mark + i. Set only
+        /// when the stream was unfinished at entry; absent when the stream was already done.
+        std::optional<size_t> in_progress_start_mark;
+
         /// Number of rows intended to be read per granule during the reading chain.
         ///
         /// Filled in `startReadingChain` based on initial granule layout and expected row counts.
@@ -351,6 +403,17 @@ public:
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
+
+        /// Diagnostic counters for debugging adjustLastGranule assertions.
+        /// These track where addRows() increments came from in startReadingChain().
+        size_t debug_rows_from_read_in_loop = 0;       /// rows from stream.read() inside the loop
+        size_t debug_rows_from_finalize_in_loop = 0;    /// rows from stream.finalize() at range boundaries
+        size_t debug_rows_from_finalize_post_loop = 0;  /// rows from stream.finalize() after the loop
+        size_t debug_max_rows = 0;                      /// max_rows parameter passed to startReadingChain
+        size_t debug_num_ranges_processed = 0;          /// number of ranges processed
+        size_t debug_skipped_marks = 0;                 /// marks skipped via canSkipMark
+        bool debug_use_query_condition_cache = false;
+        bool debug_can_read_incomplete_granules = false;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
@@ -375,7 +438,7 @@ public:
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
-        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
@@ -407,7 +470,7 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    const PrewhereExprStep * prewhere_info;
+    const PrewhereExprStep * prewhere_info{};
 
     Stream stream;
 
@@ -418,6 +481,7 @@ private:
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
+    bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

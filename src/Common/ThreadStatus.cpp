@@ -1,9 +1,11 @@
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Core/Settings.h>
@@ -18,8 +20,6 @@
 
 namespace DB
 {
-thread_local ThreadStatus constinit * current_thread = nullptr;
-
 namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
@@ -86,7 +86,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -96,7 +96,6 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -185,7 +184,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::getQueryContext() const
+ContextPtr ThreadStatus::tryGetQueryContext() const
 {
     return query_context.lock();
 }
@@ -234,12 +233,12 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
-    if (untracked_memory == 0)
+    Int64 current_untracked_memory = untracked_memory.load();
+    if (current_untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = current_thread->untracked_memory;
-    untracked_memory = 0;
+    untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
@@ -267,7 +266,7 @@ ThreadStatus::~ThreadStatus()
 {
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
+    chassert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
     /// detachGroup if it was attached
     if (deleter)
@@ -346,7 +345,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 

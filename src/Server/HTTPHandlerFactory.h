@@ -89,6 +89,17 @@ public:
         });
     }
 
+    /// Handle GET, HEAD or POST endpoint on specified path
+    void allowGetHeadAndPostRequest()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
     /// Handle Post request or (Get or Head) with params or OPTIONS requests
     void allowPostAndGetParamsAndOptionsRequest()
     {
@@ -99,6 +110,18 @@ public:
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
+    void allowRESTMethods()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE;
         });
     }
 
@@ -135,9 +158,11 @@ HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer
 /// @param async_metrics - used for prometheus (in case of prometheus.asynchronous_metrics=true)
+/// @param http_handlers_key - config key for custom http_handlers (default: "http_handlers")
 HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics,
-    const std::string & name);
+    const std::string & name,
+    const std::string & http_handlers_key = {});
 
 }

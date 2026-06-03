@@ -90,7 +90,8 @@ MergingAggregatedTransform::MergingAggregatedTransform(
                 params.overflow_row,
                 params.max_threads,
                 params.max_block_size,
-                params.min_hit_rate_to_use_consecutive_keys_optimization);
+                params.min_hit_rate_to_use_consecutive_keys_optimization,
+                params.serialize_string_with_zero_byte);
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::make_shared<const Block>(reordering.updateHeader(in_header)), std::move(set_params), final);
 
@@ -112,17 +113,24 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     }
 }
 
-void MergingAggregatedTransform::addBlock(Block block)
+void MergingAggregatedTransform::addChunk(Columns columns, size_t num_rows, Int32 bucket_num, bool is_overflows)
 {
     if (grouping_sets.size() == 1)
     {
-        auto bucket = block.info.bucket_num;
         if (grouping_sets[0].reordering_key_columns_actions)
+        {
+            auto block = getInputPort().getHeader().cloneWithColumns(columns);
+            block.erase(block.getPositionByName("__grouping_set"));
             grouping_sets[0].reordering_key_columns_actions->execute(block);
-        grouping_sets[0].bucket_to_blocks[bucket].emplace_back(std::move(block));
+            columns = block.getColumns();
+            num_rows = block.rows();
+        }
+        grouping_sets[0].bucket_to_chunks[bucket_num].emplace_back(
+            Chunk(std::move(columns), num_rows), bucket_num, is_overflows);
         return;
     }
 
+    auto block = getInputPort().getHeader().cloneWithColumns(columns);
     auto grouping_position = block.getPositionByName("__grouping_set");
     auto grouping_column = block.getByPosition(grouping_position).column;
     block.erase(grouping_position);
@@ -136,7 +144,6 @@ void MergingAggregatedTransform::addBlock(Block block)
     IColumn::Selector selector;
 
     const auto & grouping_data = grouping_column_typed->getData();
-    size_t num_rows = grouping_data.size();
     UInt64 last_group = grouping_data[0];
     UInt64 max_group = last_group;
     for (size_t row = 1; row < num_rows; ++row)
@@ -164,9 +171,9 @@ void MergingAggregatedTransform::addBlock(Block block)
     /// Optimization for single group.
     if (selector.empty())
     {
-        auto bucket = block.info.bucket_num;
         grouping_sets[last_group].reordering_key_columns_actions->execute(block);
-        grouping_sets[last_group].bucket_to_blocks[bucket].emplace_back(std::move(block));
+        grouping_sets[last_group].bucket_to_chunks[bucket_num].emplace_back(
+            Chunk(block.getColumns(), block.rows()), bucket_num, is_overflows);
         return;
     }
 
@@ -182,7 +189,7 @@ void MergingAggregatedTransform::addBlock(Block block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
+        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_groups, selector);
         for (size_t group_id = 0; group_id < num_groups; ++group_id)
             split_blocks[group_id].getByPosition(col_idx_in_block).column = std::move(split_columns[group_id]);
     }
@@ -192,7 +199,8 @@ void MergingAggregatedTransform::addBlock(Block block)
         auto & split_block = split_blocks[group];
         split_block.info = block.info;
         grouping_sets[group].reordering_key_columns_actions->execute(split_block);
-        grouping_sets[group].bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(split_block));
+        grouping_sets[group].bucket_to_chunks[bucket_num].emplace_back(
+            Chunk(split_block.getColumns(), split_block.rows()), bucket_num, is_overflows);
     }
 }
 
@@ -221,20 +229,11 @@ void MergingAggregatedTransform::consume(Chunk chunk)
           * Then the calculations can be parallelized by buckets.
           * We decompose the blocks to the bucket numbers indicated in them.
           */
-        auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        block.info.is_overflows = agg_info->is_overflows;
-        block.info.bucket_num = agg_info->bucket_num;
-        block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
-
-        addBlock(std::move(block));
+        addChunk(chunk.detachColumns(), input_rows, agg_info->bucket_num, agg_info->is_overflows);
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
     {
-        auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-        block.info.is_overflows = false;
-        block.info.bucket_num = -1;
-
-        addBlock(std::move(block));
+        addChunk(chunk.detachColumns(), input_rows, -1, false);
     }
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
@@ -248,43 +247,46 @@ Chunk MergingAggregatedTransform::generate()
         LOG_DEBUG(log, "Read {} blocks of partially aggregated data, total {} rows.", total_input_blocks, total_input_rows);
 
         /// Exception safety. Make iterator valid in case any method below throws.
-        next_block = blocks.begin();
+        next_chunk = chunks.begin();
 
         for (auto & grouping_set : grouping_sets)
         {
             auto & params = grouping_set.params;
-            auto & bucket_to_blocks = grouping_set.bucket_to_blocks;
+            auto & bucket_to_chunks = grouping_set.bucket_to_chunks;
             AggregatedDataVariants data_variants;
 
             /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
-            params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, is_cancelled);
-            auto merged_blocks = params->aggregator.convertToBlocks(data_variants, params->final);
+            params->aggregator.mergeBlocks(std::move(bucket_to_chunks), data_variants, is_cancelled);
+            auto merged_chunks = params->aggregator.convertToChunks(data_variants, params->final);
 
             if (grouping_set.creating_missing_keys_actions)
-                for (auto & block : merged_blocks)
+            {
+                auto res_header = params->params.getHeader(params->header, params->final);
+                for (auto & agg_chunk : merged_chunks)
+                {
+                    auto block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
                     grouping_set.creating_missing_keys_actions->execute(block);
+                    agg_chunk.chunk = Chunk(block.getColumns(), block.rows());
+                }
+            }
 
-            blocks.splice(blocks.end(), std::move(merged_blocks));
+            chunks.splice(chunks.end(), std::move(merged_chunks));
         }
 
-        next_block = blocks.begin();
+        next_chunk = chunks.begin();
     }
 
-    if (next_block == blocks.end())
+    if (next_chunk == chunks.end())
         return {};
 
-    auto block = std::move(*next_block);
-    ++next_block;
-
     auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = block.info.bucket_num;
-    info->is_overflows = block.info.is_overflows;
-    info->out_of_order_buckets = block.info.out_of_order_buckets;
+    info->bucket_num = next_chunk->bucket_num;
+    info->is_overflows = next_chunk->is_overflows;
 
-    UInt64 num_rows = block.rows();
-    Chunk chunk(block.getColumns(), num_rows);
-
+    Chunk chunk = std::move(next_chunk->chunk);
     chunk.getChunkInfos().add(std::move(info));
+
+    ++next_chunk;
 
     return chunk;
 }
