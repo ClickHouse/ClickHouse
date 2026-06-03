@@ -387,32 +387,45 @@ DiskCacheHandle::~DiskCacheHandle()
         chassert(range.offset >= object_file_offset);
         const ByteRange range_in_object{range.offset - object_file_offset, range.size};
 
-        /// `cache->get` is read-only — never creates new segments. We use it
-        /// here (rather than the ctor's `holder`, which `put` may have
-        /// dropped) to find currently-cached segments overlapping `range`.
-        /// `file_segments_limit = 0`: every overlap, not the user's batch hint.
-        auto touch_holder = cache->get(
-            cache_key,
-            range_in_object.offset,
-            range_in_object.size,
-            /*file_segments_limit=*/0,
-            origin.user_id);
-
-        if (!touch_holder)
-            continue;
-
-        for (const auto & segment : *touch_holder)
+        /// Best-effort, and this runs from an implicitly-`noexcept` destructor that
+        /// is often invoked while unwinding from a read/cache exception. `cache->get`
+        /// and `increasePriority` can throw (cache/metadata errors), and the LRU bump
+        /// is an optimization, not correctness — so suppress and log per range,
+        /// mirroring `FileSegmentsHolder::reset`. A throw escaping here would
+        /// `std::terminate` (worse, during unwinding from the original exception).
+        try
         {
-            const auto state = segment->state();
-            if (state != FileSegmentState::DOWNLOADED
-                && state != FileSegmentState::PARTIALLY_DOWNLOADED
-                && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            /// `cache->get` is read-only — never creates new segments. We use it
+            /// here (rather than the ctor's `holder`, which `put` may have
+            /// dropped) to find currently-cached segments overlapping `range`.
+            /// `file_segments_limit = 0`: every overlap, not the user's batch hint.
+            auto touch_holder = cache->get(
+                cache_key,
+                range_in_object.offset,
+                range_in_object.size,
+                /*file_segments_limit=*/0,
+                origin.user_id);
+
+            if (!touch_holder)
                 continue;
 
-            /// `increasePriority` is the canonical hit-bump entry point —
-            /// updates `cache_hits` and moves the segment to the protected
-            /// queue under SLRU, mirroring `CachedOnDiskReadBufferFromFile`.
-            segment->increasePriority();
+            for (const auto & segment : *touch_holder)
+            {
+                const auto state = segment->state();
+                if (state != FileSegmentState::DOWNLOADED
+                    && state != FileSegmentState::PARTIALLY_DOWNLOADED
+                    && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+                    continue;
+
+                /// `increasePriority` is the canonical hit-bump entry point —
+                /// updates `cache_hits` and moves the segment to the protected
+                /// queue under SLRU, mirroring `CachedOnDiskReadBufferFromFile`.
+                segment->increasePriority();
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Deferred LRU priority bump failed", LogsLevel::debug);
         }
     }
 }
