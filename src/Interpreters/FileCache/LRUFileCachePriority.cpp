@@ -532,7 +532,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    moveEvictionPosIfEqual(it.iterator, lock);
+    other.moveEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);

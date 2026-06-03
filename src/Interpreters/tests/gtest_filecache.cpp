@@ -1829,6 +1829,59 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
 }
 
+TEST_F(FileCacheTest, MoveEvictionPos)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    /// Two independent LRU queues, modelling SLRU's protected/probationary sub-queues
+    /// between which `LRUFileCachePriority::move` transfers entries.
+    LRUFileCachePriority src(/* max_size */100, /* max_elements */10, "src");
+    LRUFileCachePriority dst(/* max_size */100, /* max_elements */10, "dst");
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    auto key = DB::FileCacheKey::fromPath("move_key");
+    auto origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    using Entry = IFileCachePriority::Entry;
+    auto add_to_src = [&](size_t offset, size_t size)
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        return src.add(std::make_shared<Entry>(key, offset, size, key_metadata), write_lock, &state_lock);
+    };
+
+    /// src queue: [offset 0, offset 10, offset 20].
+    add_to_src(0, 10);
+    auto it_middle = add_to_src(10, 10);
+    add_to_src(20, 10);
+
+    /// Point src's eviction position at the middle entry — the one we are about to move out.
+    {
+        auto read_lock = cache_guard.readLock();
+        src.setEvictionPos(it_middle.get(), read_lock);
+    }
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 10u);
+
+    /// Move the middle entry out of `src` into `dst` (as an SLRU upgrade/downgrade would).
+    /// `move` is called on the destination queue; `src` is the source.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        dst.move(it_middle, src, write_lock, state_lock);
+    }
+
+    /// The moved node was spliced out of src, so src's eviction position must advance to the
+    /// next surviving src entry (offset 20). Before the fix it kept pointing at the moved node,
+    /// which now lives in `dst` (offset 10) — a dangling cross-queue eviction position.
+    ASSERT_EQ((*src.getEvictionPos(cache_guard.readLock()))->offset, 20u);
+}
+
 TEST_F(FileCacheTest, LoadMetadataParallelism)
 {
     /// Test that loading cache metadata with different numbers of threads produces
