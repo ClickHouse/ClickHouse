@@ -134,7 +134,7 @@ private:
         }
 
         fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
-        assert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
+        chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
     }
 
     void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
