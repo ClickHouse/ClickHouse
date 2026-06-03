@@ -30,7 +30,7 @@ private:
     const FormatSettings format_settings;
 };
 
-class MySQLDumpSchemaReader : public IRowSchemaReader
+class MySQLDumpSchemaReader final : public IRowSchemaReader
 {
 public:
     MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

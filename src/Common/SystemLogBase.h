@@ -38,6 +38,7 @@
     M(ZooKeeperConnectionLogElement) \
     M(IcebergMetadataLogElement) \
     M(DeltaMetadataLogElement) \
+    M(PredicateStatisticsLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \
@@ -114,12 +115,12 @@ struct SystemLogQueueSettings
 {
     String database;
     String table;
-    size_t reserved_size_rows;
-    size_t max_size_rows;
-    size_t buffer_size_rows_flush_threshold;
-    size_t flush_interval_milliseconds;
-    bool notify_flush_on_crash;
-    bool turn_off_logger;
+    size_t reserved_size_rows{};
+    size_t max_size_rows{};
+    size_t buffer_size_rows_flush_threshold{};
+    size_t flush_interval_milliseconds{};
+    bool notify_flush_on_crash{};
+    bool turn_off_logger{};
 };
 
 template <typename LogElement>
