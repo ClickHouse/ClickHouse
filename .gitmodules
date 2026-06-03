@@ -396,3 +396,6 @@
 [submodule "contrib/silk"]
 	path = contrib/silk
 	url = https://github.com/ClickHouse/silk.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/xtensor-stack/xsimd
