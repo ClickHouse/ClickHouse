@@ -214,6 +214,22 @@ def test_url_wildcard_with_headers():
     assert result.strip() == "15"
 
 
+def test_url_wildcard_with_all_positional_args_and_headers():
+    # Regression: the wildcard path used to validate the raw argument count before stripping the
+    # optional `headers(...)` argument, so a full positional signature plus `headers(...)` was
+    # wrongly rejected with NUMBER_OF_ARGUMENTS_DOESNT_MATCH even though the plain `url` path
+    # accepts it. Here url + format + structure + compression + headers = 5 AST children.
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(x) FROM url("
+        "'http://resolver:8087/data/headers/**/part*.tsv', "
+        "'TSV', "
+        "'x UInt64', "
+        "'none', "
+        "headers('X-Test-Header'='1'))")
+    )
+    assert result.strip() == "15"
+
+
 def test_url_wildcard_expands_query_templates():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv?x={1,2}', 'TSV', 'x UInt64')")

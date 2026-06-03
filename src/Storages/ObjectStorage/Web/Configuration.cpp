@@ -74,17 +74,19 @@ void WebStorageParsedArguments::fromNamedCollection(const NamedCollection & coll
 
 void WebStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    if (args.empty() || args.size() > WebStorageParsedArguments::getMaxNumberOfArguments(with_structure))
+    /// Collect and strip the optional `headers(...)` argument first, then validate the number of
+    /// positional arguments. Checking `args.size()` before this would count `headers(...)` as a
+    /// positional argument and wrongly reject valid signatures such as
+    /// `url('http://host/*.gz', 'TSV', 'x UInt64', 'gzip', headers('X'='Y'))`, which the plain
+    /// `url` path accepts (see `StorageURL::getConfiguration`).
+    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
+
+    if (count == 0 || count > WebStorageParsedArguments::getMaxNumberOfArguments(with_structure))
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage URL requires 1 to {} arguments. All supported signatures:\n{}",
             WebStorageParsedArguments::getMaxNumberOfArguments(with_structure),
             WebStorageParsedArguments::getSignatures(with_structure));
-
-    size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
-
-    if (count == 0)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "URL requires at least 1 argument");
 
     url = checkAndGetLiteralArgument<String>(args[0], "url");
 
@@ -166,17 +168,24 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
         return;
     }
 
-    for (auto & arg : args)
+    /// `headers(...)` is a URL-specific argument and is not a SQL function, so it must be preserved
+    /// instead of being evaluated. Detach it before counting/rewriting positional arguments,
+    /// otherwise it inflates the positional count and the branches below would mistake it for
+    /// `format` / `structure`. It is always the last argument (see `makeWebObjectStorageEngineArgs`
+    /// and `TableFunctionURL::parseArgumentsImpl`).
+    ASTPtr headers_ast;
+    if (!args.empty())
     {
-        const auto * func = arg->as<ASTFunction>();
+        const auto * func = args.back()->as<ASTFunction>();
         if (func && func->name == "headers")
         {
-            // `headers(...)` is a URL-specific argument and is not a SQL function.
-            // It must be preserved for URL argument parsing instead of being evaluated.
-            continue;
+            headers_ast = args.back();
+            args.pop_back();
         }
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
     }
+
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     size_t count = args.size();
     ASTPtr format_literal = make_intrusive<ASTLiteral>(format_);
@@ -202,6 +211,9 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
         if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
             args[2] = structure_literal;
     }
+
+    if (headers_ast)
+        args.push_back(headers_ast);
 }
 
 void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments, ContextPtr context)
