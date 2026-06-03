@@ -58,8 +58,6 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     void drop(ContextPtr context) override;
 
     String getObjectMetadataPath(const String & object_name) const override;
@@ -91,8 +89,6 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
-
 protected:
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
@@ -102,6 +98,7 @@ protected:
 
     void iterateMetadataFiles(const IteratingFunction & process_metadata_file) const;
 
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(
         const String & table_name,
         ContextPtr context,

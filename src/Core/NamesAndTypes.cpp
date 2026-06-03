@@ -92,7 +92,7 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     assertString("columns format version: 1\n", buf);
-    size_t count;
+    size_t count = 0;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
 
@@ -250,7 +250,7 @@ NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
+    HashMapWithSavedHash<std::string_view, const DataTypePtr *, StringViewHash> types;
 
     for (const auto & column : *this)
         types[column.name] = &column.type;
@@ -330,7 +330,7 @@ void NamesAndTypesList::readTextWithNamesInStorage(ReadBuffer & buf)
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     assertString("columns format version: 1\n", buf);
-    size_t count;
+    size_t count = 0;
     DB::readText(count, buf);
     assertString(" columns:\n", buf);
 

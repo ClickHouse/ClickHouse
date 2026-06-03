@@ -59,7 +59,7 @@ struct InitcapUTF8Impl
             if (dst_code_point > 0)
             {
                 size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, reinterpret_cast<char *>(dst), src_end - src);
-                assert(dst_sequence_length <= 4);
+                chassert(dst_sequence_length <= 4);
 
                 if (dst_sequence_length == src_sequence_length)
                 {
@@ -134,7 +134,7 @@ If the length of the UTF-8 byte sequence is different for upper and lower case o
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionInitcapUTF8>(documentation);
 }

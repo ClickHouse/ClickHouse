@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Common/CurrentThread.h>
 #include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
@@ -10,23 +11,29 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/typeid_cast.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>
 #include <Common/quoteString.h>
-
-#include <boost/range/adaptor/map.hpp>
-#include <boost/range/algorithm/copy.hpp>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <filesystem>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -72,7 +79,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 
@@ -98,12 +105,14 @@ namespace
 BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
+    const String & backup_id_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
     const ContextPtr & context_,
     ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
+    , backup_id(backup_id_)
     , backup_coordination(backup_coordination_)
     , read_settings(read_settings_)
     , context(context_)
@@ -115,10 +124,10 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(
-        context->getConfigRef().getBool("backups.compare_collected_metadata",
-                                        !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
-                                                                                          /// (because in the Cloud only Replicated databases are used)
+    , compare_collected_metadata(context->getConfigRef().getBool(
+          "backups.compare_collected_metadata",
+          !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+    /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
     , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
@@ -220,6 +229,8 @@ void BackupEntriesCollector::gatherMetadataAndCheckConsistency()
     /// ...
     /// and so on, the sleep time is doubled each time until it reaches 5000 milliseconds.
     /// And such attempts will be continued until 600000 milliseconds pass.
+
+    auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::gatherMetadataAndCheckConsistency");
 
     setStage(Stage::formatGatheringMetadata(0));
 
@@ -397,7 +408,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -429,6 +440,11 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
     const std::set<DatabaseAndTableName> & except_table_names)
 {
     checkIsQueryCancelled();
+
+#if CLICKHOUSE_CLOUD
+    if (database_name == SharedDatabaseCatalog::INTERNAL_DATABASE_TO_DROP)
+        return;
+#endif
 
     auto it = database_infos.find(database_name);
     if (it == database_infos.end())
@@ -511,6 +527,14 @@ void BackupEntriesCollector::gatherTablesMetadata()
     checkIsQueryCancelled();
 
     table_infos.clear();
+
+    /// Collect target tables of refreshable materialized views that use the REPLACE
+    /// refresh strategy (APPEND is excluded) among the tables being backed up.
+    /// We build this snapshot from the storages we've already found, so the decision
+    /// in `shouldBackupTableData` doesn't need to query `DatabaseCatalog` again and
+    /// is scoped to the tables within the backup.
+    std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> rmv_replace_target_ids;
+
     for (const auto & [database_name, database_info] : database_infos)
     {
         std::vector<std::pair<ASTPtr, StoragePtr>> db_tables = findTablesInDatabase(database_name);
@@ -538,32 +562,47 @@ void BackupEntriesCollector::gatherTablesMetadata()
                     / escapeForFileName(table_name_in_backup.table);
             }
 
-            /// Add information to `table_infos`.
-            auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
+            const auto qualified_name = QualifiedTableName{database_name, table_name};
+            auto & res_table_info = table_infos[qualified_name];
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            if (!backup_settings.structure_only)
+            if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
             {
-                auto it = database_info.tables.find(table_name);
-                if (it != database_info.tables.end())
-                {
-                    const auto & partitions = it->second.partitions;
-                    if (partitions && storage && !storage->supportsBackupPartition())
-                    {
-                        throw Exception(
-                            ErrorCodes::CANNOT_BACKUP_TABLE,
-                            "Table engine {} doesn't support partitions, cannot backup {}",
-                            storage->getName(),
-                            tableNameWithTypeToString(database_name, table_name, false));
-                    }
-                    res_table_info.partitions = partitions;
-                }
+                if (mv->isRefreshable() && !mv->isAppendRefreshStrategy())
+                    rmv_replace_target_ids.insert(mv->getTargetTableId());
             }
         }
+    }
+
+    /// Second pass: now that we have the full snapshot of tables and RMV targets,
+    /// decide whether the data of each table should be backed up and validate
+    /// partition-related constraints.
+    for (auto & [qualified_name, res_table_info] : table_infos)
+    {
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+
+        if (!res_table_info.should_backup_data)
+            continue;
+
+        const auto & database_info = database_infos.at(qualified_name.database);
+        auto it = database_info.tables.find(qualified_name.table);
+        if (it == database_info.tables.end())
+            continue;
+
+        const auto & partitions = it->second.partitions;
+        if (partitions && res_table_info.storage && !res_table_info.storage->supportsBackupPartition())
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Table engine {} doesn't support partitions, cannot backup {}",
+                res_table_info.storage->getName(),
+                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+        }
+        res_table_info.partitions = partitions;
     }
 }
 
@@ -611,7 +650,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> BackupEntriesCollector::findTablesInD
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
         {
-            if (!create->temporary)
+            if (!create->isTemporary())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Got a non-temporary create query for {}",
@@ -795,12 +834,14 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
-    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
+    /// Using a lambda with references is fine, since it only uses `this` and `it.first` which is part of table_infos (`this`)
+    /// So they will outlive runner even if an exception is thrown
+    for (const auto & it : table_infos)
     {
-        runner([&]()
+        runner.enqueueAndKeepTrack([&]()
         {
-            makeBackupEntriesForTableData(table_name);
+            makeBackupEntriesForTableData(it.first);
         });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
@@ -808,10 +849,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
 {
-    if (backup_settings.structure_only)
+    const auto & table_info = table_infos.at(table_name);
+    if (!table_info.should_backup_data)
         return;
 
-    const auto & table_info = table_infos.at(table_name);
     const auto & storage = table_info.storage;
     const auto & data_path_in_backup = table_info.data_path_in_backup;
 
@@ -838,6 +879,26 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         e.addMessage("While collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+bool BackupEntriesCollector::shouldBackupTableData(
+    const QualifiedTableName & table_name,
+    const StoragePtr & storage,
+    const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
+{
+    if (backup_settings.structure_only)
+        return false;
+
+    if (!storage)
+        return true;
+
+    if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
+        && rmv_replace_target_ids.contains(storage->getStorageID()))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
+        return false;
+    }
+    return true;
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)

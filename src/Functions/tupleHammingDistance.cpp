@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 /// tupleHammingDistance function: (Tuple(...), Tuple(...))-> N
 /// Return the number of non-equal tuple elements
-class FunctionTupleHammingDistance : public ITupleFunction
+class FunctionTupleHammingDistance final : public ITupleFunction
 {
 public:
     static constexpr auto name = "tupleHammingDistance";
@@ -171,7 +171,7 @@ SELECT
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTupleHammingDistance>(documentation);
 }

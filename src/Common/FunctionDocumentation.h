@@ -81,6 +81,7 @@ struct FunctionDocumentation
         Unknown,
 
         /// Regular functions
+        AI,
         Arithmetic,
         Array,
         Bit,
@@ -94,6 +95,7 @@ struct FunctionDocumentation
         Distance,
         EmbeddedDictionary,
         Geo,
+        GeoPolygon,
         Encoding,
         Encryption,
         Financial,
@@ -126,6 +128,9 @@ struct FunctionDocumentation
         UniqTheta,
         Variant,
 
+        /// Internal utility functions, not documented in the user docs
+        Internal,
+
         /// Other types of functions
         AggregateFunction,
         TableFunction
@@ -136,13 +141,12 @@ struct FunctionDocumentation
     /// TODO Fields with {} initialization are optional. We should make all fields non-optional.
     Description description;                      /// E.g. "Returns the position (in bytes, starting at 1) of a substring needle in a string haystack."
     Syntax syntax {};                             /// E.g. "position(haystack, needle)"
-    Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}},
-                                                  ///       {"needle", "Substring to be searched.", {"String"}}}
-    /// Parameters parameters {};
+    Arguments arguments {};                       /// E.g. {{"haystack", "String in which the search is performed.", {"String"}}, {"needle", "Substring to be searched.", {"String"}}}
+    Parameters parameters {};                     /// E.g. {{"level"}, "The quantile level. 0.5 is the median.", {"Float*"}}
     ReturnedValue returned_value {};              /// E.g. {"Starting position in bytes and counting from 1, if the substring was found.", {"(U)Int*"}}
     Examples examples {};                         ///
     IntroducedIn introduced_in {VERSION_UNKNOWN}; /// E.g. {25, 5}
-    Category category;                            /// E.g. Category::DatesAndTimes
+    Category category{};                            /// E.g. Category::DatesAndTimes
 
     String syntaxAsString() const;
     String argumentsAsString() const;
@@ -151,5 +155,10 @@ struct FunctionDocumentation
     String examplesAsString() const;
     String introducedInAsString() const;
     String categoryAsString() const;
+
+    /// Use as a placeholder for internal functions that have no public documentation
+    static FunctionDocumentation INTERNAL_FUNCTION_DOCS;
+
 };
+
 }

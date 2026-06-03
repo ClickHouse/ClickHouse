@@ -4,54 +4,45 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
-
+#include <Common/quoteString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnArray.h>
-
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Core/AccurateComparison.h>
+#include <Core/DecimalComparison.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
-
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/castColumn.h>
-#include <Interpreters/Context.h>
-
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-
-#include <Core/AccurateComparison.h>
-#include <Core/DecimalComparison.h>
-#include <Core/Settings.h>
-#include <Core/callOnTypeIndex.h>
-
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Functions/ComparisonNames.h>
 #include <type_traits>
+
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <Functions/castTypeToEither.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
 
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
-    extern const SettingsBool validate_enum_literals_in_operators;
-}
+FormatSettings getFormatSettings(const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -150,7 +141,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -177,27 +168,9 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImplAVX512BW(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorVectorImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorVectorImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorVectorImplSSE42(a, b, c);
+            vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -206,7 +179,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -226,27 +199,9 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImplAVX512BW(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX512F))
-        {
-            vectorConstantImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42(a, b, c);
+            vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 #endif
@@ -320,6 +275,28 @@ struct StringComparisonImpl
             c[i] = Op::apply(memcmpSmallAllowOverflow15(
                 a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
                 b_data.data(), b_size), 0);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
+    /// `String` vector vs constant `FixedString`. `string_vector_constant` uses a plain
+    /// `memcmp`, which respects the constant's trailing NUL padding and disagrees with the
+    /// `String` vs `FixedString` vector path (which uses zero-padded comparison, per SQL
+    /// semantics that `toFixedString('abc', 5) = 'abc'`).
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset,
+                b_data.data(), b_n), 0);
 
             prev_a_offset = a_offsets[i];
         }
@@ -411,6 +388,14 @@ struct StringComparisonImpl
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
+    }
+
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void constant_fixed_string_vector( /// NOLINT
@@ -513,6 +498,30 @@ struct StringEqualsImpl
         }
     }
 
+    /// `String` vector vs constant `FixedString`. See the same-named method in
+    /// `StringComparisonImpl` for the rationale: the constant's trailing NUL padding
+    /// must not be respected, otherwise the result disagrees with the `String` vs
+    /// `FixedString` vector path.
+    static void NO_INLINE string_vector_constant_fixed_string( /// NOLINT
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
+        PaddedPODArray<UInt8> & c)
+    {
+        size_t size = a_offsets.size();
+        ColumnString::Offset prev_a_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto a_size = a_offsets[i] - prev_a_offset;
+
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
+                a_data.data() + prev_a_offset, a_size,
+                b_data.data(), b_n);
+
+            prev_a_offset = a_offsets[i];
+        }
+    }
+
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16( /// NOLINT
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -598,6 +607,14 @@ struct StringEqualsImpl
         string_vector_constant(b_data, b_offsets, a_data, a_size, c);
     }
 
+    static void constant_fixed_string_string_vector( /// NOLINT
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
+        PaddedPODArray<UInt8> & c)
+    {
+        string_vector_constant_fixed_string(b_data, b_offsets, a_data, a_n, c);
+    }
+
     static void constant_fixed_string_vector( /// NOLINT
         const ColumnString::Chars & a_data, ColumnString::Offset a_size,
         const ColumnString::Chars & b_data, ColumnString::Offset b_n,
@@ -643,30 +660,83 @@ struct GenericComparisonImpl
     }
 };
 
-struct NameEquals          { static constexpr auto name = "equals"; };
-struct NameNotEquals       { static constexpr auto name = "notEquals"; };
-struct NameLess            { static constexpr auto name = "less"; };
-struct NameGreater         { static constexpr auto name = "greater"; };
-struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
-struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
+
+#if USE_EMBEDDED_COMPILER
+
+template <template <typename, typename> typename Op> struct CompileOp;
+
+template <> struct CompileOp<EqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
+    }
+};
+
+template <> struct CompileOp<IsNotDistinctFromOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y);
+    }
+};
+
+template <> struct CompileOp<NotEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpUNE(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
+    }
+};
+
+#endif
 
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
-    bool allow_not_comparable_types = false;
+    bool use_variant_default_implementation = true;
+    FormatSettings format_settings;
 
-    explicit ComparisonParams(const ContextPtr & context)
-        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-        , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
-    {}
+    explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
 };
 
-template <template <typename, typename> class Op, typename Name>
-class FunctionComparison : public IFunction
+template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
+class FunctionComparison final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -675,6 +745,8 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
+    bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
+    bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
 private:
     const ComparisonParams params;
 
@@ -799,16 +871,20 @@ private:
         const ColumnString::Chars * c1_const_chars = nullptr;
         ColumnString::Offset c0_const_size = 0;
         ColumnString::Offset c1_const_size = 0;
+        const ColumnString      * c0_const_string       = nullptr;
+        const ColumnFixedString * c0_const_fixed_string = nullptr;
+        const ColumnString      * c1_const_string       = nullptr;
+        const ColumnFixedString * c1_const_fixed_string = nullptr;
 
         if (c0_const)
         {
-            const ColumnString * c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
-            const ColumnFixedString * c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
+            c0_const_string = checkAndGetColumn<ColumnString>(&c0_const->getDataColumn());
+            c0_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c0_const->getDataColumn());
 
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size;
+                c0_const_size = c0_const_string->getDataAt(0).size();
             }
             else if (c0_const_fixed_string)
             {
@@ -821,13 +897,13 @@ private:
 
         if (c1_const)
         {
-            const ColumnString * c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
-            const ColumnFixedString * c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
+            c1_const_string = checkAndGetColumn<ColumnString>(&c1_const->getDataColumn());
+            c1_const_fixed_string = checkAndGetColumn<ColumnFixedString>(&c1_const->getDataColumn());
 
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size;
+                c1_const_size = c1_const_string->getDataAt(0).size();
             }
             else if (c1_const_fixed_string)
             {
@@ -859,6 +935,9 @@ private:
         else if (c0_string && c1_fixed_string)
             StringImpl::string_vector_fixed_string_vector(
                 c0_string->getChars(), c0_string->getOffsets(), c1_fixed_string->getChars(), c1_fixed_string->getN(), c_res->getData());
+        else if (c0_string && c1_const_fixed_string)
+            StringImpl::string_vector_constant_fixed_string(
+                c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
         else if (c0_string && c1_const)
             StringImpl::string_vector_constant(
                 c0_string->getChars(), c0_string->getOffsets(), *c1_const_chars, c1_const_size, c_res->getData());
@@ -875,6 +954,9 @@ private:
         else if (c0_fixed_string && c1_const)
             StringImpl::fixed_string_vector_constant(
                 c0_fixed_string->getChars(), c0_fixed_string->getN(), *c1_const_chars, c1_const_size, c_res->getData());
+        else if (c0_const_fixed_string && c1_string)
+            StringImpl::constant_fixed_string_string_vector(
+                *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
         else if (c0_const && c1_string)
             StringImpl::constant_string_vector(
                 *c0_const_chars, c0_const_size, c1_string->getChars(), c1_string->getOffsets(), c_res->getData());
@@ -931,7 +1013,7 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
@@ -966,7 +1048,6 @@ private:
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
-
         const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
@@ -977,6 +1058,25 @@ private:
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
+        /// comparisons would produce ColumnNothing which doesn't match the declared
+        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
+        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
+        /// and the element-wise null-safe comparison handles Nothing types correctly.
+        if constexpr (!is_null_safe_cmp_mode)
+        {
+            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
+            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
+                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
+                {
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                }
+            }
+        }
 
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
@@ -1156,7 +1256,6 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
-
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
@@ -1176,29 +1275,24 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!params.allow_not_comparable_types)
+        if ((name == NameEquals::name || name == NameNotEquals::name))
         {
-            if ((name == NameEquals::name || name == NameNotEquals::name))
-            {
-                if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality."
-                        "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                        arguments[0]->getName(),
-                        arguments[1]->getName(),
-                        getName());
-            }
-            else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
-            {
+            if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable."
-                    "Set setting allow_not_comparable_types_in_comparison_functions = 1 in order to allow it",
-                    arguments[0]->getName(),
-                    arguments[1]->getName(),
-                    getName());
-            }
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
+                    backQuote(arguments[0]->getName()),
+                    backQuote(arguments[1]->getName()),
+                    backQuote(getName()));
+        }
+        else if (!arguments[0]->isComparable() || !arguments[1]->isComparable())
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
+                backQuote(arguments[0]->getName()),
+                backQuote(arguments[1]->getName()),
+                backQuote(getName()));
         }
 
         WhichDataType left(arguments[0].get());
@@ -1222,7 +1316,7 @@ public:
         {
             if (!tryGetLeastSupertype(arguments))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
-                    " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
+                    " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
         }
 
         bool both_tuples = left_tuple && right_tuple;
@@ -1232,6 +1326,7 @@ public:
 
             bool has_nullable = false;
             bool has_null = false;
+            bool has_nothing = false;
 
             const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
             size_t size = any_tuple->getElements().size();
@@ -1244,14 +1339,41 @@ public:
                                                    {nullptr, right_tuple->getElements()[i], ""}};
                     element_type = func->build(args)->getResultType();
                 }
+                else
+                {
+                    /// One side is `String`/`FixedString`. At runtime the string is parsed as a tuple
+                    /// value matching the structure of the tuple side and compared element-wise.
+                    /// Recursively compute the element-vs-string comparison type so that nested
+                    /// `Nullable` (or `Nothing`/`Dynamic`/`Variant`) elements transitively propagate
+                    /// `Nullable` to the outer return type. Without this, e.g.
+                    /// `Tuple(Tuple(Nullable(String))) <= String` would be inferred as `UInt8`
+                    /// while the runtime produces `Nullable(UInt8)`, tripping the type-mismatch
+                    /// assertion in the analyzer's constant-folding path (STID 3344-4a3c).
+                    const DataTypePtr & string_side_type = left_tuple ? arguments[1] : arguments[0];
+                    ColumnsWithTypeAndName args = left_tuple
+                        ? ColumnsWithTypeAndName{{nullptr, element_type, ""}, {nullptr, string_side_type, ""}}
+                        : ColumnsWithTypeAndName{{nullptr, string_side_type, ""}, {nullptr, element_type, ""}};
+                    element_type = func->build(args)->getResultType();
+                }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
+
+                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nothing
+                has_nothing = has_nothing || isNothing(element_type);
             }
 
+            // In null-safe cmp mode, return DataTypeUInt8 (null-safe comparison always produces a definite result)
+            if (is_null_safe_cmp_mode)
+                return std::make_shared<DataTypeUInt8>();
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
@@ -1387,8 +1509,8 @@ public:
         }
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            /// Comparing different date/time types requires implicit conversion to a common type
+            if (date_and_time_datetime)
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
@@ -1450,11 +1572,119 @@ public:
                 continue;
 
             if (column->isNullAt(0))
+            {
+                /// If the result type cannot hold NULL values (e.g. LowCardinality(UInt8) when
+                /// comparing with a Variant column that contains NULL but is not Nullable itself),
+                /// don't constant-fold — let the runtime execution path handle NULL correctly.
+                if (!canContainNull(*result_type))
+                    return nullptr;
                 return result_type->createColumnConst(1, Null());
+            }
         }
 
         return nullptr;
     }
+
+#if USE_EMBEDDED_COMPILER
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeFloat32,
+            DataTypeFloat64>(type, std::forward<F>(f));
+    }
+
+    template <typename F>
+    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
+    {
+        return castType(left, [&](const auto & left_)
+        {
+            return castType(right, [&](const auto & right_)
+            {
+                return f(left_, right_);
+            });
+        });
+    }
+
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & result_type) const override
+    {
+        if (2 != arguments.size())
+            return false;
+
+        if (!canBeNativeType(*arguments[0]) || !canBeNativeType(*arguments[1]) || !canBeNativeType(*result_type))
+            return false;
+
+        WhichDataType data_type_lhs(arguments[0]);
+        WhichDataType data_type_rhs(arguments[1]);
+        /// TODO support date/date32
+        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
+            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
+            return false;
+
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
+            {
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                return OpSpec::compilable;
+            }
+            return false;
+        });
+        return false;
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr &) const override
+    {
+        chassert(2 == arguments.size());
+
+        llvm::Value * result = nullptr;
+        castBothTypes(arguments[0].type.get(), arguments[1].type.get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using LeftType = typename LeftDataType::FieldType;
+            using RightType = typename RightDataType::FieldType;
+            using PromotedType = typename NumberTraits::ResultOfIf<LeftType, RightType>::Type;
+
+            if constexpr (
+                !std::is_same_v<DataTypeFixedString, LeftDataType> && !std::is_same_v<DataTypeFixedString, RightDataType>
+                && !std::is_same_v<DataTypeString, LeftDataType> && !std::is_same_v<DataTypeString, RightDataType>
+                && (std::is_integral_v<PromotedType> || std::is_floating_point_v<PromotedType>))
+            {
+                using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+                if constexpr (OpSpec::compilable)
+                {
+                    auto promoted_type = std::make_shared<DataTypeNumber<PromotedType>>();
+                    auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                    auto * left_value = nativeCast(b, arguments[0], promoted_type);
+                    auto * right_value = nativeCast(b, arguments[1], promoted_type);
+                    result = b.CreateSelect(
+                        CompileOp<Op>::compile(b, left_value, right_value, std::is_signed_v<PromotedType>), b.getInt8(1), b.getInt8(0));
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        return result;
+    }
+#endif
 };
 
 }

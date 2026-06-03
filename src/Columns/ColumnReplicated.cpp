@@ -1,6 +1,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 namespace DB
@@ -82,9 +83,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+void ColumnReplicated::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
-    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
+    nested_column->getValueNameImpl(name_buf, indexes.getIndexAt(n), options);
 }
 
 bool ColumnReplicated::getBool(size_t n) const
@@ -117,7 +118,7 @@ UInt64 ColumnReplicated::get64(size_t n) const
     return nested_column->get64(indexes.getIndexAt(n));
 }
 
-StringRef ColumnReplicated::getDataAt(size_t n) const
+std::string_view ColumnReplicated::getDataAt(size_t n) const
 {
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
@@ -133,43 +134,30 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
 
-StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
-char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory);
+    return nested_column->getSerializedValueSize(indexes.getIndexAt(n), settings);
 }
 
-std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
+void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested_column->getSerializedValueSize(indexes.getIndexAt(n));
-}
-
-const char * ColumnReplicated::deserializeAndInsertFromArena(const char * pos)
-{
-    const auto * res = nested_column->deserializeAndInsertFromArena(pos);
+    nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
-    return res;
 }
 
-const char * ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
 {
-    const auto * res = nested_column->deserializeAndInsertAggregationStateValueFromArena(pos);
-    indexes.insertIndex(nested_column->size() - 1);
-    return res;
-}
-
-const char * ColumnReplicated::skipSerializedInArena(const char * pos) const
-{
-    return nested_column->skipSerializedInArena(pos);
+    nested_column->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -320,6 +308,17 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
     auto filtered_indexes = ColumnIndex(indexes.getIndexes()->filter(filt, result_size_hint));
     auto filtered_nested_column = filtered_indexes.removeUnusedRowsInIndexedData(nested_column);
     return create(filtered_nested_column, std::move(filtered_indexes));
+}
+
+void ColumnReplicated::filter(const Filter & filt)
+{
+    if (size() != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
+
+    indexes.getIndexesPtr()->filter(filt);
+    auto mutable_nested = nested_column->assumeMutable();
+    indexes.removeUnusedRowsInIndexedData(mutable_nested);
+    insertion_cache.clear();
 }
 
 void ColumnReplicated::expand(const Filter & mask, bool inverted)
@@ -535,10 +534,11 @@ void ColumnReplicated::updateHashFast(SipHash & hash) const
     nested_column->updateHashFast(hash);
 }
 
-void ColumnReplicated::getExtremes(Field & min, Field & max) const
+void ColumnReplicated::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     /// It might happen that some indexes are unused, so we cannot call nested_column->getExtremes.
-    nested_column->index(*indexes.getIndexes(), 0)->getExtremes(min, max);
+    auto indexed = nested_column->index(*indexes.getIndexes(), 0);
+    indexed->getExtremes(min, max, start, end);
 }
 
 void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size_t from, size_t limit) const
@@ -553,7 +553,7 @@ void ColumnReplicated::getIndicesOfNonDefaultRows(Offsets & result_indexes, size
 
 UInt64 ColumnReplicated::getNumberOfDefaultRows() const
 {
-    std::unordered_set<size_t> indexes_of_default_values;
+    UnorderedSetWithMemoryTracking<size_t> indexes_of_default_values;
     for (size_t i = 0; i != nested_column->size(); ++i)
     {
         if (nested_column->isDefaultAt(i))
@@ -638,9 +638,9 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns source_nested_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -650,15 +650,30 @@ void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & sou
             source_nested_columns.emplace_back(source_column);
     }
 
-    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns, max_dynamic_subcolumns);
+    nested_column->chooseDynamicStructureForMerge(source_nested_columns, max_dynamic_subcolumns);
 }
 
-void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
-        nested_column->takeDynamicStructureFromColumn(rhs_replicated->nested_column);
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
+        nested_column->takeExactDynamicStructureFrom(*rhs_replicated->nested_column);
     else
-        nested_column->takeDynamicStructureFromColumn(source_column);
+        nested_column->takeExactDynamicStructureFrom(source);
+}
+
+
+void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        if (const auto * replicated = typeid_cast<const ColumnReplicated *>(source_column.get()))
+            nested_source_columns.push_back(replicated->getNestedColumn());
+        else
+            nested_source_columns.push_back(source_column);
+    }
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 namespace
@@ -671,7 +686,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], i);
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
     return result;
 }
 

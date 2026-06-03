@@ -1,6 +1,8 @@
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <Compression/CompressionFactory.h>
 #include <algorithm>
 #include <functional>
@@ -107,7 +109,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     return *this;
 }
 
-ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     if (this == &other)
         return *this;
@@ -143,7 +145,7 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-String formatASTStateAware(IAST & ast, IAST::FormatState & state)
+static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
@@ -228,31 +230,71 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
-            if (col_ast->default_expression)
+            if (auto col_default_expression = col_ast->getDefaultExpression())
             {
-                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-                default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.kind = toColumnDefaultKind(col_ast->default_specifier);
+                default_desc.expression = std::move(col_default_expression);
                 default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
-            if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
+            if (auto col_comment = col_ast->getComment())
+                comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
-            if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+            if (auto col_codec = col_ast->getCodec())
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
 
-            if (col_ast->ttl)
-                ttl = col_ast->ttl;
+            if (auto col_ttl = col_ast->getTTL())
+                ttl = col_ttl;
 
-            if (col_ast->settings)
-                settings = col_ast->settings->as<ASTSetQuery &>().changes;
+            if (auto col_settings = col_ast->getSettings())
+                settings = col_settings->as<ASTSetQuery &>().changes;
 
-            if (col_ast->statistics_desc)
-                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_ast->statistics_desc, name, type);
+            if (auto col_statistics_desc = col_ast->getStatisticsDesc())
+                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_statistics_desc, name, type);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
     }
+}
+
+ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
+{
+    if (this != &other)
+    {
+        columns = other.columns;
+        subcolumns = other.subcolumns;
+        invalidateGetCache();
+    }
+    return *this;
+}
+
+ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) noexcept
+{
+    if (this != &other)
+    {
+        columns = std::move(other.columns);
+        subcolumns = std::move(other.subcolumns);
+        /// Steal the cache from `other`: it is consistent with the columns we just moved.
+        /// Lock `*this` only; `other` is moved-from and has no concurrent users by contract.
+        std::lock_guard lock(get_cache_mutex);
+        get_cache = std::move(other.get_cache);
+    }
+    return *this;
+}
+
+ColumnsDescription::GetCacheKey ColumnsDescription::makeGetCacheKey(const GetColumnsOptions & options)
+{
+    return GetCacheKey{
+        static_cast<UInt8>(options.kind),
+        static_cast<UInt8>(options.virtuals_kind),
+        static_cast<UInt8>(options.virtuals_place),
+        static_cast<UInt8>((options.with_subcolumns ? 1 : 0) | (options.with_dynamic_subcolumns ? 2 : 0))};
+}
+
+void ColumnsDescription::invalidateGetCache() const
+{
+    std::lock_guard lock(get_cache_mutex);
+    get_cache.clear();
 }
 
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
@@ -355,9 +397,12 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
+    /// Aliases don't have real subcolumns, they should be extracted
+    /// using getSubcolumn after expression evaluation.
+    if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
+    invalidateGetCache();
 }
 
 void ColumnsDescription::remove(const String & column_name)
@@ -373,6 +418,7 @@ void ColumnsDescription::remove(const String & column_name)
         removeSubcolumns(list_it->name);
         list_it = columns.get<0>().erase(list_it);
     }
+    invalidateGetCache();
 }
 
 void ColumnsDescription::rename(const String & column_from, const String & column_to)
@@ -388,6 +434,7 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     {
         old_name = column_to;
     });
+    invalidateGetCache();
 }
 
 void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
@@ -412,6 +459,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     if (first)
     {
         reorder_column([&]() { return columns.cbegin(); });
+        invalidateGetCache();
     }
     else if (!after_column.empty() && column_name != after_column)
     {
@@ -421,6 +469,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Wrong column name. Cannot find column {} to insert after", after_column);
 
         reorder_column([&]() { return getNameRange(columns, after_column).second; });
+        invalidateGetCache();
     }
 }
 
@@ -473,6 +522,7 @@ void ColumnsDescription::flattenNested()
             columns.get<0>().insert(it, std::move(nested_column));
         }
     }
+    invalidateGetCache();
 }
 
 
@@ -549,6 +599,12 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
+        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
+        /// and no expression to compute them during SELECT.
+        auto it = columns.get<1>().find(col.name);
+        if (it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Ephemeral)
+            continue;
+
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
             subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
@@ -559,6 +615,22 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
 
 NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
 {
+    /// `get(const GetColumnsOptions &)` is hot: analyzer + planner together call it 2-3 times per query
+    /// with the same options, and rebuilding the list iterates the columns multi-index
+    /// and runs `addSubcolumnsToList` (linear hash lookups per row). Memoize on
+    /// `ColumnsDescription` so the result is shared across queries on the same metadata
+    /// version. The cache is invalidated by every method that touches `columns` or
+    /// `subcolumns`.
+    auto key = makeGetCacheKey(options);
+    {
+        std::shared_lock lock(get_cache_mutex);
+        for (const auto & entry : get_cache)
+        {
+            if (entry.first == key)
+                return *entry.second;
+        }
+    }
+
     NamesAndTypesList res;
     switch (options.kind)
     {
@@ -615,7 +687,18 @@ NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) con
     if (options.with_subcolumns)
         addSubcolumnsToList(res);
 
-    return res;
+    auto cached = std::make_shared<const NamesAndTypesList>(std::move(res));
+    {
+        std::lock_guard lock(get_cache_mutex);
+        /// Re-check under the lock: another thread may have populated the same key.
+        for (const auto & entry : get_cache)
+        {
+            if (entry.first == key)
+                return *entry.second;
+        }
+        get_cache.emplace_back(key, cached);
+    }
+    return *cached;
 }
 
 bool ColumnsDescription::has(const String & column_name) const
@@ -627,38 +710,6 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 {
     auto range = getNameRange(columns, column_name);
     return range.first != range.second && range.first->name.length() > column_name.length();
-}
-
-bool ColumnsDescription::hasSubcolumn(const String & column_name) const
-{
-    if (subcolumns.get<0>().count(column_name))
-        return true;
-
-    /// Check for dynamic subcolumns
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return true;
-    }
-
-    return false;
-}
-
-const ColumnDescription & ColumnsDescription::get(const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    if (it == columns.get<1>().end())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
-
-    return *it;
-}
-
-const ColumnDescription * ColumnsDescription::tryGet(const String & column_name) const
-{
-    auto it = columns.get<1>().find(column_name);
-    return it == columns.get<1>().end() ? nullptr : &(*it);
 }
 
 static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
@@ -676,6 +727,34 @@ static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
     }
 
     return GetColumnsOptions::None;
+}
+
+bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & kind))
+        return true;
+
+    /// Check for dynamic subcolumns
+    if (tryGetDynamicSubcolumn(column_name, kind))
+        return true;
+
+    return false;
+}
+
+const ColumnDescription & ColumnsDescription::get(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end())
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table.", column_name);
+
+    return *it;
+}
+
+const ColumnDescription * ColumnsDescription::tryGet(const String & column_name) const
+{
+    auto it = columns.get<1>().find(column_name);
+    return it == columns.get<1>().end() ? nullptr : &(*it);
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -714,16 +793,14 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
             return *jt;
 
-        /// Check for dynamic subcolumns.
-        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-        it = columns.get<1>().find(ordinary_column_name);
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        if (options.with_dynamic_subcolumns)
         {
-            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+            /// Check for dynamic subcolumns.
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name, options))
+                return dynamic_subcolumn;
         }
     }
 
@@ -754,7 +831,7 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
             return ColumnDescription{jt->name, jt->type};
     }
 
@@ -813,17 +890,8 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(kind, column_name))
         return true;
-
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
-            return true;
-    }
 
     return false;
 }
@@ -952,20 +1020,26 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
-
-        if (has(subcolumn.name))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
-
+        /// Note, it is allowed to have columns with the same name as subcolumns, example:
+        ///
+        ///     `attribute.names` Array(LowCardinality(String)) ALIAS mapKeys(attribute),
+        ///     `attribute.values` Array(String) ALIAS mapValues(attribute),
+        ///     `attribute` Map(LowCardinality(String), String)
+        ///
+        /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
+    invalidateGetCache();
 }
 
 void ColumnsDescription::removeSubcolumns(const String & name_in_storage)
 {
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
     if (range.first != range.second)
+    {
         subcolumns.get<1>().erase(range.first, range.second);
+        invalidateGetCache();
+    }
 }
 
 std::vector<String> ColumnsDescription::getAllRegisteredNames() const
@@ -980,35 +1054,68 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
+std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const
+{
+    for (auto [ordinary_column_name, dynamic_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        auto it = columns.get<1>().find(String(ordinary_column_name));
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
+        {
+            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                return NameAndTypePair(String(ordinary_column_name), String(dynamic_subcolumn_name), it->type, dynamic_subcolumn_type);
+        }
+    }
+
+    return std::nullopt;
+}
+
+
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
-    if (!col_decl.default_expression)
+    auto col_default_expression = col_decl.getDefaultExpression();
+    if (!col_default_expression)
         return;
 
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
     * 2. conversion of expression (1) to explicitly-specified type alias as column name
     */
-    if (col_decl.type)
+    if (col_decl.getType())
     {
         const auto & final_column_name = col_decl.name;
         const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), tmp_column_name));
     }
     else
     {
         info.has_columns_with_default_without_type = true;
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), col_decl.name));
     }
 }
 
 namespace
 {
+
+/// Recursively check if an AST tree contains any subquery nodes at any depth.
+/// Used during DDL validation to reject subqueries nested inside function arguments
+/// in DEFAULT/ALIAS/MATERIALIZED expressions (e.g. `ALIAS toString((SELECT ...))`)
+/// that the previous shallow check on direct children would miss.
+bool hasSubqueryInTree(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>())
+        return true;
+    for (const auto & child : ast->children)
+        if (hasSubqueryInTree(child))
+            return true;
+    return false;
+}
 
 void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
 {
@@ -1192,7 +1299,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);
@@ -1260,7 +1367,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
     }
 
     for (const auto & child : default_expr_list->children)
-        if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
+        if (hasSubqueryInTree(child))
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try

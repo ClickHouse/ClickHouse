@@ -1,5 +1,3 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -134,7 +132,7 @@ bool ClientEmbedded::isEmbeeddedClient() const
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    setThreadName("LocalServerPty");
+    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
@@ -182,7 +180,6 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(*cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -261,5 +258,3 @@ catch (...)
 }
 
 }
-
-#endif

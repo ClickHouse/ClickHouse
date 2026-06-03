@@ -5,13 +5,18 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/QueryProfiler.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <IO/S3/getAvailabilityZone.h>
+#include <csignal>
 
 namespace CurrentMetrics
 {
@@ -34,6 +39,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_password;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
+    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -68,13 +74,13 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     switch (thread_type)
     {
         case RD_KAFKA_THREAD_MAIN:
-            setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_MAIN);
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
-            setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
             break;
         case RD_KAFKA_THREAD_BROKER:
-            setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BROKER);
             break;
     }
 
@@ -86,6 +92,24 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     auto thread_status = std::make_shared<ThreadStatus>();
     std::lock_guard lock(self->thread_statuses_mutex);
     self->thread_statuses.emplace_back(std::move(thread_status));
+
+    /// Due to [1] librdkafka blocks all signals before creating threads,
+    /// and broker threads are created while signals are already all-blocked
+    /// (inside rd_kafka_new), so they inherit the all-blocked mask.
+    /// We unblock only the specific signals needed by `system.stack_trace`
+    /// (SIGRTMIN) and the query profiler (SIGUSR1/SIGUSR2), rather than
+    /// the full mask — otherwise we would also drop the process-wide
+    /// SIGPIPE block installed by the daemon.
+    ///
+    ///   [1]: https://github.com/confluentinc/librdkafka/issues/4571
+    sigset_t mask;
+    sigemptyset(&mask);
+#ifdef OS_LINUX
+    sigaddset(&mask, STACK_TRACE_SERVICE_SIGNAL);
+#endif
+    sigaddset(&mask, QueryProfilerReal::PAUSE_SIGNAL);
+    sigaddset(&mask, QueryProfilerCPU::PAUSE_SIGNAL);
+    pthread_sigmask(SIG_UNBLOCK, &mask, nullptr);
 
     return RD_KAFKA_RESP_ERR_NO_ERROR;
 }
@@ -114,7 +138,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnNew(
     rd_kafka_t * rk, const rd_kafka_conf_t *, void * ctx, char * /*errstr*/, size_t /*errstr_size*/)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status;
+    rd_kafka_resp_err_t status = {};
 
     status = rd_kafka_interceptor_add_on_thread_start(rk, "init-thread", rdKafkaOnThreadStart, ctx);
     if (status != RD_KAFKA_RESP_ERR_NO_ERROR)
@@ -135,7 +159,7 @@ rd_kafka_resp_err_t KafkaInterceptors<TStorageKafka>::rdKafkaOnConfDup(
     rd_kafka_conf_t * new_conf, const rd_kafka_conf_t * /*old_conf*/, size_t /*filter_cnt*/, const char ** /*filter*/, void * ctx)
 {
     TStorageKafka * self = reinterpret_cast<TStorageKafka *>(ctx);
-    rd_kafka_resp_err_t status;
+    rd_kafka_resp_err_t status = {};
 
     // cppkafka copies configuration multiple times
     status = rd_kafka_conf_interceptor_add_on_conf_dup(new_conf, "init", rdKafkaOnConfDup, ctx);
@@ -358,8 +382,8 @@ void updateConfigurationFromConfig(
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
-    /// We have to set these settings before taking the values from the consumer/producer specific configuration,
-    /// because otherwise we would introduce a breaking change.
+    specific_config_updater(kafka_config, params);
+
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
@@ -369,14 +393,30 @@ void updateConfigurationFromConfig(
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
-
-    specific_config_updater(kafka_config, params);
-
     if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
         kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
 
     if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
         kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
+
+    auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
+    if (!autodetect_rack.empty())
+    {
+        if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
+        {
+            std::string rack
+                = S3::tryGetRunningAvailabilityZone(magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
+            if (!rack.empty())
+            {
+                kafka_config.set("client.rack", rack);
+                LOG_TRACE(params.log, "client.rack set to {}.", rack);
+            }
+            else
+                LOG_ERROR(params.log, "Failed to determine client.rack via facility {}.", autodetect_rack);
+        }
+        else
+            LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility  {}. Expected one of AWS_ZONE_ID, AWS_ZONE_NAME, GCP_ZONE, CLICKHOUSE, AWS_ZONE_NAME_THEN_GCP_ZONE.", autodetect_rack);
+    }
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
@@ -446,7 +486,7 @@ void updateConfigurationFromConfig(
         // This should be safe, since we wait the rdkafka object anyway.
         void * self = static_cast<void *>(&storage);
 
-        int status;
+        int status = 0;
 
         status
             = rd_kafka_conf_interceptor_add_on_new(kafka_config.get_handle(), "init", KafkaInterceptors<TKafkaStorage>::rdKafkaOnNew, self);

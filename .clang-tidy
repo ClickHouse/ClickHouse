@@ -33,8 +33,10 @@ Checks: [
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-sizeof-expression', # too aggressive
 
   '-cert-dcl16-c',
+  '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
@@ -46,7 +48,53 @@ Checks: [
   '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
   '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
-  '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
+  # cppcoreguidelines-* checks are mostly impractical in a codebase as large as ClickHouse, also slow.
+  # Listed explicitly (instead of wildcard '-cppcoreguidelines-*') so newly added checks in future
+  # clang-tidy versions are not silently suppressed; only `init-variables` and `pro-type-member-init`
+  # are enabled.
+  '-cppcoreguidelines-avoid-capturing-lambda-coroutines',
+  '-cppcoreguidelines-avoid-const-or-ref-data-members',
+  '-cppcoreguidelines-avoid-do-while',
+  '-cppcoreguidelines-avoid-goto',
+  '-cppcoreguidelines-avoid-non-const-global-variables',
+  '-cppcoreguidelines-avoid-reference-coroutine-parameters',
+  '-cppcoreguidelines-interfaces-global-init',
+  '-cppcoreguidelines-macro-usage',
+  '-cppcoreguidelines-misleading-capture-default-by-value',
+  '-cppcoreguidelines-missing-std-forward',
+  '-cppcoreguidelines-no-malloc',
+  '-cppcoreguidelines-no-suspend-with-lock',
+  '-cppcoreguidelines-owning-memory',
+  '-cppcoreguidelines-prefer-member-initializer',
+  '-cppcoreguidelines-pro-bounds-array-to-pointer-decay',
+  '-cppcoreguidelines-pro-bounds-avoid-unchecked-container-access',
+  '-cppcoreguidelines-pro-bounds-constant-array-index',
+  '-cppcoreguidelines-pro-bounds-pointer-arithmetic',
+  '-cppcoreguidelines-pro-type-const-cast',
+  '-cppcoreguidelines-pro-type-cstyle-cast',
+  '-cppcoreguidelines-pro-type-reinterpret-cast',
+  '-cppcoreguidelines-pro-type-static-cast-downcast',
+  '-cppcoreguidelines-pro-type-union-access',
+  '-cppcoreguidelines-pro-type-vararg',
+  '-cppcoreguidelines-rvalue-reference-param-not-moved',
+  '-cppcoreguidelines-slicing',
+  '-cppcoreguidelines-special-member-functions',
+  '-cppcoreguidelines-use-enum-class',
+  '-cppcoreguidelines-virtual-class-destructor',
+  # Aliases for checks owned by other modules. Disabled here so they are not silently re-enabled
+  # now that the wildcard `-cppcoreguidelines-*` is gone; their canonical names are handled
+  # elsewhere in this file.
+  '-cppcoreguidelines-avoid-c-arrays',                          # alias of `modernize-avoid-c-arrays`
+  '-cppcoreguidelines-avoid-magic-numbers',                     # alias of `readability-magic-numbers`
+  '-cppcoreguidelines-c-copy-assignment-signature',             # alias of `misc-unconventional-assign-operator`
+  '-cppcoreguidelines-explicit-virtual-functions',              # alias of `modernize-use-override`
+  '-cppcoreguidelines-macro-to-enum',                           # alias of `modernize-macro-to-enum`
+  '-cppcoreguidelines-narrowing-conversions',                   # alias of `bugprone-narrowing-conversions`
+  '-cppcoreguidelines-noexcept-destructor',                     # alias of `performance-noexcept-destructor`
+  '-cppcoreguidelines-noexcept-move-operations',                # alias of `performance-noexcept-move-constructor`
+  '-cppcoreguidelines-noexcept-swap',                           # alias of `performance-noexcept-swap`
+  '-cppcoreguidelines-non-private-member-variables-in-classes', # alias of `misc-non-private-member-variables-in-classes`
+  '-cppcoreguidelines-use-default-member-init',                 # alias of `modernize-use-default-member-init`
 
   '-darwin-*',
 
@@ -64,7 +112,7 @@ Checks: [
   '-hicpp-braces-around-statements',
   '-hicpp-explicit-conversions',
   '-hicpp-function-size',
-  '-hicpp-member-init',
+  # '-hicpp-member-init', # alias of cppcoreguidelines-pro-type-member-init, enabled
   '-hicpp-move-const-arg',
   '-hicpp-multiway-paths-covered',
   '-hicpp-named-parameter',

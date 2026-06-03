@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Access/Common/AccessType.h>
 #include <optional>
@@ -28,6 +29,7 @@ public:
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
+    StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
     /// Read from target table
     void read(
@@ -104,23 +106,48 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr local_context) override;
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
-    StorageInMemoryMetadata getInMemoryMetadata() const override { return getTargetTable()->getInMemoryMetadata(); }
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override { return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache); }
+
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::make_shared<const StorageInMemoryMetadata>();
+
+        return target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    }
+
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
-    StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Capabilities that validate a user-requested operation resolve the target table and report UNKNOWN_TABLE for a
+    /// broken Alias. Advisory capability probes used for optimization, routing, execution strategy, or system-table
+    /// metadata fail closed (return false).
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
-    bool supportsDynamicSubcolumns() const override { return getTargetTable()->supportsDynamicSubcolumns(); }
-    bool supportsDynamicSubcolumnsDeprecated() const override { return getTargetTable()->supportsDynamicSubcolumnsDeprecated(); }
+    bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
-    bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
-    bool supportsOptimizationToSubcolumns() const override { return getTargetTable()->supportsOptimizationToSubcolumns(); }
-    bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
-    bool supportsDeduplication() const override { return getTargetTable()->supportsDeduplication(); }
+    bool canMoveConditionsToPrewhere() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->canMoveConditionsToPrewhere();
+    }
+    bool supportsOptimizationToSubcolumns() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsOptimizationToSubcolumns();
+    }
+    bool supportsParallelInsert() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsParallelInsert();
+    }
+    bool supportsDeduplication() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsDeduplication();
+    }
     bool supportsTransactions() const override { return getTargetTable()->supportsTransactions(); }
     bool noPushingToViewsOnInserts() const override { return getTargetTable()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getTargetTable()->hasEvenlyDistributedRead(); }
@@ -128,18 +155,30 @@ public:
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
-
-    bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
+    bool supportsReplication() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsReplication();
+    }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
-    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override
+    {
+        return getTargetTable()->supportsLightweightUpdate();
+    }
     bool supportsDelete() const override { return getTargetTable()->supportsDelete(); }
     bool hasProjection() const override { return getTargetTable()->hasProjection(); }
-    bool supportsSparseSerialization() const override { return getTargetTable()->supportsSparseSerialization(); }
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override { return getTargetTable()->supportsTrivialCountOptimization(storage_snapshot, query_context); }
+    bool supportsSparseSerialization() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsSparseSerialization();
+    }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
-
-    NamesAndTypesList getVirtuals() const { return getTargetTable()->getVirtualsList(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -147,14 +186,91 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
+    Strings getDataPaths() const override { auto target = tryGetTargetTable(); return target ? target->getDataPaths() : Strings{}; }
+    std::optional<Strings> tryGetDataPaths() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
 
-    ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
+        return target->getDataPaths();
+    }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
-    ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
-    IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
+    /// Alias does not store data on disk
+    bool storesDataOnDisk() const override { return false; }
+
+    StoragePolicyPtr getStoragePolicy() const override { auto target = tryGetTargetTable(); return target ? target->getStoragePolicy() : StoragePolicyPtr{}; }
+    std::optional<StoragePolicyPtr> tryGetStoragePolicy() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getStoragePolicy();
+    }
+
+    SerializationInfoByName getSerializationHints() const override { auto target = tryGetTargetTable(); return target ? target->getSerializationHints() : IStorage::getSerializationHints(); }
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getSerializationHints();
+    }
+
+    ActionLock getActionLock(StorageActionBlockType type) override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return {};
+        return target->getActionLock(type);
+    }
+
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000)); }
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return nullptr;
+
+        return target->tryLockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000));
+    }
+
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalRows(query_context) : std::optional<UInt64>{}; }
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalBytes(query_context) : std::optional<UInt64>{}; }
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { auto target = tryGetTargetTable(); return target ? target->totalBytesUncompressed(settings) : std::optional<UInt64>{}; }
+    std::optional<UInt64> lifetimeRows() const override { auto target = tryGetTargetTable(); return target ? target->lifetimeRows() : std::optional<UInt64>{}; }
+    std::optional<std::optional<UInt64>> tryLifetimeRows() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->lifetimeRows();
+    }
+
+    std::optional<UInt64> lifetimeBytes() const override { auto target = tryGetTargetTable(); return target ? target->lifetimeBytes() : std::optional<UInt64>{}; }
+    std::optional<std::optional<UInt64>> tryLifetimeBytes() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->lifetimeBytes();
+    }
+
+    ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getColumnSizes();
+    }
+
+    IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -144,7 +145,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
 void DistinctStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Columns: ";
 
     if (columns.empty())
@@ -158,7 +159,7 @@ void DistinctStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << column;
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
         }
     }
 
@@ -196,12 +197,12 @@ void DistinctStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
 
-    size_t columns_size;
+    size_t columns_size = 0;
     readVarUInt(columns_size, ctx.in);
     Names column_names(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
@@ -216,15 +217,16 @@ std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx,
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, false);
 }
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, true);
 }
 
+void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.

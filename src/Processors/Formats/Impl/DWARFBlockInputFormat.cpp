@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
+#include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>
@@ -9,6 +10,7 @@
 #include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnIndex.h>
@@ -20,6 +22,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WithFileName.h>
@@ -228,7 +231,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
     auto abbrev_section = elf->findSectionByName(".debug_abbrev");
     if (!abbrev_section.has_value())
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "No .debug_abbrev section");
-    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", abbrev_section->size() * 1. / (1 << 20), info_section->size() * 1. / (1 << 20));
+    LOG_DEBUG(getLogger("DWARF"), ".debug_abbrev is {:.3f} MiB, .debug_info is {:.3f} MiB", static_cast<double>(abbrev_section->size()) * 1. / (1 << 20), static_cast<double>(info_section->size()) * 1. / (1 << 20));
 
     /// (The StringRef points into Elf's mmap of the whole file, or into file_contents.)
     extractor.emplace(llvm::StringRef(info_section->begin(), info_section->size()), /*IsLittleEndian*/ true, /*AddressSize*/ 8);
@@ -258,9 +261,9 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    runner.emplace(getFormatParsingThreadPool().get(), "DWARFDecoder");
+    runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     for (size_t i = 0; i < num_threads; ++i)
-        runner.value()(
+        runner.value().enqueueAndKeepTrack(
             [this, thread_group = CurrentThread::getGroup()]()
             {
                 try
@@ -562,7 +565,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data, data.size);
+                                col_attr_str->insertData(data.data(), data.size());
                             }
                         }
                         else if (need[COL_ATTR_STR])
@@ -668,7 +671,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
                         if (need[COL_ATTR_INT])
                         {
-                            uint64_t ref;
+                            uint64_t ref = 0;
                             if (std::optional<uint64_t> offset = val.getAsRelativeReference())
                                 ref = val.getUnit()->getOffset() + *offset;
                             else if (offset = val.getAsDebugInfoReference(); offset)
@@ -703,7 +706,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                     parseRanges(*ranges, ranges_rnglistx, unit, col_ranges_start, col_ranges_end);
                 else if (low_pc.has_value())
                 {
-                    UInt64 high;
+                    UInt64 high = 0;
                     if (!high_pc.has_value())
                         high = *low_pc + 1;
                     else if (relative_high_pc)
@@ -836,7 +839,7 @@ void DWARFBlockInputFormat::parseFilenameTable(UnitState & unit, uint64_t offset
     for (const auto & entry : prologue.FileNames)
     {
         auto val = entry.Name.getAsCString();
-        const char * c_str;
+        const char * c_str = nullptr;
         if (llvm::Error e = val.takeError())
         {
             c_str = "<error>";
@@ -859,7 +862,7 @@ uint64_t DWARFBlockInputFormat::fetchFromDebugAddr(uint64_t addr_base, uint64_t 
     uint64_t offset = addr_base + idx * 8;
     if (offset + 8 > debug_addr_section->size())
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, ".debug_addr offset out of bounds: {} vs {}.", offset, debug_addr_section->size());
-    uint64_t res;
+    uint64_t res = 0;
     memcpy(&res, debug_addr_section->data() + offset, 8);
     return res;
 }
@@ -992,6 +995,7 @@ NamesAndTypesList DWARFSchemaReader::readSchema()
     return getHeaderForDWARF();
 }
 
+void registerDWARFSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -1003,6 +1007,7 @@ void registerDWARFSchemaReader(FormatFactory & factory)
     );
 }
 
+void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -1028,6 +1033,8 @@ void registerInputFormatDWARF(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatDWARF(FormatFactory &);
+void registerDWARFSchemaReader(FormatFactory &);
 void registerInputFormatDWARF(FormatFactory &)
 {
 }

@@ -3,7 +3,10 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <chrono>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <unordered_map>
@@ -39,7 +42,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions;
+    int32_t permissions{};
     String scheme;
     String id;
 
@@ -113,6 +116,11 @@ enum class Error : int32_t
     ZNOTHING = -117,                    /// (not error) no server responses to process
     ZSESSIONMOVED = -118,               /// Session moved to another server, so operation is ignored
     ZNOTREADONLY = -119,                /// State-changing request is passed to read-only server
+    ZNOWATCHER = -121,                  /// No wathces were found
+
+    /// IMPORTANT: Update these when adding new error codes.
+    MIN = ZNOWATCHER,
+    MAX = ZOK,
 };
 
 /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
@@ -262,6 +270,136 @@ struct GetACLResponse : virtual Response
     size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
 };
 
+struct CheckWatchRequest : virtual Request
+{
+    enum class CheckWatchType : int32_t
+    {
+        CHILDREN = 1,
+        DATA = 2,
+        ANY = 3,
+        PERSISTENT = 4,
+        PERSISTENT_RECURSIVE = 5
+    };
+
+    String path;
+    CheckWatchType type{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct CheckWatchResponse : virtual Response
+{
+};
+
+struct RemoveWatchRequest : virtual Request
+{
+    String path;
+    enum class WatchType : int32_t
+    {
+        CHILDREN = 1,
+        DATA = 2,
+        PERSISTENT = 4,
+        PERSISTENTRECURSIVE = 5,
+        ANY = 3
+    } type{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(type);
+    }
+};
+
+struct RemoveWatchResponse : virtual Response
+{
+};
+
+struct AddWatchRequest : virtual Request
+{
+    enum class AddWatchMode : int32_t
+    {
+        PERSISTENT = 0,
+        PERSISTENT_RECURSIVE = 1,
+    };
+
+    String path;
+    AddWatchMode mode{};
+
+    String getPath() const override { return path; }
+    void addRootPath(const String & root_path) override { path = root_path; }
+
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(mode);
+    }
+};
+
+struct AddWatchResponse : virtual Response
+{
+};
+
+struct SetWatchesRequest : virtual Request
+{
+    int64_t zxid{};
+    std::vector<String> child_watches;
+    std::vector<String> exist_watches;
+    std::vector<String> data_watches;
+
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
+    size_t bytesSize() const override
+    {
+        size_t result = sizeof(zxid);
+        result += pathesSize(data_watches);
+        result += pathesSize(exist_watches);
+        result += pathesSize(child_watches);
+
+        return result;
+    }
+
+protected:
+    static size_t pathesSize(const std::vector<String> & paths)
+    {
+        size_t result = sizeof(Int32);
+        for (const auto & elem : paths)
+            result += sizeof(Int32) + elem.size();
+        return result;
+    }
+};
+
+struct SetWatchesResponse : virtual Response
+{
+};
+
+
+struct SetWatches2Request : virtual SetWatchesRequest
+{
+    std::vector<String> persistent_watches;
+    std::vector<String> persistent_recursive_watches;
+
+    String getPath() const override { return data_watches[0]; }
+    void addRootPath(const String &) override {}
+    size_t bytesSize() const override
+    {
+        size_t result = SetWatchesRequest::bytesSize();
+        result += pathesSize(persistent_watches);
+        result += pathesSize(persistent_recursive_watches);
+        return result;
+    }
+};
+
+struct SetWatches2Response : virtual Response
+{
+};
+
 struct CreateRequest : virtual Request
 {
     String path;
@@ -269,6 +407,7 @@ struct CreateRequest : virtual Request
     bool is_ephemeral = false;
     bool is_sequential = false;
     ACLs acls;
+    bool include_stats = false;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -293,6 +432,7 @@ struct RemoveRequest : virtual Request
 {
     String path;
     int32_t version = -1;
+    bool try_remove = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
@@ -319,6 +459,22 @@ struct RemoveRecursiveRequest : virtual Request
 
 struct RemoveRecursiveResponse : virtual Response
 {
+};
+
+
+struct ListRecursiveResponse : virtual Response
+{
+    std::vector<String> children;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override
+    {
+        size_t result = 0;
+        for (const auto & child : children)
+            result += child.size();
+        return result;
+    }
 };
 
 struct ExistsRequest : virtual Request
@@ -397,13 +553,28 @@ struct ListResponse : virtual Response
     std::vector<String> names;
     Stat stat;
 
+    /// Optional fields for LIST_WITH_STAT_AND_DATA feature
+    std::vector<Stat> stats;  /// Per-child stats (if requested via with_stat)
+    std::vector<String> data; /// Per-child data (if requested via with_data)
+
     size_t bytesSize() const override
     {
         size_t size = sizeof(stat);
         for (const auto & name : names)
             size += name.size();
+        size += stats.size() * sizeof(Stat);
+        for (const auto & child_data : data)
+            size += child_data.size();
         return size;
     }
+};
+
+struct ListRecursiveRequest : virtual ListRequest
+{
+    /// strict limit for number of listed nodes
+    uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max();
+
+    size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(children_nodes_limit); }
 };
 
 struct CheckRequest : virtual Request
@@ -420,7 +591,7 @@ struct CheckRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
@@ -449,7 +620,7 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version;
+    int32_t version{};
 
     String getPath() const final { return keeper_config_path; }
 
@@ -522,6 +693,7 @@ using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
+using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
 
 /// For watches.
 enum State
@@ -588,6 +760,15 @@ public:
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
 
+    virtual int64_t getLastZXIDSeen() const = 0;
+
+    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
+    /// last data received from the server (any kind: response, heartbeat, or
+    /// watch event). Used by progress-based timeout logic in sync wrappers.
+    /// Returns 0 (epoch) by default, meaning implementations without progress
+    /// tracking will fall back to plain timeout.
+    virtual Int64 getLastReceivedTimestamp() const { return 0; }
+
     virtual String tryGetAvailabilityZone() { return ""; }
 
     using WatchCallbackCreator = std::function<WatchCallback()>;
@@ -624,6 +805,11 @@ public:
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) = 0;
 
+    virtual void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) = 0;
+
     virtual void exists(
         const String & path,
         ExistsCallback callback,
@@ -644,7 +830,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtrOrEventPtr watch) = 0;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) = 0;
 
     virtual void check(
         const String & path,
@@ -682,9 +870,18 @@ public:
     using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
+    struct WatchCreateInfo
+    {
+        std::chrono::system_clock::time_point create_time{};
+        XID request_xid{0};
+        OpNum op_num{OpNum::Error};
+    };
+
+    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
+
 protected:
     std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
+    mutable std::mutex watches_mutex;
 };
 
 }
@@ -704,4 +901,3 @@ template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
         return self.hash();
     }
 };
-

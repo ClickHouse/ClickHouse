@@ -10,8 +10,12 @@ class SerializationArray final : public SimpleTextSerialization
 private:
     SerializationPtr nested;
 
-public:
     explicit SerializationArray(const SerializationPtr & nested_) : nested(nested_) {}
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & nested_);
+    bool supportsPooling() const override { return nested->supportsPooling(); }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -76,8 +80,10 @@ public:
         SubstreamsCache * cache) const override;
 
     static void serializeOffsetsBinaryBulk(const IColumn & offsets_column, size_t offset, size_t limit, SerializeBinaryBulkSettings & settings);
-    static void deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+    static bool deserializeOffsetsBinaryBulk(ColumnPtr & offsets_column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
     static std::pair<size_t, size_t> deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(ColumnPtr & offsets_column, size_t offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache);
+
+    static void readArraySafe(IColumn & column, std::function<void()> && read_func);
 
     struct SubcolumnCreator : public ISubcolumnCreator
     {
@@ -89,6 +95,8 @@ public:
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
+
+    const SerializationPtr & getNestedSerialization() const { return nested; }
 
 private:
     template <typename ReturnType>

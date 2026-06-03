@@ -1,6 +1,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <queue>
+#include <iterator>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
@@ -56,7 +60,7 @@ QueryPipeline::QueryPipeline()
 }
 
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
@@ -154,9 +158,9 @@ static void checkCompleted(Processors & processors)
 static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
-    std::vector<IProcessor *> processors;
-    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
-    std::unordered_set<IProcessor *> visited;
+    VectorWithMemoryTracking<IProcessor *> processors;
+    MapWithMemoryTracking<LimitTransform *, VectorWithMemoryTracking<size_t>> limit_candidates;
+    UnorderedSetWithMemoryTracking<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
@@ -166,7 +170,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ssize_t limit_input_port;
     };
 
-    std::queue<QueuedEntry> queue;
+    QueueWithMemoryTracking<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
@@ -416,7 +420,6 @@ QueryPipeline::QueryPipeline(Chain chain)
     , input(&chain.getInputPort())
     , num_threads(chain.getNumThreads())
 {
-    processors->reserve(chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -497,7 +500,6 @@ void QueryPipeline::complete(Chain chain)
     drop(totals, *processors);
     drop(extremes, *processors);
 
-    processors->reserve(processors->size() + chain.getProcessors().size() + 1);
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
@@ -659,7 +661,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
 
 void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer)
 {
-    assert(pulling());
+    chassert(pulling());
 
     /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
     /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.
@@ -686,14 +688,12 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
 
 void QueryPipeline::finalizeWriteInQueryResultCache()
 {
-    auto it = std::find_if(
-        processors->begin(), processors->end(),
-        [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
-
-    /// The pipeline can contain up to three StreamInQueryResultCacheTransforms which all point to the same query result cache writer
-    /// object. We can call finalize() on any of them.
-    if (it != processors->end())
-        dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
+    /// QueryPipeline can contain multiple StreamInQueryResultCacheTransforms,
+    /// and all StreamInQueryResultCacheTransforms can point to different QueryResultCacheWriter objects if subqueries are cached.
+    /// We should call finalize() on all of them.
+    for (auto & processor : *processors)
+        if (auto * stream_processor = dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); stream_processor)
+            stream_processor->finalizeWriteInQueryResultCache();
 }
 
 void QueryPipeline::readFromQueryResultCache(
@@ -722,12 +722,21 @@ void QueryPipeline::addStorageHolder(StoragePtr storage)
     resources.storage_holders.emplace_back(std::move(storage));
 }
 
-void QueryPipeline::addCompletedPipeline(QueryPipeline other)
+void QueryPipeline::addCompletedPipeline(QueryPipeline && other)
 {
     if (!other.completed())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
 
-    resources = std::move(other.resources);
+    resources.append(other.resources);
+    processors->insert(processors->end(), std::make_move_iterator(other.processors->begin()), std::make_move_iterator(other.processors->end()));
+}
+
+void QueryPipeline::addCompletedPipeline(const QueryPipeline & other)
+{
+    if (!other.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add not completed pipeline");
+
+    resources.append(other.resources);
     processors->insert(processors->end(), other.processors->begin(), other.processors->end());
 }
 

@@ -4,6 +4,7 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
+#include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -14,6 +15,9 @@ namespace DB
 {
 
 class Context;
+
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
@@ -66,7 +70,8 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -82,8 +87,10 @@ public:
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
+    /// The optional `pool` parameter keeps the connection pool alive while entries are in use,
+    /// preventing use-after-free when the pool would otherwise be destroyed before the entries.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections_,
+        ConnectionPoolEntries && connections_,
         const String & query_,
         SharedHeader header_,
         ContextPtr context_,
@@ -92,7 +99,8 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
-        std::optional<Extension> extension_ = std::nullopt);
+        std::optional<Extension> extension_ = std::nullopt,
+        ConnectionPoolWithFailoverPtr pool = nullptr);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
@@ -150,7 +158,7 @@ public:
         explicit ReadResult(Type type_)
             : type(type_)
         {
-            assert(type != Type::Data && type != Type::FileDescriptor);
+            chassert(type != Type::Data && type != Type::FileDescriptor);
         }
 
         Type getType() const { return type; }
@@ -200,7 +208,7 @@ public:
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
-    void setQueryId(const std::string& query_id_) { assert(!sent_query); query_id = query_id_; }
+    void setQueryId(const std::string& query_id_) { chassert(!sent_query); query_id = query_id_; }
 
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }
@@ -209,17 +217,23 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
+    void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
+
+    void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
+
+    bool isFinished() const { return finished; }
 
 private:
     RemoteQueryExecutor(
@@ -261,7 +275,7 @@ private:
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
-    std::vector<ExternalTablesData> external_tables_data;
+    std::vector<ExternalTablesData> external_tables_data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
@@ -304,12 +318,18 @@ private:
 #endif
 
     /// Parts uuids, collected from remote replicas
-    std::vector<UUID> duplicated_part_uuids;
+    UUIDs duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
     LoggerPtr log = nullptr;
+
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    bool shard_skip_reported = false;
+
+    /// Total number of remote connections across all shards, used to scale interactive_delay.
+    size_t distributed_fanout = 0;
 
     GetPriorityForLoadBalancing::Func priority_func;
 
@@ -323,7 +343,7 @@ private:
 
     /// Set part uuids to a query context, collected from remote replicas.
     /// Return true if duplicates found.
-    bool setPartUUIDs(const std::vector<UUID> & uuids);
+    bool setPartUUIDs(const UUIDs & uuids);
 
     void processReadTaskRequest();
 

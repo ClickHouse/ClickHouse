@@ -1,40 +1,74 @@
 import dataclasses
 import re
+import runpy
+import signal
 import traceback
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from praktika.result import Result
 
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "
-TIMEOUT_SIGN = "[ Timeout! "
 UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
+NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
-SERVER_DIED_SIGN = "Server died, terminating all processes"
-SERVER_DIED_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
+
+# Pick up the runner exit codes straight from `tests/clickhouse-test` so
+# the contract has a single source of truth.
+_clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
+_clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
+STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
+GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
+
+# Exit codes that mean the run was aborted mid-flight, so per-test results
+# (if any) are incomplete and we cannot trust which test "caused" the
+# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
+# raised `StopTesting` and reached the outer handler. The kill-by-signal
+# variants cover the out-of-band cases where the parent was killed before
+# it could exit through that handler (currently reachable via the
+# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
+# parent terminates re-broadcasts SIGTERM to the whole process group via
+# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
+# also covers external kills like job-level timeouts and runner shutdown).
+#
+# Both `128 + N` (bash's convention when its child died from signal N) and
+# the negative form `-N` are included: `Shell.run` wraps the command in
+# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
+# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
+# wrapper bash can itself die from the signal — and Python's
+# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
+#
+# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
+# checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
+# that run AFTER all tests have finished. Per-test results in that case are
+# complete and authoritative and must not be demoted.
+ABORTED_RUN_EXIT_CODES = frozenset(
+    {
+        STOP_TESTING_EXIT_CODE,
+        128 + signal.SIGTERM,  # 143
+        128 + signal.SIGKILL,  # 137
+        -signal.SIGTERM,  # -15
+        -signal.SIGKILL,  # -9
+    }
+)
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
 
-# Regex pattern to match test result lines
-# Format: "2025-10-21 04:08:13 test_name: [ STATUS ] time sec."
-# This ensures we only match actual test result lines, not patterns embedded in error messages
-# Note: Test names can contain letters, digits, underscores, hyphens, and dots
+# Regex pattern to match test result lines.
+# The shape `name: [ STATUS ] N.NN sec.` is specific enough that we don't pin
+# the leading timestamp - the bounded `^.{0,32}?` lets through any expected
+# framing (raw=0, `ts`=20, `[YYYY-MM-DD HH:MM:SS] `=22) but rules out matches
+# embedded deeper in an error/exception message (see PR #88825). Test names
+# can contain letters, digits, underscores, hyphens, and dots.
 TEST_RESULT_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
+    r"^.{0,32}?"
+    r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
 )
-
-
-# def write_results(results_file, status_file, results, status):
-#     with open(results_file, "w", encoding="utf-8") as f:
-#         out = csv.writer(f, delimiter="\t")
-#         out.writerows(results)
-#     with open(status_file, "w", encoding="utf-8") as f:
-#         out = csv.writer(f, delimiter="\t")
-#         out.writerow(status)
 
 
 class FTResultsProcessor:
@@ -47,7 +81,6 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
-        server_died: bool = False
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
@@ -63,7 +96,6 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
-        server_died = False
         retries = False
         success_finish = False
         test_results = []
@@ -81,8 +113,6 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
-                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
-                    server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -103,15 +133,17 @@ class FTResultsProcessor:
                         continue
 
                     total += 1
-                    if TIMEOUT_SIGN in status_marker:
-                        failed += 1
-                        test_results.append((test_name, "Timeout", test_time, []))
-                    elif FAIL_SIGN in status_marker:
+                    if FAIL_SIGN in status_marker:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
                     elif UNKNOWN_SIGN in status_marker:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
+                    elif NOT_FAILED_SIGN in status_marker:
+                        # Test was on a blacklist (expected to fail) but passed -
+                        # the blacklist needs updating. Surface as a failure.
+                        failed += 1
+                        test_results.append((test_name, "NOT_FAILED", test_time, []))
                     elif SKIPPED_SIGN in status_marker:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
@@ -121,7 +153,7 @@ class FTResultsProcessor:
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] in ("FAIL", "SKIPPED")
+                    and test_results[-1][1] in ("FAIL", "SKIPPED", "NOT_FAILED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -171,75 +203,89 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
-            server_died=server_died,
             success_finish=success_finish,
             retries=retries,
         )
 
         return s
 
-    def run(self):
-        state = Result.Status.SUCCESS
+    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
+        state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
 
-        # # Check test_results.tsv for sanitizer asserts, crashes and other critical errors.
-        # # If the file is present, it's expected to be generated by stress_test.lib check for critical errors
-        # # In the end this file will be fully regenerated, including both results from critical errors check and
-        # # functional test results.
-        # if test_results_path and os.path.exists(test_results_path):
-        #     with open(test_results_path, "r", encoding="utf-8") as test_results_file:
-        #         existing_test_results = list(
-        #             csv.reader(test_results_file, delimiter="\t")
-        #         )
-        #         for test in existing_test_results:
-        #             if len(test) < 2:
-        #                 unknown += 1
-        #             else:
-        #                 test_results.append(test)
-        #
-        #                 if test[1] != "OK":
-        #                     failed += 1
-        #                 else:
-        #                     success += 1
-
-        # is_flaky_check = 1 < int(os.environ.get("NUM_TRIES", 1))
-        # logging.info("Is flaky check: %s", is_flaky_check)
-        # # If no tests were run (success == 0) it indicates an error (e.g. server did not start or crashed immediately)
-        # # But it's Ok for "flaky checks" - they can contain just one test for check which is marked as skipped.
-        # if failed != 0 or unknown != 0 or (success == 0 and (not is_flaky_check)):
         if s.failed != 0 or s.unknown != 0:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
 
         info = ""
         if s.hung:
-            state = Result.Status.FAILED
+            state = Result.Status.FAIL
             test_results.append(
-                Result("Some queries hung", "FAIL", info="Some queries hung")
+                Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif s.server_died:
-            state = Result.Status.FAILED
-            # When ClickHouse server crashes, some tests are still running
-            # and fail because they cannot connect to server
-            for result in test_results:
-                if result.status == "FAIL":
-                    result.status = "SERVER_DIED"
-            test_results.append(Result("Server died", "FAIL", info="Server died"))
+        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
+            state = Result.Status.FAIL
+            failed_results = [r for r in test_results if r.is_failure()]
+            if len(failed_results) > 1:
+                # Multiple tests failed when the server died - this is a parallel
+                # run where we can't tell which test (if any) caused the crash.
+                # Mark them all as UNKNOWN so they don't pollute failure reports.
+                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                # entry added from the server log.
+                for result in failed_results:
+                    result.status = Result.Status.UNKNOWN
+            elif len(failed_results) == 1:
+                # Single test failed - sequential run, this test is the culprit.
+                failed_results[0].status = Result.Status.ERROR
+            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+        elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
+            # The run stopped gracefully because the global time limit was
+            # reached. This is the *expected* stop condition for the flaky and
+            # targeted checks, which rerun the selected tests until the time
+            # budget is exhausted - not a failure. Real test failures and hung
+            # queries are still reported through the branches above (they set
+            # `state` to FAIL regardless), so here we only add an informational
+            # leaf and leave `state` as computed from the parsed results.
+            test_results.append(
+                Result(
+                    "Global time limit reached",
+                    Result.Status.OK,
+                    info="Stopped after reaching the time budget - the expected stop condition for this check.",
+                )
+            )
         elif not s.success_finish:
             state = Result.Status.ERROR
             info = "The test runner was terminated unexpectedly"
         elif s.retries:
             test_results.append(
-                Result("Some tests restarted", "SKIPPED", info="Some tests restarted")
+                Result("Some tests restarted", Result.Status.SKIPPED, info="Some tests restarted")
             )
         else:
             pass
+
+        # The runner's exit code is the authoritative signal: if `clickhouse-test`
+        # exited non-zero, the job must not report OK even when log parsing finds
+        # nothing to blame. The synthetic leaf is added only when the parser
+        # found nothing - otherwise the real failure already explains the result
+        # and a duplicate entry is just noise.
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
+        # stop (handled above), not a failure, even though it is non-zero.
+        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
+            if state == Result.Status.OK:
+                state = Result.Status.FAIL
+                test_results.append(
+                    Result(
+                        name="clickhouse-test",
+                        status=Result.Status.FAIL,
+                        info=f"clickhouse-test exited with code {runner_exit_code}",
+                    )
+                )
 
         if not info:
             info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
         result = Result.create_from(
-            name="Tests",
+            name=task_name,
             results=test_results,
             status=state,
             files=[],
@@ -254,8 +300,9 @@ class FTResultsProcessor:
                 "Timeout": 2,
                 "NOT_FAILED": 3,
                 "BROKEN": 4,
-                "OK": 5,
-                "SKIPPED": 6,
+                "UNKNOWN": 5,
+                "OK": 6,
+                "SKIPPED": 7,
             }
             result.results.sort(key=lambda x: order.get(x.status, -1))
 

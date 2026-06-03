@@ -12,7 +12,7 @@ The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a
 Particularly it compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
 
 :::warning
-The `CHECK TABLE`` query may read all the data in the table and hold some resources, making it resource-intensive.
+The `CHECK TABLE` query may read all the data in the table and hold some resources, making it resource-intensive.
 Consider the potential impact on performance and resource utilization before executing this query.
 This query will not improve performance of the system and you should not execute it if you are not sure of what you are doing.
 :::
@@ -30,10 +30,10 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 - `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
-  - **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
+  - (Optional): [check_query_single_value_result](../../operations/settings/settings#check_query_single_value_result): This setting controls if the output is detailed (`0`) or summarized (`1`).
   - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
 
-The query response depends on the value of contains `check_query_single_value_result` setting.
+The query response depends on the value of the `check_query_single_value_result` setting.
 In case of `check_query_single_value_result = 1` only `result` column with a single row is returned. Value inside this row is `1` if the integrity check is passed and `0` if data is corrupted.
 
 With `check_query_single_value_result = 0` the query returns the following columns:
@@ -56,11 +56,11 @@ Engines from the `*Log` family do not provide automatic data recovery on failure
 
 By default `CHECK TABLE` query shows the general table check status:
 
-```sql
+```sql title="Query"
 CHECK TABLE test_table;
 ```
 
-```text
+```text title="Response"
 ┌─result─┐
 │      1 │
 └────────┘
@@ -70,15 +70,13 @@ If you want to see the check status for every individual data part you may use `
 
 Also, to check a specific partition of the table, you can use the `PARTITION` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 │ 201003_3_3_0 │         1 │         │
@@ -87,15 +85,13 @@ Output:
 
 Similarly, you can check a specific part of the table by using the `PART` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_7_7_0'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 └──────────────┴───────────┴─────────┘
@@ -103,11 +99,11 @@ Output:
 
 Note that when part does not exist, the query returns an error:
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_111_222_0'
 ```
 
-```text
+```text title="Response"
 DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
 ```
 
@@ -123,15 +119,13 @@ Remove the existing checksum file:
 rm /var/lib/clickhouse-server/data/default/t0/201003_3_3_0/checksums.txt
 ```
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
+```
 
-
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message──────────────────────────────────┐
 │ 201003_7_7_0 │         1 │                                          │
 │ 201003_3_3_0 │         1 │ Checksums recounted and written to disk. │

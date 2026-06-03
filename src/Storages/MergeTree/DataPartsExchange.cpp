@@ -2,32 +2,35 @@
 
 #include "config.h"
 
-#include <Formats/NativeWriter.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Formats/NativeWriter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomDelay.h>
-#include <Common/FailPoint.h>
-#include <Common/thread_local_rng.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
-#include <random>
+#include <boost/algorithm/string/join.hpp>
+#include <Poco/Net/HTTPRequest.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/randomDelay.h>
+#include <Common/thread_local_rng.h>
+#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -58,12 +61,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int ZERO_COPY_REPLICATION_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char replicated_sends_failpoint[];
 }
 
 namespace DataPartsExchange
@@ -104,7 +101,7 @@ struct ReplicatedFetchReadCallback
         if (replicated_fetch_entry->total_size_bytes_compressed != 0)
         {
             replicated_fetch_entry->progress.store(
-                    static_cast<double>(bytes_count) / replicated_fetch_entry->total_size_bytes_compressed,
+                    static_cast<double>(bytes_count) / static_cast<double>(replicated_fetch_entry->total_size_bytes_compressed),
                     std::memory_order_relaxed);
         }
     }
@@ -185,7 +182,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
         Strings capabilities;
         const String delimiter(", ");
         size_t pos_start = 0;
-        size_t pos_end;
+        size_t pos_end = 0;
         while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
         {
             const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
@@ -293,6 +290,16 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         }
     }
 
+    /// Handle unknown projections: .proj entries in part->checksums that are
+    /// not in getProjectionParts() (e.g. a projection was dropped while the
+    /// part was detached, then re-attached).  Copy their stored checksums to
+    /// data_checksums so that checkEqual below does not fail.
+    for (const auto & [name, checksum] : part->checksums.files)
+    {
+        if (name.ends_with(".proj") && !data_checksums.has(name))
+            data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
+    }
+
     writeBinary(replicated_description.files.size(), out);
     for (const auto & [file_name, desc] : replicated_description.files)
     {
@@ -303,19 +310,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         HashingWriteBuffer hashing_out(out);
 
         const auto & is_cancelled = blocker.getCounter();
-        auto cancellation_hook = [&]()
-        {
-            if (is_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-            fiu_do_on(FailPoints::replicated_sends_failpoint,
-            {
-                std::bernoulli_distribution fault(0.1);
-                if (fault(thread_local_rng))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
-            });
-        };
-        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
+        copyDataWithThrottler(*file_in, hashing_out, is_cancelled, data.getSendsThrottler());
 
         hashing_out.finalize();
 
@@ -338,7 +333,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
+static bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 
@@ -379,7 +374,7 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     static const UInt32 wait_timeout_ms = 1000;
     auto pred = [&] ()
     {
-        auto lock = data.lockParts();
+        auto lock = data.readLockParts();
         return part->getState() != MergeTreeDataPartState::PreActive;
     };
 
@@ -444,7 +439,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
-    uri.setPort(port);
+    uri.setPort(static_cast<uint16_t>(port));
     uri.setQueryParameters(
     {
         {"endpoint",                endpoint_id},
@@ -504,10 +499,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
-    read_settings.http_max_tries = 1;
+    read_settings.http_settings.max_tries = 1;
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                  .withBypassProxy(true)
                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                   .withTimeouts(timeouts)
                   .withSettings(read_settings)
@@ -694,7 +690,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     ThrottlerPtr throttler,
     bool sync) const
 {
-    size_t files;
+    size_t files = 0;
     readBinary(files, in);
     LOG_DEBUG(log, "Downloading files {}", files);
 
@@ -704,7 +700,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
-        UInt64 file_size;
+        UInt64 file_size = 0;
 
         readStringBinary(file_name, in);
         readBinary(file_size, in);
@@ -801,11 +797,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    /// Create temporary part storage to write sent files.
-    /// Actual part storage will be initialized later from metadata.
-    auto part_storage_for_loading = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, part_dir);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the `SingleDiskVolume` and the
+    /// `DataPartStorageOnDiskFull` below are stored on the resulting part and live for its
+    /// lifetime. Only this two-line scope is wrapped — the actual fetch I/O buffers below
+    /// are short-lived and stay in the default arena.
+    auto [volume, part_storage_for_loading] = [&]
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+        auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
+        return std::pair{std::move(v), std::move(s)};
+    }();
+
     part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())
@@ -872,7 +876,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
-        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -903,7 +907,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     else
     {
         if (isFullPartStorage(new_data_part->getDataPartStorage()))
+        {
+            /// Handle unknown projections on the fetch side: .proj entries in
+            /// checksums.txt that were not transferred (e.g. a projection was
+            /// dropped while the part was detached, then re-attached on the
+            /// sender).  Copy them to data_checksums so that checkEqual does
+            /// not fail.
+            for (const auto & [name, checksum] : new_data_part->checksums.files)
+            {
+                if (name.ends_with(".proj") && !data_checksums.has(name))
+                    data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
+            }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
+        }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }
 

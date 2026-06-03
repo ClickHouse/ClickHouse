@@ -31,9 +31,9 @@ namespace
         bool isServerConstant() const override { return true; }
     };
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     /// buildId() - returns the compiler build id of the running binary.
-    class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
+    class FunctionBuildId final : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
     public:
         static constexpr auto name = "buildId";
@@ -44,7 +44,7 @@ namespace
 
 
     /// Get the host name. It is constant on single server, but is not constant in distributed queries.
-    class FunctionHostName : public FunctionServerConstantBase<FunctionHostName, String, DataTypeString>
+    class FunctionHostName final : public FunctionServerConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "hostName";
@@ -53,7 +53,7 @@ namespace
     };
 
 
-    class FunctionServerUUID : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
+    class FunctionServerUUID final : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
     {
     public:
         static constexpr auto name = "serverUUID";
@@ -62,7 +62,7 @@ namespace
     };
 
 
-    class FunctionTCPPort : public FunctionServerConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
+    class FunctionTCPPort final : public FunctionServerConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
@@ -72,7 +72,7 @@ namespace
 
 
     /// Returns timezone for current session.
-    class FunctionTimezone : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
+    class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
@@ -81,7 +81,7 @@ namespace
     };
 
     /// Returns the server time zone (timezone in which server runs).
-    class FunctionServerTimezone : public FunctionServerConstantBase<FunctionServerTimezone, String, DataTypeString>
+    class FunctionServerTimezone final : public FunctionServerConstantBase<FunctionServerTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "serverTimezone";
@@ -91,7 +91,7 @@ namespace
 
 
     /// Returns server uptime in seconds.
-    class FunctionUptime : public FunctionServerConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
+    class FunctionUptime final : public FunctionServerConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "uptime";
@@ -101,7 +101,7 @@ namespace
 
 
     /// version() - returns the current version as a string.
-    class FunctionVersion : public FunctionServerConstantBase<FunctionVersion, String, DataTypeString>
+    class FunctionVersion final : public FunctionServerConstantBase<FunctionVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "version";
@@ -110,7 +110,7 @@ namespace
     };
 
     /// revision() - returns the current revision.
-    class FunctionRevision : public FunctionServerConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
+    class FunctionRevision final : public FunctionServerConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "revision";
@@ -118,7 +118,7 @@ namespace
         explicit FunctionRevision(ContextPtr context) : FunctionServerConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
     };
 
-    class FunctionZooKeeperSessionUptime : public FunctionServerConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
+    class FunctionZooKeeperSessionUptime final : public FunctionServerConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "zookeeperSessionUptime";
@@ -129,7 +129,7 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-    class FunctionGetOSKernelVersion : public FunctionServerConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
+    class FunctionGetOSKernelVersion final : public FunctionServerConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "getOSKernelVersion";
@@ -137,7 +137,7 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
-    class FunctionDisplayName : public FunctionServerConstantBase<FunctionDisplayName, String, DataTypeString>
+    class FunctionDisplayName final : public FunctionServerConstantBase<FunctionDisplayName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "displayName";
@@ -146,7 +146,7 @@ namespace
     };
 }
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 REGISTER_FUNCTION(BuildId)
 {
     FunctionDocumentation::Description description = R"(
@@ -171,7 +171,7 @@ SELECT buildId()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBuildId>(documentation);
 }
@@ -203,7 +203,7 @@ SELECT hostName()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHostName>(documentation);
     factory.registerAlias("hostname", "hostName");
@@ -233,7 +233,7 @@ SELECT serverUUID();
     };
     FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
     FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
+    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, {}, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
 
     factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
 }
@@ -241,7 +241,7 @@ SELECT serverUUID();
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](../../interfaces/tcp.md) TCP port number listened to by the server.
+Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -263,7 +263,7 @@ SELECT tcpPort()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTCPPort>(documentation);
 }
@@ -294,7 +294,7 @@ SELECT timezone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
@@ -306,7 +306,7 @@ REGISTER_FUNCTION(ServerTimezone)
 Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
-    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
+    FunctionDocumentation::Syntax syntax = "serverTimezone()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -323,7 +323,7 @@ SELECT serverTimeZone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
@@ -354,7 +354,7 @@ SELECT uptime() AS Uptime
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionUptime>(documentation);
 }
@@ -384,7 +384,7 @@ SELECT version()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVersion>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -412,7 +412,7 @@ SELECT revision()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRevision>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -440,7 +440,7 @@ SELECT zookeeperSessionUptime();
     };
     FunctionDocumentation::IntroducedIn introduced_in_zookeeperSessionUptime = {21, 11};
     FunctionDocumentation::Category category_zookeeperSessionUptime = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
+    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, {}, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
 
     factory.registerFunction<FunctionZooKeeperSessionUptime>(documentation_zookeeperSessionUptime);
 }
@@ -469,7 +469,7 @@ SELECT getOSKernelVersion();
     };
     FunctionDocumentation::IntroducedIn introduced_in_getOSKernelVersion = {21, 11};
     FunctionDocumentation::Category category_getOSKernelVersion = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
+    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, {}, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
 
     factory.registerFunction<FunctionGetOSKernelVersion>(documentation_getOSKernelVersion);
 }
@@ -498,7 +498,7 @@ SELECT displayName();
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDisplayName>(documentation);
 }

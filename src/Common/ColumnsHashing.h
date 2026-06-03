@@ -1,24 +1,23 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
-#include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
 #include <memory>
-#include <cassert>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -95,6 +94,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+    static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -135,7 +135,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (!context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
-        LowCardinalityDictionaryCache * lcd_cache;
+        LowCardinalityDictionaryCache * lcd_cache = nullptr;
         if constexpr (use_cache)
         {
             lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
@@ -152,7 +152,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         key_columns = {dict};
         const bool is_shared_dict = column->isSharedDictionary();
 
-        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
+        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key{};
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
 
         if (is_shared_dict)
@@ -331,6 +331,15 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
+class HashMethodSerializedContext : public HashMethodContext
+{
+public:
+    explicit HashMethodSerializedContext(const HashMethodContextSettings & settings_)
+        : settings(settings_)
+    {}
+
+    HashMethodContextSettings settings;
+};
 
 /** Hash by concatenating serialized key values.
   * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
@@ -344,7 +353,13 @@ struct HashMethodSerialized
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
+    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
+    {
+        return std::make_shared<HashMethodSerializedContext>(settings);
+    }
+
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
@@ -354,12 +369,46 @@ struct HashMethodSerialized
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
     bool use_batch_serialize = false;
+    IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    std::vector<StringRef> serialized_keys;
+    std::vector<std::string_view> serialized_keys;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    /// Per-row canonical hashes computed from `serialized_keys` using the hash table's hash function.
+    /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
+    /// Only used when `can_precompute_hashes` is true.
+    PaddedPODArray<size_t> precomputed_hashes;
+    /// `precomputed_hashes_initialized` starts `true` by default so the hot path skips the lazy-init
+    /// gate when precomputation is statically disabled. It is set to `false` in the constructor only
+    /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
+    bool precomputed_hashes_initialized = true;
+    bool can_precompute_hashes = false;
+
+    /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
+    /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
+    /// Checked lazily on the first emplace/find call.
+    size_t min_bytes_for_prefetch = 0;
+
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+    /// Absolute row index at which `calcPrefetchLookAhead` should fire. Computed lazily as
+    /// `first_row + PrefetchingHelper::iterationsToMeasure()` so that calibration is
+    /// interval-relative — matches the pattern used in `Aggregator::executeImplBatch` and
+    /// remains correct when `emplaceKey`/`findKey` are called over sliced ranges
+    /// (e.g. `executeOnBlockSmall` with non-zero `row_begin`).
+    size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
+
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
+        const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
+        if (!hash_serialized_context)
+        {
+            const auto & cached_val = *context;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSerialized context: {}",
+                            demangle(typeid(cached_val).name()));
+        }
+
+        serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
         if constexpr (nullable)
         {
             null_maps.resize(keys_size, nullptr);
@@ -379,7 +428,7 @@ struct HashMethodSerialized
 
             /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i], &serialization_settings);
 
             for (auto row_size : row_sizes)
                 total_size += row_size;
@@ -391,13 +440,12 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                std::vector<char *> memories(rows);
+                VectorWithMemoryTracking<char *> memories(rows);
                 serialized_keys.resize(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
                     memories[i] = memory;
-                    serialized_keys[i].data = memory;
-                    serialized_keys[i].size = row_sizes[i];
+                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
 
                     memory += row_sizes[i];
                 }
@@ -405,12 +453,54 @@ struct HashMethodSerialized
                 for (size_t i = 0; i < keys_size; ++i)
                 {
                     if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
                     else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories);
+                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
                 }
             }
         }
+
+        /// We can only precompute canonical per-row hashes when:
+        ///   1. We have the serialized keys upfront (batch serialization is in use), and
+        ///   2. We use the hash table's actual hash function (deferred to first emplace/find), and
+        ///   3. Software prefetch is enabled by the caller (mirrors `enable_software_prefetch_in_aggregation`).
+        /// Without batch serialization, fall back to the regular `data.prefetch(key_holder)` path.
+        /// The hash-table size threshold (`min_bytes_for_prefetch`) is enforced lazily on the first
+        /// emplace/find call, once `Data` is known.
+        if constexpr (has_pre_computed_hashes)
+        {
+            if (use_batch_serialize && hash_serialized_context->settings.enable_prefetch)
+            {
+                can_precompute_hashes = true;
+                precomputed_hashes_initialized = false;
+                min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
+                prefetching = std::make_unique<PrefetchingHelper>();
+            }
+        }
+    }
+
+    /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
+    /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
+    /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
+    /// + prefetch path when the hash table is small enough to fit in caches. Matches
+    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    template <typename Data>
+    NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
+        requires(prealloc)
+    {
+        precomputed_hashes_initialized = true;
+        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        {
+            can_precompute_hashes = false;
+            return;
+        }
+
+        const size_t rows = serialized_keys.size();
+        precomputed_hashes.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+            precomputed_hashes[i] = data.hash(serialized_keys[i]);
     }
 
     bool shouldUseBatchSerialize() const
@@ -442,13 +532,13 @@ struct HashMethodSerialized
         {
             std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
             char * memory = holder.get();
-            StringRef key(memory, row_sizes[row]);
+            std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j], &serialization_settings);
                 else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+                    memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
             return ArenaKeyHolder{key, pool, std::move(holder)};
@@ -464,13 +554,13 @@ struct HashMethodSerialized
 
             size_t sum_size = 0;
             for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size;
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size();
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
 
         return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
+            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
             pool};
     }
 };

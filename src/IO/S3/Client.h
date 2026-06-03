@@ -25,6 +25,7 @@ struct ServerSideEncryptionKMSConfig
 #if USE_AWS_S3
 
 #include <Common/assert_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
@@ -59,10 +60,10 @@ struct ClientCache
     void clearCache();
 
     mutable std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
+    NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
+    UnorderedMapWithMemoryTracking<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -81,7 +82,7 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
+    UnorderedMapWithMemoryTracking<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -208,6 +209,7 @@ public:
 
     Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
     Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
+    Model::PutObjectTaggingOutcome PutObjectTagging(PutObjectTaggingRequest & request) const;
     Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
@@ -268,17 +270,18 @@ private:
 
     using Aws::S3::S3Client::CopyObject;
     using Aws::S3::S3Client::PutObject;
+    using Aws::S3::S3Client::PutObjectTagging;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;

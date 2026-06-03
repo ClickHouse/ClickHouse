@@ -5,6 +5,8 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <DataTypes/IDataType_fwd.h>
 
 #include "config.h"
 
@@ -19,13 +21,10 @@ namespace llvm
     class IRBuilderBase;
 }
 
+struct FunctionsStressTestThread;
 
 namespace DB
 {
-
-class IDataType;
-struct DataTypeWithConstInfo;
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class Field;
 struct FieldInterval;
@@ -48,7 +47,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// Cancel current execution if possible
+    /// Method `execute` called from another thread should stop after this method is called and throw an exception.
+    virtual void cancelExecution() const {}
+
 protected:
+    friend struct ::FunctionsStressTestThread;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
@@ -58,10 +62,15 @@ protected:
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
-      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are NULL constants then return NULL constant (the underlying function
+      *   may or may not be executed in this case),
       *  if some of arguments are Nullable, then execute function as usual for columns,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   where Nullable columns are substituted with nested columns,
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      * The underlying function may or may not be called for the rows containing NULLs. When called,
+      * arbitrary values are used instead of NULLs - whatever values happened to be in ColumnNullable's
+      * nested column; typically default values, but that's not guaranteed.
+      * So this only makes sense for functions that don't fail and don't have side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -99,10 +108,24 @@ protected:
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+    /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
+      *
+      * Useful when executing on LowCardinality dictionary, which contains default value even if
+      * none of the rows use it.
+      *
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
+      *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
+      *   ┌──x─┐
+      *   │ 42 │
+      *   └────┘
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+
+    /** True if function might throw an exception during execution.
+      */
+    virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
 private:
 
@@ -155,6 +178,7 @@ public:
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -220,6 +244,10 @@ public:
       * Sometimes, functions are "deterministic" in scope of single query
       *  (even for distributed query), but not deterministic it general.
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
+      *
+      * Also means that the function cannot return different values depending on
+      * the constness of arguments (same value, different constness => same result).
+      * Counterexamples: `isConstant`, `toColumnTypeName`.
       */
 
     virtual bool isDeterministic() const { return true; }
@@ -255,7 +283,7 @@ public:
         /// Should we enable lazy execution for the nth argument of short-circuit function?
         /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
         /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
-        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+        UnorderedSetWithMemoryTracking<size_t> arguments_with_disabled_lazy_execution;
 
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
@@ -263,11 +291,11 @@ public:
         /// to execute expr lazily, because it's used in both branches.
         /// Example 2: and(expr1, expr2(..., expr, ...), expr3(..., expr, ...)), here we
         /// should enable lazy execution for expr, because it must be filtered by expr1.
-        bool enable_lazy_execution_for_common_descendants_of_arguments;
+        bool enable_lazy_execution_for_common_descendants_of_arguments{};
         /// Should we enable lazy execution without checking isSuitableForShortCircuitArgumentsExecution?
         /// Example: toTypeName(expr), even if expr contains functions that are not suitable for
         /// lazy execution (because of their simplicity), we shouldn't execute them at all.
-        bool force_enable_lazy_execution;
+        bool force_enable_lazy_execution{};
     };
 
     /** Function is called "short-circuit" if it's arguments can be evaluated lazily
@@ -312,6 +340,11 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
+  * Warning: One instance of IFunctionOverloadResolver can only be used to resolve one overload.
+  *          To resolve a different overload, get a new IFunctionOverloadResolver from the factory.
+  *          Calling `build` again with different arguments will subtly break things in some cases.
+  *          TODO: Fix this. Known offenders are IFunction implementations with mutable fields,
+  *                e.g. see `mutable bool to_nullable` in FunctionsConversion.h
   */
 class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
@@ -337,6 +370,11 @@ public:
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
+    /// Returns true for higher-order functions that accept a lambda expression as an argument
+    /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
+    /// capability check so callers can avoid invoking `getLambdaArgumentTypes`, which throws
+    /// on non-higher-order functions.
+    virtual bool isHigherOrderFunction() const { return false; }
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
@@ -360,6 +398,9 @@ public:
     /// Returns type that should be used as the result type in default implementation for Dynamic.
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
@@ -386,6 +427,8 @@ protected:
       *   - wrap getReturnType() result in Nullable type and pass to build
       *
       * Otherwise build returns build(arguments, getReturnType(arguments));
+      * Note that the function may be called with garbage input for the null rows (but the output will be masked out),
+      * so this is not suitable for heavy functions or functions with side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -422,6 +465,16 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
+    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
+     *  if function arguments has Variant column. This adaptor will build and execute this function for all
+     *  internal types inside Variant column separately and construct result based on results for these types.
+     *  The result will be Variant with the union of all variant types from arguments.
+     *
+     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
+     *  because Variant column can contain NULLs and we should know how to process them.
+      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -439,11 +492,19 @@ public:
 
     virtual String getName() const = 0;
 
+    /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
+    ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
+    ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
+    ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
+    ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
     }
+
+    /// Cancel current `executeImpl` execution if possible
+    virtual void cancelExecution() const {}
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
@@ -493,9 +554,8 @@ public:
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /// Properties from IFunctionBase (see IFunction.h)
@@ -511,8 +571,14 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
+    /// Higher-order functions accept at least one lambda expression as an argument.
+    virtual bool isHigherOrderFunction() const { return false; }
+
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
+
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
@@ -541,6 +607,7 @@ public:
 
 
 #if USE_EMBEDDED_COMPILER
+    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 

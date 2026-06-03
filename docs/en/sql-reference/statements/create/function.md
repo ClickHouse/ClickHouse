@@ -12,7 +12,7 @@ Creates a user defined function (UDF) from a lambda expression. The expression m
 **Syntax**
 
 ```sql
-CREATE FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
+CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
 
@@ -26,16 +26,12 @@ If any restriction is violated then an exception is raised.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─number─┬─plus(multiply(2, number), 1)─┐
 │      0 │                            1 │
 │      1 │                            3 │
@@ -45,19 +41,36 @@ Result:
 
 A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
 
-```sql
+```sql title="Query"
 CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
 SELECT number, parity_str(number) FROM numbers(3);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
 │      0 │ even                                 │
 │      1 │ odd                                  │
 │      2 │ even                                 │
 └────────┴──────────────────────────────────────┘
+```
+
+Replace an existing UDF:
+
+```sql title="Query"
+CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+```
+
+```text title="Response"
+┌─create_query─────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
+└──────────────────────────────────────────────────────────┘
+
+┌─create_query───────────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related Content {#related-content}

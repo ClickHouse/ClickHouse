@@ -5,8 +5,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include <Core/Defines.h>
 #include <Core/Names.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/IStorage_fwd.h>
@@ -23,7 +23,14 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    ASTPtr ast = {}; /// The AST of the whole command
+    /// Serialized text of the command (output of `formatWithSecretsOneLine`),
+    /// used for on-disk / ZooKeeper persistence.
+    String ast_text = {};
+
+    /// Parser limits used when `ast_text` was produced. Re-applied if the
+    /// AST has to be reparsed from `ast_text`.
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 
     enum Type
     {
@@ -49,20 +56,50 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// WHERE part of mutation
-    ASTPtr predicate = {};
+    /// Parses `ast_text` and returns the resulting alter command (shareable,
+    /// const). The parsed AST is *not* cached on the `MutationCommand`, so
+    /// callers that access several sub-trees of the same command should hoist
+    /// the result into a local. Returns nullptr if `ast_text` is empty.
+    boost::intrusive_ptr<const ASTAlterCommand> ast() const;
 
-    /// Columns with corresponding actions
-    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
+    /// RAII handle for editing the AST of a `MutationCommand` in place. The
+    /// constructor parses a mutable copy of `ast_text`. To publish edits, call
+    /// `commit` (it serializes the AST back into `ast_text` and may throw);
+    /// otherwise the destructor discards them.
+    /// Neither copyable nor movable.
+    class MutableAst
+    {
+    public:
+        explicit MutableAst(MutationCommand & owner);
+        ~MutableAst() noexcept;
+
+        MutableAst(const MutableAst &) = delete;
+        MutableAst & operator=(const MutableAst &) = delete;
+        MutableAst(MutableAst &&) = delete;
+        MutableAst & operator=(MutableAst &&) = delete;
+
+        ASTAlterCommand & operator*() const { return *ast; }
+        ASTAlterCommand * operator->() const { return ast.get(); }
+        ASTAlterCommand * get() const { return ast.get(); }
+
+        /// Serialize the (possibly modified) AST back into `owner.ast_text`.
+        /// May throw.
+        void commit();
+
+    private:
+        MutationCommand & owner;
+        boost::intrusive_ptr<ASTAlterCommand> ast;
+        bool committed = false;
+    };
+
+    /// Open a mutating scope on the AST. See `MutableAst` for the semantics.
+    MutableAst mutateAst() { return MutableAst(*this); }
 
     /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};
     String projection_name = {};
     std::vector<String> statistics_columns = {};
     std::vector<String> statistics_types = {};
-
-    /// For MATERIALIZE INDEX, UPDATE and DELETE.
-    ASTPtr partition = {};
 
     /// For reads, drops and etc.
     String column_name = {};
@@ -81,8 +118,16 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
+    /// If `parse_alter_commands` is true, more alter commands are accepted as
+    /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
+    /// captured into the returned command so subsequent on-demand re-parsing
+    /// uses the same limits as this initial parse.
+    static std::optional<MutationCommand> parse(
+        const ASTAlterCommand & command,
+        bool parse_alter_commands = false,
+        bool with_pure_metadata_commands = false,
+        UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
@@ -92,11 +137,17 @@ struct MutationCommand
     bool affectsAllColumns() const;
 };
 
+/// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
+/// command into a `column -> expression` map. The returned `ASTPtr`s point
+/// into the assignment subtrees of `alter`, so the map is valid for as long
+/// as `alter` is.
+std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter);
+
 /// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
     void readText(ReadBuffer & in, bool with_pure_metadata_commands);

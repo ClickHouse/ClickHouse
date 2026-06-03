@@ -1,11 +1,14 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
 #include <Columns/ColumnArray.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <libdivide-config.h>
 #include <libdivide.h>
 
 

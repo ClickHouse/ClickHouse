@@ -2,19 +2,14 @@
 
 #include <cstddef>
 #include <cstring>
-#include <deque>
-#include <vector>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -93,7 +88,7 @@ public:
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count;
+        size_t sample_count = 0;
         readBinaryLittleEndian(sample_count,buf);
         bucket.samples.reserve(sample_count);
 
@@ -111,7 +106,7 @@ public:
     }
 
 private:
-    void fillResultValue(const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+    void fillResultValue(const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         if (samples_in_window.empty())
@@ -171,14 +166,18 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets
         for (UInt32 i = 0; i < Base::bucket_count; ++i)
         {
-            const TimestampType current_timestamp = Base::start_timestamp + i * Base::step;
+            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
+            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
+            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
+            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
+            const TimestampType current_timestamp = Base::timestampAtIndex(i);
 
             auto bucket_it = buckets.find(i);
             if (bucket_it != buckets.end())
