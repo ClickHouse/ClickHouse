@@ -19,16 +19,24 @@ SELECT (TIMESTAMP '2001-02-16 20:38:40' AT LOCAL) = toTimeZone(TIMESTAMP '2001-0
 -- Timezone expression can be any expression, not just a literal
 SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE concat('America', '/', 'Denver');
 
--- Precedence: AT TIME ZONE binds looser than arithmetic, so + is applied first
-SELECT TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/Denver';
+-- Precedence: AT TIME ZONE binds tighter than + (matching PostgreSQL)
+-- To add-then-convert, explicit parens are required (same as PostgreSQL)
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
 
--- Must equal the explicitly parenthesised form
-SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/Denver')
+SELECT ((TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver')
      = toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
 
--- Precedence: AT LOCAL also binds looser than arithmetic, so + is applied first
-SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT LOCAL)
-     = toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, timeZone());
+-- Without parens, AT TIME ZONE applies to the right operand of + (the interval), giving a type error
+SELECT TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/Denver'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Same for AT LOCAL
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT LOCAL;
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT LOCAL; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- INTERVAL on the left — AT TIME ZONE binds to ts, matching PostgreSQL
+-- INTERVAL 1 HOUR + ts AT TIME ZONE 'tz'  →  INTERVAL 1 HOUR + (ts AT TIME ZONE 'tz')
+SELECT INTERVAL 1 HOUR + TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
 
 -- precedence / associativity (formatQuery pins the grouping)
 SELECT formatQuery($$SELECT dt AT TIME ZONE 'UTC' = dt2$$);          -- toTimeZone(dt, 'UTC') = dt2 (binds tighter than '=')

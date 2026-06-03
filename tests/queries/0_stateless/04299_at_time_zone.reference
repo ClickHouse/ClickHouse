@@ -5,7 +5,8 @@
 2001-02-16 13:38:40
 2001-02-16 14:38:40
 1
-1
+2001-02-16 21:38:40
+2001-02-16 14:38:40
 SELECT toTimeZone(dt, \'UTC\') = dt2
 SELECT toTimeZone(toTimeZone(dt, \'A\'), \'B\')
 SELECT toTimeZone(t, tz)\nFROM x
