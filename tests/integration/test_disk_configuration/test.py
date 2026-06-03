@@ -175,7 +175,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
     minio = cluster.minio_client
-    zk_client = start_cluster.get_kazoo_client("zoo1")
 
     # Cleanup from any previous failed run
     node1.query(f"DROP TABLE IF EXISTS {TABLE_NAME} SYNC")
@@ -187,13 +186,6 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data")
     wait_blobs_count_synchronization(minio, 0, bucket="root", path="data2")
 
-    if not zk_client.exists("/minio"):
-        zk_client.create("/minio")
-    if not zk_client.exists("/minio/access_key_id"):
-        zk_client.create("/minio/access_key_id")
-
-    zk_client.set("/minio/access_key_id", b"minio")
-
     try:
         node1.query(
             f"""
@@ -203,9 +195,9 @@ def test_merge_tree_custom_disk_setting(start_cluster):
             SETTINGS
                 disk = disk(
                     type=s3,
-                    include = 'include_endpoint',
-                    access_key_id = 'from_zk /minio/access_key_id',
-                    secret_access_key='from_env MINIO_SECRET');
+                    endpoint='http://minio1:9001/root/data/',
+                    access_key_id='minio',
+                    secret_access_key='{minio_secret_key}');
         """
         )
 
