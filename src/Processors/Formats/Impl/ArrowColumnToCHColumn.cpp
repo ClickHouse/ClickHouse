@@ -140,7 +140,7 @@ void checkArrowBuffer(const arrow::Array & chunk, size_t elem_size, const String
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
     const size_t count = static_cast<size_t>(chunk.offset() + chunk.length());
-    size_t required;
+    size_t required = 0;
     if (unlikely(__builtin_mul_overflow(elem_size, count, &required)))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -268,7 +268,7 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
     const size_t count_plus_one = static_cast<size_t>(chunk.offset() + chunk.length()) + 1;
-    size_t required;
+    size_t required = 0;
     if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
@@ -726,12 +726,12 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
             else
             {
                 const size_t safe_offset = static_cast<size_t>(chunk.value_offset(value_i));
-                if (unlikely(safe_offset + sizeof(ValueType) > data_buf_size))
+                if (unlikely(safe_offset > data_buf_size || sizeof(ValueType) > data_buf_size - safe_offset))
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
-                        column_name, value_i, safe_offset, data_buf_size);
+                        column_name, value_i, chunk.value_offset(value_i), data_buf_size);
                 integer_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
             }
         }
@@ -1340,12 +1340,12 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
             else
             {
                 const size_t safe_offset = static_cast<size_t>(chunk.value_offset(value_i));
-                if (unlikely(safe_offset + sizeof(IPv6) > data_buf_size))
+                if (unlikely(safe_offset > data_buf_size || sizeof(IPv6) > data_buf_size - safe_offset))
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Arrow BinaryArray data buffer too small for column '{}': "
                         "row {} has offset {} but buffer is {} bytes",
-                        column_name, value_i, safe_offset, data_buf_size);
+                        column_name, value_i, chunk.value_offset(value_i), data_buf_size);
                 ipv6_column.insertData(chunk.Value(value_i).data(), chunk.Value(value_i).size());
             }
         }
