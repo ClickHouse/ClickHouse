@@ -231,22 +231,51 @@ SELECT count() FROM (
 );
 DROP TABLE tab_scann_fallback;
 
-SELECT '5. invalid distance function';
+-- Test 5: mixed index (ScaNN + minmax) — regression for the bug where the per-part
+-- skip-index ordering ran minmax first, filtered marks, and then skipped ScaNN
+-- entirely because vector indexes require all_match.  ScaNN must run first so that
+-- it sees the full mark range, producing correct results.
+SELECT '5. ScaNN not skipped when combined with a minmax index';
+DROP TABLE IF EXISTS tab_scann_mixed;
+CREATE TABLE tab_scann_mixed (
+    id  Int32,
+    tag Int32,
+    vec Array(Float32),
+    INDEX scann_idx vec TYPE vector_similarity('scann', 'L2Distance', 2) GRANULARITY 100000000,
+    INDEX mm_idx    tag TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_mixed
+    SELECT toInt32(number), toInt32(number % 10), [toFloat32(number), toFloat32(0.0)]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_mixed FINAL;
+-- Results must match brute-force; a mismatch would mean ScaNN was skipped.
+SELECT count() FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_mixed ORDER BY L2Distance(vec, ref) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 1
+    EXCEPT
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_mixed ORDER BY L2Distance(vec, ref) ASC LIMIT 3
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_mixed;
+
+SELECT '6. invalid distance function';
 CREATE TABLE tab_scann_bad_dist (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'hamming', 2)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 
-SELECT '6. too few arguments';
+SELECT '7. too few arguments';
 CREATE TABLE tab_scann_too_few (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT '7. too many arguments';
+SELECT '8. too many arguments';
 CREATE TABLE tab_scann_too_many (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'extra')) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SELECT '8. dimensions must be > 0';
+SELECT '9. dimensions must be > 0';
 CREATE TABLE tab_scann_zero_dim (vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 0)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 
-SELECT '9. must be created on Array(Float32) or Array(Float64) column';
+SELECT '10. must be created on Array(Float32) or Array(Float64) column';
 CREATE TABLE tab_scann_wrong_col (vec Array(UInt64), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError ILLEGAL_COLUMN }
 
-SELECT '10. dimension mismatch at insert';
+SELECT '11. dimension mismatch at insert';
 DROP TABLE IF EXISTS tab_scann_dim_ins;
 CREATE TABLE tab_scann_dim_ins (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id;
@@ -257,7 +286,7 @@ DROP TABLE tab_scann_dim_ins;
 -- result cardinality. With scann_num_leaves_to_search=1 ScaNN searches a single IVF
 -- partition (~sqrt(N) vectors), so nn.size() < num_candidates when LIMIT is large.
 -- The fix falls back to a full-granule exact scan, returning exactly LIMIT rows.
-SELECT '11. scann_num_leaves_to_search small: result cardinality equals LIMIT';
+SELECT '12. scann_num_leaves_to_search small: result cardinality equals LIMIT';
 DROP TABLE IF EXISTS tab_scann_few_leaves;
 CREATE TABLE tab_scann_few_leaves (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
@@ -283,7 +312,7 @@ SELECT count() FROM (
 );
 DROP TABLE tab_scann_few_leaves;
 
-SELECT '12. non-finite values rejected at insert (NaN/Inf)';
+SELECT '13. non-finite values rejected at insert (NaN/Inf)';
 DROP TABLE IF EXISTS tab_scann_nonfinite;
 CREATE TABLE tab_scann_nonfinite (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id;
@@ -292,7 +321,7 @@ INSERT INTO tab_scann_nonfinite VALUES (0, [inf, 1.0]); -- { serverError INCORRE
 INSERT INTO tab_scann_nonfinite VALUES (0, [-inf, 1.0]); -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_nonfinite;
 
-SELECT '13. non-finite values rejected in query vector';
+SELECT '14. non-finite values rejected in query vector';
 DROP TABLE IF EXISTS tab_scann_nonfinite_q;
 CREATE TABLE tab_scann_nonfinite_q (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id;
@@ -305,7 +334,7 @@ DROP TABLE tab_scann_nonfinite_q;
 -- Test 14: Float64 query values that are finite as double but overflow to +Inf when
 -- narrowed to float must be rejected. Regression for the bug where isfinite was checked
 -- on the double value before the static_cast<float>, letting 1e100 pass validation.
-SELECT '14. Float64 value overflowing to float32 +Inf rejected in query vector';
+SELECT '15. Float64 value overflowing to float32 +Inf rejected in query vector';
 DROP TABLE IF EXISTS tab_scann_f64_overflow;
 CREATE TABLE tab_scann_f64_overflow (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id;
@@ -317,7 +346,7 @@ SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_f64_overflow;
 
 -- Test 15: index survives DETACH/ATTACH (serialization round-trip).
-SELECT '15. Serialization round-trip (DETACH/ATTACH)';
+SELECT '16. Serialization round-trip (DETACH/ATTACH)';
 DROP TABLE IF EXISTS tab_scann_detach;
 CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

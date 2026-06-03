@@ -23,18 +23,20 @@
 0
 0
 0
-5. invalid distance function
-6. too few arguments
-7. too many arguments
-8. dimensions must be > 0
-9. must be created on Array(Float32) or Array(Float64) column
-10. dimension mismatch at insert
-11. scann_num_leaves_to_search small: result cardinality equals LIMIT
+5. ScaNN not skipped when combined with a minmax index
+0
+6. invalid distance function
+7. too few arguments
+8. too many arguments
+9. dimensions must be > 0
+10. must be created on Array(Float32) or Array(Float64) column
+11. dimension mismatch at insert
+12. scann_num_leaves_to_search small: result cardinality equals LIMIT
 1
 0
-12. non-finite values rejected at insert (NaN/Inf)
-13. non-finite values rejected in query vector
-14. Float64 value overflowing to float32 +Inf rejected in query vector
-15. Serialization round-trip (DETACH/ATTACH)
+13. non-finite values rejected at insert (NaN/Inf)
+14. non-finite values rejected in query vector
+15. Float64 value overflowing to float32 +Inf rejected in query vector
+16. Serialization round-trip (DETACH/ATTACH)
 1
 0
