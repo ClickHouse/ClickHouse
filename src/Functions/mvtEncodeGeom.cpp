@@ -5,9 +5,11 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -153,6 +155,10 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Disabled: the result `Geometry` (a Variant) cannot be wrapped in Nullable, so the default null adaptor would
+    /// strip nullability and evaluate null rows with the default value, leaking a spurious feature. Nullability is
+    /// handled explicitly in executeImpl (any null argument yields a NULL geometry for that row).
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -164,19 +170,19 @@ public:
                 getName(),
                 arguments.size());
 
-        const auto & geometry_type = arguments[0].type;
+        const auto geometry_type = removeNullable(arguments[0].type);
         if (geometry_type->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(geometry_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The first argument of function {} must be a geometry (Point, LineString, MultiLineString, Ring, Polygon, "
                 "MultiPolygon or Geometry), got {}",
                 getName(),
-                geometry_type->getName());
+                arguments[0].type->getName());
 
         /// zoom, tile_x, tile_y, extent, buffer and clip must be unsigned integers (matching mvtTileBBox); accepting
         /// arbitrary numeric types would silently truncate fractional values such as a zoom of 1.9 to 1.
         for (size_t i = 1; i < arguments.size(); ++i)
-            if (!isNativeUInt(arguments[i].type))
+            if (!isNativeUInt(removeNullable(arguments[i].type)))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Argument #{} of function {} must be an unsigned integer, got {}",
@@ -192,6 +198,22 @@ public:
         auto full = arguments;
         for (auto & a : full)
             a.column = a.column->convertToFullColumnIfConst();
+
+        /// Null propagation is handled here (the default adaptor is disabled): a row is NULL if any argument is NULL,
+        /// and such rows emit a NULL geometry. Read from the unwrapped (nested) columns for the remaining rows.
+        NullMap null_rows(input_rows_count, 0);
+        bool has_nulls = false;
+        for (auto & a : full)
+        {
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(a.column.get()))
+            {
+                has_nulls = true;
+                const auto & map = nullable->getNullMapData();
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    null_rows[row] |= map[row];
+                a.column = nullable->getNestedColumnPtr();
+            }
+        }
 
         const IColumn & col_zoom = *full[1].column;
         const IColumn & col_tile_x = *full[2].column;
@@ -312,7 +334,7 @@ public:
         };
         auto dispatch_mpolygon = [&](const MultiPolygon<BPoint> & g, const Projection & pr, const BBox & b, bool c) { process_polygons(g, pr, b, c); };
 
-        const auto & geometry_type = arguments[0].type;
+        const auto geometry_type = removeNullable(arguments[0].type);
 
         if (geometry_type->getName() == "Geometry")
         {
@@ -332,6 +354,11 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
+                if (has_nulls && null_rows[row])
+                {
+                    builder.addNull();
+                    continue;
+                }
                 const UInt8 disc = variant.globalDiscriminatorAt(row);
                 if (disc == ColumnVariant::NULL_DISCRIMINATOR)
                 {
@@ -361,6 +388,11 @@ public:
                 auto geometries = Converter::convert(full[0].column);
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
+                    if (has_nulls && null_rows[row])
+                    {
+                        builder.addNull();
+                        continue;
+                    }
                     Projection projection; BBox box; bool clip = false;
                     row_context(row, projection, box, clip);
                     if constexpr (std::is_same_v<Converter, ColumnToPointsConverter<BPoint>>)

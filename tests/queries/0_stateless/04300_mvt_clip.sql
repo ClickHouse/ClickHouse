@@ -14,6 +14,10 @@ SELECT '-- mvtTileBBox: a positive margin expands the box on every side';
 WITH mvtTileBBox(10, 550, 335) AS bb, mvtTileBBox(10, 550, 335, 0.1) AS bm
 SELECT bm.1 < bb.1, bm.2 < bb.2, bm.3 > bb.3, bm.4 > bb.4;
 
+SELECT '-- mvtTileBBox: a negative or non-finite margin is rejected (it would invert the bounds)';
+SELECT mvtTileBBox(0, 0, 0, -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT mvtTileBBox(0, 0, 0, nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
 SELECT '-- mvtTileBBox round-trips with mvtEncodeGeom: the tile centre projects to an interior pixel';
 WITH mvtTileBBox(10, 550, 335) AS bb
 SELECT mvtEncodeGeom(((bb.1 + bb.3) / 2, (bb.2 + bb.4) / 2)::Point, 10, 550, 335);
@@ -55,6 +59,10 @@ SELECT mvtTileBBoxMercator(0, 0, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT '-- mvtEncodeGeom: fractional (non-integer) tile controls are rejected rather than silently truncated';
 SELECT mvtEncodeGeom((0.0, 0.0)::Point, 1.5, 0, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mvtEncodeGeom((0.0, 0.0)::Point, 10, 550, 335, 4096.5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- mvtEncodeGeom: a NULL argument yields a NULL geometry instead of a spurious default-position feature';
+SELECT mvtEncodeGeom((13.37, 52.52)::Point, CAST(NULL, 'Nullable(UInt8)'), 0, 0) IS NULL;
+SELECT mvtEncodeGeom((13.37, 52.52)::Point, CAST(10, 'Nullable(UInt8)'), 550, 335) IS NOT NULL;
 
 SELECT '-- the largest valid tile index for a zoom is accepted';
 SELECT mvtTileBBox(1, 1, 1) IS NOT NULL, mvtEncodeGeom((13.37, 52.52)::Point, 1, 1, 0, 4096, 0, false) IS NOT NULL;

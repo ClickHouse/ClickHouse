@@ -6,6 +6,7 @@
 1
 -- mvtTileBBox: a positive margin expands the box on every side
 1	1	1	1
+-- mvtTileBBox: a negative or non-finite margin is rejected (it would invert the bounds)
 -- mvtTileBBox round-trips with mvtEncodeGeom: the tile centre projects to an interior pixel
 (2048,2050)
 -- mvtEncodeGeom: clip=true (the default) returns NULL for an out-of-tile point
@@ -22,5 +23,8 @@
 -- mvtEncode: a geometry delta exceeding the MVT command range is rejected (both vertices are in range)
 -- tile indices must be < 2^zoom in mvtEncodeGeom, mvtTileBBox and mvtTileBBoxMercator
 -- mvtEncodeGeom: fractional (non-integer) tile controls are rejected rather than silently truncated
+-- mvtEncodeGeom: a NULL argument yields a NULL geometry instead of a spurious default-position feature
+1
+1
 -- the largest valid tile index for a zoom is accepted
 1	1

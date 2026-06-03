@@ -135,6 +135,14 @@ public:
 
             const double tile_size = std::exp2(static_cast<double>(32 - zoom));
             const double margin = has_margin ? col_margin->getFloat64(row) : 0.0;
+            /// margin expands the box on every side; a negative or non-finite value would invert the bounds or fill
+            /// them with NaN, silently breaking a `WHERE ... BETWEEN bb.1 AND bb.3` prefilter.
+            if (!std::isfinite(margin) || margin < 0.0)
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The 'margin' argument ({}) of function {} must be a finite, non-negative number",
+                    margin,
+                    getName());
             const double pad = margin * tile_size;
 
             /// The full UInt32 Mercator space; y grows downward (north at the top), matching `mvtEncodeGeom`.
