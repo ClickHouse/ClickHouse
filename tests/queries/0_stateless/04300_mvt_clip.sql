@@ -60,8 +60,11 @@ SELECT mvtEncodeGeom((0.0, 0.0)::Point, 1, 0, 2); -- { serverError ARGUMENT_OUT_
 SELECT mvtTileBBox(0, 1, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT mvtTileBBoxMercator(0, 0, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
-SELECT '-- mvtEncodeGeom: an extent + 2 * buffer that cannot fit the MVT command stream is rejected';
+SELECT '-- mvtEncodeGeom: an extent + 2 * buffer that cannot fit the MVT command stream is rejected when clipping';
 SELECT mvtEncodeGeom((0.0, 0.0)::Point, 0, 0, 0, 2147483647, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT '-- mvtEncodeGeom: the extent + 2 * buffer limit does not apply when clipping is disabled (buffer is unused)';
+SELECT mvtEncodeGeom((0.0, 0.0)::Point, 0, 0, 0, 2147483647, 1, 0) IS NOT NULL;
 
 SELECT '-- mvtEncodeGeom: fractional (non-integer) tile controls are rejected rather than silently truncated';
 SELECT mvtEncodeGeom((0.0, 0.0)::Point, 1.5, 0, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -242,9 +242,13 @@ public:
             if (buffer > static_cast<UInt64>(max_extent_or_buffer))
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The buffer argument of function {} must be in [0, {}]", getName(), max_extent_or_buffer);
 
-            /// Clipped coordinates lie in [-buffer, extent + buffer], so a segment across the buffered tile can have a
-            /// delta of extent + 2 * buffer; require it to fit Int32 so the result is always encodable by mvtEncode.
-            if (extent + 2 * buffer > static_cast<UInt64>(max_extent_or_buffer))
+            clip = has_clip ? (col_clip->getUInt(row) != 0) : true;
+
+            /// When clipping, coordinates lie in [-buffer, extent + buffer], so a segment across the buffered tile can
+            /// have a delta of extent + 2 * buffer; require it to fit Int32 so the clipped result is always encodable by
+            /// mvtEncode. With clipping disabled the buffer is unused, and any out-of-range coordinate or delta is
+            /// rejected by mvtEncode instead.
+            if (clip && extent + 2 * buffer > static_cast<UInt64>(max_extent_or_buffer))
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "extent + 2 * buffer ({}) of function {} must not exceed {} so the clipped geometry fits the MVT command stream",
@@ -261,7 +265,6 @@ public:
 
             const double tile_size = std::exp2(static_cast<double>(32 - zoom));
             projection = Projection{static_cast<double>(tile_x) * tile_size, static_cast<double>(tile_y) * tile_size, static_cast<double>(extent) / tile_size};
-            clip = has_clip ? (col_clip->getUInt(row) != 0) : true;
             const double lo = -static_cast<double>(buffer);
             const double hi = static_cast<double>(extent) + static_cast<double>(buffer);
             box = BBox(BPoint(lo, lo), BPoint(hi, hi));
