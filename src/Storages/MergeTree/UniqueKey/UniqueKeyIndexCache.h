@@ -49,7 +49,7 @@ class UniqueKeyIndexCacheBacking;
 ///   ┌──────────────────────────────────────────┐
 ///   │  UniqueKeyIndexCacheEntry                │   one per cached object
 ///   │   void *obj  ─> RocksDB Block (KB-scale) │
-///   │   helper, charge, allocator              │
+///   │   helper, charge                         │
 ///   │   ~Entry() => helper->del_cb             │
 ///   └──────────────────────────────────────────┘
 ///         ▲
