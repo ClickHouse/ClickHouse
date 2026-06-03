@@ -96,8 +96,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
-        assert(lhs_node_to_compare);
-        assert(rhs_node_to_compare);
+        chassert(lhs_node_to_compare);
+        chassert(rhs_node_to_compare);
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
@@ -315,7 +315,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
       */
     for (auto & weak_pointer_ptr : weak_pointers_to_update_after_clone)
     {
-        assert(weak_pointer_ptr);
+        chassert(weak_pointer_ptr);
         auto strong_pointer = weak_pointer_ptr->lock();
         auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
 
