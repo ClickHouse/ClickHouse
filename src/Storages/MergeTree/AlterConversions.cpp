@@ -303,24 +303,8 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
 {
-    auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
+    auto [actions_chain, overwritten_by_chain] = getMutationActions(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
-
-    /// Collect the columns the on-fly chain actually overwrites — i.e. UPDATE/DELETE
-    /// targets. (`all_updated_columns` also tracks `MODIFY COLUMN` targets, but those
-    /// `READ_COLUMN` commands are NOT applied on-fly — they only set the fence; their
-    /// columns must still go through `performRequiredConversions`.)
-    NameSet overwritten_by_chain;
-    for (const auto & command : mutation_commands)
-    {
-        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
-            continue;
-        auto ast = command.ast();
-        if (!ast)
-            continue;
-        for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
-            overwritten_by_chain.insert(column);
-    }
 
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
@@ -410,7 +394,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
     return patches_to_read;
 }
 
-std::vector<MutationActions> AlterConversions::getMutationActions(
+AlterConversions::MutationActionsChain AlterConversions::getMutationActions(
     const IMergeTreeDataPartInfoForReader & part_info,
     const NamesAndTypesList & read_columns,
     const StorageMetadataPtr & metadata_snapshot,
@@ -440,6 +424,34 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     if (filtered_commands.empty())
         return {};
 
+    /// Targets of the surviving `UPDATE`/`DELETE` commands. Commands dropped by
+    /// `filterMutationCommands` (because the query does not need their targets)
+    /// must not contribute, otherwise their columns would be excluded from
+    /// `performRequiredConversions` while still flowing through earlier surviving
+    /// steps as pass-through reads.
+    NameSet overwritten_by_chain;
+    for (const auto & command : filtered_commands)
+    {
+        auto ast = command.ast();
+        if (!ast)
+            continue;
+
+        if (command.type == MutationCommand::UPDATE)
+        {
+            for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
+                overwritten_by_chain.insert(column);
+        }
+        else if (command.type == MutationCommand::DELETE)
+        {
+            /// `filterMutationCommands` rewrites lightweight `UPDATE _row_exists = 0` into a
+            /// `DELETE` command without the assignment, so `getColumnToUpdateExpression`
+            /// returns nothing. The chain still writes `_row_exists`, so add it explicitly.
+            /// For a plain `ALTER DELETE` the inclusion is harmless because `_row_exists`
+            /// is a virtual column that does not need on-disk conversion.
+            overwritten_by_chain.insert(RowExistsColumn::name);
+        }
+    }
+
     ProfileEvents::increment(ProfileEvents::ReadTasksWithAppliedMutationsOnFly);
     ProfileEvents::increment(ProfileEvents::MutationsAppliedOnFlyInAllReadTasks, filtered_commands.size());
 
@@ -460,7 +472,7 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
         context,
         settings);
 
-    return interpreter.getMutationActions();
+    return {interpreter.getMutationActions(), std::move(overwritten_by_chain)};
 }
 
 void AlterConversions::addColumnsRequiredForMaterialized(
