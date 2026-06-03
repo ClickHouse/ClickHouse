@@ -56,7 +56,7 @@ mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Arguments**
 
-- `geometry` — Geometry in longitude/latitude degrees. Longitude is clamped to `[-180, 180]` and latitude to the Web Mercator range `[-85.05112878, 85.05112878]`. [`Point`](../../data-types/geo.md) / [`LineString`](../../data-types/geo.md) / [`Polygon`](../../data-types/geo.md) / [`MultiPolygon`](../../data-types/geo.md) / [`Geometry`](../../data-types/geo.md).
+- `geometry` — Geometry in longitude/latitude degrees. Longitude is clamped to `[-180, 180]` and latitude to the Web Mercator range `[-85.05112878, 85.05112878]`. [`Point`](../../data-types/geo.md) / [`LineString`](../../data-types/geo.md) / [`MultiLineString`](../../data-types/geo.md) / [`Ring`](../../data-types/geo.md) / [`Polygon`](../../data-types/geo.md) / [`MultiPolygon`](../../data-types/geo.md) / [`Geometry`](../../data-types/geo.md).
 - `zoom` — Slippy-map zoom level, in the range `[0, 32]`. [`UInt8`](../../data-types/int-uint.md).
 - `tile_x` — Tile column index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
 - `tile_y` — Tile row index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).

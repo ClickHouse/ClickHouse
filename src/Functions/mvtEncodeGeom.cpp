@@ -434,7 +434,7 @@ Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ri
     )";
     FunctionDocumentation::Syntax syntax = "mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "LineString", "Polygon", "MultiPolygon", "Geometry"}},
+        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
         {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
         {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
         {"tile_y", "Tile row index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},

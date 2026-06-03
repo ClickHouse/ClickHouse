@@ -626,12 +626,23 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
     if (parameters.size() == 2)
     {
         const auto type = parameters[1].getType();
-        if (type != Field::Types::UInt64 && type != Field::Types::Int64)
+        static constexpr UInt64 max_extent = std::numeric_limits<Int32>::max();
+        if (type == Field::Types::UInt64)
+        {
+            const UInt64 value = parameters[1].safeGet<UInt64>();
+            if (value == 0 || value > max_extent)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second parameter (extent) of aggregate function {} must be in the range [1, 2147483647], got {}", name, value);
+            extent = static_cast<UInt32>(value);
+        }
+        else if (type == Field::Types::Int64)
+        {
+            const Int64 value = parameters[1].safeGet<Int64>();
+            if (value <= 0 || value > static_cast<Int64>(max_extent))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second parameter (extent) of aggregate function {} must be in the range [1, 2147483647], got {}", name, value);
+            extent = static_cast<UInt32>(value);
+        }
+        else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second parameter (extent) of aggregate function {} must be a positive integer", name);
-        const Int64 value = type == Field::Types::UInt64 ? static_cast<Int64>(parameters[1].safeGet<UInt64>()) : parameters[1].safeGet<Int64>();
-        if (value <= 0 || value > std::numeric_limits<Int32>::max())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second parameter (extent) of aggregate function {} must be in the range [1, 2147483647], got {}", name, value);
-        extent = static_cast<UInt32>(value);
     }
 
     return std::make_shared<AggregateFunctionMvtEncode>(argument_types, parameters, layer_name, extent);
