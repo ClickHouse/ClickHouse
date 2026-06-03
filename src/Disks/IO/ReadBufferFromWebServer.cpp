@@ -196,7 +196,7 @@ bool ReadBufferFromWebServer::nextImpl()
 
     if (!use_external_buffer)
     {
-        bool result;
+        bool result = false;
         if (has_pending_first_read_result)
         {
             result = pending_first_read_result;
