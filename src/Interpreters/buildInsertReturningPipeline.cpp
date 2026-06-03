@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
@@ -227,6 +228,12 @@ QueryPipeline buildInsertReturningPipeline(
     insert_pipeline.setProgressCallback(context->getProgressCallback());
 
     CompletedPipelineExecutor insert_executor(insert_pipeline);
+    /// Honor interactive cancellation (client Ctrl+C / `Cancel` packet) while the INSERT phase runs, like the normal
+    /// completed-pipeline paths in `TCPHandler` and `LocalConnection`. `setProcessListElement` alone only reacts once
+    /// the query is already marked killed; the cancel callback is what polls for the client's cancel request.
+    if (auto callback = context->getInteractiveCancelCallback())
+        insert_executor.setCancelCallback(
+            std::move(callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     insert_executor.execute();
 
     return buildReturningSelectPipeline(returning_select, context);
