@@ -3,8 +3,8 @@
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadPool.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <Poco/ConsoleChannel.h>
@@ -22,6 +22,8 @@
 #include <Core/UUID.h>
 #include <Disks/IStoragePolicy.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/registerDisks.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -60,7 +62,6 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/ServerUUID.h>
@@ -183,6 +184,7 @@ static void registerPrintTSVStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("PrintTSV", PrintTSVStep::deserialize);
 }
+
 
 static SharedHeader prepareSourceFileInNativeFormat(const String & file_name, const String & data, size_t input_replicate_count)
 {
@@ -442,6 +444,7 @@ public:
 
     void TearDown() override
     {
+        DB::clearDiskRegistry();
     }
 
 private:
