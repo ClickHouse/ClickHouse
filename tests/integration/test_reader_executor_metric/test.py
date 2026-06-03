@@ -50,10 +50,17 @@ POOL_EVENTS = {
 }
 ALL_EVENTS = {**METRIC_EVENTS, **POOL_EVENTS}
 
-# Multi-threaded (matches the production load test): the read pool hands each thread
-# non-contiguous task ranges, so live connections are abandoned at task boundaries -
-# this is where the incomplete connections (I) / connection resets actually occur.
-EXECUTOR_SETTINGS = {"use_reader_executor": 1, "max_threads": 8}
+# Multi-threaded (matches the production load test) plus the connection-budget axis:
+# reader_executor_use_live_connections = 1 (live: a reusable connection across windows)
+# or 0 (stateless: a short-lived one-shot connection per window). max_threads=8 because
+# the read pool hands each thread non-contiguous task ranges, which is where live
+# connections get abandoned (the incomplete-connection / reset regime).
+def _settings(live):
+    return {
+        "use_reader_executor": 1,
+        "max_threads": 8,
+        "reader_executor_use_live_connections": 1 if live else 0,
+    }
 
 LOADS = {
     # full-column scan -> R + I regime
@@ -123,11 +130,11 @@ def _drop_caches():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, drop_cache):
+def _measure(query, drop_cache, live):
     qid = str(uuid.uuid4())
     if drop_cache:
         _drop_caches()
-    node.query(query, query_id=qid, settings=EXECUTOR_SETTINGS)
+    node.query(query, query_id=qid, settings=_settings(live))
     node.query("SYSTEM FLUSH LOGS")
     cols = ", ".join(f"ProfileEvents['{e}']" for e in ALL_EVENTS.values())
     row = node.query(
@@ -139,7 +146,7 @@ def _measure(query, drop_cache):
     return dict(zip(ALL_EVENTS.keys(), map(int, row.split("\t"))))
 
 
-def _warm_even_blocks():
+def _warm_even_blocks(live):
     # Warm the even 1/16 blocks of the table; the odd blocks stay cold. Touch every
     # column the loads read (v and k, plus id via the filter) so each load sees a
     # genuinely half-warm cache -> reads then alternate cache-hit / cold-miss (the
@@ -148,7 +155,7 @@ def _warm_even_blocks():
     ranges = " OR ".join(
         f"(id >= {b * block} AND id < {(b + 1) * block})" for b in range(0, 16, 2)
     )
-    node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=EXECUTOR_SETTINGS)
+    node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(live))
 
 
 def _stats(samples):
@@ -164,46 +171,51 @@ def _stats(samples):
 
 def test_metric_values_and_stability(started_cluster):
     report = []
-    for name, query in LOADS.items():
-        for state in ("cold", "warm", "fragmented"):
-            if state == "warm":
-                _measure(query, drop_cache=True)  # prime once, then measure warm
-                samples = [_measure(query, drop_cache=False) for _ in range(SAMPLES)]
-            elif state == "fragmented":
-                # Re-establish the half-warm cache per sample (measuring it would
-                # otherwise populate the cold blocks and turn the cache fully warm).
-                samples = []
-                for _ in range(SAMPLES):
-                    _drop_caches()
-                    _warm_even_blocks()
-                    samples.append(_measure(query, drop_cache=False))
-            else:  # cold
-                samples = [_measure(query, drop_cache=True) for _ in range(SAMPLES)]
+    for live in (True, False):
+        mode = "live" if live else "stateless"
+        for name, query in LOADS.items():
+            for state in ("cold", "warm", "fragmented"):
+                if state == "warm":
+                    _measure(query, drop_cache=True, live=live)  # prime once, then measure warm
+                    samples = [_measure(query, drop_cache=False, live=live) for _ in range(SAMPLES)]
+                elif state == "fragmented":
+                    # Re-establish the half-warm cache per sample (measuring it would
+                    # otherwise populate the cold blocks and turn the cache fully warm).
+                    samples = []
+                    for _ in range(SAMPLES):
+                        _drop_caches()
+                        _warm_even_blocks(live)
+                        samples.append(_measure(query, drop_cache=False, live=live))
+                else:  # cold
+                    samples = [_measure(query, drop_cache=True, live=live) for _ in range(SAMPLES)]
 
-            st = _stats(samples)
-            cost = sum(_cost_ms(s) for s in samples) / len(samples)
-            line = (
-                f"[{name}/{state}] "
-                + " ".join(
-                    f"{k}={st[k][0]:.0f}(cv={st[k][2]:.2f},min={st[k][3]},max={st[k][4]})"
-                    for k in ALL_EVENTS
+                st = _stats(samples)
+                cost = sum(_cost_ms(s) for s in samples) / len(samples)
+                line = (
+                    f"[{name}/{state}/{mode}] "
+                    + " ".join(
+                        f"{k}={st[k][0]:.0f}(cv={st[k][2]:.2f},min={st[k][3]},max={st[k][4]})"
+                        for k in ALL_EVENTS
+                    )
+                    + f" cost={cost:.1f}ms"
                 )
-                + f" cost={cost:.1f}ms"
-            )
-            report.append(line)
-            logging.info(line)
+                report.append(line)
+                logging.info(line)
 
-            # Validated invariant: every executor-counted incomplete connection is a
-            # real S3 pool reset, so the executor's I must equal the disk pool's reset
-            # count for each sample. Guards the metric against under-counting resets
-            # (and catches a stale binary, where I reads 0 while ConnReset does not).
-            for s in samples:
-                assert s["I"] == s["ConnReset"], (
-                    f"{name}/{state}: executor I={s['I']} != pool ConnReset={s['ConnReset']}")
-            # Sanity: the executor actually ran (no legacy fallback).
-            if state == "cold" and name == "sequential":
-                assert st["R"][0] > 0, "executor did not run (R=0 cold sequential -> likely legacy fallback)"
+                # Mode-aware invariant. Live: every executor-counted incomplete connection
+                # is a real S3 pool reset (I == ConnReset). Stateless: no reused connection
+                # to abandon -> I == 0 (one short-lived bounded connection per window).
+                for s in samples:
+                    if live:
+                        assert s["I"] == s["ConnReset"], (
+                            f"{name}/{state}/live: executor I={s['I']} != pool ConnReset={s['ConnReset']}")
+                    else:
+                        assert s["I"] == 0, (
+                            f"{name}/{state}/stateless: expected no incomplete connections, got I={s['I']}")
+                # Sanity: the executor actually ran (no legacy fallback).
+                if state == "cold" and name == "sequential" and live:
+                    assert st["R"][0] > 0, "executor did not run (R=0 cold sequential -> likely legacy fallback)"
 
-    banner = "\n=== ReaderExecutor real-load metric ===\n" + "\n".join(report) + "\n"
+    banner = "\n=== ReaderExecutor real-load metric (state x pattern x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
     print(banner)
