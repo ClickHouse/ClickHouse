@@ -1552,13 +1552,19 @@ bool StorageMergeTree::merge(
     bool optimize_skip_merged_partitions)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
 
     auto merge_select_result = [&]()
     {
         std::unique_lock lock(currently_processing_in_background_mutex);
         if (merger_mutator.merges_blocker.isCancelledForPartition(partition_id))
             throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+
+        /// Read in-memory metadata under the mutex. Pairs with `StorageMergeTree::alter`,
+        /// which publishes new metadata and registers the rename mutation atomically under
+        /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
+        /// metadata without also seeing the pending rename mutation. See #80648.
+        metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
         return selectPartsToMerge(
             metadata_snapshot,
