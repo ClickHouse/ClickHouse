@@ -7,12 +7,14 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadPool.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/noexcept_scope.h>
 
 #include <base/sleep.h>
 #include <fmt/ranges.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -246,7 +248,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
     for (const auto & table_and_mutation : mutations_to_wait)
         table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
-    assert([&]()
+    chassert([&]()
     {
         std::lock_guard lock{mutex};
         return mutations == mutations_to_wait;
@@ -382,12 +384,12 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version->unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-    assert([&]()
+    chassert([&]()
     {
         std::lock_guard lock{mutex};
-        assert(mutations_to_kill == mutations);
-        assert(parts_to_remove == creating_parts);
-        assert(parts_to_activate == removing_parts);
+        chassert(mutations_to_kill == mutations);
+        chassert(parts_to_remove == creating_parts);
+        chassert(parts_to_activate == removing_parts);
         return csn == Tx::RolledBackCSN;
     }());
 
