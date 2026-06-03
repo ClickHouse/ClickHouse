@@ -642,7 +642,9 @@ AggregateFunctionPtr createAggregateFunctionMvtEncode(
             extent = static_cast<UInt32>(value);
         }
         else
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second parameter (extent) of aggregate function {} must be a positive integer", name);
+        }
     }
 
     return std::make_shared<AggregateFunctionMvtEncode>(argument_types, parameters, layer_name, extent);
