@@ -18,7 +18,6 @@
                  [net.java.dev.jna/jna "5.14.0"]
                  [net.java.dev.jna/jna-platform "5.14.0"]
                  [com.clickhouse/clickhouse-jdbc "0.3.2-patch11"]
-                 [org.clojure/data.generators "0.1.0"]
                  [clojure-interop/java.util.concurrent "1.0.5"]
                  [org.apache.zookeeper/zookeeper "3.6.1"
                   :exclusions [org.slf4j/slf4j-log4j12
