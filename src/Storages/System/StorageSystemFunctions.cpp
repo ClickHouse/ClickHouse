@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -13,6 +14,7 @@
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -40,7 +42,8 @@ namespace
         UInt64 is_aggregate,
         const String & create_query,
         FunctionOrigin function_origin,
-        const Factory & factory)
+        const Factory & factory,
+        ContextPtr context)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -99,11 +102,36 @@ namespace
             res_columns[12]->insertDefault();
             res_columns[13]->insertDefault();
         }
+
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        {
+            try
+            {
+                auto resolver = factory.tryGet(name, context);
+                if (resolver)
+                {
+                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                    return;
+                }
+            }
+            catch (...)
+            {
+                LOG_DEBUG(
+                    getLogger("system.functions"),
+                    "Cannot resolve function {} for introspection: {}",
+                    name,
+                    getCurrentExceptionMessage(/* with_stacktrace */ false));
+            }
+        }
+        res_columns[14]->insertDefault();
+        res_columns[15]->insertDefault();
     }
+
 }
 
 
-std::vector<std::pair<String, Int8>> getOriginEnumsValues()
+static std::vector<std::pair<String, Int8>> getOriginEnumsValues()
 {
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
@@ -130,25 +158,31 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
-        {"categories", std::make_shared<DataTypeString>(), "The category of the function."}
+        {"categories", std::make_shared<DataTypeString>(), "The category of the function."},
+        {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
+        {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
     };
 }
 
 void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
+    /// Resolving every function (and the helpers their constructors create internally —
+    /// e.g. coalesce constructs isNotNull/assumeNotNull/if; map constructs array/mapFromArrays;
+    /// monthName constructs dateName) would otherwise pollute query_log.used_functions for
+    /// the user's query. Suppress factory accounting for the duration of the read.
+    Context::SuppressQueryFactoriesInfoScope suppress_factory_info;
+
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
-    {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory);
-    }
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, context);
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
-    {
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory);
-    }
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
@@ -174,14 +208,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, context);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, context);
     }
 
     const auto & wasm_functions_factory = UserDefinedWebAssemblyFunctionFactory::instance();
@@ -230,6 +264,8 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[11]->insertDefault(); // examples
         res_columns[12]->insertDefault(); // introduced_in
         res_columns[13]->insertDefault(); // categories
+        res_columns[14]->insertDefault(); // is_deterministic
+        res_columns[15]->insert(UInt8{0}); // higher_order
     }
 }
 

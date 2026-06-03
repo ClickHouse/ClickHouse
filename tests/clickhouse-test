@@ -76,6 +76,22 @@ def write_text_atomic(path: Path, text: str) -> None:
     except Exception as e:
         print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
+# Exit code returned by `clickhouse-test` when the run was aborted early via
+# `stop_testing` (typically: server died / health check failed). Distinct from
+# the generic failure code 1 so the job side can populate the synthetic
+# "Server died" leaf without fragile log-line matching. Kept in sync with
+# `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
+STOP_TESTING_EXIT_CODE = 2
+
+# Exit code returned when the run stopped *gracefully* because the global time
+# limit (`--global_time_limit` / `--stop-time`) was reached. This is an
+# expected, benign stop condition - the flaky and targeted checks deliberately
+# rerun the selected tests until the time budget is exhausted - so it must NOT
+# be conflated with `STOP_TESTING_EXIT_CODE` (which the job side reports as
+# "Server died"). Kept in sync with `GLOBAL_TIME_LIMIT_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+GLOBAL_TIME_LIMIT_EXIT_CODE = 3
+
 USE_JINJA = True
 try:
     import jinja2
@@ -648,7 +664,7 @@ def kill_process_group(pgid, fatal_log):
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
-            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with lldb
             client_printed_stacktrace = False
             try:
                 if fatal_log and os.path.exists(fatal_log):
@@ -664,7 +680,7 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_gdb(child))
+                    print(get_stacktraces_from_lldb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -941,14 +957,60 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-# collect server stacktraces using gdb
-def get_stacktraces_from_gdb(pid):
-    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
-    # on a debug build with many threads; anything beyond that means gdb
-    # itself is wedged (e.g. signal-handler deadlock on the inferior).
-    # Killing gdb leaves the server process untouched.
+_LLDB_INSTALL_ATTEMPTED = False
+
+
+def _ensure_lldb_installed():
+    """Make sure `lldb` is on PATH, installing it on the fly if not.
+
+    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
+    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
+    flight, install it at runtime so `print_c_stacktraces` keeps working.
+    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
+    install `lldb` permanently, this helper and its single call site below
+    should be removed.
+
+    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
+    install fails (no sudo, no network, no `brew`, ...), let
+    `shell_get_output` return "" so the surrounding diagnostic flow keeps
+    going instead of crashing during an already-broken run.
+
+    Bounded and idempotent: each subprocess call has a hard timeout so a
+    stalled package mirror cannot wedge stacktrace collection for minutes,
+    and a process-wide flag ensures only the first call attempts the
+    install — `print_c_stacktraces` iterates over every server PID, and we
+    must not pay the install cost (or timeout) for each one if the first
+    attempt already failed.
+    """
+    global _LLDB_INSTALL_ATTEMPTED
+    if shutil.which("lldb"):
+        return
+    if _LLDB_INSTALL_ATTEMPTED:
+        return
+    _LLDB_INSTALL_ATTEMPTED = True
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
+        else:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
+            subprocess.run(
+                ["apt-get", "install", "-y", "lldb"],
+                check=True, env=env, timeout=120,
+            )
+    except Exception as e:
+        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
+
+
+# collect server stacktraces using lldb (used uniformly on Linux and macOS)
+def get_stacktraces_from_lldb(pid):
+    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
+    # debug build with many threads; anything beyond that means lldb itself
+    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
+    # leaves the server process untouched.
+    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     return shell_get_output(
-        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
     )
 
@@ -1027,7 +1089,7 @@ def get_all_server_pids():
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
             args,
@@ -1040,22 +1102,22 @@ def is_asan_build(args):
 
 
 def print_c_stacktraces(args) -> None:
-    """C++-side backtraces via gdb.  Works whenever the server process
+    """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  gdb's "thread apply all
-    backtrace" pause is on the order of seconds — acceptable in both
-    cases against the diagnostic value.
+    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
+    pause is on the order of seconds — acceptable in both cases against
+    the diagnostic value.
 
-    Skipped under ASan, where gdb attach disables LeakSanitizer
-    detections.
+    Skipped under ASan, where attaching a debugger disables
+    LeakSanitizer detections.
     """
     if is_asan_build(args):
         print(
             colored(
-                "\nCannot collect C stacktraces under ASan: gdb attach is disabled.",
+                "\nCannot collect C stacktraces under ASan: debugger attach is disabled.",
                 args,
                 "red",
                 attrs=["bold"],
@@ -1079,8 +1141,8 @@ def print_c_stacktraces(args) -> None:
 
     for pid in all_pids:
         label = "main server" if pid == server_pid else "replica"
-        print(f"\nCollecting C stacktraces from {label} process {pid} with gdb:")
-        bt = get_stacktraces_from_gdb(pid)
+        print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
+        bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
             print(f"=== PID {pid} ({label}) ===\n{bt}")
         else:
@@ -1182,6 +1244,7 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    OLD_ANALYZER = "old-analyzer"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
     LINUX_ONLY = "supported only on Linux"
 
@@ -1214,7 +1277,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1478,6 +1541,16 @@ class SettingsRandomizer:
         "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
         "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
         "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
+        "query_plan_direct_read_from_text_index": lambda: random.random() > 0.05,
+        "query_plan_text_index_add_hint": lambda: random.random() > 0.05,
+        "optimize_truncate_order_by_after_group_by_keys": lambda: random.random() > 0.05,
+        "enable_automatic_decision_for_merging_across_partitions_for_final": lambda: random.random() > 0.05,
+        "parallel_non_joined_rows_processing": lambda: random.random() > 0.05,
+        "use_skip_indexes_for_disjunctions": lambda: random.random() > 0.05,
+        "use_hash_table_stats_for_join_reordering": lambda: random.random() > 0.05,
+        "allow_calculating_subcolumns_sizes_for_merge_tree_reading": lambda: random.random() > 0.05,
+        "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
+        "enable_join_transitive_predicates": lambda: random.random() < 0.3,
     }
 
     dependent_settings = {
@@ -1615,6 +1688,8 @@ class MergeTreeSettingsRandomizer:
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
+        "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
+        "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
     }
 
@@ -2010,10 +2085,13 @@ class TestCase:
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
 
+        # Put randomized settings BEFORE base_client_options / client_options so
+        # that user-supplied --client-option values win over them: with
+        # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                self.base_client_options + new_options + " "
+                new_options + " " + self.base_client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -2024,7 +2102,7 @@ class TestCase:
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
 
-        return client_options + new_options
+        return new_options + " " + client_options
 
     def remove_settings_from_env(self):
         os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
@@ -2518,6 +2596,9 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
+
+        if "no-old-analyzer" in tags and is_old_analyzer_used(args):
+            return FailureReason.OLD_ANALYZER
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
@@ -4052,12 +4133,23 @@ class TestSuite:
         return TestSuite(args, suite_path, suite_tmp_path, suite)
 
 
-class ServerDied(Exception):
-    pass
+class StopTesting(Exception):
+    """Raised to abort the whole test run (server crash, hung-check
+    timeout, --max-failures limit, global time limit, etc.). Mirrors
+    `StopIteration` in role: a control-flow exception unwound to a
+    known outer handler.
 
+    The reason is in the message — the catch handler prefixes it with
+    "Test run aborted:" so it stands out in the log, and exits with
+    `exit_code` so the job side can distinguish the cause: the default
+    `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
+    (reported as "Server died"), while `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
+    benign, expected stop after the time budget was reached.
+    """
 
-class GlobalTimeout(Exception):
-    pass
+    def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 def run_diagnose_from_artifacts(args, stop_testing):
@@ -4287,12 +4379,26 @@ def run_tests_array(
 
         if stop_testing.is_set():
             stop_tests()
-            raise ServerDied("Server died")
+            raise StopTesting(
+                "another component requested stop (see earlier output for the cause)"
+            )
 
         if args.stop_time and time() > args.stop_time:
-            print("\nStop tests run because global time limit is exceeded.\n")
+            if is_concurrent:
+                # Parallel worker: stop quietly and let the parent orchestrate
+                # the graceful shutdown and the exit code. Do NOT call
+                # `stop_tests()` here — its `killpg` broadcasts SIGTERM to the
+                # whole group, including the parent, which would clobber the
+                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` into 143 (reported as
+                # "Server died").
+                break
+            # Sequential runner (runs in the main process): raise so the
+            # graceful exit code propagates to the outer handler.
             stop_tests()
-            raise GlobalTimeout("Stop tests run because global time limit is exceeded")
+            raise StopTesting(
+                "global time limit exceeded (--stop-time)",
+                exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+            )
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4314,7 +4420,7 @@ def run_tests_array(
 
             while True:
                 # This is the upper level timeout
-                # It helps with completely frozen processes, like in case of gdb errors
+                # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
                         # Dump stacktraces *before* stop_tests() kills the
@@ -4383,14 +4489,18 @@ def run_tests_array(
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
-                    raise ServerDied("Server died")
+                    raise StopTesting(
+                        f"ClickHouse server died during test '{test_case.name}'"
+                    )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
                             stop_testing.set()
-                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
+                            raise StopTesting(
+                                f"reached --max-failures limit ({args.max_failures})"
+                            )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -4402,7 +4512,9 @@ def run_tests_array(
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             stop_testing.set()
-            raise ServerDied("Max failures chain")
+            raise StopTesting(
+                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+            )
 
     if failures_total > 0:
         print(
@@ -4806,6 +4918,11 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
+        # Set when the parent stops the run because the global time limit was
+        # reached, so the final `StopTesting` is raised with the benign
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
+        global_time_limit_reached = False
+
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -4835,6 +4952,29 @@ def do_run_tests(
                     # we consider shedding another worker.
                     last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
 
+            # Stop the whole run once the global time limit is reached. This is
+            # the *expected* stop condition for the flaky and targeted checks,
+            # which rerun the selected tests until the time budget is exhausted -
+            # distinct from a server death or a hung check below. Only claim the
+            # time limit if nothing else has already requested a stop, so a real
+            # server death or `--max-failures` abort keeps precedence.
+            if (
+                args.stop_time
+                and time() > args.stop_time
+                and not stop_testing.is_set()
+            ):
+                print("Global time limit reached - stopping all tests gracefully.")
+                # Ignore SIGTERM in the parent for the rest of the run: when we
+                # terminate the workers below, each worker's KeyboardInterrupt
+                # handler re-broadcasts SIGTERM to the whole process group via
+                # `stop_tests()` -> `killpg`. Without this guard that signal
+                # would hit the parent and exit it with 143 instead of the
+                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                # timeout back into a "Server died" report).
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                global_time_limit_reached = True
+                stop_testing.set()
+
             # Periodically check the server for hangs
             # and stop all processes in this case
             if args.hung_check:
@@ -4858,7 +4998,14 @@ def do_run_tests(
                         p.kill()
                 for p in processes:
                     p.join(timeout=5)
-                break
+                if global_time_limit_reached:
+                    raise StopTesting(
+                        "global time limit reached",
+                        exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+                    )
+                raise StopTesting(
+                    "test run was stopped (see earlier output for the cause)"
+                )
 
             for p in processes[:]:
                 if not p.is_alive():
@@ -5278,7 +5425,7 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         stop_testing.set()
-        raise
+        raise StopTesting(f"Failed to create databases for tests: {e}") from e
 
     if (
         args.collect_per_test_coverage
@@ -5476,9 +5623,6 @@ ORDER BY (test_name, callee_offset)
                 stop_testing,
                 runner_process_killed,
             )
-
-    if stop_testing.is_set():
-        exit_code.value = 1
 
     if runner_process_killed.is_set():
         exit_code.value = 1
@@ -6501,6 +6645,37 @@ if __name__ == "__main__":
     else:
         args.client_options_query_str = ""
 
+    if args.llvm_coverage:
+        # Pin the seeds of random-by-default mechanisms so the set of branches
+        # exercised inside the server is stable run-to-run. Without this the
+        # LLVM coverage report flickers on files reachable from these injection
+        # points (keeper fault injection, etc.).
+        # `--allow_repeated_settings` is already appended later by the per-test
+        # composition, so a test that explicitly sets one of these still wins.
+        coverage_pinned_settings = {
+            "backup_restore_keeper_fault_injection_seed": 1,
+            "insert_keeper_fault_injection_seed": 1,
+        }
+        coverage_pinned_cli = " ".join(
+            f"--{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+        coverage_pinned_url = "&".join(
+            f"{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+
+        existing_client_opt = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").rstrip()
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            f"{existing_client_opt} {coverage_pinned_cli} ".lstrip()
+        )
+
+        existing_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "").rstrip("&")
+        if existing_url_params:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                f"{existing_url_params}&{coverage_pinned_url}"
+            )
+        else:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = coverage_pinned_url
+
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
 
@@ -6518,10 +6693,10 @@ if __name__ == "__main__":
 
     try:
         main(args)
-    except ServerDied as e:
-        print(f"{e}", file=sys.stderr)
+    except StopTesting as e:
+        print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(1)
+        sys.exit(e.exit_code)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)
         sys.exit(128 + e.signal)
