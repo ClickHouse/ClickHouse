@@ -710,10 +710,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
             if (shouldIgnoreShardException(packet.exception->code()))
             {
-                LOG_ERROR(log,
-                    "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
-                    connections->dumpAddresses(),
-                    packet.exception->displayText());
+                /// `log` may be null (e.g. when the executor is created internally by
+                /// `getStructureOfRemoteTable`), so guard the logging like other call sites do.
+                if (log)
+                    LOG_ERROR(log,
+                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                        connections->dumpAddresses(),
+                        packet.exception->displayText());
 
                 /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
                 /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
@@ -887,10 +890,13 @@ void RemoteQueryExecutor::finish()
 
                 if (shouldIgnoreShardException(packet.exception->code()))
                 {
-                    LOG_ERROR(log,
-                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
-                        connections->dumpAddresses(),
-                        packet.exception->displayText());
+                    /// `log` may be null (e.g. when the executor is created internally by
+                    /// `getStructureOfRemoteTable`), so guard the logging like other call sites do.
+                    if (log)
+                        LOG_ERROR(log,
+                            "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                            connections->dumpAddresses(),
+                            packet.exception->displayText());
 
                     /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
                     /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
