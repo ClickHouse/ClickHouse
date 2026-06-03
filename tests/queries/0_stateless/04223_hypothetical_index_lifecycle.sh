@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: long, no-replicated-database
 # no-replicated-database: hypothetical indexes are session-scoped and not replicated
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
