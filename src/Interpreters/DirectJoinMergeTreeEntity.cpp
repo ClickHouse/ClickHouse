@@ -269,16 +269,14 @@ Chunk DirectJoinMergeTreeEntity::getByKeys(
     for (const auto & col : found_columns)
         col->insertDefault();
 
-    /// `found_columns` are in `plan_header` order, but the caller expects them in `required_columns`
-    /// (i.e. `sample_block`) order. The two orders may differ because the lookup plan is free to
-    /// reorder columns during optimization. Without this remapping, the result block ends up with
-    /// column data shuffled across positions while keeping the schema's names and types from
-    /// `right_sample_block`, which produces type-column mismatches downstream — e.g. comparing the
-    /// shuffled-in column against another value can hit `executeGenericIdenticalTypes` with one
-    /// `Nullable` column and one non-`Nullable` column, raising a `LOGICAL_ERROR`.
+    /// Remap `found_columns` (in `plan_header` order) into `sample_block` order so the result
+    /// matches the schema the caller expects. `sample_block` already encodes the empty-means-all
+    /// contract: when `required_columns` is empty it is the full plan header, otherwise it is the
+    /// requested subset in the requested order.
+    const auto & result_names = sample_block.getNames();
     MutableColumns result_columns;
-    result_columns.reserve(required_columns.size());
-    for (const auto & column_name : required_columns)
+    result_columns.reserve(result_names.size());
+    for (const auto & column_name : result_names)
     {
         size_t plan_idx = plan_header->getPositionByName(column_name);
         result_columns.push_back(IColumn::mutate(found_columns[plan_idx]->index(*selector, 0)));

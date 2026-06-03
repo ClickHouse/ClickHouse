@@ -68,5 +68,22 @@ ORDER BY 1, 2, 3
 LIMIT 713
 SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
 
+-- SEMI/ANTI joins project no right-side columns, so the lookup requests a minimal column
+-- set. The successful-lookup path must still return a chunk whose schema matches the
+-- not-found and empty-key paths; otherwise it produces a data-dependent schema mismatch.
+SELECT t0.Id
+FROM events_04206 AS t0
+LEFT SEMI JOIN attributes_04206 AS t1 ON t1.EventId = t0.Id
+ORDER BY t0.Id
+LIMIT 5
+SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+
+SELECT t0.Id
+FROM events_04206 AS t0
+LEFT ANTI JOIN attributes_04206 AS t1 ON t1.EventId = t0.Id
+ORDER BY t0.Id
+LIMIT 5
+SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+
 DROP TABLE events_04206;
 DROP TABLE attributes_04206;
