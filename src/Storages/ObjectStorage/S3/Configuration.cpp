@@ -241,8 +241,13 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>(
-        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    if (collection.has("partition_columns_in_data_file"))
+    {
+        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
+        partition_columns_in_data_file_was_set = true;
+    }
+    else
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
 
@@ -330,6 +335,12 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto object_storage = disk->getObjectStorage();
+    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
+    /// `assert_cast` checks `typeid` exactly, so calling it on a wrapper would throw a
+    /// LOGICAL_ERROR even though the wrapper exposes the same interface and ultimately
+    /// holds an `S3ObjectStorage`. See https://github.com/ClickHouse/ClickHouse/issues/89300.
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
@@ -618,6 +629,12 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
+    /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
+    s3_settings->request_settings.updateFromSettings(
+        context->getSettingsRef(),
+        /* if_changed */ true,
+        context->getSettingsRef()[Setting::s3_validate_request_settings]);
+
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())
     {
@@ -654,6 +671,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         partition_columns_in_data_file_value.has_value())
     {
         partition_columns_in_data_file = partition_columns_in_data_file_value.value();
+        partition_columns_in_data_file_was_set = true;
     }
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
@@ -1013,7 +1031,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    assert(s3_settings != nullptr);
+    chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
