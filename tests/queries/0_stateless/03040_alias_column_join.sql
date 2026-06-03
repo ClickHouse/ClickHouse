@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/44365
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 DROP TABLE IF EXISTS 03040_test;
 
 CREATE TABLE 03040_test

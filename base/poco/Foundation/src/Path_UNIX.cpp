@@ -48,25 +48,17 @@ std::string PathImpl::currentImpl()
 std::string PathImpl::homeImpl()
 {
 	std::string path;
-#if defined(_POSIX_C_SOURCE) || defined(_BSD_SOURCE) || defined(_POSIX_C_SOURCE)
 	size_t buf_size = 1024;     // Same as glibc use for getpwuid
 	std::vector<char> buf(buf_size);
 	struct passwd res;
 	struct passwd* pwd = nullptr;
 
 	getpwuid_r(getuid(), &res, buf.data(), buf_size, &pwd);
-#else
-	struct passwd* pwd = getpwuid(getuid());
-#endif
 	if (pwd)
 		path = pwd->pw_dir;
 	else
 	{
-#if defined(_POSIX_C_SOURCE) || defined(_BSD_SOURCE) || defined(_POSIX_C_SOURCE)
 		getpwuid_r(getuid(), &res, buf.data(), buf_size, &pwd);
-#else
-		pwd = getpwuid(geteuid());
-#endif
 		if (pwd)
 			path = pwd->pw_dir;
 		else
@@ -82,7 +74,7 @@ std::string PathImpl::configHomeImpl()
 {
 	std::string path = PathImpl::homeImpl();
 	std::string::size_type n = path.size();
-	if (n > 0 && path[n - 1] == '/') 
+	if (n > 0 && path[n - 1] == '/')
 #if POCO_OS == POCO_OS_MAC_OS_X
 	  path.append("Library/Preferences/");
 #else
@@ -97,7 +89,7 @@ std::string PathImpl::dataHomeImpl()
 {
 	std::string path = PathImpl::homeImpl();
 	std::string::size_type n = path.size();
-	if (n > 0 && path[n - 1] == '/') 
+	if (n > 0 && path[n - 1] == '/')
 #if POCO_OS == POCO_OS_MAC_OS_X
 	  path.append("Library/Application Support/");
 #else
@@ -112,7 +104,7 @@ std::string PathImpl::cacheHomeImpl()
 {
 	std::string path = PathImpl::homeImpl();
 	std::string::size_type n = path.size();
-	if (n > 0 && path[n - 1] == '/') 
+	if (n > 0 && path[n - 1] == '/')
 #if POCO_OS == POCO_OS_MAC_OS_X
 	  path.append("Library/Caches/");
 #else
@@ -127,7 +119,7 @@ std::string PathImpl::tempHomeImpl()
 {
 	std::string path = PathImpl::homeImpl();
 	std::string::size_type n = path.size();
-	if (n > 0 && path[n - 1] == '/') 
+	if (n > 0 && path[n - 1] == '/')
 #if POCO_OS == POCO_OS_MAC_OS_X
 	  path.append("Library/Caches/");
 #else
@@ -159,7 +151,7 @@ std::string PathImpl::tempImpl()
 std::string PathImpl::configImpl()
 {
 	std::string path;
-	
+
 #if POCO_OS == POCO_OS_MAC_OS_X
 	  path = "/Library/Preferences/";
 #else

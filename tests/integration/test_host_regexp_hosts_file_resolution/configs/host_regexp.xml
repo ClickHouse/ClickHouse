@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <users>
         <test_dns>
             <password/>
@@ -8,4 +8,4 @@
             <profile>default</profile>
         </test_dns>
     </users>
-</yandex>
+</clickhouse>

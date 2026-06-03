@@ -186,7 +186,7 @@ bool ZooKeeperWithFaultInjection::injectFailureAfterOperationPromise(const char 
 }
 
 Strings ZooKeeperWithFaultInjection::getChildren(
-    const std::string & path, Coordination::Stat * stat, const zkutil::EventPtr & watch, Coordination::ListRequestType list_request_type)
+    const std::string & path, Coordination::Stat * stat, const Coordination::EventPtr & watch, Coordination::ListRequestType list_request_type)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->getChildren(path, stat, watch, list_request_type); });
 }
@@ -202,7 +202,7 @@ Coordination::Error ZooKeeperWithFaultInjection::tryGetChildren(
     const std::string & path,
     Strings & res,
     Coordination::Stat * stat,
-    const zkutil::EventPtr & watch,
+    const Coordination::EventPtr & watch,
     Coordination::ListRequestType list_request_type)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->tryGetChildren(path, res, stat, watch, list_request_type); });
@@ -215,52 +215,22 @@ ZooKeeperWithFaultInjection::tryGetChildren(const std::vector<std::string> & pat
         __func__, !paths.empty() ? paths.front() : "", [&]() { return keeper->tryGetChildren(paths, list_request_type); });
 }
 
-Coordination::Error ZooKeeperWithFaultInjection::tryGetChildrenWatch(
-    const std::string & path,
-    Strings & res,
-    Coordination::Stat * stat,
-    Coordination::WatchCallback watch_callback,
-    Coordination::ListRequestType list_request_type)
-{
-    return executeWithFaultSync(
-        __func__, path, [&]() { return keeper->tryGetChildrenWatch(path, res, stat, watch_callback, list_request_type); });
-}
-
 Strings ZooKeeperWithFaultInjection::getChildrenWatch(
     const std::string & path,
     Coordination::Stat * stat,
-    Coordination::WatchCallback watch_callback,
-    Coordination::ListRequestType list_request_type)
-{
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
-}
-
-Strings ZooKeeperWithFaultInjection::getChildrenWatch(
-    const std::string & path,
-    Coordination::Stat * stat,
-    Coordination::WatchCallbackPtr watch_callback,
+    Coordination::WatchCallbackPtrOrEventPtr watch_callback,
     Coordination::ListRequestType list_request_type)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->getChildrenWatch(path, stat, watch_callback, list_request_type); });
 }
 
 bool ZooKeeperWithFaultInjection::tryGet(
-    const std::string & path, std::string & res, Coordination::Stat * stat, const zkutil::EventPtr & watch, Coordination::Error * code)
+    const std::string & path, std::string & res, Coordination::Stat * stat, const Coordination::EventPtr & watch, Coordination::Error * code)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->tryGet(path, res, stat, watch, code); });
 }
 
-bool ZooKeeperWithFaultInjection::tryGetWatch(
-    const std::string & path,
-    std::string & res,
-    Coordination::Stat * stat,
-    Coordination::WatchCallback watch_callback,
-    Coordination::Error * code)
-{
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->tryGetWatch(path, res, stat, watch_callback, code); });
-}
-
-std::string ZooKeeperWithFaultInjection::get(const std::string & path, Coordination::Stat * stat, const zkutil::EventPtr & watch)
+std::string ZooKeeperWithFaultInjection::get(const std::string & path, Coordination::Stat * stat, const Coordination::EventPtr & watch)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->get(path, stat, watch); });
 }
@@ -277,15 +247,15 @@ zkutil::ZooKeeper::MultiTryGetResponse ZooKeeperWithFaultInjection::tryGet(const
 
 void ZooKeeperWithFaultInjection::set(const String & path, const String & data, int32_t version, Coordination::Stat * stat)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->set(path, data, version, stat); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->set(path, data, version, stat); });
 }
 
 void ZooKeeperWithFaultInjection::remove(const String & path, int32_t version)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->remove(path, version); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->remove(path, version); });
 }
 
-bool ZooKeeperWithFaultInjection::exists(const std::string & path, Coordination::Stat * stat, const zkutil::EventPtr & watch)
+bool ZooKeeperWithFaultInjection::exists(const std::string & path, Coordination::Stat * stat, const Coordination::EventPtr & watch)
 {
     return executeWithFaultSync(__func__, path, [&]() { return keeper->exists(path, stat, watch); });
 }
@@ -352,18 +322,18 @@ Coordination::Responses ZooKeeperWithFaultInjection::multi(const Coordination::R
 
 void ZooKeeperWithFaultInjection::createIfNotExists(const std::string & path, const std::string & data)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createIfNotExists(path, data); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createIfNotExists(path, data); });
 }
 
 void ZooKeeperWithFaultInjection::createOrUpdate(const std::string & path, const std::string & data, int32_t mode)
 {
     chassert(mode != zkutil::CreateMode::EphemeralSequential && mode != zkutil::CreateMode::Ephemeral);
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createOrUpdate(path, data, mode); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createOrUpdate(path, data, mode); });
 }
 
 void ZooKeeperWithFaultInjection::createAncestors(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->createAncestors(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->createAncestors(path); });
 }
 
 Coordination::Error ZooKeeperWithFaultInjection::tryRemove(const std::string & path, int32_t version)
@@ -373,17 +343,17 @@ Coordination::Error ZooKeeperWithFaultInjection::tryRemove(const std::string & p
 
 void ZooKeeperWithFaultInjection::removeRecursive(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->removeRecursive(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->removeRecursive(path); });
 }
 
 void ZooKeeperWithFaultInjection::tryRemoveRecursive(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->tryRemoveRecursive(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->tryRemoveRecursive(path); });
 }
 
 void ZooKeeperWithFaultInjection::removeChildren(const std::string & path)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->removeChildren(path); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->removeChildren(path); });
 }
 
 bool ZooKeeperWithFaultInjection::tryRemoveChildrenRecursive(
@@ -410,14 +380,14 @@ ZooKeeperWithFaultInjection::trySet(const std::string & path, const std::string 
 
 void ZooKeeperWithFaultInjection::checkExistsAndGetCreateAncestorsOps(const std::string & path, Coordination::Requests & requests)
 {
-    return executeWithFaultSync(__func__, path, [&]() { return keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
+    executeWithFaultSync(__func__, path, [&]() { keeper->checkExistsAndGetCreateAncestorsOps(path, requests); });
 }
 
 void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(
     const std::string & path, const std::string & fast_delete_if_equal_value)
 {
-    return executeWithFaultSync(
-        __func__, path, [&]() { return keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
+    executeWithFaultSync(
+        __func__, path, [&]() { keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
 }
 
 Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
@@ -447,32 +417,6 @@ ZooKeeperWithFaultInjection::tryMultiNoThrow(const Coordination::Requests & requ
     }
 }
 
-zkutil::ZooKeeper::FutureExists ZooKeeperWithFaultInjection::asyncExists(std::string path, Coordination::WatchCallback watch_callback)
-{
-    auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
-    auto future = promise->get_future();
-    if (injectFailureBeforeOperationPromise(__func__, promise, path))
-        return future;
-
-    const char * function_name = __func__;
-    auto callback = [&, promise](const Coordination::ExistsResponse & response) mutable
-    {
-        if (injectFailureAfterOperationPromise(function_name, promise, path))
-            return;
-
-        if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
-            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException::fromPath(response.error, path)));
-        else
-            promise->set_value(response);
-    };
-
-    keeper->impl->exists(
-        path,
-        std::move(callback),
-        watch_callback ? std::make_shared<Coordination::WatchCallback>(watch_callback) : Coordination::WatchCallbackPtr{});
-    return future;
-}
-
 zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::string path)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
@@ -496,8 +440,12 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
     return future;
 }
 
-
 zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops)
+{
+    return asyncTryMultiNoThrow(std::span(ops));
+}
+
+zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
 {
 #ifndef NDEBUG
     /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes

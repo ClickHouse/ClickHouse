@@ -13,7 +13,7 @@ SELECT toDateTimeNonExistingFunction(now()) RESPECT NULLS b; -- { serverError UN
 SELECT toDateTime(now()) RESPECT NULLS b; -- { serverError SYNTAX_ERROR }
 SELECT count() from numbers(10) where in(number, (0)) RESPECT NULLS; -- { serverError SYNTAX_ERROR }
 SELECT if(number > 0, number, 0) respect nulls from numbers(0); -- { serverError SYNTAX_ERROR }
-WITH (x -> x + 1) AS lambda SELECT lambda(number) RESPECT NULLS FROM numbers(10) SETTINGS allow_experimental_analyzer = 1; -- { serverError SYNTAX_ERROR }
+WITH (x -> x + 1) AS lambda SELECT lambda(number) RESPECT NULLS FROM numbers(10) SETTINGS enable_analyzer = 1; -- { serverError SYNTAX_ERROR }
 SELECT * from system.one WHERE indexHint(dummy = 1) RESPECT NULLS; -- { serverError SYNTAX_ERROR }
 SELECT arrayJoin([[3,4,5], [6,7], [2], [1,1]]) IGNORE NULLS; -- { serverError SYNTAX_ERROR }
 SELECT number, grouping(number % 2, number) RESPECT NULLS AS gr FROM numbers(10) GROUP BY GROUPING SETS ((number), (number % 2)) SETTINGS force_grouping_standard_compatibility = 0; -- { serverError SYNTAX_ERROR }

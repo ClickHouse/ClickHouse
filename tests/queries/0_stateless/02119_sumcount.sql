@@ -163,8 +163,8 @@ SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '1'::UInt256 AS v FROM 
 SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '1.001'::Decimal(3, 3) AS v FROM numbers(100));
 
 -- Other types
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT 'a'::String AS v); -- { serverError 43 }
-SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT now()::DateTime AS v); -- { serverError 43 }
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT 'a'::String AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT now()::DateTime AS v); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 
 -- SumCountIf

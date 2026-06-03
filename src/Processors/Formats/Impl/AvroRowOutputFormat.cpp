@@ -1,40 +1,37 @@
-#include "AvroRowOutputFormat.h"
+#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #if USE_AVRO
-
-#include <Core/Field.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-
-#include <Formats/FormatFactory.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-
-#include <Common/re2.h>
-
+#include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Formats/FormatFactory.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
+#include <Processors/Port.h>
+#include <boost/algorithm/string.hpp>
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>
 #include <Schema.hh>
-
-#include <boost/algorithm/string.hpp>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -66,30 +63,15 @@ private:
     const RE2 string_to_string_regexp;
 };
 
-
-class OutputStreamWriteBufferAdapter : public avro::OutputStream
+bool OutputStreamWriteBufferAdapter::next(uint8_t ** data, size_t * len)
 {
-public:
-    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    out.nextIfAtEnd();
+    *data = reinterpret_cast<uint8_t *>(out.position());
+    *len = out.available();
+    out.position() += out.available();
 
-    bool next(uint8_t ** data, size_t * len) override
-    {
-        out.nextIfAtEnd();
-        *data = reinterpret_cast<uint8_t *>(out.position());
-        *len = out.available();
-        out.position() += out.available();
-
-        return true;
-    }
-
-    void backup(size_t len) override { out.position() -= len; }
-
-    uint64_t byteCount() const override { return out.count(); }
-    void flush() override { }
-
-private:
-    WriteBuffer & out;
-};
+    return true;
+}
 
 namespace
 {
@@ -126,7 +108,6 @@ AvroSerializer::SchemaWithSerializeFn createBigIntegerSchemaWithSerializeFn(cons
 }
 
 }
-
 AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name)
 {
     ++type_name_increment;
@@ -259,16 +240,17 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::String:
             if (traits->isStringAsString(column_name))
-                return {avro::StringSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                return {
+                    avro::StringSchema(),
+                    [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
                         encoder.encodeString(std::string(s));
-                    }
-                };
+                    }};
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
                         encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
@@ -278,7 +260,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
@@ -287,7 +269,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(sizeof(IPv6), "ipv6_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num);
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
@@ -304,7 +286,10 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [enum_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 auto enum_value = assert_cast<const DataTypeEnum8::ColumnType &>(column).getElement(row_num);
-                encoder.encodeEnum(enum_mapping.at(enum_value));
+                auto it = enum_mapping.find(enum_value);
+                if (it == enum_mapping.end())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Enum8 value {} in Avro output", enum_value);
+                encoder.encodeEnum(it->second);
             }};
         }
         case TypeIndex::Enum16:
@@ -320,7 +305,10 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [enum_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 auto enum_value = assert_cast<const DataTypeEnum16::ColumnType &>(column).getElement(row_num);
-                encoder.encodeEnum(enum_mapping.at(enum_value));
+                auto it = enum_mapping.find(enum_value);
+                if (it == enum_mapping.end())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Enum16 value {} in Avro output", enum_value);
+                encoder.encodeEnum(it->second);
             }};
         }
         case TypeIndex::UUID:
@@ -339,26 +327,28 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
             auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name);
             auto schema = avro::ArraySchema(nested_mapping.schema);
-            return {schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
-            {
-                const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
-                const ColumnArray::Offsets & offsets = column_array.getOffsets();
-                size_t offset = offsets[row_num - 1];
-                size_t next_offset = offsets[row_num];
-                size_t row_count = next_offset - offset;
-                const IColumn & nested_column = column_array.getData();
+            return {
+                schema,
+                [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+                    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+                    size_t offset = offsets[row_num - 1];
+                    size_t next_offset = offsets[row_num];
+                    size_t row_count = next_offset - offset;
+                    const IColumn & nested_column = column_array.getData();
 
-                encoder.arrayStart();
-                if (row_count > 0)
-                {
-                    encoder.setItemCount(row_count);
-                }
-                for (size_t i = offset; i < next_offset; ++i)
-                {
-                    nested_mapping.serialize(nested_column, i, encoder);
-                }
-                encoder.arrayEnd();
-            }};
+                    encoder.arrayStart();
+                    if (row_count > 0)
+                    {
+                        encoder.setItemCount(row_count);
+                    }
+                    for (size_t i = offset; i < next_offset; ++i)
+                    {
+                        nested_mapping.serialize(nested_column, i, encoder);
+                    }
+                    encoder.arrayEnd();
+                }};
         }
         case TypeIndex::Nullable:
         {
@@ -368,26 +358,23 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 return nested_mapping;
             }
-            else
+            avro::UnionSchema union_schema;
+            union_schema.addType(avro::NullSchema());
+            union_schema.addType(nested_mapping.schema);
+            return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                avro::UnionSchema union_schema;
-                union_schema.addType(avro::NullSchema());
-                union_schema.addType(nested_mapping.schema);
-                return {union_schema, [nested_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+                if (!col.isNullAt(row_num))
                 {
-                    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-                    if (!col.isNullAt(row_num))
-                    {
-                        encoder.encodeUnionIndex(1);
-                        nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
-                    }
-                    else
-                    {
-                        encoder.encodeUnionIndex(0);
-                        encoder.encodeNull();
-                    }
-                }};
-            }
+                    encoder.encodeUnionIndex(1);
+                    nested_mapping.serialize(col.getNestedColumn(), row_num, encoder);
+                }
+                else
+                {
+                    encoder.encodeUnionIndex(0);
+                    encoder.encodeNull();
+                }
+            }};
         }
         case TypeIndex::LowCardinality:
         {
@@ -401,6 +388,49 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         }
         case TypeIndex::Nothing:
             return {avro::NullSchema(), [](const IColumn &, size_t, avro::Encoder & encoder) { encoder.encodeNull(); }};
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = assert_cast<const DataTypeVariant &>(*data_type);
+
+            avro::UnionSchema union_schema;
+            const auto & nested_types = variant_type.getVariants();
+
+            std::vector<SerializeFn> nested_serializers;
+            nested_serializers.reserve(nested_types.size());
+
+            for (const auto & nested_type : nested_types)
+            {
+                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name);
+                union_schema.addType(schema);
+                nested_serializers.push_back(serialize);
+            }
+
+            // Since Variants have no schema-guaranteed nullability, we need to always include the null as one of the options in Avro Union.
+            // This is because Variant is considered Null in case it doesn't have any of the variants defined.
+            const auto null_union_index = nested_types.size();
+            union_schema.addType(avro::NullSchema());
+
+            return {
+                static_cast<avro::Schema>(union_schema),
+                [serializers = std::move(nested_serializers),
+                 null_union_index](const IColumn & column, const size_t row_num, avro::Encoder & encoder)
+                {
+                    const auto & col = assert_cast<const ColumnVariant &>(column);
+                    const auto global_discriminator = col.globalDiscriminatorAt(row_num);
+
+                    if (global_discriminator == ColumnVariant::NULL_DISCRIMINATOR)
+                    {
+                        encoder.encodeUnionIndex(null_union_index);
+                        encoder.encodeNull();
+                    }
+                    else
+                    {
+                        size_t offset = col.offsetAt(row_num);
+                        encoder.encodeUnionIndex(global_discriminator);
+                        serializers[global_discriminator](col.getVariantByGlobalDiscriminator(global_discriminator), offset, encoder);
+                    }
+                }};
+        }
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
@@ -473,7 +503,6 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
-
 AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_)
     : traits(std::move(traits_)), settings(settings_)
 {
@@ -531,10 +560,10 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_)
     , settings(settings_)
-    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
 {
 }
 
@@ -581,16 +610,67 @@ void AvroRowOutputFormat::resetFormatterImpl()
     file_writer_ptr.reset();
 }
 
+AvroConfluentRowOutputFormat::AvroConfluentRowOutputFormat(
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_)
+    , settings(settings_)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , schema_registry(getConfluentSchemaRegistry(settings_))
+    , output_stream(std::make_unique<OutputStreamWriteBufferAdapter>(out_))
+    , encoder(avro::binaryEncoder())
+{
+    if (settings.avro.output_confluent_subject.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "output_format_avro_confluent_subject must be set for AvroConfluent output format");
+}
+
+AvroConfluentRowOutputFormat::~AvroConfluentRowOutputFormat() = default;
+
+void AvroConfluentRowOutputFormat::write(const Columns & columns, size_t row_num)
+{
+    if (!schema_registered)
+    {
+        schema_id = schema_registry->registerSchema(settings.avro.output_confluent_subject, serializer.getSchema(), settings.avro.schema_registry_timeouts);
+        schema_registered = true;
+    }
+
+    /// Write the Confluent wire format header for each row:
+    /// [magic byte 0x00] [schema_id 4 bytes big-endian]
+    writeBinaryBigEndian(static_cast<uint8_t>(0x00), out);
+    writeBinaryBigEndian(schema_id, out);
+
+    /// Re-init the encoder so it picks up the current buffer position
+    /// (after the 5-byte header we just wrote).
+    encoder->init(*output_stream);
+    serializer.serializeRow(columns, row_num, *encoder);
+    encoder->flush();
+}
+
+void registerOutputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory)
 {
     factory.registerOutputFormat("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
+    factory.markOutputFormatNotTTYFriendly("Avro");
+    factory.setContentType("Avro", "application/octet-stream");
+
+    factory.registerOutputFormat("AvroConfluent", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
+    {
+        return std::make_shared<AvroConfluentRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+    });
+    factory.markOutputFormatNotTTYFriendly("AvroConfluent");
+    factory.setContentType("AvroConfluent", "application/octet-stream");
 }
 
 }
@@ -600,6 +680,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatAvro(FormatFactory &);
 void registerOutputFormatAvro(FormatFactory &)
 {
 }

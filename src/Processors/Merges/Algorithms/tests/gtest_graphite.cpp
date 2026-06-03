@@ -47,7 +47,7 @@ static ConfigProcessor::LoadedConfig loadConfigurationFromString(std::string & s
         {
             throw std::runtime_error("unable write to temp file");
         }
-        int error = close(fd);
+        [[maybe_unused]] int error = close(fd);
         chassert(!error);
 
         auto config_path = std::string(tmp_file) + ".xml";
@@ -87,7 +87,7 @@ struct  PatternForCheck
 };
 
 
-bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
+static bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck & pattern_check,
     const std::string & typ, const std::string & path, std::string & message)
 {
     bool rule_type_eq = (pattern.rule_type == pattern_check.rule_type);
@@ -107,7 +107,7 @@ bool checkRule(const Graphite::Pattern & pattern, const struct PatternForCheck &
     return false;
 }
 
-std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
+static std::ostream & operator<<(std::ostream & stream, const PatternForCheck & a)
 {
     stream << "{ rule_type = " << ruleTypeStr(a.rule_type);
     if (!a.regexp_str.empty())

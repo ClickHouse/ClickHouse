@@ -1,5 +1,5 @@
-#include "Storages/ColumnsDescription.h"
 #include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -15,18 +16,7 @@ namespace DB
 
 static String typeToString(FilesystemCacheLogElement::CacheType type)
 {
-    switch (type)
-    {
-        case FilesystemCacheLogElement::CacheType::READ_FROM_CACHE:
-            return "READ_FROM_CACHE";
-        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE:
-            return "READ_FROM_FS_AND_DOWNLOADED_TO_CACHE";
-        case FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE:
-            return "READ_FROM_FS_BYPASSING_CACHE";
-        case FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE:
-            return "WRITE_THROUGH_CACHE";
-    }
-    UNREACHABLE();
+    return String(magic_enum::enum_name(type));
 }
 
 ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
@@ -35,6 +25,8 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         std::make_shared<DataTypeNumber<UInt64>>(),
         std::make_shared<DataTypeNumber<UInt64>>(),
     };
+
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     return ColumnsDescription
     {
@@ -50,8 +42,8 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         {"size", std::make_shared<DataTypeUInt64>(), "Read size"},
         {"read_type", std::make_shared<DataTypeString>(), "Read type: READ_FROM_CACHE, READ_FROM_FS_AND_DOWNLOADED_TO_CACHE, READ_FROM_FS_BYPASSING_CACHE"},
         {"read_from_cache_attempted", std::make_shared<DataTypeUInt8>(), "Whether reading from cache was attempted"},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
         {"read_buffer_id", std::make_shared<DataTypeString>(), "Internal implementation read buffer id"},
+        {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
     };
 }
 
@@ -73,18 +65,8 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(file_segment_size);
     columns[i++]->insert(typeToString(cache_type));
     columns[i++]->insert(read_from_cache_attempted);
-
-    if (profile_counters)
-    {
-        auto * column = columns[i++].get();
-        ProfileEvents::dumpToMapColumn(*profile_counters, column, true);
-    }
-    else
-    {
-        columns[i++]->insertDefault();
-    }
-
     columns[i++]->insert(read_buffer_id);
+    columns[i++]->insert(user_id);
 }
 
 }

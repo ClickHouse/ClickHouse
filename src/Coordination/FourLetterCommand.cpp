@@ -1,18 +1,22 @@
 #include <Coordination/FourLetterCommand.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Coordination/KeeperFeatureFlags.h"
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -33,6 +37,8 @@ String formatZxid(int64_t zxid)
     String hex = getHexUIntLowercase(zxid);
     /// without leading zeros
     trimLeft(hex, '0');
+    if (hex.empty())
+        hex = "0";
     return "0x" + hex;
 }
 
@@ -50,6 +56,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -62,15 +69,21 @@ int32_t IFourLetterCommand::code()
     return toCode(name());
 }
 
+String IFourLetterCommand::runWithArgument(const std::string &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Four letter command {} does not support argument", name());
+}
+
 String IFourLetterCommand::toName(int32_t code)
 {
     int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
-int32_t IFourLetterCommand::toCode(const String & name)
+int32_t IFourLetterCommand::toCode(std::string_view name)
 {
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    int32_t res = 0;
+    std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return std::byteswap(res);
 }
@@ -89,7 +102,7 @@ void FourLetterCommandFactory::checkInitialization() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
-bool FourLetterCommandFactory::isKnown(int32_t code)
+bool FourLetterCommandFactory::isKnown(int32_t code) const
 {
     checkInitialization();
     return commands.contains(code);
@@ -203,12 +216,18 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
         factory.registerCommand(profile_events_command);
 
+        FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
+        factory.registerCommand(toggle_request_logging);
+
+        FourLetterCommandPtr reconfigure_command = std::make_shared<ReconfigureCommand>(keeper_dispatcher);
+        factory.registerCommand(reconfigure_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(int32_t code)
+bool FourLetterCommandFactory::isEnabled(int32_t code) const
 {
     checkInitialization();
     if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
@@ -217,15 +236,24 @@ bool FourLetterCommandFactory::isEnabled(int32_t code)
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
+{
+    checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
+    return false;
+}
+
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
-
-    String list_str = keeper_settings->four_letter_word_allow_list;
-    Strings tokens;
+    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
+    auto log = getLogger("FourLetterCommandFactory");
+    String list_str = server_config->four_letter_word_allow_list;
+    std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
-    for (String token: tokens)
+    for (auto token : tokens)
     {
         trim(token);
 
@@ -235,18 +263,11 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
+
+        if (auto code = IFourLetterCommand::toCode(token); commands.contains(code))
+            allow_list.push_back(code);
         else
-        {
-            if (commands.contains(IFourLetterCommand::toCode(token)))
-            {
-                allow_list.push_back(IFourLetterCommand::toCode(token));
-            }
-            else
-            {
-                auto log = getLogger("FourLetterCommandFactory");
-                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-            }
-        }
+            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
     }
 }
 
@@ -258,7 +279,9 @@ String RuokCommand::run()
 namespace
 {
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+using StringBuffer = DB::WriteBufferFromOwnString;
+
+void print(StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -267,7 +290,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, const Str
     writeText('\n', buf);
 }
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
+void print(StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
@@ -300,12 +323,14 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    print(ret, "znode_count", state_machine.getNodesCount());
-    print(ret, "watch_count", state_machine.getTotalWatchesCount());
-    print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
-    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
-    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
-    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
+    const auto & storage_stats = state_machine.getStorageStats();
+
+    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
+    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "key_arena_size", 0);
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
@@ -318,8 +343,10 @@ String MonitorCommand::run()
 
     if (keeper_info.is_leader)
     {
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();
@@ -345,7 +372,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
@@ -386,6 +413,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -397,9 +425,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -415,6 +443,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -430,9 +459,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -511,7 +540,7 @@ String EnviCommand::run()
 
     String os_user;
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
@@ -529,8 +558,7 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    else
-        return "rw";
+    return "rw";
 }
 
 String RecoveryCommand::run()
@@ -628,7 +656,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-void printToString(void * output, const char * data)
+static void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);
@@ -637,25 +665,23 @@ void printToString(void * output, const char * data)
 String JemallocDumpStats::run()
 {
     std::string output;
-    malloc_stats_print(printToString, &output, nullptr);
+    je_malloc_stats_print(printToString, &output, nullptr);
     return output;
 }
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 
 String JemallocEnableProfile::run()
 {
-    setJemallocProfileActive(true);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 
 String JemallocDisableProfile::run()
 {
-    setJemallocProfileActive(false);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 #endif
 
@@ -684,6 +710,34 @@ String ProfileEventsCommand::run()
 #endif
 
     return ret.str();
+}
+
+String ToggleRequestLogging::run()
+{
+    const auto & keeper_context = keeper_dispatcher.getKeeperContext();
+    auto old_value = keeper_context->shouldLogRequests();
+    keeper_context->setLogRequests(!old_value);
+    return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

@@ -1,9 +1,15 @@
 ---
-slug: /en/operations/named-collections
+description: 'Documentation for Named collections'
+sidebar_label: 'Named collections'
 sidebar_position: 69
-sidebar_label: "Named collections"
-title: "Named collections"
+slug: /operations/named-collections
+title: 'Named collections'
+doc_type: 'reference'
 ---
+
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge />
 
 Named collections provide a way to store collections of key-value pairs to be
 used to configure integrations with external sources. You can use named collections with
@@ -28,9 +34,9 @@ If you are using named collections with that purpose, you should disable
 `allow_named_collection_override_by_default` (which is enabled by default).
 :::
 
-## Storing named collections in the system database
+## Storing named collections in the system database {#storing-named-collections-in-the-system-database}
 
-### DDL example
+### DDL example {#ddl-example}
 
 ```sql
 CREATE NAMED COLLECTION name AS
@@ -41,13 +47,13 @@ url = 'https://connection.url/'
 
 In the above example:
 
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
-### Permissions to create named collections with DDL
+### Permissions to create named collections with DDL {#permissions-to-create-named-collections-with-ddl}
 
-To manage named collections with DDL a user must have the `named_control_collection` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
+To manage named collections with DDL a user must have the `named_collection_control` privilege.  This can be assigned by adding a file to `/etc/clickhouse-server/users.d/`.  The example gives the user `default` both the `access_management` and `named_collection_control` privileges:
 
 ```xml title='/etc/clickhouse-server/users.d/user_default.xml'
 <clickhouse>
@@ -67,9 +73,34 @@ To manage named collections with DDL a user must have the `named_control_collect
 In the above example the `password_sha256_hex` value is the hexadecimal representation of the SHA256 hash of the password.  This configuration for the user `default` has the attribute `replace=true` as in the default configuration has a plain text `password` set, and it is not possible to have both plain text and sha256 hex passwords set for a user.
 :::
 
-## Storing named collections in configuration files
+### Storage for named collections {#storage-for-named-collections}
 
-### XML example
+Named collections can either be stored on local disk or in ZooKeeper/Keeper. By default local storage is used.
+They can also be stored using encryption with the same algorithms used for [disk encryption](storing-data#encrypted-virtual-file-system),
+where `aes_128_ctr` is used by default.
+
+To configure named collections storage you need to specify a `type`. This can be either `local` or `keeper`/`zookeeper`. For encrypted storage,
+you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
+
+To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
+`named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <algorithm>aes_128_ctr</algorithm>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>1000</update_timeout_ms>
+  </named_collections_storage>
+</clickhouse>
+```
+
+An optional configuration parameter `update_timeout_ms` by default is equal to `5000`.
+
+## Storing named collections in configuration files {#storing-named-collections-in-configuration-files}
+
+### XML example {#xml-example}
 
 ```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
 <clickhouse>
@@ -85,15 +116,15 @@ In the above example the `password_sha256_hex` value is the hexadecimal represen
 
 In the above example:
 
- * `key_1` can always be overridden.
- * `key_2` can never be overridden.
- * `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
+* `key_1` can always be overridden.
+* `key_2` can never be overridden.
+* `url` can be overridden or not depending on the value of `allow_named_collection_override_by_default`.
 
-## Modifying named collections
+## Modifying named collections {#modifying-named-collections}
 
 Named collections that are created with DDL queries can be altered or dropped with DDL. Named collections created with XML files can be managed by editing or deleting the corresponding XML.
 
-### Alter a DDL named collection
+### Alter a DDL named collection {#alter-a-ddl-named-collection}
 
 Change or add the keys `key1` and `key3` of the collection `collection2`
 (this will not change the value of the `overridable` flag for those keys):
@@ -123,16 +154,16 @@ ALTER NAMED COLLECTION collection2 DELETE key1;
 ALTER NAMED COLLECTION collection2 SET key1=4;
 ```
 
-### Drop the DDL named collection `collection2`:
+### Drop the DDL named collection `collection2`: {#drop-the-ddl-named-collection-collection2}
 ```sql
 DROP NAMED COLLECTION collection2
 ```
 
-## Named collections for accessing S3
+## Named collections for accessing S3 {#named-collections-for-accessing-s3}
 
 The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
 
-### DDL example
+### DDL example {#ddl-example-1}
 
 ```sql
 CREATE NAMED COLLECTION s3_mydata AS
@@ -142,7 +173,7 @@ format = 'CSV',
 url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 ```
 
-### XML example
+### XML example {#xml-example-1}
 
 ```xml
 <clickhouse>
@@ -157,11 +188,11 @@ url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 </clickhouse>
 ```
 
-### s3() function and S3 Table named collection examples
+### s3() function and S3 Table named collection examples {#s3-function-and-s3-table-named-collection-examples}
 
 Both of the following examples use the same named collection `s3_mydata`:
 
-#### s3() function
+#### s3() function {#s3-function}
 
 ```sql
 INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
@@ -173,7 +204,7 @@ SELECT * FROM numbers(10000);
 The first argument to the `s3()` function above is the name of the collection, `s3_mydata`.  Without named collections, the access key ID, secret, format, and URL would all be passed in every call to the `s3()` function.
 :::
 
-#### S3 table
+#### S3 table {#s3-table}
 
 ```sql
 CREATE TABLE s3_engine_table (number Int64)
@@ -188,11 +219,11 @@ SELECT * FROM s3_engine_table LIMIT 3;
 └────────┘
 ```
 
-## Named collections for accessing MySQL database
+## Named collections for accessing MySQL database {#named-collections-for-accessing-mysql-database}
 
 The description of parameters see [mysql](../sql-reference/table-functions/mysql.md).
 
-### DDL example
+### DDL example {#ddl-example-2}
 
 ```sql
 CREATE NAMED COLLECTION mymysql AS
@@ -205,7 +236,7 @@ connection_pool_size = 8,
 replace_query = 1
 ```
 
-### XML example
+### XML example {#xml-example-2}
 
 ```xml
 <clickhouse>
@@ -223,11 +254,11 @@ replace_query = 1
 </clickhouse>
 ```
 
-### mysql() function, MySQL table, MySQL database, and Dictionary named collection examples
+### mysql() function, MySQL table, MySQL database, and Dictionary named collection examples {#mysql-function-mysql-table-mysql-database-and-dictionary-named-collection-examples}
 
 The four following examples use the same named collection `mymysql`:
 
-#### mysql() function
+#### mysql() function {#mysql-function}
 
 ```sql
 SELECT count() FROM mysql(mymysql, table = 'test');
@@ -240,7 +271,7 @@ SELECT count() FROM mysql(mymysql, table = 'test');
 The named collection does not specify the `table` parameter, so it is specified in the function call as `table = 'test'`.
 :::
 
-#### MySQL table
+#### MySQL table {#mysql-table}
 
 ```sql
 CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
@@ -255,7 +286,7 @@ SELECT count() FROM mytable;
 The DDL overrides the named collection setting for connection_pool_size.
 :::
 
-#### MySQL database
+#### MySQL database {#mysql-database}
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
@@ -268,7 +299,7 @@ SHOW TABLES FROM mydatabase;
 └────────┘
 ```
 
-#### MySQL Dictionary
+#### MySQL Dictionary {#mysql-dictionary}
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -284,10 +315,24 @@ SELECT dictGet('dict', 'B', 2);
 └─────────────────────────┘
 ```
 
-## Named collections for accessing PostgreSQL database
+## Named collections for accessing PostgreSQL database {#named-collections-for-accessing-postgresql-database}
 
-The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md).
+The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
 
+- `username` for `user`
+- `db` for `database`.
+
+Parameter `addresses_expr` is used in a collection instead of `host:port`. The parameter is optional, because there are other optional ones: `host`, `hostname`, `port`. The following pseudo code explains the priority:
+
+```sql
+CASE
+    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
+    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+END
+```
+
+Example of creation:
 ```sql
 CREATE NAMED COLLECTION mypg AS
 user = 'pguser',
@@ -295,7 +340,7 @@ password = 'jw8s0F4',
 host = '127.0.0.1',
 port = 5432,
 database = 'test',
-schema = 'test_schema',
+schema = 'test_schema'
 ```
 
 Example of configuration:
@@ -314,7 +359,7 @@ Example of configuration:
 </clickhouse>
 ```
 
-### Example of using named collections with the postgresql function
+### Example of using named collections with the postgresql function {#example-of-using-named-collections-with-the-postgresql-function}
 
 ```sql
 SELECT * FROM postgresql(mypg, table = 'test');
@@ -323,8 +368,6 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
-
-
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐
@@ -334,7 +377,7 @@ SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 └───┘
 ```
 
-### Example of using named collections with database with engine PostgreSQL
+### Example of using named collections with database with engine PostgreSQL {#example-of-using-named-collections-with-database-with-engine-postgresql}
 
 ```sql
 CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
@@ -348,7 +391,11 @@ SELECT * FROM mypgtable;
 └───┘
 ```
 
-### Example of using named collections with database with engine PostgreSQL
+:::note
+PostgreSQL copies data from the named collection when the table is being created. A change in the collection does not affect the existing tables.
+:::
+
+### Example of using named collections with database with engine PostgreSQL {#example-of-using-named-collections-with-database-with-engine-postgresql-1}
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
@@ -360,7 +407,7 @@ SHOW TABLES FROM mydatabase
 └──────┘
 ```
 
-### Example of using named collections with a dictionary with source POSTGRESQL
+### Example of using named collections with a dictionary with source POSTGRESQL {#example-of-using-named-collections-with-a-dictionary-with-source-postgresql}
 
 ```sql
 CREATE DICTIONARY dict (a Int64, b String)
@@ -376,7 +423,7 @@ SELECT dictGet('dict', 'b', 2);
 └─────────────────────────┘
 ```
 
-## Named collections for accessing a remote ClickHouse database
+## Named collections for accessing a remote ClickHouse database {#named-collections-for-accessing-a-remote-clickhouse-database}
 
 The description of parameters see [remote](../sql-reference/table-functions/remote.md/#parameters).
 
@@ -408,7 +455,7 @@ secure = 1
 ```
 `secure` is not needed for connection because of `remoteSecure`, but it can be used for dictionaries.
 
-### Example of using named collections with the `remote`/`remoteSecure` functions
+### Example of using named collections with the `remote`/`remoteSecure` functions {#example-of-using-named-collections-with-the-remoteremotesecure-functions}
 
 ```sql
 SELECT * FROM remote(remote1, table = one);
@@ -429,7 +476,7 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-### Example of using named collections with a dictionary with source ClickHouse
+### Example of using named collections with a dictionary with source ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
 CREATE DICTIONARY dict(a Int64, b String)
@@ -443,3 +490,156 @@ SELECT dictGet('dict', 'b', 1);
 │ a                       │
 └─────────────────────────┘
 ```
+
+## Named collections for accessing Kafka {#named-collections-for-accessing-kafka}
+
+The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
+
+### DDL example {#ddl-example-3}
+
+```sql
+CREATE NAMED COLLECTION my_kafka_cluster AS
+kafka_broker_list = 'localhost:9092',
+kafka_topic_list = 'kafka_topic',
+kafka_group_name = 'consumer_group',
+kafka_format = 'JSONEachRow',
+kafka_max_block_size = '1048576';
+
+```
+### XML example {#xml-example-3}
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_kafka_cluster>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
+        </my_kafka_cluster>
+    </named_collections>
+</clickhouse>
+```
+
+### Example of using named collections with a Kafka table {#example-of-using-named-collections-with-a-kafka-table}
+
+Both of the following examples use the same named collection `my_kafka_cluster`:
+
+```sql
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+SETTINGS kafka_num_consumers = 4,
+         kafka_thread_per_consumer = 1;
+```
+
+## Named collections for backups {#named-collections-for-backups}
+
+For the description of parameters see [Backup and Restore](/operations/backup/overview).
+
+### DDL example {#ddl-example-4}
+
+```sql
+BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
+```
+
+### XML example {#xml-example-4}
+
+```xml
+<clickhouse>
+    <named_collections>
+        <named_collection_s3_backups>
+            <url>https://my-s3-bucket.s3.amazonaws.com/backup-S3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </named_collection_s3_backups>
+    </named_collections>
+</clickhouse>
+```
+
+## Named collections for accessing MongoDB Table and Dictionary {#named-collections-for-accessing-mongodb-table-and-dictionary}
+
+For the description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
+
+### DDL example {#ddl-example-5}
+
+```sql
+CREATE NAMED COLLECTION mymongo AS
+user = '',
+password = '',
+host = '127.0.0.1',
+port = 27017,
+database = 'test',
+collection = 'my_collection',
+options = 'connectTimeoutMS=10000'
+```
+
+### XML example {#xml-example-5}
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymongo>
+            <user></user>
+            <password></password>
+            <host>127.0.0.1</host>
+            <port>27017</port>
+            <database>test</database>
+            <collection>my_collection</collection>
+            <options>connectTimeoutMS=10000</options>
+        </mymongo>
+    </named_collections>
+</clickhouse>
+```
+
+#### MongoDB table {#mongodb-table}
+
+```sql
+CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+:::note
+The DDL overrides the named collection setting for options.
+:::
+
+#### MongoDB Dictionary {#mongodb-dictionary}
+
+```sql
+CREATE DICTIONARY dict
+(
+    `a` Int64,
+    `b` String
+)
+PRIMARY KEY a
+SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED())
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+:::note
+The named collection specifies `my_collection` for the collection name. In the function call it is overwritten by `collection = 'my_dict'` to select another collection.
+:::

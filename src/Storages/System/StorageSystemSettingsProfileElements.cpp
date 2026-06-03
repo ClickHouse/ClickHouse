@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/User.h>
@@ -13,12 +14,13 @@
 #include <Interpreters/Context.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <Common/SettingConstraintWritability.h>
+#include <base/range.h>
 
 
 namespace DB
 {
 
-const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
+static const std::vector<std::pair<String, Int8>> & getSettingConstraintWritabilityEnumValues()
 {
     static const std::vector<std::pair<String, Int8>> values = []
     {
@@ -169,7 +171,7 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
                     break;
                 }
                 default:
-                    assert(false);
+                    chassert(false);
             }
 
             column_index.push_back(current_index);

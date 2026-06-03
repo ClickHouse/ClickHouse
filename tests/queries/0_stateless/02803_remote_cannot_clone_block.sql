@@ -6,7 +6,7 @@ SELECT *
 FROM system.numbers
 LIMIT 10000;
 
-SET allow_experimental_analyzer = 0;
+SET enable_analyzer = 0;
 
 SELECT *
 FROM

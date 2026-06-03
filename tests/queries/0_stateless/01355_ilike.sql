@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-fasttest
 
 SELECT 'Hello' ILIKE '';
 SELECT 'Hello' ILIKE '%';
@@ -53,11 +53,7 @@ SELECT 'ощщЁё' ILIKE '%щ%';
 SELECT 'ощЩЁё' ILIKE '%ё%';
 
 SHOW TABLES NOT ILIKE '%';
-DROP DATABASE IF EXISTS test_01355;
-CREATE DATABASE test_01355;
-USE test_01355;
 CREATE TABLE test1 (x UInt8) ENGINE = Memory;
 CREATE TABLE test2 (x UInt8) ENGINE = Memory;
 SHOW TABLES ILIKE 'tES%';
 SHOW TABLES NOT ILIKE 'TeS%';
-DROP DATABASE test_01355;

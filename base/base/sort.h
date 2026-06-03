@@ -5,6 +5,7 @@
 #ifndef NDEBUG
 
 #include <pcg_random.hpp>
+#include <base/defines.h>
 #include <base/getThreadId.h>
 
 /** Same as libcxx std::__debug_less. Just without dependency on private part of standard library.
@@ -23,7 +24,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            assert(!cmp(rhs, lhs));
+            chassert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
@@ -33,7 +34,7 @@ public:
     {
         bool lhs_less_than_rhs = cmp(lhs, rhs);
         if (lhs_less_than_rhs)
-            assert(!cmp(rhs, lhs));
+            chassert(!cmp(rhs, lhs));
 
         return lhs_less_than_rhs;
     }
@@ -61,7 +62,7 @@ using ComparatorWrapper = Comparator;
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
-
+#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 #include <miniselect/floyd_rivest_select.h>
 
 template <typename RandomIt, typename Compare>

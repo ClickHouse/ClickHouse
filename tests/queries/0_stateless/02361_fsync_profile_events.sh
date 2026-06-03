@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-s3-storage, no-random-merge-tree-settings
-# Tag no-s3-storage: s3 does not have fsync
+# Tags: no-object-storage, no-random-merge-tree-settings
+# Tag no-object-storage: s3 does not have fsync
+# add_minmax_index_for_numeric_columns=0: More files
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_fsync_pe;
 
     create table data_fsync_pe (key Int) engine=MergeTree()
@@ -15,7 +16,11 @@ $CLICKHOUSE_CLIENT -nm -q "
         min_rows_for_wide_part = 2,
         fsync_after_insert = 1,
         fsync_part_directory = 1,
-        ratio_of_defaults_for_sparse_serialization = 1;
+        ratio_of_defaults_for_sparse_serialization = 1,
+        serialization_info_version = 'basic',
+        write_marks_for_substreams_in_compact_parts = 1,
+        auto_statistics_types = '',
+        add_minmax_index_for_numeric_columns=0;
 "
 
 ret=1
@@ -27,8 +32,8 @@ for i in {1..100}; do
     $CLICKHOUSE_CLIENT --query_id "$query_id" -q "insert into data_fsync_pe values (1)"
 
     read -r FileSync FileOpen DirectorySync FileSyncElapsedMicroseconds DirectorySyncElapsedMicroseconds <<<"$(
-    $CLICKHOUSE_CLIENT -nm --param_query_id "$query_id" -q "
-        system flush logs;
+    $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
+        system flush logs query_log;
 
         select
             ProfileEvents['FileSync'],
@@ -38,14 +43,14 @@ for i in {1..100}; do
             ProfileEvents['DirectorySyncElapsedMicroseconds']>0
         from system.query_log
         where
-            event_date >= yesterday() and
+            event_date >= yesterday() AND event_time >= now() - 600 and
             current_database = currentDatabase() and
             query_id = {query_id:String} and
             type = 'QueryFinish';
     ")"
 
     # Non retriable errors
-    if [[ $FileSync -ne 8 ]]; then
+    if [[ $FileSync -ne 9 ]]; then
         echo "FileSync: $FileSync != 8" >&2
         exit 2
     fi

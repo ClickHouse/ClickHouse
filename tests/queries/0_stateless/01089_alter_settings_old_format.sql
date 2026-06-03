@@ -9,7 +9,7 @@ CREATE TABLE old_format_mt (
 )
 ENGINE = MergeTree(event_date, (key, value1), 8192);
 
-ALTER TABLE old_format_mt MODIFY SETTING enable_mixed_granularity_parts = 1; --{serverError 36}
+ALTER TABLE old_format_mt MODIFY SETTING enable_mixed_granularity_parts = 1; --{serverError BAD_ARGUMENTS}
 
 SELECT 1;
 

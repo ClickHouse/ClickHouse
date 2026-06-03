@@ -104,8 +104,8 @@ class QuantileTDigest
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
         /// Symmetric interpolation for better results with infinities.
-        double k = (x - x1) / (x2 - x1);
-        return static_cast<Value>((1 - k) * y1 + k * y2);
+        double k = static_cast<double>(x - x1) / static_cast<double>(x2 - x1);
+        return static_cast<Value>((1 - k) * static_cast<double>(y1) + k * static_cast<double>(y2));
     }
 
     struct RadixSortTraits
@@ -119,7 +119,6 @@ class QuantileTDigest
         static constexpr size_t PART_SIZE_BITS = 8;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
-        using Allocator = RadixSortAllocator;
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }
@@ -132,15 +131,15 @@ class QuantileTDigest
     void addCentroid(const Centroid & c)
     {
         centroids.push_back(c);
-        count += c.count;
+        count += static_cast<BetterFloat>(c.count);
         ++unmerged;
         if (unmerged > params.max_unmerged)
             compress();
     }
 
-    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
-        return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
+        return l_mean == static_cast<BetterFloat>(r_mean) || (!std::isinf(l_mean) && !std::isinf(static_cast<BetterFloat>(r_mean)));
     }
 
     void compressBrute()
@@ -152,8 +151,8 @@ class QuantileTDigest
         auto l = centroids.begin();
         auto r = std::next(l);
         BetterFloat sum = 0;
-        BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
-        BetterFloat l_count = l->count;
+        BetterFloat l_mean = static_cast<BetterFloat>(l->mean); // We have high-precision temporaries for numeric stability
+        BetterFloat l_count = static_cast<BetterFloat>(l->count);
         size_t batch_pos = 0;
 
         for (; r != centroids.end(); ++r)
@@ -161,10 +160,10 @@ class QuantileTDigest
             if (batch_pos < batch_size - 1)
             {
                 /// The left column "eats" the right. Middle of the batch
-                l_count += r->count;
-                if (r->mean != l_mean) /// Handling infinities of the same sign well.
+                l_count += static_cast<BetterFloat>(r->count);
+                if (static_cast<BetterFloat>(r->mean) != l_mean) /// Handling infinities of the same sign well.
                 {
-                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                    l_mean += static_cast<BetterFloat>(r->count) * (static_cast<BetterFloat>(r->mean) - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                 }
                 l->mean = static_cast<Value>(l_mean);
                 l->count = static_cast<Value>(l_count);
@@ -175,14 +174,14 @@ class QuantileTDigest
                 // End of the batch, start the next one
                 if (!std::isnan(l->mean)) /// Skip writing batch result if we compressed something to nan.
                 {
-                    sum += l->count; // Not l_count, otherwise actual sum of elements will be different
+                    sum += static_cast<BetterFloat>(l->count); // Not l_count, otherwise actual sum of elements will be different
                     ++l;
                 }
 
                 /// We skip all the values "eaten" earlier.
                 *l = *r;
-                l_mean = l->mean;
-                l_count = l->count;
+                l_mean = static_cast<BetterFloat>(l->mean);
+                l_count = static_cast<BetterFloat>(l->count);
                 batch_pos = 0;
             }
         }
@@ -216,10 +215,10 @@ public:
             auto l = centroids.begin();
             auto r = std::next(l);
 
-            const BetterFloat count_epsilon_4 = count * params.epsilon * 4; // Compiler is unable to do this optimization
+            const BetterFloat count_epsilon_4 = count * static_cast<BetterFloat>(params.epsilon) * 4; // Compiler is unable to do this optimization
             BetterFloat sum = 0;
-            BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
-            BetterFloat l_count = l->count;
+            BetterFloat l_mean = static_cast<BetterFloat>(l->mean); // We have high-precision temporaries for numeric stability
+            BetterFloat l_count = static_cast<BetterFloat>(l->count);
             while (r != centroids.end())
             {
                 /// N.B. We cannot merge all the same values into single centroids because this will lead to
@@ -231,11 +230,10 @@ public:
                 BetterFloat err = ql * (1 - ql);
 
                 /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
-                BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
+                BetterFloat qr = (sum + l_count + static_cast<BetterFloat>(r->count) * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                if (err > err2)
-                    err = err2;
+                err = std::min(err, err2);
 
                 BetterFloat k = count_epsilon_4 * err;
 
@@ -244,14 +242,14 @@ public:
                   *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
                   */
 
-                if (l_count + r->count <= k && canBeMerged(l_mean, r->mean))
+                if (l_count + static_cast<BetterFloat>(r->count) <= k && canBeMerged(l_mean, r->mean))
                 {
                     // it is possible to merge left and right
                     /// The left column "eats" the right.
-                    l_count += r->count;
-                    if (r->mean != l_mean) /// Handling infinities of the same sign well.
+                    l_count += static_cast<BetterFloat>(r->count);
+                    if (static_cast<BetterFloat>(r->mean) != l_mean) /// Handling infinities of the same sign well.
                     {
-                        l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                        l_mean += static_cast<BetterFloat>(r->count) * (static_cast<BetterFloat>(r->mean) - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
                     }
                     l->mean = static_cast<Value>(l_mean);
                     l->count = static_cast<Value>(l_count);
@@ -259,14 +257,14 @@ public:
                 else
                 {
                     // not enough capacity, check the next pair
-                    sum += l->count; // Not l_count, otherwise actual sum of elements will be different
+                    sum += static_cast<BetterFloat>(l->count); // Not l_count, otherwise actual sum of elements will be different
                     ++l;
 
                     /// We skip all the values "eaten" earlier.
                     if (l != r)
                         *l = *r;
-                    l_mean = l->mean;
-                    l_count = l->count;
+                    l_mean = static_cast<BetterFloat>(l->mean);
+                    l_count = static_cast<BetterFloat>(l->count);
                 }
                 ++r;
             }
@@ -325,7 +323,7 @@ public:
                 throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
             if (!std::isnan(c.mean))
             {
-                count += c.count;
+                count += static_cast<BetterFloat>(c.count);
             }
         }
 
@@ -333,6 +331,18 @@ public:
         centroids.erase(it, centroids.end());
 
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
+    }
+
+    Float64 getCountEqual(Float64 value) const
+    {
+        Float64 result = 0;
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            if (value == static_cast<Float64>(c.mean))
+                result += static_cast<Float64>(c.count);
+        }
+        return result;
     }
 
     Float64 getCountLessThan(Float64 value) const
@@ -346,8 +356,8 @@ public:
         for (const auto & c : centroids)
         {
             /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
-            Float64 current_x = sum + c.count * 0.5;
-            if (c.mean >= value)
+            Float64 current_x = static_cast<Float64>(sum) + static_cast<Float64>(c.count) * 0.5;
+            if (static_cast<Float64>(c.mean) >= value)
             {
                 /// value is smaller than any value.
                 if (first)
@@ -380,7 +390,7 @@ public:
     ResultType getImpl(Float64 level)
     {
         if (centroids.empty())
-            return std::is_floating_point_v<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
+            return is_floating_point<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
 
         compress();
 
@@ -395,7 +405,7 @@ public:
 
         for (const auto & c : centroids)
         {
-            Float64 current_x = sum + c.count * 0.5;
+            Float64 current_x = static_cast<Float64>(sum) + static_cast<Float64>(c.count) * 0.5;
 
             if (current_x >= x)
             {
@@ -405,15 +415,10 @@ public:
 
                 if (x <= left)
                     return checkOverflow<ResultType>(prev_mean);
-                else if (x >= right)
+                if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
-                else
-                    return checkOverflow<ResultType>(interpolate(
-                        static_cast<Value>(x),
-                        static_cast<Value>(left),
-                        prev_mean,
-                        static_cast<Value>(right),
-                        c.mean));
+                return checkOverflow<ResultType>(
+                    interpolate(static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
             }
 
             sum += c.count;
@@ -436,7 +441,12 @@ public:
         if (centroids.empty())
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = std::is_floating_point_v<ResultType> ? NAN : 0;
+            {
+                if constexpr (std::is_floating_point_v<ResultType>)
+                    result[result_num] = NAN;
+                else
+                    result[result_num] = 0;
+            }
             return;
         }
 
@@ -458,7 +468,7 @@ public:
         size_t result_num = 0;
         for (const auto & c : centroids)
         {
-            Float64 current_x = sum + c.count * 0.5;
+            Float64 current_x = static_cast<Float64>(sum) + static_cast<Float64>(c.count) * 0.5;
 
             if (current_x >= x)
             {

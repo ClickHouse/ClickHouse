@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
 #include <queue>
+#include <unordered_map>
+#include <Processors/IProcessor.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
+
+class Block;
 
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
@@ -21,18 +25,10 @@ namespace DB
 class ResizeProcessor final : public IProcessor
 {
 public:
-    /// TODO Check that there is non zero number of inputs and outputs.
-    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
-        : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
-        , current_input(inputs.begin())
-        , current_output(outputs.begin())
-    {
-    }
+    ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
-
-    Status prepare() override;
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     InputPorts::iterator current_input;
@@ -40,46 +36,37 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<UInt64> waiting_outputs;
-    std::queue<UInt64> inputs_with_data;
+    std::queue<OutputPort *> waiting_outputs;
+    std::queue<InputPort *> inputs_with_data;
     bool initialized = false;
     bool is_reading_started = false;
 
-    enum class OutputStatus
+    enum class OutputStatus : uint8_t
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus
+    enum class InputStatus : uint8_t
     {
         NotActive,
         HasData,
         Finished,
     };
 
-    struct InputPortWithStatus
-    {
-        InputPort * port;
-        InputStatus status;
-    };
-
-    struct OutputPortWithStatus
-    {
-        OutputPort * port;
-        OutputStatus status;
-    };
-
-    std::vector<InputPortWithStatus> input_ports;
-    std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, InputStatus> input_status;
+    std::unordered_map<const OutputPort *, OutputStatus> output_status;
 };
 
-class StrictResizeProcessor : public IProcessor
+/// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
+/// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
+/// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
+class StrictResizeProcessor final : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.
-    StrictResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
+    StrictResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
         , current_input(inputs.begin())
         , current_output(outputs.begin())
@@ -94,8 +81,7 @@ public:
     }
 
     String getName() const override { return "StrictResize"; }
-
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     InputPorts::iterator current_input;
@@ -103,39 +89,38 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<UInt64> disabled_input_ports;
-    std::queue<UInt64> waiting_outputs;
+    std::queue<InputPort *> disabled_input_ports;
+    std::queue<OutputPort *> waiting_outputs;
     bool initialized = false;
 
-    enum class OutputStatus
+    enum class OutputStatus : uint8_t
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus
+    enum class InputStatus : uint8_t
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    struct InputPortWithStatus
+    struct InputPortState
     {
-        InputPort * port;
         InputStatus status;
-        ssize_t waiting_output;
+        OutputPort * waiting_output;
     };
 
-    struct OutputPortWithStatus
+    struct OutputPortState
     {
-        OutputPort * port;
         OutputStatus status;
     };
 
-    std::vector<InputPortWithStatus> input_ports;
-    std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, InputPortState> input_port_state;
+    std::unordered_map<const OutputPort *, OutputPortState> output_port_state;
+
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
     std::vector<Port::Data> abandoned_chunks;

@@ -8,6 +8,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 
+
 namespace DB
 {
 
@@ -27,10 +28,9 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-private:
-    /// Fail fast if estimated number of rows to read exceeds the limit
-    void checkLimits(size_t rows);
+    QueryPlanStepPtr clone() const override;
 
+private:
     Pipe makePipe();
 
     const Names column_names;
@@ -38,9 +38,7 @@ private:
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
     size_t num_streams;
-    std::pair<UInt64, UInt64> limit_length_and_offset;
-    bool should_pushdown_limit;
-    UInt64 limit;
     std::shared_ptr<const StorageLimitsList> storage_limits;
 };
+
 }

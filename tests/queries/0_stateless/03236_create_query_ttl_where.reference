@@ -1,0 +1,1 @@
+CREATE TABLE default.ttl\n(\n    `a` UInt32,\n    `timestamp` DateTime\n)\nENGINE = MergeTree\nORDER BY a\nTTL timestamp + toIntervalSecond(2) WHERE a IN (\n    SELECT number\n    FROM system.numbers\n    LIMIT 100000\n)\nSETTINGS index_granularity = 8192

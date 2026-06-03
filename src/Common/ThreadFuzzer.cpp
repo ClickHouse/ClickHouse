@@ -1,4 +1,4 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
+// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name,readability-else-after-return)
 
 #include <csignal>
 #include <sys/time.h>
@@ -12,13 +12,15 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadFuzzer.h>
+#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <Common/ThreadFuzzer.h>
 #include "config.h" // USE_JEMALLOC
 
 
@@ -35,7 +37,9 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -51,15 +55,9 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
-        return;
-    }
-    setup();
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
-
 
 template <typename T>
 static void initFromEnv(T & what, const char * name)
@@ -133,10 +131,16 @@ void ThreadFuzzer::initConfiguration()
 }
 
 
+bool ThreadFuzzer::needsSetup() const
+{
+    return cpu_time_period_us != 0
+        && (yield_probability > 0 || migrate_probability > 0 || (sleep_probability > 0 && sleep_time_us_max > 0));
+}
+
 bool ThreadFuzzer::isEffective() const
 {
-    if (!isStarted())
-        return false;
+    if (needsSetup())
+        return true;
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
@@ -163,10 +167,13 @@ bool ThreadFuzzer::isEffective() const
 #    undef INIT_WRAPPER_PARAMS
 #endif
 
-    return cpu_time_period_us != 0
-        && (yield_probability > 0
-            || migrate_probability > 0
-            || (sleep_probability > 0 && sleep_time_us_max > 0));
+    if (explicit_sleep_probability > 0 && sleep_time_us_max > 0)
+        return true;
+
+    if (explicit_memory_exception_probability > 0)
+        return true;
+
+    return false;
 }
 
 void ThreadFuzzer::stop()
@@ -220,11 +227,9 @@ static void injectionImpl(
     UNUSED(migrate_probability);
 #endif
 
-    if (sleep_probability > 0
-        && sleep_time_us_max > 0
-        && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
+    if (sleep_probability > 0 && sleep_time_us_max > 0.001 && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max)) * 1000); /*may sleep(0)*/
+        sleepForNanoseconds((thread_local_rng() % static_cast<uint64_t>(sleep_time_us_max * 1000)));
     }
 }
 
@@ -271,6 +276,9 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
+    if (!needsSetup())
+        return;
+
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
@@ -292,7 +300,7 @@ void ThreadFuzzer::setup() const
 
     static constexpr UInt32 timer_precision = 1000000;
 
-    struct timeval interval;
+    struct timeval interval{};
     interval.tv_sec = cpu_time_period_us / timer_precision;
     interval.tv_usec = cpu_time_period_us % timer_precision;
 
@@ -361,7 +369,7 @@ void ThreadFuzzer::setup() const
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL)
+#if defined(OS_LINUX) and !defined(USE_MUSL) and !defined(__loongarch64)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -373,6 +381,8 @@ void ThreadFuzzer::setup() const
     #    define GLIBC_SYMVER "GLIBC_2.17"
     #elif (defined(__S390X__) || defined(__s390x__))
     #    define GLIBC_SYMVER "GLIBC_2.2"
+    #elif defined(__e2k__)
+    #    define GLIBC_SYMVER "GLIBC_2.0"
     #else
     #    error Your platform is not supported.
     #endif
@@ -383,7 +393,8 @@ void ThreadFuzzer::setup() const
     GLIBC_COMPAT_SYMBOL(__pthread_mutex_lock)
 #endif
 
-#if defined(ADDRESS_SANITIZER)
+/// The loongarch64's glibc_version is 2.36
+#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif
@@ -440,4 +451,6 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER_USING_INTERNAL_SYMBOLS)
 #endif
 }
 
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)
+#pragma clang diagnostic pop
+
+// NOLINTEND(readability-inconsistent-declaration-parameter-name,readability-else-after-return)

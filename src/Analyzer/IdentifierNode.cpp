@@ -56,13 +56,15 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
-    return std::make_shared<IdentifierNode>(identifier);
+    auto clone_identifier_node = std::make_shared<IdentifierNode>(identifier);
+    clone_identifier_node->table_expression_modifiers = table_expression_modifiers;
+    return clone_identifier_node;
 }
 
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
-    return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+    return make_intrusive<ASTIdentifier>(std::move(identifier_parts));
 }
 
 }

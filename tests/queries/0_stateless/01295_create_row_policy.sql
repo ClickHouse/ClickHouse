@@ -19,7 +19,7 @@ SHOW CREATE ROW POLICY p3_01295 ON db.table;
 
 SELECT '-- rename';
 ALTER ROW POLICY p2_01295 ON db.table RENAME TO 'p2_01295_renamed';
-SHOW CREATE ROW POLICY p2_01295 ON db.table; -- { serverError 523 } -- Policy not found
+SHOW CREATE ROW POLICY p2_01295 ON db.table; -- { serverError UNKNOWN_ROW_POLICY } -- Policy not found
 SHOW CREATE ROW POLICY p2_01295_renamed ON db.table;
 DROP ROW POLICY p1_01295, p2_01295_renamed, p3_01295 ON db.table;
 

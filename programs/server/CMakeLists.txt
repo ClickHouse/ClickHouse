@@ -8,14 +8,12 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_aggregate_functions
         clickhouse_common_config
         clickhouse_common_io
+        clickhouse_common_zookeeper_base
         clickhouse_common_zookeeper
         clickhouse_functions
         clickhouse_parsers
         clickhouse_storages_system
         clickhouse_table_functions
-        string_utils
-
-    ${LINK_RESOURCE_LIB}
 
     PUBLIC
         daemon
@@ -26,6 +24,10 @@ endif()
 if (TARGET ch_contrib::azure_sdk)
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::azure_sdk)
 endif()
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Server.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/embedded.xml")
 
 clickhouse_program_add(server)
 

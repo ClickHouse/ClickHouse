@@ -1,13 +1,23 @@
 ## sudo -H pip install PyMySQL
+from contextlib import contextmanager
+import logging
+import socket
+import time
 import warnings
+
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-import time
-import logging
+from helpers.port_forward import PortForward
+from helpers.config_cluster import mysql_pass
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
-CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+CONFIG_FILES = [
+    "configs/remote_servers.xml",
+    "configs/named_collections.xml",
+    "configs/bg_reconnect.xml",
+]
 USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -43,11 +53,12 @@ def started_cluster():
         mysql_connection.close()
 
         # Create database in ClickHouse
-        instance.query("CREATE DATABASE IF NOT EXISTS test")
+        instance.query("DROP DATABASE IF EXISTS test")
+        instance.query("CREATE DATABASE test")
 
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query(
-            "CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', 'clickhouse')"
+            f"CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql80:3306', 'test', 'root', '{mysql_pass}')"
         )
 
         yield cluster
@@ -76,7 +87,7 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
 
     query = instance.query
     query(
-        """
+        f"""
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -89,17 +100,51 @@ def test_mysql_dictionaries_custom_query_full_load(started_cluster):
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD 'clickhouse'
+        PASSWORD '{mysql_pass}'
         QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id);$doc$))
     LIFETIME(0)
     """
     )
 
-    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
+    result = query(
+        "SELECT dictGetString('test_dictionary_custom_query', 'value_1', toUInt64(1))"
+    )
+    assert result == "Value_1\n"
 
+    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
     assert result == "1\tValue_1\tValue_2\n"
 
     query("DROP DICTIONARY test_dictionary_custom_query;")
+
+    query(
+        f"""
+    CREATE DICTIONARY test_cache_dictionary_custom_query
+    (
+        id1 UInt64,
+        id2 UInt64,
+        value_concat String
+    )
+    PRIMARY KEY id1, id2
+    LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD '{mysql_pass}'
+        QUERY 'SELECT id AS id1, id + 1 AS id2, CONCAT_WS(" ", "The", value_1) AS value_concat FROM test.test_table_1'))
+    LIFETIME(0)
+    """
+    )
+
+    result = query(
+        "SELECT dictGetString('test_cache_dictionary_custom_query', 'value_concat', (1, 2))"
+    )
+    assert result == "The Value_1\n"
+
+    result = query("SELECT id1, value_concat FROM test_cache_dictionary_custom_query")
+    assert result == "1\tThe Value_1\n"
+
+    query("DROP DICTIONARY test_cache_dictionary_custom_query;")
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
@@ -125,7 +170,7 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
 
     query = instance.query
     query(
-        """
+        f"""
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -138,8 +183,8 @@ def test_mysql_dictionaries_custom_query_partial_load_simple_key(started_cluster
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD 'clickhouse'
-        QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id) WHERE {condition};$doc$))
+        PASSWORD '{mysql_pass}'
+        QUERY $doc$SELECT id, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id) WHERE {{condition}};$doc$))
     """
     )
 
@@ -175,7 +220,7 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
 
     query = instance.query
     query(
-        """
+        f"""
     CREATE DICTIONARY test_dictionary_custom_query
     (
         id UInt64,
@@ -189,8 +234,8 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
         HOST 'mysql80'
         PORT 3306
         USER 'root'
-        PASSWORD 'clickhouse'
-        QUERY $doc$SELECT id, id_key, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id, id_key) WHERE {condition};$doc$))
+        PASSWORD '{mysql_pass}'
+        QUERY $doc$SELECT id, id_key, value_1, value_2 FROM test.test_table_1 INNER JOIN test.test_table_2 USING (id, id_key) WHERE {{condition}};$doc$))
     """
     )
 
@@ -204,6 +249,78 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
+
+
+def test_mysql_dict_complex_key_with_special_chars(started_cluster):
+    """Regression test: ExternalQueryBuilder uses backslash escaping for MySQL backend.
+
+    MySQL uses IdentifierQuotingStyle::Backticks, so escape_quote_with_quote stays false
+    (backslash escaping: ' -> \\', \\ -> \\\\). Verify that keys containing single quotes
+    and backslashes are looked up correctly via dictGet.
+    """
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE IF NOT EXISTS test.test_mysql_escape (key_col TEXT, value_col TEXT);",
+    )
+    # Single-quote key: use double-quote MySQL string literal to avoid escaping.
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES (\"it's\", 'quote');",
+    )
+    # Backslash key: use CHAR(92) to insert a literal backslash without SQL escaping confusion.
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES (CONCAT('foo', CHAR(92), 'bar'), 'backslash');",
+    )
+    execute_mysql_query(
+        mysql_connection,
+        "INSERT INTO test.test_mysql_escape VALUES ('normal', 'normal value');",
+    )
+
+    query = instance.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_mysql_escape
+    (
+        key_col String,
+        value_col String DEFAULT ''
+    )
+    PRIMARY KEY key_col
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(MYSQL(
+        HOST 'mysql80'
+        PORT 3306
+        USER 'root'
+        PASSWORD '{mysql_pass}'
+        DB 'test'
+        TABLE 'test_mysql_escape'))
+    """
+    )
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('it\\'s'))"
+    )
+    assert result == "quote\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('foo\\\\bar'))"
+    )
+    assert result == "backslash\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('normal'))"
+    )
+    assert result == "normal value\n", f"Unexpected result: {result!r}"
+
+    result = query(
+        "SELECT dictGet('test_dict_mysql_escape', 'value_col', tuple('missing'))"
+    )
+    assert result == "\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_mysql_escape;")
+    execute_mysql_query(mysql_connection, "DROP TABLE test.test_mysql_escape;")
 
 
 def test_predefined_connection_configuration(started_cluster):
@@ -371,7 +488,7 @@ def get_mysql_conn(started_cluster):
             if conn is None:
                 conn = pymysql.connect(
                     user="root",
-                    password="clickhouse",
+                    password=mysql_pass,
                     host=started_cluster.mysql8_ip,
                     port=started_cluster.mysql8_port,
                 )
@@ -400,3 +517,103 @@ def execute_mysql_query(connection, query):
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
+
+
+def test_background_dictionary_reconnect(started_cluster):
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE test.dict (id Integer, value Text);",
+    )
+    execute_mysql_query(
+        mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
+    )
+
+    port_forward = PortForward()
+    port = port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port))
+
+    @contextmanager
+    def port_forward_manager():
+        try:
+            yield
+        finally:
+            port_forward.stop(True)
+
+    with port_forward_manager():
+
+        query = instance.query
+        query(
+            f"""
+        DROP DICTIONARY IF EXISTS dict;
+        CREATE DICTIONARY dict
+        (
+            id UInt64,
+            value String
+        )
+        PRIMARY KEY id
+        LAYOUT(DIRECT())
+        SOURCE(MYSQL(
+            USER 'root'
+            PASSWORD '{mysql_pass}'
+            DB 'test'
+            QUERY $doc$SELECT * FROM test.dict;$doc$
+            BACKGROUND_RECONNECT 'true'
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT {port} PRIORITY 1)))
+        """
+        )
+
+        result = query("SELECT value FROM dict WHERE id = 1")
+        assert result == "Value_1\n"
+
+        class MySQL_Instance:
+            pass
+
+        mysql_instance = MySQL_Instance()
+        mysql_instance.ip_address = started_cluster.mysql8_ip
+
+        query("TRUNCATE TABLE IF EXISTS system.text_log")
+
+        # Break connection to mysql server
+        port_forward.stop(force=True)
+
+        # Exhaust possible connection pool and initiate reconnection attempts
+        for _ in range(5):
+            try:
+                result = query("SELECT value FROM dict WHERE id = 1")
+            except Exception as e:
+                pass
+
+        time.sleep(5)
+
+        # Restore connection to mysql server
+        port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port), port)
+
+        time.sleep(5)
+
+        query("SYSTEM FLUSH LOGS")
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'"
+                )
+            )
+            > 0
+        )
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+                )
+            )
+            > 0
+        )
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+                )
+            )
+            > 0
+        )

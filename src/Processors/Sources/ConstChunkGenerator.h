@@ -8,10 +8,10 @@ namespace DB
 
 /// Source that generates chunks with constant columns and
 /// size up to max_block_size with total rows total_num_rows.
-class ConstChunkGenerator : public ISource
+class ConstChunkGenerator final : public ISource
 {
 public:
-    ConstChunkGenerator(Block header, size_t total_num_rows, size_t max_block_size_)
+    ConstChunkGenerator(SharedHeader header, size_t total_num_rows, size_t max_block_size_)
         : ISource(std::move(header))
         , remaining_rows(total_num_rows), max_block_size(max_block_size_)
     {

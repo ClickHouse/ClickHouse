@@ -22,10 +22,10 @@
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
 #include <Parsers/ParserShowSettingQuery.h>
+#include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
-#include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ParserShowAccessQuery.h>
 #include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
@@ -67,6 +67,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
+    ParserSnapshotQuery snapshot_p;
 
     ASTPtr query;
 
@@ -97,7 +98,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected)
-        || backup_p.parse(pos, query, expected);
+        || backup_p.parse(pos, query, expected)
+        || snapshot_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -115,19 +117,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output.setIsOutfileAppend(true);
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output.setIsOutfileTruncate(true);
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output.setIsIntoOutfileWithStdout(true);
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
@@ -152,37 +154,67 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     }
 
+    /// These two sections are allowed in an arbitrary order.
     ParserKeyword s_format(Keyword::FORMAT);
+    ParserKeyword s_settings(Keyword::SETTINGS);
 
-    if (s_format.ignore(pos, expected))
+    /** Why: let's take the following example:
+      * SELECT 1 UNION ALL SELECT 2 FORMAT TSV
+      * Each subquery can be put in parentheses and have its own settings:
+      *   (SELECT 1 SETTINGS a=b) UNION ALL (SELECT 2 SETTINGS c=d) FORMAT TSV
+      * And the whole query can have settings:
+      *   (SELECT 1 SETTINGS a=b) UNION ALL (SELECT 2 SETTINGS c=d) FORMAT TSV SETTINGS e=f
+      * A single query with output is parsed in the same way as the UNION ALL chain:
+      *   SELECT 1 SETTINGS a=b FORMAT TSV SETTINGS e=f
+      * So while these forms have a slightly different meaning, they both exist:
+      *   SELECT 1 SETTINGS a=b FORMAT TSV
+      *   SELECT 1 FORMAT TSV SETTINGS e=f
+      * And due to this effect, the users expect that the FORMAT and SETTINGS may go in an arbitrary order.
+      * But while this work:
+      *   (SELECT 1) UNION ALL (SELECT 2) FORMAT TSV SETTINGS d=f
+      * This does not work automatically, unless we explicitly allow different orders:
+      *   (SELECT 1) UNION ALL (SELECT 2) SETTINGS d=f FORMAT TSV
+      * Inevitably, we also allow this:
+      *   SELECT 1 SETTINGS a=b SETTINGS d=f FORMAT TSV
+      *   ^^^^^^^^^^^^^^^^^^^^^
+      * Because this part is consumed into ASTSelectWithUnionQuery
+      * and the rest into ASTQueryWithOutput.
+      */
+
+    for (size_t i = 0; i < 2; ++i)
     {
-        ParserIdentifier format_p;
+        if (!query_with_output.format_ast && s_format.ignore(pos, expected))
+        {
+            ParserIdentifier format_p;
 
-        if (!format_p.parse(pos, query_with_output.format, expected))
-            return false;
-        setIdentifierSpecial(query_with_output.format);
+            if (!format_p.parse(pos, query_with_output.format_ast, expected))
+                return false;
+            setIdentifierSpecial(query_with_output.format_ast);
 
-        query_with_output.children.push_back(query_with_output.format);
+            query_with_output.children.push_back(query_with_output.format_ast);
+        }
+        else if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
+        {
+            // SETTINGS key1 = value1, key2 = value2, ...
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+                return false;
+            query_with_output.children.push_back(query_with_output.settings_ast);
+        }
+        else
+            break;
     }
 
-    // SETTINGS key1 = value1, key2 = value2, ...
-    ParserKeyword s_settings(Keyword::SETTINGS);
-    if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
+    /// The formatter always outputs FORMAT before SETTINGS. Ensure children
+    /// are in the same canonical order so that tree hash is stable after
+    /// a formatting roundtrip (regardless of the original clause order).
+    if (query_with_output.format_ast && query_with_output.settings_ast)
     {
-        ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
-            return false;
-        query_with_output.children.push_back(query_with_output.settings_ast);
-
-        // SETTINGS after FORMAT is not parsed by the SELECT parser (ParserSelectQuery)
-        // Pass them manually, to apply in InterpreterSelectQuery::initSettings()
-        if (query->as<ASTSelectWithUnionQuery>())
-        {
-            auto settings = query_with_output.settings_ast->clone();
-            assert_cast<ASTSetQuery *>(settings.get())->print_in_format = false;
-            QueryWithOutputSettingsPushDownVisitor::Data data{settings};
-            QueryWithOutputSettingsPushDownVisitor(data).visit(query);
-        }
+        auto & ch = query_with_output.children;
+        auto fmt_it = std::find(ch.begin(), ch.end(), query_with_output.format_ast);
+        auto set_it = std::find(ch.begin(), ch.end(), query_with_output.settings_ast);
+        if (fmt_it != ch.end() && set_it != ch.end() && set_it < fmt_it)
+            std::iter_swap(fmt_it, set_it);
     }
 
     node = std::move(query);

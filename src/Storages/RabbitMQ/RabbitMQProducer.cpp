@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Columns/ColumnString.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <amqpcpp.h>
 #include <boost/algorithm/string/split.hpp>
@@ -85,6 +86,18 @@ void RabbitMQProducer::produce(const String & message, size_t, const Columns &, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
 }
 
+void RabbitMQProducer::cancel() noexcept
+{
+    try
+    {
+      finish();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
 void RabbitMQProducer::setupChannel()
 {
     producer_channel = connection.createChannel();
@@ -140,7 +153,7 @@ void RabbitMQProducer::setupChannel()
 void RabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
-    assert(record_iter != delivery_record.end());
+    chassert(record_iter != delivery_record.end());
 
     if (multiple)
     {
@@ -266,12 +279,12 @@ void RabbitMQProducer::startProducingTaskLoop()
     .onSuccess([&]()
     {
         LOG_TRACE(log, "Successfully closed producer channel");
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     })
     .onError([&](const char * message)
     {
         LOG_ERROR(log, "Failed to close producer channel: {}", message);
-        connection.getHandler().stopLoop();
+        connection.getHandler().stopBlockingLoop();
     });
 
     int active = connection.getHandler().startBlockingLoop();

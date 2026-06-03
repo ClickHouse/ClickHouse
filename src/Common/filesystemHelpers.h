@@ -14,10 +14,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-using PocoTemporaryFile = Poco::TemporaryFile;
-
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path);
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path);
 
 
 // Determine what block device is responsible for specified path
@@ -28,7 +26,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path);
 
 std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path);
 
-enum class BlockDeviceType
+enum class BlockDeviceType : uint8_t
 {
     UNKNOWN = 0, // we were unable to determine device type
     NONROT = 1, // not a rotational device (SSD, NVME, etc)
@@ -56,7 +54,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path);
 #endif
 String getFilesystemName([[maybe_unused]] const String & mount_point);
 
-struct statvfs getStatVFS(const String & path);
+struct statvfs getStatVFS(String path);
 
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
@@ -77,6 +75,12 @@ std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 Int64 getINodeNumberFromPath(const String & path);
 
 }
+
+// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
+// Undef it to avoid conflict with FS namespace below.
+#ifdef FS
+#  undef FS
+#endif
 
 namespace FS
 {

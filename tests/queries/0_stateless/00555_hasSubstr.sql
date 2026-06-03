@@ -25,8 +25,8 @@ select hasSubstr(['a', 'b'], ['a', 'c']);
 select hasSubstr(['a', 'c', 'b'], ['a', 'c']);
 select '-';
 
-select hasSubstr([1], ['a']); -- { serverError 386 }
-select hasSubstr([[1, 2], [3, 4]], ['a', 'c']); -- { serverError 386 }
+select hasSubstr([1], ['a']); -- { serverError NO_COMMON_TYPE }
+select hasSubstr([[1, 2], [3, 4]], ['a', 'c']); -- { serverError NO_COMMON_TYPE }
 select hasSubstr([[1, 2], [3, 4], [5, 8]], [[3, 4]]);
 select hasSubstr([[1, 2], [3, 4], [5, 8]], [[3, 4], [5, 8]]);
 select hasSubstr([[1, 2], [3, 4], [5, 8]], [[1, 2], [5, 8]]);

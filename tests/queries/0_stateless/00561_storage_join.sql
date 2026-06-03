@@ -36,7 +36,7 @@ SEMI LEFT JOIN joinbug_join using id2;
 SELECT * FROM ( SELECT toUInt32(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2);
 
 -- can't convert right side in case on storage join
-SELECT * FROM ( SELECT toInt64(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2); -- { serverError 53, 386 }
+SELECT * FROM ( SELECT toInt64(11) AS id2 ) AS js1 SEMI LEFT JOIN joinbug_join USING (id2); -- { serverError TYPE_MISMATCH, 386 }
 
 DROP TABLE joinbug;
 DROP TABLE joinbug_join;

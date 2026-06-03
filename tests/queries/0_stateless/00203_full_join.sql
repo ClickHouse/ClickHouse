@@ -26,7 +26,7 @@ SELECT k1, k2, k3, val_t1, val_t2 FROM t1_00203 ANY FULL JOIN t2_00203 USING (k3
 SELECT k1, k2, k3, val_t1, val_t2 FROM t1_00203 ANY RIGHT JOIN t2_00203 USING (k3, k1, k2) ORDER BY k1, k2, k3;
 
 SET any_join_distinct_right_table_keys = 0;
-SELECT k1, k2, k3, val_t1, val_t2 FROM t1_00203 ANY FULL JOIN t2_00203 USING (k3, k1, k2) ORDER BY k1, k2, k3; -- { serverError 48 }
+SELECT k1, k2, k3, val_t1, val_t2 FROM t1_00203 ANY FULL JOIN t2_00203 USING (k3, k1, k2) ORDER BY k1, k2, k3; -- { serverError NOT_IMPLEMENTED }
 SELECT k1, k2, k3, val_t1, val_t2 FROM t1_00203 ANY RIGHT JOIN t2_00203 USING (k3, k1, k2) ORDER BY k1, k2, k3;
 
 DROP TABLE t1_00203;

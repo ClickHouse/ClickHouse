@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
+#include <Common/Exception.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -43,33 +44,30 @@ public:
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
-    void getExtremes(Field &, Field &) const override {}
+    void getExtremes(Field &, Field &, size_t, size_t) const override {}
 
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(bool dry_run = false) const;
 
-    Field operator[](size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    Field operator[](size_t n) const override;
 
-    void get(size_t, Field &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    void get(size_t n, Field & res) const override;
 
-    StringRef getDataAt(size_t) const override
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+
+    std::string_view getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
@@ -94,50 +92,51 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src, size_t n) override;
+#else
+    void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t start, size_t length) override;
+#else
+    void doInsertRangeFrom(const IColumn &, size_t start, size_t length) override;
+#endif
 
     void insertData(const char *, size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
 
-    const char * deserializeAndInsertFromArena(const char *) override
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    const char * skipSerializedInArena(const char*) const override
+    void skipSerializedInArena(ReadBuffer &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
-    void updateHashWithValue(size_t, SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashWithValue is not implemented for {}", getName());
-    }
-
-    void updateWeakHash32(WeakHash32 &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateWeakHash32 is not implemented for {}", getName());
-    }
-
-    void updateHashFast(SipHash &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateHashFast is not implemented for {}", getName());
-    }
+    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    WeakHash32 getWeakHash32() const override;
+    void updateHashFast(SipHash & hash) const override;
 
     void popBack(size_t) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "popBack is not implemented for {}", getName());
     }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t, size_t, const IColumn &, int) const override
+#else
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "compareAt is not implemented for {}", getName());
     }
@@ -184,12 +183,20 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
     }
 
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+
     bool isShortCircuitArgument() const { return is_short_circuit_argument; }
 
     DataTypePtr getResultType() const;
 
     /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
+
+    const FunctionBasePtr & getFunction() const { return function; }
+    const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
     size_t elements_size;

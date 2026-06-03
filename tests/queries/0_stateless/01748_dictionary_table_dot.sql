@@ -1,8 +1,8 @@
 -- Tags: no-parallel
 
-DROP DATABASE IF EXISTS test_01748;
-CREATE DATABASE test_01748;
-USE test_01748;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 DROP TABLE IF EXISTS `test.txt`;
 DROP DICTIONARY IF EXISTS test_dict;
@@ -22,15 +22,15 @@ CREATE DICTIONARY test_dict
     `value` String
 )
 PRIMARY KEY key1, key2
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE `test.txt` PASSWORD '' DB currentDatabase()))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE `test.txt` PASSWORD '' DB currentDatabase()))
 LIFETIME(MIN 1 MAX 3600)
 LAYOUT(COMPLEX_KEY_HASHED());
 
 INSERT INTO `test.txt` VALUES (1, 2, 'Hello');
 
 -- TODO: it does not work without fully qualified name.
-SYSTEM RELOAD DICTIONARY test_01748.test_dict;
+SYSTEM RELOAD DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.test_dict;
 
 SELECT dictGet(test_dict, 'value', (toUInt32(1), toUInt32(2)));
 
-DROP DATABASE test_01748;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

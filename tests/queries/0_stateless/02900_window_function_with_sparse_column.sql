@@ -18,7 +18,7 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(time)
 ORDER BY (key, id, time);
 
-INSERT INTO test1 VALUES ('id0', now(), 3, false)
+INSERT INTO test1 VALUES ('id0', now(), 3, false);
 
 SELECT last_value(value) OVER (PARTITION BY id ORDER BY time ASC) as last_value
 FROM test1

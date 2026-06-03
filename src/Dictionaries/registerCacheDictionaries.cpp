@@ -1,7 +1,8 @@
-#include "CacheDictionary.h"
-#include "CacheDictionaryStorage.h"
-#include "SSDCacheDictionaryStorage.h"
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/CacheDictionaryStorage.h>
+#include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Common/filesystemHelpers.h>
+#include <Core/Settings.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -10,6 +11,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
 
 namespace ErrorCodes
 {
@@ -19,7 +24,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
+static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -48,7 +53,7 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
 
-SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
+static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -112,7 +117,7 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
 
 #endif
 
-CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
+static CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -229,7 +234,7 @@ DictionaryPtr createCacheDictionaryLayout(
     const auto & settings = context->getSettingsRef();
 
     const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
     CacheDictionaryConfiguration configuration{
         allow_read_expired_keys,
         dict_lifetime,
@@ -247,6 +252,7 @@ DictionaryPtr createCacheDictionaryLayout(
     return dictionary;
 }
 
+void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_simple_cache_layout = [=](const String & full_name,

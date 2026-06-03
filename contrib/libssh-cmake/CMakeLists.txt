@@ -35,6 +35,7 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/external/blowfish.c
     ${LIB_SOURCE_DIR}/src/external/chacha.c
     ${LIB_SOURCE_DIR}/src/external/poly1305.c
+    ${LIB_SOURCE_DIR}/src/external/sntrup761.c
     ${LIB_SOURCE_DIR}/src/getpass.c
     ${LIB_SOURCE_DIR}/src/init.c
     ${LIB_SOURCE_DIR}/src/kdf.c
@@ -61,6 +62,7 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/string.c
     ${LIB_SOURCE_DIR}/src/threads.c
     ${LIB_SOURCE_DIR}/src/token.c
+    ${LIB_SOURCE_DIR}/src/ttyopts.c
     ${LIB_SOURCE_DIR}/src/wrapper.c
     # some files of libssh/src/ are missing - why?
 
@@ -69,21 +71,23 @@ set(libssh_SRCS
     # files missing - why?
 
     # LIBCRYPT specific
+    ${LIB_SOURCE_DIR}/src/crypto_common.c
+    ${LIB_SOURCE_DIR}/src/curve25519_crypto.c
     ${LIB_SOURCE_DIR}/src/dh_crypto.c
     ${LIB_SOURCE_DIR}/src/ecdh_crypto.c
+    ${LIB_SOURCE_DIR}/src/getrandom_crypto.c
+    ${LIB_SOURCE_DIR}/src/gzip.c
     ${LIB_SOURCE_DIR}/src/libcrypto.c
+    ${LIB_SOURCE_DIR}/src/md_crypto.c
     ${LIB_SOURCE_DIR}/src/pki_crypto.c
+    ${LIB_SOURCE_DIR}/src/pki_context.c
+    ${LIB_SOURCE_DIR}/src/sntrup761.c
     ${LIB_SOURCE_DIR}/src/threads/libcrypto.c
 
     ${LIB_SOURCE_DIR}/src/bind.c
     ${LIB_SOURCE_DIR}/src/bind_config.c
-    ${LIB_SOURCE_DIR}/src/options.c
     ${LIB_SOURCE_DIR}/src/server.c
 )
-
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-endif()
 
 configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake ${LIB_BINARY_DIR}/include/libssh/libssh_version.h @ONLY)
 
@@ -114,6 +118,8 @@ if (OS_LINUX)
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/s390x")
     elseif (ARCH_RISCV64)
         target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/riscv64")
+    elseif (ARCH_LOONGARCH64)
+        target_include_directories(_ssh PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libssh-cmake/linux/loongarch64")
     else ()
         message(FATAL_ERROR "Platform is not supported")
     endif ()

@@ -3,6 +3,7 @@
 
 #if USE_HIVE
 
+#include <Poco/URI.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
@@ -190,10 +191,8 @@ void HiveMetastoreClient::HiveTableMetadata::updateIfNeeded(const std::vector<Ap
             new_partition_infos.emplace(partition.sd.location, PartitionInfo(partition));
             continue;
         }
-        else
-        {
-            new_partition_infos.emplace(partition.sd.location, std::move(it->second));
-        }
+
+        new_partition_infos.emplace(partition.sd.location, std::move(it->second));
     }
 
     partition_infos.swap(new_partition_infos);

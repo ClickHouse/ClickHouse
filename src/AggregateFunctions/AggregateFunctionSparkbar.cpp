@@ -9,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/PODArray.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 
@@ -29,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
     /// TODO: calculate histogram instead of storing all points
@@ -45,19 +44,19 @@ struct AggregateFunctionSparkbarData
     Y insert(const X & x, const Y & y)
     {
         if (isNaN(y) || y <= 0)
-            return 0;
+            return {};
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            if constexpr (std::is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
             {
                 it->getMapped() += y;
                 return it->getMapped();
             }
             else
             {
-                Y res;
+                Y res{};
                 bool has_overfllow = common::addOverflow(it->getMapped(), y, res);
                 it->getMapped() = has_overfllow ? std::numeric_limits<Y>::max() : res;
             }
@@ -115,11 +114,11 @@ struct AggregateFunctionSparkbarData
         readBinary(max_x, buf);
         readBinary(min_y, buf);
         readBinary(max_y, buf);
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
 
-        X x;
-        Y y;
+        X x{};
+        Y y{};
         for (size_t i = 0; i < size; ++i)
         {
             readBinary(x, buf);
@@ -129,7 +128,7 @@ struct AggregateFunctionSparkbarData
     }
 };
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 class AggregateFunctionSparkbar final
     : public IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar<X, Y>>
 {
@@ -163,8 +162,8 @@ private:
 
         if (data.points.empty())
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -173,13 +172,12 @@ private:
 
         if (from_x >= to_x)
         {
-            size_t sz = updateFrame(values, 8);
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            size_t sz = updateFrame(values, Y{8});
+            offsets.push_back(offsets.back() + sz);
             return;
         }
 
-        PaddedPODArray<Y> histogram(width, 0);
+        PaddedPODArray<Y> histogram(width, Y{0});
         PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
 
         for (const auto & point : data.points)
@@ -192,12 +190,12 @@ private:
                 delta = delta + 1;
 
             X value = point.getKey() - from_x;
-            Float64 w = histogram.size();
-            size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
+            Float64 w = static_cast<Float64>(histogram.size());
+            size_t index = std::min<size_t>(static_cast<size_t>(w / static_cast<Float64>(delta) * static_cast<Float64>(value)), histogram.size() - 1);
 
-            Y res;
+            Y res{};
             bool has_overfllow = false;
-            if constexpr (std::is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
                 res = histogram[index] + point.getMapped();
             else
                 has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
@@ -218,10 +216,13 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] /= count_histogram[i];
+            {
+                using CountHistogramType = std::conditional_t<is_floating_point<Y>, Y, UInt64>;
+                histogram[i] = histogram[i] / static_cast<CountHistogramType>(count_histogram[i]);
+            }
         }
 
-        Y y_max = 0;
+        Y y_max{};
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -231,12 +232,13 @@ private:
 
         if (y_max == 0)
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
         /// Scale the histogram to the range [0, BAR_LEVELS]
+#pragma clang loop vectorize(disable) /// Workaround for a bug in clang-23
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -245,17 +247,17 @@ private:
                 continue;
             }
 
-            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            if constexpr (std::is_floating_point_v<Y>)
+            constexpr auto levels_num = Y{BAR_LEVELS - 1};
+            if constexpr (is_floating_point<Y>)
             {
                 y = y / (y_max / levels_num) + 1;
             }
             else
             {
-                Y scaled;
-                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
+                Y scaled{};
+                bool has_overflow = common::mulOverflow<Y>(y, levels_num, scaled);
 
-                if (has_overfllow)
+                if (has_overflow)
                     y = y / (y_max / levels_num) + 1;
                 else
                     y = scaled / y_max + 1;
@@ -266,8 +268,7 @@ private:
         for (const auto & y : histogram)
             sz += updateFrame(values, y);
 
-        values.push_back('\0');
-        offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        offsets.push_back(offsets.back() + sz);
     }
 
 public:
@@ -375,9 +376,64 @@ AggregateFunctionPtr createAggregateFunctionSparkbar(const std::string & name, c
 
 }
 
+void registerAggregateFunctionSparkbar(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sparkbar", createAggregateFunctionSparkbar);
+
+    FunctionDocumentation::Description description_sparkbar = R"(
+The function plots a frequency histogram for values `x` and the repetition rate `y` of these values over the interval `[min_x, max_x]`.
+Repetitions for all `x` falling into the same bucket are averaged, so data should be pre-aggregated.
+Negative repetitions are ignored.
+
+If no interval is specified, then the minimum `x` is used as the interval start, and the maximum `x` — as the interval end.
+Otherwise, values outside the interval are ignored.
+    )";
+    FunctionDocumentation::Syntax syntax_sparkbar = R"(
+sparkbar(buckets[, min_x, max_x])(x, y)
+    )";
+    FunctionDocumentation::Parameters parameters_sparkbar = {
+        {"buckets", "The number of segments.", {"(U)Int*"}},
+        {"min_x", "Optional. The interval start.", {"(U)Int*", "Float*", "Decimal"}},
+        {"max_x", "Optional. The interval end.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::Arguments arguments_sparkbar = {
+        {"x", "The field with values.", {"const String"}},
+        {"y", "The field with the frequency of values.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sparkbar = {"Returns the frequency histogram.", {"String"}};
+    FunctionDocumentation::Examples examples_sparkbar = {
+    {
+        "Without interval specification",
+        R"(
+CREATE TABLE spark_bar_data (`value` Int64, `event_date` Date) ENGINE = MergeTree ORDER BY event_date;
+
+INSERT INTO spark_bar_data VALUES (1,'2020-01-01'), (3,'2020-01-02'), (4,'2020-01-02'), (-3,'2020-01-02'), (5,'2020-01-03'), (2,'2020-01-04'), (3,'2020-01-05'), (7,'2020-01-06'), (6,'2020-01-07'), (8,'2020-01-08'), (2,'2020-01-11');
+
+SELECT sparkbar(9)(event_date, cnt) FROM (SELECT sum(value) AS cnt, event_date FROM spark_bar_data GROUP BY event_date);
+        )",
+        R"(
+┌─sparkbar(9)(event_date, cnt)─┐
+│ ▂▅▂▃▆█  ▂                    │
+└──────────────────────────────┘
+        )"
+    },
+    {
+        "With interval specification",
+        R"(
+SELECT sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt) FROM (SELECT sum(value) AS cnt, event_date FROM spark_bar_data GROUP BY event_date);
+        )",
+        R"(
+┌─sparkbar(9, toDate('2020-01-01'), toDate('2020-01-10'))(event_date, cnt)─┐
+│ ▂▅▂▃▇▆█                                                                  │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sparkbar = {21, 11};
+    FunctionDocumentation::Category category_sparkbar = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_sparkbar = {description_sparkbar, syntax_sparkbar, arguments_sparkbar, parameters_sparkbar, returned_value_sparkbar, examples_sparkbar, introduced_in_sparkbar, category_sparkbar};
+
+    factory.registerFunction("sparkbar", {createAggregateFunctionSparkbar, documentation_sparkbar});
     factory.registerAlias("sparkBar", "sparkbar");
 }
 

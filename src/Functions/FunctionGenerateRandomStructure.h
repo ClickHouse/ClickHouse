@@ -1,14 +1,14 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <pcg_random.hpp>
 
 namespace DB
 {
 
-class FunctionGenerateRandomStructure : public IFunction
+class FunctionGenerateRandomStructure final : public IFunction
 {
 public:
     static constexpr auto name = "generateRandomStructure";
@@ -17,10 +17,7 @@ public:
     {
     }
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef().allow_suspicious_low_cardinality_types.value);
-    }
+    static FunctionPtr create(ContextPtr context);
 
     String getName() const override { return name; }
 
@@ -39,6 +36,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
     static String generateRandomStructure(size_t seed, const ContextPtr & context);
+    static String generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types);
 
 private:
     bool allow_suspicious_lc_types;

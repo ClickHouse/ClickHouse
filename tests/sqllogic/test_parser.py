@@ -7,14 +7,6 @@ from functools import reduce
 from hashlib import md5
 from itertools import chain
 
-# isort: off
-# pylint:disable=import-error; for style check
-import sqlglot
-from sqlglot.expressions import ColumnDef, PrimaryKeyColumnConstraint
-
-# pylint:enable=import-error; for style check
-# isort: on
-
 from exceptions import (
     DataResultDiffer,
     Error,
@@ -22,6 +14,7 @@ from exceptions import (
     ProgramError,
     QueryExecutionError,
 )
+
 
 logger = logging.getLogger("parser")
 logger.setLevel(logging.DEBUG)
@@ -142,36 +135,11 @@ class FileBlockBase:
     @staticmethod
     def convert_request(sql):
         if sql.startswith("CREATE TABLE"):
-            result = sqlglot.transpile(sql, read="sqlite", write="clickhouse")[0]
-            pk_token = sqlglot.parse_one(result, read="clickhouse").find(
-                PrimaryKeyColumnConstraint
-            )
-            pk_string = "tuple()"
-            if pk_token is not None:
-                pk_string = str(pk_token.find_ancestor(ColumnDef).args["this"])
-
-            result += " ENGINE = MergeTree() ORDER BY " + pk_string
-            return result
-        elif "SELECT" in sql and "CAST" in sql and "NULL" in sql:
-            # convert `CAST (NULL as INTEGER)` to `CAST (NULL as Nullable(Int32))`
-            try:
-                ast = sqlglot.parse_one(sql, read="sqlite")
-            except sqlglot.errors.ParseError as err:
-                logger.info("cannot parse %s , error is %s", sql, err)
-                return sql
-            cast = ast.find(sqlglot.expressions.Cast)
-            # logger.info("found sql %s && %s && %s", sql, cast.sql(), cast.to.args)
-            if (
-                cast is not None
-                and cast.name == "NULL"
-                and ("nested" not in cast.to.args or not cast.to.args["nested"])
-            ):
-                cast.args["to"] = sqlglot.expressions.DataType.build(
-                    "NULLABLE", expressions=[cast.to]
-                )
-                new_sql = ast.sql("clickhouse")
-                # logger.info("convert from %s to %s", sql, new_sql)
-                return new_sql
+            # ClickHouse handles SQLite types (INTEGER, TEXT, VARCHAR) natively,
+            # and `default_table_engine`, `allow_create_index_without_type`,
+            # `create_index_ignore_unique` settings handle the rest.
+            # We only need to add SETTINGS for nullable keys and block columns.
+            return sql + " SETTINGS allow_nullable_key = 1, enable_block_number_column = 1, enable_block_offset_column = 1"
         return sql
 
     @staticmethod
@@ -474,9 +442,11 @@ class QueryResult:
                     f"values_count: {self.values_count}" if self.values_count else "",
                     f"data_hash: {self.data_hash}" if self.data_hash else "",
                     f"exception: {self.exception}" if self.exception else "",
-                    f"hash_threshold: {self.hash_threshold}"
-                    if self.hash_threshold
-                    else "",
+                    (
+                        f"hash_threshold: {self.hash_threshold}"
+                        if self.hash_threshold
+                        else ""
+                    ),
                 ]
                 if x
             )
@@ -525,7 +495,7 @@ class QueryResult:
         for row in rows:
             res_row = []
             for c, t in zip(row, types):
-                logger.debug("Builging row. c:%s t:%s", c, t)
+                logger.debug("Building row. c:%s t:%s", c, t)
                 if c is None:
                     res_row.append("NULL")
                     continue

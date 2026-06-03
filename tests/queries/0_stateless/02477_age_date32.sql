@@ -99,3 +99,6 @@ SELECT age('day', materialize(toDate32('2015-08-18', 'UTC')), materialize(toDate
 SELECT age('day', materialize(toDateTime('2015-08-18 00:00:00', 'UTC')), materialize(toDate32('2015-08-19', 'UTC')), 'UTC');
 SELECT age('day', materialize(toDate32('2015-08-18', 'UTC')), materialize(toDate('2015-08-19', 'UTC')), 'UTC');
 SELECT age('day', materialize(toDate('2015-08-18', 'UTC')), materialize(toDate32('2015-08-19', 'UTC')), 'UTC');
+
+-- UBsan issue detected by fuzzer
+SELECT age('minute', toDate32(1234567890123456, 'UTC'), toDateTime64('1927-01-02 00:00:00', 3, 'UTC'), 'UTC')

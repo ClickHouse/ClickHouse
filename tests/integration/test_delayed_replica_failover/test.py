@@ -20,21 +20,30 @@ node_1_2 = cluster.add_instance("node_1_2", with_zookeeper=True)
 node_2_1 = cluster.add_instance("node_2_1", with_zookeeper=True)
 node_2_2 = cluster.add_instance("node_2_2", with_zookeeper=True)
 
+# For test to be runnable multiple times
+seqno = 0
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
 
+
+@pytest.fixture(scope="function", autouse=True)
+def create_tables():
+    global seqno
+    try:
+        seqno += 1
         for shard in (1, 2):
             for replica in (1, 2):
                 node = cluster.instances["node_{}_{}".format(shard, replica)]
                 node.query(
-                    """
-CREATE TABLE replicated (d Date, x UInt32) ENGINE =
-    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}') PARTITION BY toYYYYMM(d) ORDER BY d""".format(
-                        shard=shard, instance=node.name
-                    )
+                    f"CREATE TABLE replicated (d Date, x UInt32) ENGINE = "
+                    f"ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated_{seqno}', '{node.name}') PARTITION BY toYYYYMM(d) ORDER BY d"
                 )
 
         node_1_1.query(
@@ -42,34 +51,56 @@ CREATE TABLE replicated (d Date, x UInt32) ENGINE =
             "Distributed('test_cluster', 'default', 'replicated')"
         )
 
-        yield cluster
+        yield
 
     finally:
-        cluster.shutdown()
+        node_1_1.query("DROP TABLE distributed")
+
+        node_1_1.query("DROP TABLE replicated")
+        node_1_2.query("DROP TABLE replicated")
+        node_2_1.query("DROP TABLE replicated")
+        node_2_2.query("DROP TABLE replicated")
 
 
 def test(started_cluster):
+    instance_with_dist_table.query(
+        "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+    )
     with PartitionManager() as pm:
+        # Insert initial records and wait until they are replicated across all nodes
+        node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 1)")
+        node_2_2.query("INSERT INTO replicated VALUES ('2017-05-08', 2)")
+
+        for _ in range(100):
+            count = node_1_1.query(
+                "SELECT count() FROM clusterAllReplicas(test_cluster, default.replicated)"
+            ).strip()
+            if count == "4":
+                break
+        else:
+            raise Exception("Failed to replicate initial records")
+
         # Hinder replication between replicas of the same shard, but leave the possibility of distributed connection.
         pm.partition_instances(node_1_1, node_1_2, port=9009)
         pm.partition_instances(node_2_1, node_2_2, port=9009)
 
-        node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 1)")
-        node_2_2.query("INSERT INTO replicated VALUES ('2017-05-08', 2)")
+        # Insert additional records which won't be replicated
+        node_1_2.query("INSERT INTO replicated VALUES ('2017-05-08', 3)")
+        node_2_2.query("INSERT INTO replicated VALUES ('2017-05-08', 4)")
 
         time.sleep(1)  # accrue replica delay
 
-        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == "0"
-        assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == "1"
-        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == "0"
-        assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == "2"
+        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == "1"
+        assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == "4"
+        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == "2"
+        assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == "6"
 
         # With in_order balancing first replicas are chosen.
         assert (
             instance_with_dist_table.query(
-                "SELECT count() FROM distributed SETTINGS load_balancing='in_order'"
+                "SELECT sum(x) FROM distributed SETTINGS load_balancing='in_order'"
             ).strip()
-            == "0"
+            == "3"
         )
 
         # When we set max_replica_delay, first replicas must be excluded.
@@ -81,7 +112,7 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 """
             ).strip()
-            == "3"
+            == "10"
         )
 
         assert (
@@ -92,7 +123,7 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
     max_replica_delay_for_distributed_queries=1
 """
             ).strip()
-            == "3\n\n3"
+            == "10\n\n10"
         )
 
         pm.drop_instance_zk_connections(node_1_2)
@@ -101,13 +132,18 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
         for _ in range(30):
             try:
-                node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
+                node_2_2.query(
+                    "SELECT * FROM system.zookeeper where path = '/' SETTINGS insert_keeper_max_retries = 0"
+                )
                 time.sleep(0.5)
             except:
                 break
         else:
             raise Exception("Connection with zookeeper was not lost")
 
+        instance_with_dist_table.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+        )
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
         assert (
             instance_with_dist_table.query(
@@ -117,10 +153,10 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 """
             ).strip()
-            == "3"
+            == "10"
         )
 
-        # Regression for skip_unavailable_shards in conjunction with skip_unavailable_shards
+        # Prefer fallback_to_stale_replicas over skip_unavailable_shards
         assert (
             instance_with_dist_table.query(
                 """
@@ -130,7 +166,7 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 """
             ).strip()
-            == "3"
+            == "10"
         )
 
         # If we forbid stale replicas, the query must fail. But sometimes we must have bigger timeouts.
@@ -161,5 +197,5 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 """
             ).strip()
-            == "2"
+            == "7"
         )

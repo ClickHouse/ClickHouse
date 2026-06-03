@@ -19,45 +19,48 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
     if (isArray(input_column.type) && isArray(header_column.type))
     {
         ColumnWithTypeAndName nested_input_column;
-        const auto * array_input_column = checkAndGetColumn<ColumnArray>(input_column.column.get());
-        nested_input_column.column = array_input_column->getDataPtr();
+        const auto & array_input_column = checkAndGetColumn<ColumnArray>(*input_column.column);
+        nested_input_column.column = array_input_column.getDataPtr();
         nested_input_column.type = checkAndGetDataType<DataTypeArray>(input_column.type.get())->getNestedType();
 
         ColumnWithTypeAndName nested_header_column;
-        nested_header_column.column = checkAndGetColumn<ColumnArray>(header_column.column.get())->getDataPtr();
+        nested_header_column.column = checkAndGetColumn<ColumnArray>(*header_column.column).getDataPtr();
         nested_header_column.type = checkAndGetDataType<DataTypeArray>(header_column.type.get())->getNestedType();
 
         if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr))
             return false;
 
-        input_column.column = ColumnArray::create(nested_input_column.column, array_input_column->getOffsetsPtr());
+        input_column.column = ColumnArray::create(nested_input_column.column, array_input_column.getOffsetsPtr());
         input_column.type = std::make_shared<DataTypeArray>(std::move(nested_input_column.type));
         return true;
     }
 
     if (isTuple(input_column.type) && isTuple(header_column.type))
     {
-        const auto * tuple_input_column = checkAndGetColumn<ColumnTuple>(input_column.column.get());
-        const auto * tuple_input_type = checkAndGetDataType<DataTypeTuple>(input_column.type.get());
-        const auto * tuple_header_column = checkAndGetColumn<ColumnTuple>(header_column.column.get());
-        const auto * tuple_header_type = checkAndGetDataType<DataTypeTuple>(header_column.type.get());
+        const auto & tuple_input_column = checkAndGetColumn<ColumnTuple>(*input_column.column);
+        const auto & tuple_input_type = checkAndGetDataType<DataTypeTuple>(*input_column.type);
+        const auto & tuple_header_column = checkAndGetColumn<ColumnTuple>(*header_column.column);
+        const auto & tuple_header_type = checkAndGetDataType<DataTypeTuple>(*header_column.type);
 
-        if (tuple_input_type->getElements().size() != tuple_header_type->getElements().size())
+        if (tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
             return false;
 
+        bool has_explicit_names = tuple_input_type.hasExplicitNames();
+        Names explicit_names = has_explicit_names ? tuple_input_type.getElementNames() : Names{};
+
         Columns nested_input_columns;
-        nested_input_columns.reserve(tuple_input_type->getElements().size());
+        nested_input_columns.reserve(tuple_input_type.getElements().size());
         DataTypes nested_input_types;
-        nested_input_types.reserve(tuple_input_type->getElements().size());
+        nested_input_types.reserve(tuple_input_type.getElements().size());
         bool changed = false;
-        for (size_t i = 0; i != tuple_input_type->getElements().size(); ++i)
+        for (size_t i = 0; i != tuple_input_type.getElements().size(); ++i)
         {
             ColumnWithTypeAndName nested_input_column;
-            nested_input_column.column = tuple_input_column->getColumnPtr(i);
-            nested_input_column.type = tuple_input_type->getElement(i);
+            nested_input_column.column = tuple_input_column.getColumnPtr(i);
+            nested_input_column.type = tuple_input_type.getElement(i);
             ColumnWithTypeAndName nested_header_column;
-            nested_header_column.column = tuple_header_column->getColumnPtr(i);
-            nested_header_column.type = tuple_header_type->getElement(i);
+            nested_header_column.column = tuple_header_column.getColumnPtr(i);
+            nested_header_column.type = tuple_header_type.getElement(i);
             changed |= insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr);
             nested_input_columns.push_back(std::move(nested_input_column.column));
             nested_input_types.push_back(std::move(nested_input_column.type));
@@ -67,25 +70,48 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
             return false;
 
         input_column.column = ColumnTuple::create(std::move(nested_input_columns));
-        input_column.type = std::make_shared<DataTypeTuple>(std::move(nested_input_types));
+        input_column.type = has_explicit_names
+                            ? std::make_shared<DataTypeTuple>(std::move(nested_input_types), explicit_names)
+                            : std::make_shared<DataTypeTuple>(std::move(nested_input_types));
         return true;
     }
 
     if (isMap(input_column.type) && isMap(header_column.type))
     {
         ColumnWithTypeAndName nested_input_column;
-        nested_input_column.column = checkAndGetColumn<ColumnMap>(input_column.column.get())->getNestedColumnPtr();
-        nested_input_column.type = checkAndGetDataType<DataTypeMap>(input_column.type.get())->getNestedType();
+        nested_input_column.column = checkAndGetColumn<ColumnMap>(*input_column.column).getNestedColumnPtr();
+        nested_input_column.type = checkAndGetDataType<DataTypeMap>(*input_column.type).getNestedType();
 
         ColumnWithTypeAndName nested_header_column;
-        nested_header_column.column = checkAndGetColumn<ColumnMap>(header_column.column.get())->getNestedColumnPtr();
-        nested_header_column.type = checkAndGetDataType<DataTypeMap>(header_column.type.get())->getNestedType();
+        nested_header_column.column = checkAndGetColumn<ColumnMap>(*header_column.column).getNestedColumnPtr();
+        nested_header_column.type = checkAndGetDataType<DataTypeMap>(*header_column.type).getNestedType();
 
         if (!insertNullAsDefaultIfNeeded(nested_input_column, nested_header_column, 0, nullptr))
             return false;
 
         input_column.column = ColumnMap::create(std::move(nested_input_column.column));
         input_column.type = std::make_shared<DataTypeMap>(std::move(nested_input_column.type));
+        return true;
+    }
+
+    /// When both input and header are Nullable, unwrap and recurse into the nested types.
+    /// This can handle cases such as e.g. Nullable(Tuple(Nullable(Int32), String)) vs Nullable(Tuple(UInt32, String))
+    if (input_column.type->isNullable() && header_column.type->isNullable())
+    {
+        ColumnWithTypeAndName nested_input;
+        nested_input.column = assert_cast<const ColumnNullable *>(input_column.column.get())->getNestedColumnPtr();
+        nested_input.type = removeNullable(input_column.type);
+
+        ColumnWithTypeAndName nested_header;
+        nested_header.column = assert_cast<const ColumnNullable *>(header_column.column.get())->getNestedColumnPtr();
+        nested_header.type = removeNullable(header_column.type);
+
+        if (!insertNullAsDefaultIfNeeded(nested_input, nested_header, 0, nullptr))
+            return false;
+
+        input_column.column = ColumnNullable::create(
+            nested_input.column, assert_cast<const ColumnNullable *>(input_column.column.get())->getNullMapColumnPtr());
+        input_column.type = std::make_shared<DataTypeNullable>(std::move(nested_input.type));
         return true;
     }
 
@@ -112,6 +138,11 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(input_column.type.get());
         input_column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(lc_type->getDictionaryType()));
     }
+
+    /// After stripping the outer Nullable, the inner type may also need processing.
+    /// For example, Nullable(Tuple(Nullable(Int), String)) -> Tuple(Nullable(Int), String)
+    /// still needs the Tuple elements compared against the header to strip inner Nullable.
+    insertNullAsDefaultIfNeeded(input_column, header_column, column_i, block_missing_values);
 
     return true;
 }

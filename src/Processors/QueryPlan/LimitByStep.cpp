@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -23,32 +26,33 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitByStep::LimitByStep(
-    const DataStream & input_stream_,
-    size_t group_length_, size_t group_offset_, const Names & columns_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    const SharedHeader & input_header_,
+    size_t group_length_, size_t group_offset_, Names columns_)
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
     , group_offset(group_offset_)
-    , columns(columns_)
+    , columns(std::move(columns_))
 {
 }
 
 
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.resize(1);
+    if (!skip_stream_merging)
+        pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
     });
 }
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix << "Columns: ";
 
@@ -63,13 +67,15 @@ void LimitByStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << column;
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
         }
         settings.out << '\n';
     }
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
+    if (skip_stream_merging)
+        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -81,6 +87,47 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     map.add("Length", group_length);
     map.add("Offset", group_offset);
+    if (skip_stream_merging)
+        map.add("Skip stream merging", true);
+}
+
+void LimitByStep::serialize(Serialization & ctx) const
+{
+    writeVarUInt(group_length, ctx.out);
+    writeVarUInt(group_offset, ctx.out);
+
+
+    writeVarUInt(columns.size(), ctx.out);
+    for (const auto & column : columns)
+        writeStringBinary(column, ctx.out);
+}
+
+QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+{
+    UInt64 group_length = 0;
+    UInt64 group_offset = 0;
+
+    readVarUInt(group_length, ctx.in);
+    readVarUInt(group_offset, ctx.in);
+
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, ctx.in);
+    Names columns(num_columns);
+    for (auto & column : columns)
+        readStringBinary(column, ctx.in);
+
+    return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
+}
+
+void LimitByStep::applyOrder(SortDescription sort_description)
+{
+    in_order = sort_description.hasPrefix(columns);
+}
+
+void registerLimitByStep(QueryPlanStepRegistry & registry);
+void registerLimitByStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("LimitBy", LimitByStep::deserialize);
 }
 
 }

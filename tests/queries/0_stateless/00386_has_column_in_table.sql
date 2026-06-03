@@ -21,11 +21,11 @@ SELECT hasColumnInTable('localhost', currentDatabase(), 'has_column_in_table', '
 SELECT hasColumnInTable('system', 'one', '');
 
 /* bad queries */
-SELECT hasColumnInTable('', '', '');  -- { serverError 60 }
-SELECT hasColumnInTable('', 't', 'c');  -- { serverError 81 }
-SELECT hasColumnInTable(currentDatabase(), '', 'c'); -- { serverError 60 }
-SELECT hasColumnInTable('d', 't', 's');  -- { serverError 81 }
-SELECT hasColumnInTable(currentDatabase(), 't', 's');  -- { serverError 60 }
+SELECT hasColumnInTable('', '', '');  -- { serverError UNKNOWN_TABLE }
+SELECT hasColumnInTable('', 't', 'c');  -- { serverError UNKNOWN_DATABASE }
+SELECT hasColumnInTable(currentDatabase(), '', 'c'); -- { serverError UNKNOWN_TABLE }
+SELECT hasColumnInTable('d', 't', 's');  -- { serverError UNKNOWN_DATABASE }
+SELECT hasColumnInTable(currentDatabase(), 't', 's');  -- { serverError UNKNOWN_TABLE }
 
 
 DROP TABLE has_column_in_table;

@@ -89,7 +89,7 @@ namespace ErrorCodes
   */
 
 template <typename Name>
-class FunctionBitmapBuildImpl : public IFunction
+class FunctionBitmapBuildImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -155,7 +155,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const auto * array_type = typeid_cast<const DataTypeArray *>(from_type);
@@ -165,36 +165,35 @@ public:
 
         WhichDataType which(nested_type);
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(argument_types, arguments);
-        else if (which.isUInt16())
-            return executeBitmapData<UInt16>(argument_types, arguments);
-        else if (which.isUInt32())
-            return executeBitmapData<UInt32>(argument_types, arguments);
-        else if (which.isUInt64())
-            return executeBitmapData<UInt64>(argument_types, arguments);
-        else if (which.isInt8())
-            return executeBitmapData<Int8>(argument_types, arguments);
-        else if (which.isInt16())
-            return executeBitmapData<Int16>(argument_types, arguments);
-        else if (which.isInt32())
-            return executeBitmapData<Int32>(argument_types, arguments);
-        else if (which.isInt64())
-            return executeBitmapData<Int64>(argument_types, arguments);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+            return executeBitmapData<UInt8>(argument_types, arguments, input_rows_count);
+        if (which.isUInt16())
+            return executeBitmapData<UInt16>(argument_types, arguments, input_rows_count);
+        if (which.isUInt32())
+            return executeBitmapData<UInt32>(argument_types, arguments, input_rows_count);
+        if (which.isUInt64())
+            return executeBitmapData<UInt64>(argument_types, arguments, input_rows_count);
+        if (which.isInt8())
+            return executeBitmapData<Int8>(argument_types, arguments, input_rows_count);
+        if (which.isInt16())
+            return executeBitmapData<Int16>(argument_types, arguments, input_rows_count);
+        if (which.isInt32())
+            return executeBitmapData<Int32>(argument_types, arguments, input_rows_count);
+        if (which.isInt64())
+            return executeBitmapData<Int64>(argument_types, arguments, input_rows_count);
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
     template <typename T>
-    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments) const
+    ColumnPtr executeBitmapData(DataTypes & argument_types, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         // input data
         const ColumnArray * array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
         const ColumnPtr & mapped = array->getDataPtr();
         const ColumnArray::Offsets & offsets = array->getOffsets();
-        const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(&*mapped);
-        const typename ColumnVector<T>::Container & input_data = column->getData();
+        const ColumnVector<T> & column = checkAndGetColumn<ColumnVector<T>>(*mapped);
+        const typename ColumnVector<T>::Container & input_data = column.getData();
 
         // output data
         Array params_row;
@@ -203,10 +202,10 @@ private:
         AggregateFunctionPtr bitmap_function = AggregateFunctionFactory::instance().get(
             AggregateFunctionGroupBitmapData<T>::name(), action, argument_types, params_row, properties);
         auto col_to = ColumnAggregateFunction::create(bitmap_function);
-        col_to->reserve(offsets.size());
+        col_to->reserve(input_rows_count);
 
         size_t pos = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data
@@ -221,7 +220,7 @@ private:
 };
 
 template <typename Name>
-class FunctionBitmapToArrayImpl : public IFunction
+class FunctionBitmapToArrayImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -313,7 +312,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSubset : public IFunction
+class FunctionBitmapSubset final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -359,23 +358,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeIntType<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeIntType<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeIntType<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeIntType<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeIntType<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeIntType<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
@@ -386,9 +384,10 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func;
-        const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt64> * container1, * container2;
+        const ColumnAggregateFunction * col_agg_func = nullptr;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
+        const PaddedPODArray<UInt64> * container1 = nullptr;
+        const PaddedPODArray<UInt64> * container2 = nullptr;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -489,7 +488,7 @@ using FunctionBitmapSubsetInRange = FunctionBitmapSubset<BitmapSubsetInRangeImpl
 using FunctionBitmapSubsetLimit = FunctionBitmapSubset<BitmapSubsetLimitImpl>;
 using FunctionBitmapSubsetOffsetLimit = FunctionBitmapSubset<BitmapSubsetOffsetLimitImpl>;
 
-class FunctionBitmapTransform : public IFunction
+class FunctionBitmapTransform final : public IFunction
 {
 public:
     static constexpr auto name = "bitmapTransform";
@@ -514,17 +513,25 @@ public:
         for (size_t i = 0; i < 2; ++i)
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i + 1].get());
-            auto exception = Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second and third arguments for function {} "
-                                       "must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] "
-                                       "but one of them has type {}.", getName(), arguments[i + 1]->getName());
 
-            if (!array_type)
-                throw exception; /// NOLINT
+            bool has_error = false;
+            if (array_type)
+            {
+                auto nested_type = array_type->getNestedType();
+                WhichDataType which(nested_type);
+                if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
+                    has_error = true;
+            }
+            else
+            {
+                has_error = true;
+            }
 
-            auto nested_type = array_type->getNestedType();
-            WhichDataType which(nested_type);
-            if (!(which.isUInt8() || which.isUInt16() || which.isUInt32() || which.isUInt64()))
-                throw exception; /// NOLINT
+            if (has_error)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The second and third arguments for function {} "
+                                "must be an one of [Array(UInt8), Array(UInt16), Array(UInt32), Array(UInt64)] "
+                                "but one of them has type {}.", getName(), arguments[i + 1]->getName());
         }
         return arguments[0];
     }
@@ -538,23 +545,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeIntType<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeIntType<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeIntType<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeIntType<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeIntType<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeIntType<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeIntType<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeIntType<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:
@@ -565,11 +571,11 @@ private:
     {
         const IColumn * column_ptrs[3];
         bool is_column_const[3];
-        const ColumnAggregateFunction * col_agg_func;
-        const PaddedPODArray<AggregateDataPtr> * container0;
+        const ColumnAggregateFunction * col_agg_func = nullptr;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
 
-        const ColumnArray * array1;
-        const ColumnArray * array2;
+        const ColumnArray * array1 = nullptr;
+        const ColumnArray * array2 = nullptr;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)
@@ -615,10 +621,10 @@ private:
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
 
-        size_t from_start;
-        size_t from_end;
-        size_t to_start;
-        size_t to_end;
+        size_t from_start = 0;
+        size_t from_end = 0;
+        size_t to_start = 0;
+        size_t to_end = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             AggregateDataPtr data_ptr_0 = is_column_const[0] ? (*container0)[0] : (*container0)[i];
@@ -659,7 +665,7 @@ private:
 };
 
 template <typename Impl>
-class FunctionBitmapSelfCardinalityImpl : public IFunction
+class FunctionBitmapSelfCardinalityImpl final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -833,7 +839,7 @@ struct BitmapHasAnyImpl
     }
 };
 
-class FunctionBitmapContains : public IFunction
+class FunctionBitmapContains final : public IFunction
 {
 public:
     static constexpr auto name = "bitmapContains";
@@ -855,6 +861,14 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be a bitmap but it has type {}",
                             getName(), arguments[0]->getName());
+
+        WhichDataType first_aggregate_argument(bitmap_type0->getArgumentsDataTypes()[0]);
+        if (!first_aggregate_argument.isNativeInt() && !first_aggregate_argument.isNativeUInt())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a bitmap of an integer but it is a bitmap of {}",
+                getName(),
+                bitmap_type0->getArgumentsDataTypes()[0]->getName());
 
         WhichDataType which(arguments[1].get());
         if (!which.isNativeInt() && !which.isNativeUInt())
@@ -906,8 +920,8 @@ private:
         const IColumn * column_ptrs[2];
         bool is_column_const[2];
 
-        const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt64> * container1;
+        const PaddedPODArray<AggregateDataPtr> * container0 = nullptr;
+        const PaddedPODArray<UInt64> * container1 = nullptr;
 
         column_ptrs[0] = arguments[0].column.get();
         is_column_const[0] = isColumnConst(*column_ptrs[0]);
@@ -939,7 +953,7 @@ private:
 };
 
 template <template <typename> class Impl, typename Name, typename ToType>
-class FunctionBitmapCardinality : public IFunction
+class FunctionBitmapCardinality final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1089,7 +1103,7 @@ struct NameBitmapAnd
 };
 
 template <template <typename> class Impl, typename Name>
-class FunctionBitmap : public IFunction
+class FunctionBitmap final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -1136,23 +1150,22 @@ public:
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
             return executeBitmapData<UInt8>(arguments, input_rows_count);
-        else if (which.isUInt16())
+        if (which.isUInt16())
             return executeBitmapData<UInt16>(arguments, input_rows_count);
-        else if (which.isUInt32())
+        if (which.isUInt32())
             return executeBitmapData<UInt32>(arguments, input_rows_count);
-        else if (which.isUInt64())
+        if (which.isUInt64())
             return executeBitmapData<UInt64>(arguments, input_rows_count);
-        else if (which.isInt8())
+        if (which.isInt8())
             return executeBitmapData<Int8>(arguments, input_rows_count);
-        else if (which.isInt16())
+        if (which.isInt16())
             return executeBitmapData<Int16>(arguments, input_rows_count);
-        else if (which.isInt32())
+        if (which.isInt32())
             return executeBitmapData<Int32>(arguments, input_rows_count);
-        else if (which.isInt64())
+        if (which.isInt64())
             return executeBitmapData<Int64>(arguments, input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}",
-                from_type->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
 
 private:

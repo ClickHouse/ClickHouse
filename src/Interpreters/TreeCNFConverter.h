@@ -1,10 +1,10 @@
 #pragma once
 
-#include <set>
-#include <unordered_map>
-#include <vector>
+#include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST_fwd.h>
+
+#include <set>
+#include <vector>
 
 namespace DB
 {
@@ -12,28 +12,7 @@ namespace DB
 class CNFQuery
 {
 public:
-    struct AtomicFormula
-    {
-        bool negative = false;
-        ASTPtr ast;
-
-        /// for set
-        bool operator<(const AtomicFormula & rhs) const
-        {
-            return ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true)
-                ? negative < rhs.negative
-                : ast->getTreeHash(/*ignore_aliases=*/ true) < rhs.ast->getTreeHash(/*ignore_aliases=*/ true);
-        }
-
-        bool operator==(const AtomicFormula & rhs) const
-        {
-            return negative == rhs.negative &&
-                ast->getTreeHash(/*ignore_aliases=*/ true) == rhs.ast->getTreeHash(/*ignore_aliases=*/ true) &&
-                ast->getColumnName() == rhs.ast->getColumnName();
-        }
-    };
-
-    using OrGroup = std::set<AtomicFormula>;
+    using OrGroup = std::set<CNFQueryAtomicFormula>;
     using AndGroup = std::set<OrGroup>;
 
     CNFQuery(AndGroup && statements_) : statements(std::move(statements_)) { } /// NOLINT
@@ -70,7 +49,7 @@ public:
                 /// all atoms false -> group false -> CNF false
                 filtered.clear();
                 filtered_group.clear();
-                filtered_group.insert(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});
+                filtered_group.insert(CNFQueryAtomicFormula{false, make_intrusive<ASTLiteral>(static_cast<UInt8>(0))});
                 filtered.insert(filtered_group);
                 std::swap(statements, filtered);
                 return *this;
@@ -154,16 +133,22 @@ public:
     /// If amount of atomic formulas will be exceeded nullopt will be returned.
     /// 0 - means unlimited.
     static std::optional<CNFQuery> tryConvertToCNF(
-        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const IAST * query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static CNFQuery toCNF(
-        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const IAST * query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };
 
-void pushNotIn(CNFQuery::AtomicFormula & atom);
+void pushNotIn(CNFQueryAtomicFormula & atom);
 
+/// Reduces CNF groups by removing mutually exclusive atoms
+/// found across groups, in case other atoms are identical.
+/// Might require multiple passes to complete reduction.
+///
+/// Example:
+/// (x OR y) AND (x OR !y) -> x
 template <typename TAndGroup>
 TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
 {
@@ -175,10 +160,19 @@ TAndGroup reduceOnceCNFStatements(const TAndGroup & groups)
         bool inserted = false;
         for (const auto & atom : group)
         {
-            copy.erase(atom);
             using AtomType = std::decay_t<decltype(atom)>;
             AtomType negative_atom(atom);
             negative_atom.negative = !atom.negative;
+
+            // Sikpping erase-insert for mutually exclusive atoms within
+            // single group, since it won't insert negative atom, which
+            // will break the logic of this rule
+            if (copy.contains(negative_atom))
+            {
+                continue;
+            }
+
+            copy.erase(atom);
             copy.insert(negative_atom);
 
             if (groups.contains(copy))
@@ -209,6 +203,10 @@ bool isCNFGroupSubset(const TOrGroup & left, const TOrGroup & right)
     return true;
 }
 
+/// Removes CNF groups if subset group is found in CNF.
+///
+/// Example:
+/// (x OR y) AND (x) -> x
 template <typename TAndGroup>
 TAndGroup filterCNFSubsets(const TAndGroup & groups)
 {

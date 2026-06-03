@@ -1,0 +1,177 @@
+    # BUGS
+
+    Can't select from temporary table
+    ReadFromParallelRemoteReplicasStep: There is no table `_temporary_and_external_tables`.`_tmp_fad23aad-ce65-4447-81fe-114409a5f0f9` on server: 127.0.0.2:9000
+00542_access_to_temporary_table_in_readonly_mode
+03156_nullable_number_tips
+03143_cte_scope
+02995_bad_formatting_union_intersect
+03045_unknown_identifier_alias_substitution
+02561_temporary_table_sessions
+
+    https://github.com/ClickHouse/ClickHouse/issues/74367
+    Cannot find column in source stream
+01358_mutation_delete_null_rows
+
+    Storage Join/Set
+    https://github.com/ClickHouse/ClickHouse/issues/74362
+    Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
+01594_storage_join_uuid
+
+    GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
+01231_operator_null_in
+
+    https://github.com/ClickHouse/ClickHouse/issues/74366
+    Cannot convert type UInt8 to Variant(String, UInt64)
+02990_variant_where_cond
+
+    order is never guaranteed
+    https://github.com/ClickHouse/ClickHouse/issues/63203
+01513_optimize_aggregation_in_order_memory_long
+
+    https://github.com/ClickHouse/clickhouse-private/issues/15758
+    dictGet by dict name
+01904_ssd_cache_dictionary_default_nullable_type
+03062_analyzer_join_engine_missing_column
+
+    https://github.com/ClickHouse/clickhouse-private/issues/11670
+    Actual WithMergeableState
+01147_partial_merge_full_join
+01010_partial_merge_join
+02789_filesystem_cache_alignment
+
+    https://github.com/ClickHouse/clickhouse-private/issues/17173
+03174_exact_rows_before_aggregation
+
+    https://github.com/ClickHouse/ClickHouse/issues/74411
+02884_create_view_with_sql_security_option
+
+    Transactions
+02421_truncate_isolation_no_merges
+02421_truncate_isolation_with_mutations
+    Storage StorageDummy (table test_8yblzvrs.mt1 (560aada5-04ba-4faa-9297-c032a1798def)) does not support transactions. (NOT_IMPLEMENTED)
+    query: select 'commit', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
+01173_transaction_control_queries
+01171_mv_select_insert_isolation_long
+02345_implicit_transaction
+01174_select_insert_isolation
+
+    https://github.com/ClickHouse/clickhouse-private/issues/13900
+03075_shared_merge_tree_recursive_cte_smoke_test
+03034_recursive_cte_tree_merge_tree
+03154_recursive_cte_distributed
+
+    analyzer=0 (partially supported)
+01049_join_low_card_bug_long.gen
+01721_join_implicit_cast_long.gen
+
+    EXPLAIN / PLAN / ProfileEvents
+02676_distinct_reading_in_order_analyzer
+02866_size_of_marks_skip_idx_explain
+02943_tokenbf_and_ngrambf_indexes_support_match_function
+02835_join_step_explain
+02877_optimize_read_in_order_from_view
+02679_explain_merge_tree_prewhere_row_policy
+02911_analyzer_order_by_read_in_order_query_plan
+02911_support_alias_column_in_indices
+03151_analyzer_view_read_only_necessary_columns
+01582_move_to_prewhere_compact_parts
+02354_vector_search_queries
+01737_move_order_key_to_prewhere_select_final
+02842_move_pk_to_end_of_prewhere
+03036_join_filter_push_down_equivalent_sets
+03168_read_in_order_buffering_1
+02481_aggregation_in_order_plan
+02882_primary_key_index_in_function_different_types
+02155_read_in_order_max_rows_to_read
+01786_explain_merge_tree
+02317_distinct_in_order_optimization_explain
+02377_optimize_sorting_by_input_stream_properties_explain
+02493_max_streams_for_merge_tree_reading
+02675_predicate_push_down_filled_join_fix
+02798_explain_settings_not_applied_bug
+02809_prewhere_and_in
+02918_optimize_count_for_merge_tables
+01655_plan_optimizations_optimize_read_in_window_order
+01625_constraints_index_append
+    Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
+01655_plan_optimizations_optimize_read_in_window_order_long
+01824_move_to_prewhere_many_columns
+02810_fix_remove_dedundant_distinct_view
+02864_statistics_delayed_materialization_in_merge
+03130_convert_outer_join_to_inner_join
+03355_join_to_in_optimization
+03152_join_filter_push_down_equivalent_columns
+03254_prewarm_mark_cache_rmt
+03273_group_by_in_order_still_used_when_group_by_key_doesnt_match_order_by_key
+03273_primary_index_cache
+03276_subcolumns_in_skipping_indexes.gen
+03277_prewarm_cache_2
+03278_json_subcolumns_in_skipping_indexes.gen
+00443_preferred_block_size_bytes
+00933_test_fix_extra_seek_on_compressed_cache
+02149_read_in_order_fixed_prefix
+02151_hash_table_sizes_stats
+02156_storage_merge_prewhere
+02354_vector_search_subquery
+02451_order_by_monotonic
+02499_monotonicity_toUnixTimestamp64
+02864_statistics_usage
+03143_prewhere_profile_events
+03164_materialize_skip_index
+03166_skip_indexes_vertical_merge_1
+03173_set_transformed_partition_pruning
+03257_reverse_sorting_key
+03269_explain_unique_ids
+03272_partition_pruning_monotonic_func_bug
+    profile events
+03279_join_choose_build_table
+03279_join_choose_build_table_statistics
+03279_join_choose_build_table_auto_statistics
+03275_subcolumns_in_primary_key.gen
+03277_json_subcolumns_in_primary_key.gen
+02944_variant_as_common_type
+02417_load_marks_async
+03262_filter_push_down_view
+01283_max_threads_simple_query_optimization
+
+    # NOT BUGS
+    Not a bug
+02494_query_cache_user_isolation
+02346_non_negative_derivative
+01913_exact_rows_before_limit
+03203_optimize_disjunctions_chain_to_in
+02713_array_low_cardinality_string
+01748_partition_id_pruning
+01201_read_single_thread_in_order
+02402_merge_engine_with_view
+
+
+    plan and incorrect result
+01763_filter_push_down_bugs
+
+
+    Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
+    !!!max rows: 20.00 million, current rows: 21.00 million
+02275_full_sort_join_long.gen
+    !!!max rows: 8.00, current rows: 16.38 thousand
+01414_push_predicate_when_contains_with_clause
+    !!!max rows: 20.00 million, current rows: 22.00 million
+02435_rollback_cancelled_queries
+    max rows: 1.00, current rows: 10.00
+01576_alias_column_rewrite
+    max rows: 4.00, current rows: 10.00
+01585_use_index_for_global_in
+    max rows: 2.00, current rows: 11.00
+01585_use_index_for_global_in_with_null
+
+01624_soft_constraints
+
+    !!!Reason: Timeout!
+01666_merge_tree_max_query_limit
+
+    Failpoint
+02910_prefetch_unexpceted_exception
+
+    investigate failed tests
+03707_statistics_cache

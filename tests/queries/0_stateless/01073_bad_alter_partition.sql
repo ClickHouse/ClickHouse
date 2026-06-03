@@ -7,7 +7,7 @@ SELECT 1, * FROM merge_tree ORDER BY d;
 -- ALTER TABLE merge_tree DROP PARTITION 2020-01-02; -- This does not even parse
 -- SELECT 2, * FROM merge_tree;
 
-ALTER TABLE merge_tree DROP PARTITION 20200103; -- unfortunately, this works, but not as user expected.
+ALTER TABLE merge_tree DROP PARTITION 20200103; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT 3, * FROM merge_tree ORDER BY d;
 
 ALTER TABLE merge_tree DROP PARTITION '20200104';
@@ -16,7 +16,7 @@ SELECT 4, * FROM merge_tree ORDER BY d;
 ALTER TABLE merge_tree DROP PARTITION '2020-01-05';
 SELECT 5, * FROM merge_tree ORDER BY d;
 
-ALTER TABLE merge_tree DROP PARTITION '202001-06'; -- { serverError 38 }
+ALTER TABLE merge_tree DROP PARTITION '202001-06'; -- { serverError CANNOT_PARSE_DATE }
 SELECT 6, * FROM merge_tree ORDER BY d;
 
 DROP TABLE merge_tree;

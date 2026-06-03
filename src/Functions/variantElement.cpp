@@ -4,7 +4,9 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVariant.h>
@@ -20,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -29,7 +30,7 @@ namespace
 /** Extract element of Variant by variant type name.
   * Also the function looks through Arrays: you can get Array of Variant elements from Array of Variants.
   */
-class FunctionVariantElement : public IFunction
+class FunctionVariantElement final : public IFunction
 {
 public:
     static constexpr auto name = "variantElement";
@@ -46,12 +47,24 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        auto is_variant_or_array_of_variant = [](const IDataType & type)
+        {
+            const IDataType * current_type = &type;
+            while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
+                current_type = array->getNestedType().get();
+            return isVariant(current_type);
+        };
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                            getName(), number_of_arguments);
+        FunctionArgumentDescriptors mandatory_args{
+            {"variant", is_variant_or_array_of_variant, nullptr, "Variant or Array of Variant"},
+            {"name", &isString, &isColumnConst, "const String"}
+        };
+
+        FunctionArgumentDescriptors optional_args{
+            {"default", nullptr, nullptr, "Any"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         size_t count_arrays = 0;
         const IDataType * input_type = arguments[0].type.get();
@@ -62,24 +75,18 @@ public:
         }
 
         const DataTypeVariant * variant_type = checkAndGetDataType<DataTypeVariant>(input_type);
-        if (!variant_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be Variant or Array of Variant. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, number_of_arguments);
+        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *variant_type, arguments.size());
         if (variant_global_discr.has_value())
         {
-            DataTypePtr return_type = makeNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
+            DataTypePtr return_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type->getVariant(variant_global_discr.value()));
 
             for (; count_arrays; --count_arrays)
                 return_type = std::make_shared<DataTypeArray>(return_type);
 
             return return_type;
         }
-        else
-            return arguments[2].type;
+        return arguments[2].type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -111,61 +118,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be Variant or array of Variants. Actual {}", getName(), input_arg.type->getName());
 
-        std::optional<size_t> variant_global_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
+        auto variant_discr = getVariantGlobalDiscriminator(arguments[1].column, *input_type_as_variant, arguments.size());
 
-        if (!variant_global_discr.has_value())
+        if (!variant_discr)
             return arguments[2].column;
 
-        const auto & variant_type = input_type_as_variant->getVariant(*variant_global_discr);
-        const auto & variant_column = input_col_as_variant->getVariantPtrByGlobalDiscriminator(*variant_global_discr);
-
-        /// If Variant has only NULLs or our variant doesn't have any real values,
-        /// just create column with default values and create null mask with 1.
-        if (input_col_as_variant->hasOnlyNulls() || variant_column->empty())
-        {
-            auto res = variant_type->createColumn();
-
-            if (variant_type->lowCardinality())
-                assert_cast<ColumnLowCardinality &>(*res).nestedToNullable();
-
-            res->insertManyDefaults(input_col_as_variant->size());
-            if (!variant_type->canBeInsideNullable())
-                return wrapInArraysAndConstIfNeeded(std::move(res), array_offsets, input_arg_is_const, input_rows_count);
-
-            auto null_map = ColumnUInt8::create();
-            auto & null_map_data = null_map->getData();
-            null_map_data.resize_fill(input_col_as_variant->size(), 1);
-            return wrapInArraysAndConstIfNeeded(ColumnNullable::create(std::move(res), std::move(null_map)), array_offsets, input_arg_is_const, input_rows_count);
-        }
-
-        /// If we extract single non-empty column and have no NULLs, then just return this variant.
-        if (auto non_empty_local_discr = input_col_as_variant->getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls())
-        {
-            /// If we were trying to extract some other variant,
-            /// it would be empty and we would already processed this case above.
-            chassert(input_col_as_variant->globalDiscriminatorByLocal(*non_empty_local_discr) == variant_global_discr);
-            return wrapInArraysAndConstIfNeeded(makeNullableOrLowCardinalityNullableSafe(variant_column), array_offsets, input_arg_is_const, input_rows_count);
-        }
-
-        /// In general case we should calculate null-mask for variant
-        /// according to the discriminators column and expand
-        /// variant column by this mask to get a full column (with default values on NULLs)
-        const auto & local_discriminators = input_col_as_variant->getLocalDiscriminators();
-        auto null_map = ColumnUInt8::create();
-        auto & null_map_data = null_map->getData();
-        null_map_data.reserve(local_discriminators.size());
-        auto variant_local_discr = input_col_as_variant->localDiscriminatorByGlobal(*variant_global_discr);
-        for (auto local_discr : local_discriminators)
-            null_map_data.push_back(local_discr != variant_local_discr);
-
-        auto expanded_variant_column = IColumn::mutate(variant_column);
-        if (variant_type->lowCardinality())
-            expanded_variant_column = assert_cast<ColumnLowCardinality &>(*expanded_variant_column).cloneNullable();
-        expanded_variant_column->expand(null_map_data, /*inverted = */ true);
-        if (variant_type->canBeInsideNullable())
-            return wrapInArraysAndConstIfNeeded(ColumnNullable::create(std::move(expanded_variant_column), std::move(null_map)), array_offsets, input_arg_is_const, input_rows_count);
-        return wrapInArraysAndConstIfNeeded(std::move(expanded_variant_column), array_offsets, input_arg_is_const, input_rows_count);
+        auto variant_column = input_type_as_variant->getSubcolumn(input_type_as_variant->getVariant(*variant_discr)->getName(), input_col_as_variant->getPtr());
+        return wrapInArraysAndConstIfNeeded(std::move(variant_column), array_offsets, input_arg_is_const, input_rows_count);
     }
+
 private:
     std::optional<size_t> getVariantGlobalDiscriminator(const ColumnPtr & index_column, const DataTypeVariant & variant_type, size_t argument_size) const
     {
@@ -175,20 +136,16 @@ private:
                             "Second argument to {} with Variant argument must be a constant String",
                             getName());
 
-        String variant_element_name = name_col->getValue<String>();
-        auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name);
-        if (variant_element_type)
+        auto variant_element_name = name_col->getValue<String>();
+        if (auto variant_element_type = DataTypeFactory::instance().tryGet(variant_element_name))
         {
-            const auto & variants = variant_type.getVariants();
-            for (size_t i = 0; i != variants.size(); ++i)
-            {
-                if (variants[i]->getName() == variant_element_type->getName())
-                    return i;
-            }
+            if (auto discr = variant_type.tryGetVariantDiscriminator(variant_element_type->getName()))
+                return discr;
         }
 
         if (argument_size == 2)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} doesn't contain variant with type {}", variant_type.getName(), variant_element_name);
+
         return std::nullopt;
     }
 
@@ -208,31 +165,39 @@ private:
 
 REGISTER_FUNCTION(VariantElement)
 {
-    factory.registerFunction<FunctionVariantElement>(FunctionDocumentation{
-        .description = R"(
+    FunctionDocumentation::Description description = R"(
 Extracts a column with specified type from a `Variant` column.
-)",
-        .syntax{"variantElement(variant, type_name, [, default_value])"},
-        .arguments{{
-            {"variant", "Variant column"},
-            {"type_name", "The name of the variant type to extract"},
-            {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional"}}},
-        .examples{{{
-            "Example",
-            R"(
+)";
+    FunctionDocumentation::Syntax syntax = "variantElement(variant, type_name[, default_value])";
+    FunctionDocumentation::Arguments arguments = {
+        {"variant", "Variant column.", {"Variant"}},
+        {"type_name", "The name of the variant type to extract.", {"String"}},
+        {"default_value", "The default value that will be used if variant doesn't have variant with specified type. Can be any type. Optional.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a column with the specified variant type extracted from the Variant column.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
 INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
-SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;)",
-            R"(
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
+         )",
+         R"(
 ┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
 │ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
 │ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
 │ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
 └───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
-)"}}},
-        .categories{"Variant"},
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionVariantElement>(documentation);
 }
 
 }

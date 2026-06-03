@@ -17,12 +17,16 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
@@ -34,9 +38,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -55,8 +59,8 @@ namespace
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from)
 {
-    To result;
-    if (!accurate::convertNumeric(from.get<From>(), result))
+    To result{};
+    if (!accurate::convertNumeric(from.safeGet<From>(), result))
         return {};
     return result;
 }
@@ -87,7 +91,7 @@ Field convertNumericType(const Field & from, const IDataType & type)
 template <typename From, typename T>
 Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    From value = from.get<From>();
+    From value = from.safeGet<From>();
     if (!type.canStoreWhole(value))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
@@ -99,7 +103,7 @@ Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T> & typ
 template <typename T>
 Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    const String & str_value = from.get<String>();
+    const String & str_value = from.safeGet<String>();
     T value = type.parseFromString(str_value);
     return DecimalField<T>(value, type.getScale());
 }
@@ -107,7 +111,7 @@ Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & 
 template <typename From, typename T>
 Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    auto field = from.get<DecimalField<From>>();
+    auto field = from.safeGet<DecimalField<From>>();
     T value = convertDecimals<DataTypeDecimal<From>, DataTypeDecimal<T>>(field.getValue(), field.getScale(), type.getScale());
     return DecimalField<T>(value, type.getScale());
 }
@@ -115,7 +119,7 @@ Field convertDecimalToDecimalType(const Field & from, const DataTypeDecimal<T> &
 template <typename From, typename T>
 Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
 {
-    From value = from.get<From>();
+    From value = from.safeGet<From>();
     if (!type.canStoreWhole(value))
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number is too big to place in {}", type.getName());
 
@@ -127,43 +131,73 @@ Field convertFloatToDecimalType(const Field & from, const DataTypeDecimal<T> & t
     return DecimalField<T>(scaled_value, scale);
 }
 
+/// When `strict` is true, rejects lossy Decimal conversions by returning Null.
+/// This is used by the IN operator to avoid false positives from precision loss.
+///
+/// For Decimal -> Decimal conversions, `convertFieldToType` may round/truncate (e.g. due to different scales).
+/// Strict mode rejects any lossy conversion by requiring exact equality after conversion.
+/// Example:
+///   SELECT CAST('33.3', 'Decimal64(1)') IN (CAST('33.33', 'Decimal64(2)')); -- 0 (would be 1 without strict check)
+///   SELECT CAST('33.3', 'Decimal64(1)') IN (CAST('33.30', 'Decimal64(2)')); -- 1
+///
+/// For Float64 -> Decimal conversions, the strictness check is done by converting the Decimal back to Float64
+/// and comparing with the original Float64. This prevents surprising membership results like:
+/// Example:
+///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.33); -- 0 (RHS would round to 33.3 without strict check)
+///   SELECT CAST('33.3', 'Decimal64(1)') IN (33.3);  -- 1
 template <typename To>
-Field convertDecimalType(const Field & from, const To & type)
+Field convertDecimalType(const Field & from, const To & type, bool strict)
 {
+    using T = typename To::FieldType;
+    Field result;
+
     if (from.getType() == Field::Types::UInt64)
-        return convertIntToDecimalType<UInt64>(from, type);
-    if (from.getType() == Field::Types::Int64)
-        return convertIntToDecimalType<Int64>(from, type);
-    if (from.getType() == Field::Types::UInt128)
-        return convertIntToDecimalType<UInt128>(from, type);
-    if (from.getType() == Field::Types::Int128)
-        return convertIntToDecimalType<Int128>(from, type);
-    if (from.getType() == Field::Types::UInt256)
-        return convertIntToDecimalType<UInt256>(from, type);
-    if (from.getType() == Field::Types::Int256)
-        return convertIntToDecimalType<Int256>(from, type);
+        result = convertIntToDecimalType<UInt64>(from, type);
+    else if (from.getType() == Field::Types::Int64)
+        result = convertIntToDecimalType<Int64>(from, type);
+    else if (from.getType() == Field::Types::UInt128)
+        result = convertIntToDecimalType<UInt128>(from, type);
+    else if (from.getType() == Field::Types::Int128)
+        result = convertIntToDecimalType<Int128>(from, type);
+    else if (from.getType() == Field::Types::UInt256)
+        result = convertIntToDecimalType<UInt256>(from, type);
+    else if (from.getType() == Field::Types::Int256)
+        result = convertIntToDecimalType<Int256>(from, type);
+    else if (from.getType() == Field::Types::String)
+        result = convertStringToDecimalType(from, type);
+    else if (from.getType() == Field::Types::Decimal32)
+        result = convertDecimalToDecimalType<Decimal32>(from, type);
+    else if (from.getType() == Field::Types::Decimal64)
+        result = convertDecimalToDecimalType<Decimal64>(from, type);
+    else if (from.getType() == Field::Types::Decimal128)
+        result = convertDecimalToDecimalType<Decimal128>(from, type);
+    else if (from.getType() == Field::Types::Decimal256)
+        result = convertDecimalToDecimalType<Decimal256>(from, type);
+    else if (from.getType() == Field::Types::Float64)
+        result = convertFloatToDecimalType<Float64>(from, type);
+    else
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}", type.getName(), from.getType());
 
-    if (from.getType() == Field::Types::String)
-        return convertStringToDecimalType(from, type);
+    if (strict)
+    {
+        if (Field::isDecimal(from.getType()) && !accurateEquals(from, result))
+            return {};
 
-    if (from.getType() == Field::Types::Decimal32)
-        return convertDecimalToDecimalType<Decimal32>(from, type);
-    if (from.getType() == Field::Types::Decimal64)
-        return convertDecimalToDecimalType<Decimal64>(from, type);
-    if (from.getType() == Field::Types::Decimal128)
-        return convertDecimalToDecimalType<Decimal128>(from, type);
-    if (from.getType() == Field::Types::Decimal256)
-        return convertDecimalToDecimalType<Decimal256>(from, type);
+        if (from.getType() == Field::Types::Float64)
+        {
+            auto decimal_field = result.safeGet<DecimalField<T>>();
+            auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
+            if (decimal_to_float != from.safeGet<Float64>())
+                return {};
+        }
+    }
 
-    if (from.getType() == Field::Types::Float64)
-        return convertFloatToDecimalType<Float64>(from, type);
-
-    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
-        type.getName(), from.getType());
+    return result;
 }
 
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -178,59 +212,134 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         which_from_type = WhichDataType(*from_type_hint);
     }
 
-    /// Conversion between Date and DateTime and vice versa.
+    /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()).toUnderType());
+        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
-    else if (which_type.isDate32() && which_from_type.isDateTime())
+    if (which_type.isDate32() && which_from_type.isDateTime())
     {
-        return static_cast<Int32>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()).toUnderType());
+        return static_cast<Int32>(
+            static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
-    else if (which_type.isDateTime() && which_from_type.isDate())
+    if (which_type.isDateTime() && which_from_type.isDate())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<UInt64>())));
     }
-    else if (which_type.isDateTime() && which_from_type.isDate32())
+    if (which_type.isDateTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<Int32>()));
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<Int32>())));
     }
-    else if (which_type.isDateTime64() && which_from_type.isDate())
+    if (which_type.isDateTime64() && which_from_type.isDate())
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
-        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(src.get<UInt16>()));
-        return DecimalField(
+        const auto value = date_time64_type.getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<UInt16>())));
+        return DecimalField<DateTime64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
-    else if (which_type.isDateTime64() && which_from_type.isDate32())
+    if (which_type.isDateTime64() && which_from_type.isDate32())
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
-        const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.get<Int32>())));
-        return DecimalField(
+        const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
+        return DecimalField<DateTime64>(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
     }
-    else if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
+    if (which_type.isDate() && which_from_type.isTime())
     {
-        if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
-        if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
-        if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
-        if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
-        if (which_type.isUInt128()) return convertNumericType<UInt128>(src, type);
-        if (which_type.isUInt256()) return convertNumericType<UInt256>(src, type);
-        if (which_type.isInt8()) return convertNumericType<Int8>(src, type);
-        if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
-        if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
-        if (which_type.isInt64()) return convertNumericType<Int64>(src, type);
-        if (which_type.isInt128()) return convertNumericType<Int128>(src, type);
-        if (which_type.isInt256()) return convertNumericType<Int256>(src, type);
-        if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
-        if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
-        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
-        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
-        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
-        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal256> *>(&type)) return convertDecimalType(src, *ptype);
+        return static_cast<UInt16>(static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isDate32() && which_from_type.isTime())
+    {
+        return static_cast<Int32>(
+            static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isTime() && which_from_type.isDate())
+    {
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt64>())));
+    }
+    if (which_type.isTime() && which_from_type.isDate32())
+    {
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<Int32>())));
+    }
+    if (which_type.isTime64() && which_from_type.isDate())
+    {
+        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<UInt16>())));
+        return DecimalField<Time64>(
+            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
+            time64_type.getScale());
+    }
+    if (which_type.isTime64() && which_from_type.isDate32())
+    {
+        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+        const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
+        return DecimalField<Time64>(
+            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
+            time64_type.getScale());
+    }
+    if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
+    {
+        /// Bool is not represented in which_type, so we need to handle it separately.
+        /// See the comment for `strict` in convertFieldToType.h for details.
+        if (isInt64OrUInt64orBoolFieldType(src.getType()) && type.getName() == "Bool")
+        {
+            if (strict)
+            {
+                if (src.getType() == Field::Types::Int64)
+                {
+                    Int64 val = src.safeGet<Int64>();
+                    if (val == 0 || val == 1)
+                        return bool(val);
+                    return {};
+                }
+                UInt64 val = src.safeGet<UInt64>();
+                if (val <= 1)
+                    return bool(val);
+                return {};
+            }
+            return bool(src.safeGet<bool>());
+        }
+
+        if (which_type.isUInt8())
+            return convertNumericType<UInt8>(src, type);
+        if (which_type.isUInt16())
+            return convertNumericType<UInt16>(src, type);
+        if (which_type.isUInt32())
+            return convertNumericType<UInt32>(src, type);
+        if (which_type.isUInt64())
+            return convertNumericType<UInt64>(src, type);
+        if (which_type.isUInt128())
+            return convertNumericType<UInt128>(src, type);
+        if (which_type.isUInt256())
+            return convertNumericType<UInt256>(src, type);
+        if (which_type.isInt8())
+            return convertNumericType<Int8>(src, type);
+        if (which_type.isInt16())
+            return convertNumericType<Int16>(src, type);
+        if (which_type.isInt32())
+            return convertNumericType<Int32>(src, type);
+        if (which_type.isInt64())
+            return convertNumericType<Int64>(src, type);
+        if (which_type.isInt128())
+            return convertNumericType<Int128>(src, type);
+        if (which_type.isInt256())
+            return convertNumericType<Int256>(src, type);
+        if (which_type.isBFloat16())
+            return convertNumericType<BFloat16>(src, type);
+        if (which_type.isFloat32())
+            return convertNumericType<Float32>(src, type);
+        if (which_type.isFloat64())
+            return convertNumericType<Float64>(src, type);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type))
+            return convertDecimalType(src, *ptype, strict);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type))
+            return convertDecimalType(src, *ptype, strict);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type))
+            return convertDecimalType(src, *ptype, strict);
+        if (const auto * ptype = typeid_cast<const DataTypeDecimal<Decimal256> *>(&type))
+            return convertDecimalType(src, *ptype, strict);
 
         if (which_type.isEnum() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
@@ -238,9 +347,22 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
+        }
+
+        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        {
+            /// We don't need any conversion UInt64 is under type of DateTime and Time
+            return src;
+        }
+
+        if (which_type.isTime() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
             return src;
         }
 
@@ -252,28 +374,61 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
-            const auto & from_type = src.get<Decimal64>();
+            const auto & from_type = src.safeGet<Decimal64>();
             const auto & to_type = static_cast<const DataTypeDateTime64 &>(type);
 
             const auto scale_from = from_type.getScale();
             const auto scale_to = to_type.getScale();
-            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier() : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
 
             if (scale_multiplier_diff == 1) /// Already in needed type.
                 return src;
 
             /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff : from_type.getValue().value * scale_multiplier_diff;
-            return DecimalField(
-                DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1),
-                scale_to);
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result = 0;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
+            return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
+        if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            const auto & from_type = src.safeGet<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
+            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
+                                                       : from_type.getValue().value * scale_multiplier_diff;
+            return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
+        }
+
+        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
+        /// range-check so out-of-range integers don't get silently truncated
+        /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt16>(src, type);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
@@ -292,6 +447,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return Field(DecimalField<DateTime64>(decimal_value, scale));
         }
 
+        if (which_type.isTime64()
+            && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
+        {
+            const auto scale = static_cast<const DataTypeTime64 &>(type).getScale();
+            const auto decimal_value
+                = DecimalUtils::decimalFromComponents<Time64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+            return Field(DecimalField<Time64>(decimal_value, scale));
+        }
+
         if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
         {
             /// Already in needed type.
@@ -299,8 +463,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         if (which_type.isIPv4() && src.getType() == Field::Types::UInt64)
         {
-            /// convert to UInt32 which is the underlying type for native IPv4
-            return convertNumericType<UInt32>(src, type);
+            /// convert through UInt32 which is the underlying type for native IPv4
+            return static_cast<IPv4>(convertNumericType<UInt32>(src, type).safeGet<UInt32>());
         }
     }
     else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
@@ -317,7 +481,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_from_type.isFixedString() && assert_cast<const DataTypeFixedString *>(from_type_hint)->getN() == IPV6_BINARY_LENGTH)
         {
             const auto col = type.createColumn();
-            ReadBufferFromString in_buffer(src.get<String>());
+            ReadBufferFromString in_buffer(src.safeGet<String>());
             type.getDefaultSerialization()->deserializeBinary(*col, in_buffer, {});
             return (*col)[0];
         }
@@ -329,7 +493,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             if (which_type.isFixedString())
             {
                 size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
-                const auto & src_str = src.get<String>();
+                const auto & src_str = src.safeGet<String>();
                 if (src_str.size() < n)
                 {
                     String src_str_extended = src_str;
@@ -346,7 +510,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::Array)
         {
-            const Array & src_arr = src.get<Array>();
+            const Array & src_arr = src.safeGet<Array>();
             size_t src_arr_size = src_arr.size();
 
             const auto & element_type = *(type_array->getNestedType());
@@ -354,8 +518,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type);
-                if (res[i].isNull() && !element_type.isNullable())
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict);
+                if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
                     have_unconvertible_element = true;
@@ -369,42 +533,146 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::Tuple)
         {
-            const auto & src_tuple = src.get<Tuple>();
+            const auto & src_tuple = src.safeGet<Tuple>();
             size_t src_tuple_size = src_tuple.size();
             size_t dst_tuple_size = type_tuple->getElements().size();
 
             if (dst_tuple_size != src_tuple_size)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Bad size of tuple in IN or VALUES section. "
-                    "Expected size: {}, actual size: {}", dst_tuple_size, src_tuple_size);
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of tuple in IN or VALUES section. "
+                    "Expected size: {}, actual size: {}",
+                    dst_tuple_size,
+                    src_tuple_size);
 
             Tuple res(dst_tuple_size);
             bool have_unconvertible_element = false;
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type);
-                if (!res[i].isNull() || element_type.isNullable())
-                    continue;
-
-                /*
-                 * Either the source element was Null, or the conversion did not
-                 * succeed, because the source and the requested types of the
-                 * element are compatible, but the value is not convertible
-                 * (e.g. trying to convert -1 from Int8 to UInt8). In these
-                 * cases, consider the whole tuple also compatible but not
-                 * convertible. According to the specification of this function,
-                 * we must return Null in this case.
-                 *
-                 * The following elements might be not even compatible, so it
-                 * makes sense to check them to detect user errors. Remember
-                 * that there is an unconvertible element, and try to process
-                 * the remaining ones. The convertFieldToType for each element
-                 * will throw if it detects incompatibility.
-                 */
-                have_unconvertible_element = true;
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict);
+                if (res[i].isNull() && !canContainNull(element_type))
+                {
+                    /*
+                     * Either the source element was Null, or the conversion did not
+                     * succeed, because the source and the requested types of the
+                     * element are compatible, but the value is not convertible
+                     * (e.g. trying to convert -1 from Int8 to UInt8). In these
+                     * cases, consider the whole tuple also compatible but not
+                     * convertible. According to the specification of this function,
+                     * we must return Null in this case.
+                     *
+                     * The following elements might be not even compatible, so it
+                     * makes sense to check them to detect user errors. Remember
+                     * that there is an unconvertible element, and try to process
+                     * the remaining ones. The convertFieldToType for each element
+                     * will throw if it detects incompatibility.
+                     */
+                    have_unconvertible_element = true;
+                }
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
+        }
+    }
+    else if (const DataTypeQBit * type_qbit = typeid_cast<const DataTypeQBit *>(&type))
+    {
+        size_t dst_dimension = type_qbit->getDimension();
+        size_t dst_element_size = type_qbit->getElementSize();
+        size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dst_dimension);
+        const size_t padded_dimension = bytes_per_fixedstring * 8;
+
+        /// For tuples, we expect the input to be in the transposed format already s.t. it can by directly copied inside a QBit
+        auto convert_tuple_to_qbit = [&](const auto & src_container, size_t src_size) -> Field
+        {
+            /// Check that we have 16, 32 and 64 strings for BFloat16, Float32 and Float64 respectively
+            if (dst_element_size != src_size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad number of elements in IN or VALUES section when converting to QBit. Expected size: {}, actual size: {}",
+                    dst_element_size,
+                    src_size);
+
+            /// Check that each string is of expected length
+            for (size_t i = 0; i < src_container.size(); i++)
+            {
+                const auto elem = src_container[i].template safeGet<String>();
+
+                if (elem.size() != bytes_per_fixedstring)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "To construct QBit, each string within tuple must consist of {} byte{}. Got {}",
+                        bytes_per_fixedstring,
+                        bytes_per_fixedstring != 1 ? "s" : "",
+                        elem.size());
+            }
+            return src_container;
+        };
+
+        /// For arrays, we expect to get normal numeric data
+        auto convert_array_to_qbit = [&](const auto & src_container, size_t src_size) -> Field
+        {
+            if (dst_dimension != src_size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of QBit in IN or VALUES section. Expected size: {}, actual size: {}",
+                    dst_dimension,
+                    src_size);
+
+            for (const auto & elem : src_container)
+                if (elem.getType() != Field::Types::Float64)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "QBit can only be constructed from BFloat16, Float32 and Float64 values, got {}",
+                        elem.getTypeName());
+
+            Tuple res(dst_element_size);
+
+            auto transpose_bits = [&]<typename Word, typename FloatType>()
+            {
+                /// Prepare output tuple buffers
+                std::vector<std::string> out(dst_element_size, std::string(bytes_per_fixedstring, '\0'));
+                std::vector<char *> plane(dst_element_size);
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    plane[i] = reinterpret_cast<char *>(out[i].data());
+
+                /// Transpose
+                for (size_t i = 0; i < padded_dimension; ++i)
+                {
+                    Word w = 0;
+                    if (i < dst_dimension)
+                    {
+                        FloatType v = static_cast<const FloatType>(src_container[i].template safeGet<FloatType>());
+                        std::memcpy(&w, &v, sizeof(Word));
+                    }
+
+                    SerializationQBit::transposeBits<Word>(w, i, padded_dimension, plane.data());
+                }
+
+                /// Move into Fields
+                for (size_t i = 0; i < dst_element_size; ++i)
+                    res[i] = Field(std::move(out[i]));
+            };
+
+            if (dst_element_size == 16)
+                transpose_bits.template operator()<UInt16, BFloat16>();
+            else if (dst_element_size == 32)
+                transpose_bits.template operator()<UInt32, Float32>();
+            else
+                transpose_bits.template operator()<UInt64, Float64>();
+
+            return Field(res);
+        };
+
+        if (src.getType() == Field::Types::Tuple)
+        {
+            const auto & src_tuple = src.safeGet<Tuple>();
+            return convert_tuple_to_qbit(src_tuple, src_tuple.size());
+        }
+        else if (src.getType() == Field::Types::Array)
+        {
+            const auto & src_array = src.safeGet<Array>();
+            return convert_array_to_qbit(src_array, src_array.size());
         }
     }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
@@ -414,7 +682,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
-            const auto & map = src.get<Map>();
+            const auto & map = src.safeGet<Map>();
             size_t map_size = map.size();
 
             Map res(map_size);
@@ -423,20 +691,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                const auto & map_entry = map[i].get<Tuple>();
+                const auto & map_entry = map[i].safeGet<Tuple>();
 
                 const auto & key = map_entry[0];
                 const auto & value = map_entry[1];
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict);
 
-                if (updated_entry[0].isNull() && !key_type.isNullable())
+                if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type);
-                if (updated_entry[1].isNull() && !value_type.isNullable())
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict);
+                if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
                 res[i] = updated_entry;
@@ -448,63 +716,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert {} to {}",
-                src.getTypeName(), agg_func_type->getName());
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", src.getTypeName(), agg_func_type->getName());
 
-        const auto & name = src.get<AggregateFunctionStateData>().name;
+        const auto & name = src.safeGet<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
             throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", name, agg_func_type->getName());
 
         return src;
     }
-    else if (isObject(type))
-    {
-        if (src.getType() == Field::Types::Object)
-            return src;  /// Already in needed type.
-
-        const auto * from_type_tuple = typeid_cast<const DataTypeTuple *>(from_type_hint);
-        if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
-        {
-            const auto & names = from_type_tuple->getElementNames();
-            const auto & tuple = src.get<const Tuple &>();
-
-            if (names.size() != tuple.size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Bad size of tuple in IN or VALUES section (while converting to Object). Expected size: {}, actual size: {}",
-                        names.size(), tuple.size());
-
-            Object object;
-            for (size_t i = 0; i < names.size(); ++i)
-                object[names[i]] = tuple[i];
-
-            return object;
-        }
-
-        if (src.getType() == Field::Types::Map)
-        {
-            Object object;
-            const auto & map = src.get<const Map &>();
-            for (const auto & element : map)
-            {
-                const auto & map_entry = element.get<Tuple>();
-                const auto & key = map_entry[0];
-                const auto & value = map_entry[1];
-
-                if (key.getType() != Field::Types::String)
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                        "Cannot convert from Map with key of type {} to Object", key.getTypeName());
-
-                object[key.get<const String &>()] = value;
-            }
-
-            return object;
-        }
-    }
     else if (const DataTypeVariant * type_variant = typeid_cast<const DataTypeVariant *>(&type))
     {
+        if (src.isNull())
+            return src;
+
         /// If we have type hint and Variant contains such type, no need to convert field.
-        if (from_type_hint && type_variant->tryGetVariantDiscriminator(*from_type_hint))
+        if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
             return src;
 
         /// Create temporary column and check if we can insert this field to the variant.
@@ -512,41 +738,64 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         auto col = type_variant->createColumn();
         if (col->tryInsert(src))
             return src;
+
+        /// Otherwise try to convert field to any variant.
+        for (const auto & variant : type_variant->getVariants())
+        {
+            auto res = tryConvertFieldToType(src, *variant, from_type_hint, format_settings);
+            if (!res.isNull())
+                return res;
+        }
+    }
+    else if (isDynamic(type))
+    {
+        /// We can insert any field to Dynamic column.
+        return src;
+    }
+    else if (isObject(type))
+    {
+        if (src.getType() == Field::Types::Object)
+            return src; /// Already in needed type.
+
+        /// TODO: add conversion from Map/Tuple to Object.
     }
 
     /// Conversion from string by parsing.
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
-        /// But don't promote Float32, since we want to keep the exact same value
+        /// But don't promote narrow floats (Float32, BFloat16): parsing the string into Float64 and narrowing back
+        /// would fail the strict equality check inside `accurate::convertNumeric` for any decimal value that is not
+        /// exactly representable in the narrow type, producing a Null Field and silently zero-matching comparisons
+        /// like `WHERE bf16_col = '49.9'`.
         /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
         /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
+        if (type.canBePromoted() && !which_type.isFloat32() && !which_type.isBFloat16() && !type.getCustomSerialization())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();
         }
 
         const auto col = type_to_parse->createColumn();
-        ReadBufferFromString in_buffer(src.get<String>());
+        ReadBufferFromString in_buffer(src.safeGet<String>());
         try
         {
-            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, format_settings);
         }
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string '{}' to type {}", src.safeGet<String>(), type.getName());
 
-            e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
+            e.addMessage(fmt::format("while converting '{}' to {}", src.safeGet<String>(), type.getName()));
             throw;
         }
 
         Field parsed = (*col)[0];
-        return convertFieldToType(parsed, type, from_type_hint);
+        return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
 
     throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
@@ -555,8 +804,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
+Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
+{
+    /// TODO: implement proper tryConvertFieldToType without try/catch by adding template flag to convertFieldToTypeImpl to not throw an exception.
+    try
+    {
+        return convertFieldToType(from_value, to_type, from_type_hint, format_settings);
+    }
+    catch (...) // Ok: tryConvertFieldToType is a try-pattern
+    {
+        return {};
+    }
+}
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
     if (from_value.isNull())
         return from_value;
@@ -565,8 +826,8 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
-    else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict);
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
 
@@ -576,64 +837,28 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict);
     }
-    else
-        return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
+    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict);
 }
 
 
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
     bool is_null = from_value.isNull();
-    if (is_null && !to_type.isNullable() && !to_type.isLowCardinalityNullable())
+    if (is_null && !canContainNull(to_type))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
 
-    Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings);
 
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
-            toString(from_value),
+            fieldToString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
 
     return converted;
-}
-
-template <typename T>
-static bool decimalEqualsFloat(Field field, Float64 float_value)
-{
-    auto decimal_field = field.get<DecimalField<T>>();
-    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
-    return decimal_to_float == float_value;
-}
-
-std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type)
-{
-    Field result_value = convertFieldToType(from_value, to_type);
-
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-    {
-        bool is_equal = applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-        return is_equal ? result_value : std::optional<Field>{};
-    }
-
-    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
-    {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>()) ? result_value : std::optional<Field>{};
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
-    }
-
-    return result_value;
 }
 
 }

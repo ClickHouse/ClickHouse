@@ -17,7 +17,7 @@ namespace
 {
 
 /// Get the UTC time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionUTCTimestamp : public IExecutableFunction
+class ExecutableFunctionUTCTimestamp final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionUTCTimestamp(time_t time_) : time_value(time_) {}
@@ -35,7 +35,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseUTCTimestamp : public IFunctionBase
+class FunctionBaseUTCTimestamp final : public IFunctionBase
 {
 public:
     explicit FunctionBaseUTCTimestamp(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -67,7 +67,7 @@ private:
     DataTypePtr return_type;
 };
 
-class UTCTimestampOverloadResolver : public IFunctionOverloadResolver
+class UTCTimestampOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "UTCTimestamp";
@@ -107,18 +107,32 @@ public:
 /// UTC_timestamp for MySQL interface support
 REGISTER_FUNCTION(UTCTimestamp)
 {
-    factory.registerFunction<UTCTimestampOverloadResolver>(FunctionDocumentation{
-        .description=R"(
+    FunctionDocumentation::Description description = R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
-Same as `now('UTC')`. Was added only for MySQL support. `now` is preferred.
 
-Example:
-[example:typical]
-)",
-    .examples{
-        {"typical", "SELECT UTCTimestamp();", ""}},
-    .categories{"Dates and Times"}}, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::CaseInsensitive);
+This function gives the same result that `now('UTC')` would. It was added only for MySQL support. [`now`](#now) is the preferred usage.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+UTCTimestamp()
+    )";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time at the moment of query analysis.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get current UTC timestamp", R"(
+SELECT UTCTimestamp()
+        )",
+        R"(
+┌──────UTCTimestamp()─┐
+│ 2024-05-28 08:32:09 │
+└─────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in,category};
+
+    factory.registerFunction<UTCTimestampOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

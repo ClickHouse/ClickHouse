@@ -12,4 +12,4 @@ WITH ROLLUP
 ORDER BY
     count() ASC,
     number DESC NULLS LAST
-    SETTINGS limit = 2, allow_experimental_analyzer = 1;
+    SETTINGS limit = 2, enable_analyzer = 1;

@@ -1,15 +1,19 @@
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/assert_cast.h>
+#include <Columns/IColumn.h>
 
 #include <base/find_symbols.h>
+#include <base/scope_guard.h>
 
 #include <Common/logger_useful.h>
 
@@ -54,7 +58,7 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
                 if (*pos == '\\')
@@ -75,10 +79,10 @@ namespace JSONUtils
 
                 if (pos > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (pos == in.buffer().end())
+                if (pos == in.buffer().end())
                     continue;
 
-                else if (*pos == opening_bracket)
+                if (*pos == opening_bracket)
                 {
                     ++balance;
                     ++pos;
@@ -134,7 +138,7 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
                 if (*in.position() == '\\')
@@ -156,10 +160,10 @@ namespace JSONUtils
 
                 if (in.position() > in.buffer().end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-                else if (in.position() == in.buffer().end())
+                if (in.position() == in.buffer().end())
                     continue;
 
-                else if (*in.position() == opening_bracket)
+                if (*in.position() == opening_bracket)
                 {
                     ++balance;
                     ++in.position();
@@ -192,12 +196,12 @@ namespace JSONUtils
 
     void skipRowForJSONEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'{', '}'>(in);
+        skipRowForJSONEachRowImpl<'{', '}'>(in);
     }
 
     void skipRowForJSONCompactEachRow(ReadBuffer & in)
     {
-        return skipRowForJSONEachRowImpl<'[', ']'>(in);
+        skipRowForJSONEachRowImpl<'[', ']'>(in);
     }
 
     NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info)
@@ -207,7 +211,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        String field;
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -235,7 +238,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
-        String field;
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
@@ -279,6 +281,12 @@ namespace JSONUtils
                 String str;
                 readJSONString(str, in, format_settings.json);
 
+                if (format_settings.json.empty_as_default && str.empty())
+                {
+                    column.insertDefault();
+                    return false;
+                }
+
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
@@ -288,11 +296,18 @@ namespace JSONUtils
                 return true;
             }
 
-            if (as_nullable)
-                return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column, in, format_settings, serialization);
+            auto deserialize = [as_nullable, &format_settings, &serialization](IColumn & column_, ReadBuffer & buf) -> bool
+            {
+                if (as_nullable)
+                    return SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(column_, buf, format_settings, serialization);
 
-            serialization->deserializeTextJSON(column, in, format_settings);
-            return true;
+                serialization->deserializeTextJSON(column_, buf, format_settings);
+                return true;
+            };
+
+            if (format_settings.json.empty_as_default)
+                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<bool, false>(column, in, deserialize);
+            return deserialize(column, in);
         }
         catch (Exception & e)
         {
@@ -309,7 +324,7 @@ namespace JSONUtils
 
     void writeFieldCompactDelimiter(WriteBuffer & out) { writeCString(", ", out); }
 
-    void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    static void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
     {
         writeChar('\t', indent, out);
         writeChar('"', out);
@@ -318,12 +333,12 @@ namespace JSONUtils
         writeCString(after_delimiter, out);
     }
 
-    void writeTitlePretty(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    static void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
     {
-        writeChar(' ', indent * 4, out);
+        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
         writeCString(title, out);
-        writeCString("\": ", out);
+        writeCString("\":", out);
         writeCString(after_delimiter, out);
     }
 
@@ -396,7 +411,7 @@ namespace JSONUtils
         {
             if (pretty_json)
             {
-                writeTitlePretty(name->data(), out, indent, title_after_delimiter);
+                writeTitlePretty(name->data(), out, settings, indent, title_after_delimiter);
             }
             else
             {
@@ -489,6 +504,8 @@ namespace JSONUtils
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
         const Stopwatch & watch,
         const Progress & progress,
         bool write_statistics,
@@ -504,7 +521,12 @@ namespace JSONUtils
             writeTitle("rows_before_limit_at_least", out, 1, " ");
             writeIntText(rows_before_limit, out);
         }
-
+        if (applied_aggregation)
+        {
+            writeFieldDelimiter(out, 2);
+            writeTitle("rows_before_aggregation", out, 1, " ");
+            writeIntText(rows_before_aggregation, out);
+        }
         if (write_statistics)
         {
             writeFieldDelimiter(out, 2);
@@ -558,7 +580,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
-    bool checkAndSkipColon(ReadBuffer & in)
+    static bool checkAndSkipColon(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
         if (!checkChar(':', in))
@@ -576,13 +598,13 @@ namespace JSONUtils
         return field;
     }
 
-    bool tryReadFieldName(ReadBuffer & in, String & field, const FormatSettings::JSON & settings)
+    static bool tryReadFieldName(ReadBuffer & in, String & field, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         return tryReadJSONStringInto(field, in, settings) && checkAndSkipColon(in);
     }
 
-    String readStringField(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static String readStringField(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         String value;
@@ -591,7 +613,7 @@ namespace JSONUtils
         return value;
     }
 
-    bool tryReadStringField(ReadBuffer & in, String & value, const FormatSettings::JSON & settings)
+    static bool tryReadStringField(ReadBuffer & in, String & value, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         if (!tryReadJSONStringInto(value, in, settings))
@@ -680,19 +702,19 @@ namespace JSONUtils
         return true;
     }
 
-    std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         auto field_name = readFieldName(in, settings);
         auto field_value = readStringField(in, settings);
         return {field_name, field_value};
     }
 
-    bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value, const FormatSettings::JSON & settings)
+    static bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value, const FormatSettings::JSON & settings)
     {
         return tryReadFieldName(in, field_and_value.first, settings) && tryReadStringField(in, field_and_value.second, settings);
     }
 
-    NameAndTypePair readObjectWithNameAndType(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static NameAndTypePair readObjectWithNameAndType(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipObjectStart(in);
         auto [first_field_name, first_field_value] = readStringFieldNameAndValue(in, settings);
@@ -714,7 +736,7 @@ namespace JSONUtils
         return name_and_type;
     }
 
-    bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type, const FormatSettings::JSON & settings)
+    static bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type, const FormatSettings::JSON & settings)
     {
         if (!checkAndSkipObjectStart(in))
             return false;
@@ -849,6 +871,78 @@ namespace JSONUtils
         }
     }
 
+    template <typename ReturnType, bool default_column_return_value>
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested)
+    {
+        static constexpr auto throw_exception = std::is_same_v<ReturnType, void>;
+
+        static constexpr auto EMPTY_STRING = "\"\"";
+        static constexpr auto EMPTY_STRING_LENGTH = std::string_view(EMPTY_STRING).length();
+
+        if (istr.eof() || *istr.position() != EMPTY_STRING[0])
+            return deserialize_nested(column, istr);
+
+        auto do_deserialize = [](IColumn & column_, ReadBuffer & buf, auto && check_for_empty_string, auto && deserialize) -> ReturnType
+        {
+            if (check_for_empty_string(buf))
+            {
+                column_.insertDefault();
+                return ReturnType(default_column_return_value);
+            }
+            return deserialize(column_, buf);
+        };
+
+        if (istr.available() >= EMPTY_STRING_LENGTH)
+        {
+            /// We have enough data in buffer to check if we have an empty string.
+            auto check_for_empty_string = [](ReadBuffer & buf) -> bool
+            {
+                auto * pos = buf.position();
+                if (checkString(EMPTY_STRING, buf))
+                    return true;
+                buf.position() = pos;
+                return false;
+            };
+
+            return do_deserialize(column, istr, check_for_empty_string, deserialize_nested);
+        }
+
+        /// We don't have enough data in buffer to check if we have an empty string.
+        /// Use PeekableReadBuffer to make a checkpoint before checking for an
+        /// empty string and rollback if check was failed.
+
+        auto check_for_empty_string = [](ReadBuffer & buf) -> bool
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf);
+            peekable_buf.setCheckpoint();
+            SCOPE_EXIT(peekable_buf.dropCheckpoint());
+            if (checkString(EMPTY_STRING, peekable_buf))
+                return true;
+            peekable_buf.rollbackToCheckpoint();
+            return false;
+        };
+
+        auto deserialize_nested_with_check = [&deserialize_nested](IColumn & column_, ReadBuffer & buf) -> ReturnType
+        {
+            auto & peekable_buf = assert_cast<PeekableReadBuffer &>(buf);
+            if constexpr (throw_exception)
+                deserialize_nested(column_, peekable_buf);
+            else if (!deserialize_nested(column_, peekable_buf))
+                return ReturnType(false);
+
+            if (unlikely(peekable_buf.hasUnreadData()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect state while parsing JSON: PeekableReadBuffer has unread data in own memory: {}", String(peekable_buf.position(), peekable_buf.available()));
+
+            return ReturnType(true);
+        };
+
+        PeekableReadBuffer peekable_buf(istr, true);
+        return do_deserialize(column, peekable_buf, check_for_empty_string, deserialize_nested_with_check);
+    }
+
+    template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }

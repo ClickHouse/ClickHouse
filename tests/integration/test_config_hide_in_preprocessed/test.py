@@ -1,7 +1,8 @@
-import pytest
 import os
-from helpers.cluster import ClickHouseCluster
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -55,3 +56,8 @@ def test_hide_in_preprocessed(started_cluster):
         in out
     )
     assert '<named_collections hide_in_preprocessed="true">' not in out
+
+    # make sure the preprocessed users.xml was saved (this throws if the file does not exist)
+    node.exec_in_container(
+        ["ls", "/var/lib/clickhouse/preprocessed_configs/users.xml"]
+    )

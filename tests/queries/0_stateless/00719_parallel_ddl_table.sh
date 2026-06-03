@@ -10,7 +10,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS parallel_ddl"
 
 function query()
 {
-    for _ in {1..50}; do
+    local it=0
+    TIMELIMIT=30
+    while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 50 ];
+    do
+        it=$((it+1))
         ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS parallel_ddl(a Int) ENGINE = Memory"
         ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS parallel_ddl"
     done

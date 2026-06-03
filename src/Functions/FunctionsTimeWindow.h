@@ -76,13 +76,9 @@ template<> \
                 auto val = t * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
                 if (delta == 1) \
                     return val; \
-                else \
-                    return val - (val % delta); \
+                return val - (val % delta); \
             } \
-            else \
-            { \
-                return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
-            } \
+            return t - (t % (delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)))) ; \
         } \
     };
     TRANSFORM_SUBSECONDS(Millisecond, 3)
@@ -97,7 +93,7 @@ template<> \
     template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static inline auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
+        static auto execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \
@@ -110,7 +106,7 @@ template<> \
     template <>
     struct AddTime<IntervalKind::Kind::Week>
     {
-        static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
+        static NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &)
         {
             return ExtendedDayNum(static_cast<Int32>(d + delta * 7));
         }
@@ -120,7 +116,7 @@ template<> \
     template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
+        static NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) \
         { return static_cast<UInt32>(t + delta * (INTERVAL)); } \
     };
     ADD_TIME(Day, 86400)
@@ -133,14 +129,11 @@ template<> \
 template <> \
     struct AddTime<IntervalKind::Kind::INTERVAL_KIND> \
     { \
-        static inline NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
+        static NO_SANITIZE_UNDEFINED Int64 execute(Int64 t, UInt64 delta, const UInt32 scale) \
         { \
             if (scale < (DEF_SCALE)) \
-            { \
                 return t + delta * DecimalUtils::scaleMultiplier<DateTime64>((DEF_SCALE) - scale); \
-            } \
-            else \
-                return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
+            return t + delta * DecimalUtils::scaleMultiplier<DateTime64>(scale - (DEF_SCALE)); \
         } \
     };
     ADD_SUBSECONDS(Millisecond, 3)
