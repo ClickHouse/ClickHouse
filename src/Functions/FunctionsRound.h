@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
 #include <Common/NaNUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -111,7 +112,12 @@ struct IntegerRoundingComputation
         {
             case RoundingMode::Trunc:
             {
-                return x / scale * scale;
+                /// `x - x % scale` instead of `x / scale * scale`. For wide integer types
+                /// (`Decimal128`/`Decimal256`) the compiler emits a single divmod helper call
+                /// (`__udivmodti4`) that returns both quotient and remainder, so we can
+                /// compute the truncated value with a subtraction and skip the multi-word
+                /// `imul scale` that the textbook formulation would otherwise require.
+                return x - x % scale;
             }
             case RoundingMode::Floor:
             {
@@ -877,7 +883,7 @@ private:
     void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries) const
     {
         using ValueType = typename Container::value_type;
-        std::vector<ValueType> boundary_values(boundaries.size());
+        VectorWithMemoryTracking<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = static_cast<ValueType>(boundaries[i].safeGet<ValueType>());
 

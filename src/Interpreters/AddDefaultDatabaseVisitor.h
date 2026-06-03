@@ -73,7 +73,8 @@ public:
     {
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
-            !tryVisit<ASTFunction>(ast))
+            !tryVisit<ASTFunction>(ast) &&
+            !tryVisit<ASTRefreshStrategy>(ast))
             visitChildren(*ast);
     }
 
