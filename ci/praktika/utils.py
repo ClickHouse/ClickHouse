@@ -11,7 +11,6 @@ import subprocess
 import sys
 import shutil
 import tempfile
-import textwrap
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -336,8 +335,7 @@ class Shell:
             return 0  # Return success for dry-run
 
         if verbose:
-            wrapped = textwrap.fill(f"Run command: [{command}]", width=80)
-            print(wrapped)
+            print(f"Run command: [{command}]")
 
         log_file = log_file or "/dev/null"
         proc = None
@@ -792,11 +790,21 @@ class Utils:
                 )
         return path_out
 
+    @staticmethod
+    def fix_ownership_after_docker(path, docker_image: str) -> None:
+        uid = os.getuid()
+        gid = os.getgid()
+        Shell.run(
+            f"docker run --rm --user root --volume {path}:{path} {docker_image} chown -R {uid}:{gid} {path}",
+            verbose=True,
+        )
+
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 which breaks openssl enc -pass file:
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
-openssl rand 32 >{aes_key_path}
+openssl rand -base64 32 >{aes_key_path}
 openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)

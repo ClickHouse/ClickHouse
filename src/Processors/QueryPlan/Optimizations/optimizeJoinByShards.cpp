@@ -19,7 +19,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
+static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -36,7 +36,7 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
     return nullptr;
 }
 
-ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
+static ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 {
     if (const auto & prewhere_info = source.getPrewhereInfo())
         return prewhere_info->prewhere_actions.clone();
@@ -45,7 +45,7 @@ ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
+static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 {
     if (node.children.size() != 1)
         return false;
@@ -95,7 +95,7 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 /// which is also used in JOIN equality condition.
 ///
 /// Only the prefix size is needed, but here we additionally return names for debugging.
-JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
+static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)
@@ -238,10 +238,14 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
             analysis_result = source->selectRangesToRead();
 
         size_t added_parts = all_parts.size();
-        for (const auto & part : analysis_result->parts_with_ranges)
+        /// Renumber part_index_in_query to be contiguous starting from added_parts.
+        /// filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
+        /// leaving non-contiguous part_index_in_query values. The distribution logic
+        /// below assumes contiguous indices to assign parts back to their sources.
+        for (size_t local_idx = 0; local_idx < analysis_result->parts_with_ranges.size(); ++local_idx)
         {
-            all_parts.push_back(part);
-            all_parts.back().part_index_in_query += added_parts;
+            all_parts.push_back(analysis_result->parts_with_ranges[local_idx]);
+            all_parts.back().part_index_in_query = added_parts + local_idx;
         }
 
         analysis_results.push_back(std::move(analysis_result));

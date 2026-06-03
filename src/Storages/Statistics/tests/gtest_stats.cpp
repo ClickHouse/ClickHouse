@@ -185,3 +185,69 @@ TEST(Statistics, MinMaxEstimateLess)
     StatisticsMinMax empty(Field{}, Field{}, 0);
     EXPECT_FALSE(empty.estimateLess(Field(UInt64(42))).has_value());
 }
+
+TEST(Statistics, LikeSelectivity)
+{
+    /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
+    /// selectivity defaults and their complement behavior under NOT.
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
+
+    MutableColumnPtr col = DataTypeInt32().createColumn();
+    for (Int32 i = 0; i < 10000; i++)
+        col->insert(i + 1);
+
+    ColumnStatisticsDescription mock_description;
+    mock_description.data_type = data_type;
+    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
+
+    ColumnDescription column_desc;
+    column_desc.name = "a";
+    column_desc.type = data_type;
+    column_desc.statistics = mock_description;
+    auto stats = MergeTreeStatisticsFactory::instance().get(column_desc);
+    stats->build(std::move(col));
+
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addStatistics("a", stats);
+    estimator_builder.incrementRowCount(10000);
+    auto estimator = estimator_builder.getEstimator();
+
+    /// Helper: estimate rows for a condition string.
+    auto estimate = [&](const String & expression) -> UInt64
+    {
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        return estimator->estimateRelationProfile(nullptr, node).rows;
+    };
+
+    /// default_like_factor = 0.1, total_rows = 10000.
+    /// LIKE: 0.1 * 10000 = 1000 rows.
+    UInt64 like_rows = estimate("a like '%pattern%'");
+    EXPECT_EQ(like_rows, 1000u);
+
+    /// NOT LIKE: (1 - 0.1) * 10000 = 9000 rows.
+    UInt64 not_like_rows = estimate("not(a like '%pattern%')");
+    EXPECT_EQ(not_like_rows, 9000u);
+
+    /// Complement: LIKE + NOT LIKE = total rows.
+    EXPECT_EQ(like_rows + not_like_rows, 10000u);
+
+    /// ILIKE: same as LIKE.
+    UInt64 ilike_rows = estimate("a ilike '%pattern%'");
+    EXPECT_EQ(ilike_rows, 1000u);
+
+    /// NOT ILIKE: same as NOT LIKE.
+    UInt64 not_ilike_rows = estimate("not(a ilike '%pattern%')");
+    EXPECT_EQ(not_ilike_rows, 9000u);
+
+    /// notLike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notlike_direct_rows = estimate("a not like '%pattern%'");
+    EXPECT_EQ(notlike_direct_rows, 9000u);
+
+    /// notILike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
+    EXPECT_EQ(notilike_direct_rows, 9000u);
+}
