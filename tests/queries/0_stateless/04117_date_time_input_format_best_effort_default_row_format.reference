@@ -1,0 +1,8 @@
+-- CSV: best_effort by default parses a non-basic datetime
+2020-04-15 10:30:00
+-- CSV: basic mode rejects the same non-basic datetime
+Cannot parse
+-- TSV: best_effort by default parses a non-basic datetime
+2024-04-04 00:00:00
+-- TSV: basic mode rejects the same non-basic datetime
+Cannot parse

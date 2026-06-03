@@ -12,6 +12,7 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/BackupLog.h>
@@ -47,7 +48,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
-#include <Interpreters/HistogramMetricLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -377,13 +377,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 
-    if (histogram_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("histogram_metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        histogram_metric_log->startCollect(ThreadName::HISTOGRAM_METRIC_LOG, collect_interval_milliseconds);
-    }
-
     if (background_schedule_pool_log)
     {
         size_t duration_threshold_milliseconds = config.getUInt64("background_schedule_pool_log.duration_threshold_milliseconds", 30);
@@ -601,7 +594,7 @@ SystemLog<LogElement>::SystemLog(
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
-    assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
+    chassert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
 template <typename LogElement>
