@@ -81,6 +81,13 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_local_read_bandwidth=1) VALUES (110, 'localbw'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_localbw FROM t_insert_returning WHERE id = 110;
 
+-- Process-list admission/scheduling limits in the RETURNING subquery are rejected too (they are consumed by
+-- ProcessList::insert when the outer INSERT registers, before the subquery runs), while the INSERT still completes first
+SELECT 'returning admission limit rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_concurrent_queries_for_user=1) VALUES (113, 'admission'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_admission FROM t_insert_returning WHERE id = 113;
+
 -- AST size/depth limits in the RETURNING subquery's SETTINGS are enforced when the subquery is planned (after the
 -- INSERT persists), exactly as for a standalone SELECT
 SELECT 'returning ast size limit';

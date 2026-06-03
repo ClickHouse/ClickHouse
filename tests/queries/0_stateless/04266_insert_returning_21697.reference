@@ -27,6 +27,8 @@ returning network bandwidth rejection
 1
 returning local read bandwidth rejection
 1
+returning admission limit rejection
+1
 returning ast size limit
 1
 returning delayed ast size limit
