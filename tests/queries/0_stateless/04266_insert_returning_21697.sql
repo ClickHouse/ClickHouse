@@ -74,6 +74,13 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_network_bandwidth_for_user=1) VALUES (109, 'netbw'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_netbw FROM t_insert_returning WHERE id = 109;
 
+-- Per-query read/write throttler limits in the RETURNING subquery are rejected too (the throttlers are copied from
+-- the INSERT context by Context::createCopy), while the INSERT still completes first
+SELECT 'returning local read bandwidth rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_local_read_bandwidth=1) VALUES (110, 'localbw'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_localbw FROM t_insert_returning WHERE id = 110;
+
 -- AST size/depth limits in the RETURNING subquery's SETTINGS are enforced when the subquery is planned (after the
 -- INSERT persists), exactly as for a standalone SELECT
 SELECT 'returning ast size limit';

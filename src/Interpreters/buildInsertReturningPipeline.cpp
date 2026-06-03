@@ -38,14 +38,15 @@ namespace ErrorCodes
 namespace
 {
     /// The INSERT and RETURNING phases share one query, one `ProcessListElement`, one thread-group `MemoryTracker`,
-    /// one query/user `TemporaryDataOnDiskScope` and the user/all-user network throttlers, all set up once from the
-    /// outer INSERT-phase settings (the throttlers are created or attached by `ProcessList::insert` before the
-    /// RETURNING context exists). Query-global resource and execution limits therefore cannot be re-applied for the
-    /// RETURNING phase: memory, temporary-data-on-disk and network-bandwidth limits would have no effect, and the query
-    /// time limit is measured from INSERT registration (so it cannot bound the subquery alone). Rather than silently
-    /// ignore such settings when they appear in the RETURNING subquery's `SETTINGS` clause, reject them explicitly.
-    /// Settings enforceable on the result pipeline (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`)
-    /// remain supported.
+    /// one query/user `TemporaryDataOnDiskScope`, the user/all-user network throttlers and the per-query read/write
+    /// throttlers, all established once from the outer INSERT-phase settings: the user/all-user throttlers are created
+    /// by `ProcessList::insert`, and the per-query throttlers are copied by `Context::createCopy` (the getters only
+    /// create one when the pointer is null, so the RETURNING context reuses the outer ones). Query-global resource and
+    /// execution limits therefore cannot be re-applied for the RETURNING phase: memory, temporary-data-on-disk and
+    /// network/bandwidth limits would have no effect, and the query time limit is measured from INSERT registration (so
+    /// it cannot bound the subquery alone). Rather than silently ignore such settings when they appear in the RETURNING
+    /// subquery's `SETTINGS` clause, reject them explicitly. Settings enforceable on the result pipeline
+    /// (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) remain supported.
     void rejectUnsupportedReturningSettings(const ASTPtr & returning_select)
     {
         static const std::unordered_set<std::string_view> unsupported_settings = {
@@ -57,6 +58,10 @@ namespace
             "max_temporary_data_on_disk_size_for_user",
             "max_network_bandwidth_for_user",
             "max_network_bandwidth_for_all_users",
+            "max_remote_read_network_bandwidth",
+            "max_remote_write_network_bandwidth",
+            "max_local_read_bandwidth",
+            "max_local_write_bandwidth",
         };
 
         const auto * select_with_union = returning_select->as<ASTSelectWithUnionQuery>();

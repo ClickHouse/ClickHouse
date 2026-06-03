@@ -25,6 +25,8 @@ returning temp data limit rejection
 1
 returning network bandwidth rejection
 1
+returning local read bandwidth rejection
+1
 returning ast size limit
 1
 returning analyzer setting
