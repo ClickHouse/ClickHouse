@@ -789,7 +789,36 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
 
-    const auto & source_columns = source_part->getColumns();
+    /// Filter out stale-slot source columns: after separate `DROP COLUMN b`
+    /// then `ADD COLUMN b`, an old wide part still keeps the original `b`
+    /// slot in its columns list (we preserve it so compact ordinal layout
+    /// stays stable -- see remapColumnsWithPhysicalNames case (c)), but
+    /// the current mapping now binds logical `b` to a fresh column ID.
+    /// A wide-part mutation that only updates `a` must NOT reuse the stale
+    /// `b` slot here: `populateColumnIds` would stamp it with the new ID,
+    /// the writer would never hardlink/produce a file at that ID, and the
+    /// resulting part would claim `b` is stored at the new ID while no
+    /// such file exists.  Treat stale-effective-ID slots as absent so the
+    /// downstream loop falls through to the "column not in source" branch
+    /// and the new `b` reads defaults instead.
+    const auto & source_columns_raw = source_part->getColumns();
+    NamesAndTypesList source_columns;
+    if (auto active_mapping = source_part->storage.getActiveColumnIdMapping())
+    {
+        for (const auto & col : source_columns_raw)
+        {
+            const String source_effective_id = col.column_id.empty() ? col.getNameInStorage() : col.column_id;
+            if (active_mapping->hasLogicalName(col.getNameInStorage())
+                && active_mapping->getColumnId(col.getNameInStorage()) != source_effective_id)
+                continue;
+            source_columns.push_back(col);
+        }
+    }
+    else
+    {
+        source_columns = source_columns_raw;
+    }
+
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
     for (const auto & it : source_columns)
         source_columns_name_to_type[it.name] = it.type;

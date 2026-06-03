@@ -726,7 +726,20 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
     /// column ID prefix: "{counter}.x", "{counter}.y".  This keeps the
     /// shared offset stream (e.g. "5.size0") stable across renames while
     /// giving each sibling its own data stream.
+    ///
+    /// Incremental child additions to an existing flattened Nested
+    /// group must reuse the existing siblings' physical prefix.  Without
+    /// this, `ADD COLUMN n.z ...` after `ADD COLUMN n Nested(x UInt64, y
+    /// String)` would allocate `n.z` a plain counter-only ID like `2`,
+    /// splitting the shared offset stream: existing `n.x`/`n.y` write
+    /// offsets to `1.size0` while the new `n.z` would write to `n.size0`
+    /// (or its own column-id-derived stream), and reads of older parts
+    /// would fail to find the shared offset slot.  Inspect every added
+    /// dotted column and, if its logical parent already has siblings with
+    /// a shared physical prefix in the mapping, allocate the new child
+    /// under that same prefix instead of a fresh counter.
     std::map<String, std::vector<std::pair<String, String>>> nested_groups;
+    std::map<String, String> incremental_child_prefix; // logical -> phys parent
     std::vector<String> plain_new_columns;
 
     for (const auto & col : new_metadata.getColumns().getAllPhysical())
@@ -738,7 +751,33 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
         auto [parent, child] = Nested::splitName(col.name);
         if (!child.empty())
         {
-            bool has_sibling = false;
+            String existing_prefix;
+            for (const auto & other : new_metadata.getColumns().getAllPhysical())
+            {
+                if (other.name == col.name)
+                    continue;
+                auto [other_parent, other_child] = Nested::splitName(other.name);
+                if (other_child.empty() || other_parent != parent)
+                    continue;
+                if (!old_col_names.contains(other.name))
+                    continue;
+                if (!local_mapping.hasLogicalName(other.name))
+                    continue;
+                const String & sibling_id = local_mapping.getColumnId(other.name);
+                auto [sib_phys_parent, sib_phys_child] = Nested::splitName(sibling_id);
+                if (!sib_phys_child.empty())
+                {
+                    existing_prefix = sib_phys_parent;
+                    break;
+                }
+            }
+            if (!existing_prefix.empty())
+            {
+                incremental_child_prefix[col.name] = existing_prefix;
+                continue;
+            }
+
+            bool has_new_sibling = false;
             for (const auto & other : new_metadata.getColumns().getAllPhysical())
             {
                 if (other.name == col.name)
@@ -747,11 +786,11 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
                 if (!other_child.empty() && other_parent == parent
                     && !old_col_names.contains(other.name))
                 {
-                    has_sibling = true;
+                    has_new_sibling = true;
                     break;
                 }
             }
-            if (has_sibling)
+            if (has_new_sibling)
             {
                 nested_groups[parent].emplace_back(col.name, child);
                 continue;
@@ -760,12 +799,21 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
         plain_new_columns.push_back(col.name);
     }
 
-    /// Allocate compound column IDs for flattened Nested groups.
+    /// Allocate compound column IDs for flattened Nested groups (initial
+    /// `ADD COLUMN n Nested(...)`).
     for (const auto & [parent, siblings] : nested_groups)
     {
         auto base = local_mapping.allocateColumnId();
         for (const auto & [logical_name, child_name] : siblings)
             local_mapping.addColumn(logical_name, base + "." + child_name);
+    }
+
+    /// Incremental child additions inherit the existing siblings' physical
+    /// prefix so the shared offset stream stays coherent.
+    for (const auto & [logical_name, phys_parent] : incremental_child_prefix)
+    {
+        auto [_, child_name] = Nested::splitName(logical_name);
+        local_mapping.addColumn(logical_name, phys_parent + "." + child_name);
     }
 
     /// Allocate plain counter-based column IDs for non-Nested columns.
