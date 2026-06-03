@@ -293,7 +293,7 @@ Names StorageRabbitMQ::parseSettings(String settings_list)
 
 AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 {
-    AMQP::ExchangeType type;
+    AMQP::ExchangeType type = {};
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
         if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;
@@ -509,7 +509,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
     std::string error;
-    int error_code;
+    int error_code = 0;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {

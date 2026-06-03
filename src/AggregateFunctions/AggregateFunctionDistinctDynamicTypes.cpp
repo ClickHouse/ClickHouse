@@ -49,7 +49,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
         if (size > MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", MAX_ARRAY_SIZE, size);

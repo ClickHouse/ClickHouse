@@ -199,7 +199,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);

@@ -144,7 +144,7 @@ struct Params
     String time_column_name;
     String value_column_name;
     String version_column_name;
-    bool patterns_typed;
+    bool patterns_typed{};
     Graphite::Patterns patterns;
     Graphite::Patterns patterns_plain;
     Graphite::Patterns patterns_tagged;

@@ -57,8 +57,8 @@ void checkCount(UInt32 count, UInt32 limit, const char * what)
 
 inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read)
 {
-    Float64 x;
-    Float64 y;
+    Float64 x = 0;
+    Float64 y = 0;
     readBinaryEndian(x, in_buffer, endian_to_read);
     readBinaryEndian(y, in_buffer, endian_to_read);
     return CartesianPoint(x, y);
@@ -66,7 +66,7 @@ inline CartesianPoint readPointWKB(ReadBuffer & in_buffer, std::endian endian_to
 
 inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
-    UInt32 num_points;
+    UInt32 num_points = 0;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
     checkCount(num_points, limit, "points");
 
@@ -80,7 +80,7 @@ inline LineString<CartesianPoint> readLineWKB(ReadBuffer & in_buffer, std::endia
 
 inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
-    UInt32 num_points;
+    UInt32 num_points = 0;
     readBinaryEndian(num_points, in_buffer, endian_to_read);
     checkCount(num_points, limit, "points");
 
@@ -94,7 +94,7 @@ inline Ring<CartesianPoint> readRingWKB(ReadBuffer & in_buffer, std::endian endi
 
 inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
-    UInt32 num_rings;
+    UInt32 num_rings = 0;
     readBinaryEndian(num_rings, in_buffer, endian_to_read);
     checkCount(num_rings, limit, "rings");
 
@@ -117,7 +117,7 @@ static MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_bu
 {
     MultiLineString<CartesianPoint> multiline;
 
-    UInt32 num_rings;
+    UInt32 num_rings = 0;
     readBinaryEndian(num_rings, in_buffer, endian_to_read);
     checkCount(num_rings, limit, "line strings");
 
@@ -136,7 +136,7 @@ static MultiPolygon<CartesianPoint> readMultiPolygonWKB(ReadBuffer & in_buffer, 
 {
     MultiPolygon<CartesianPoint> multipolygon;
 
-    UInt32 num_polygons;
+    UInt32 num_polygons = 0;
     readBinaryEndian(num_polygons, in_buffer, endian_to_read);
     checkCount(num_polygons, limit, "polygons");
 
@@ -155,13 +155,13 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
 {
     UInt32 limit = effectiveLimit(max_element_count);
 
-    char little_endian;
+    char little_endian = 0;
     if (!in_buffer.read(little_endian) || (little_endian != 0 && little_endian != 1))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading WKB format: Incorrect first flag");
 
     std::endian endian_to_read = little_endian ? std::endian::little : std::endian::big;
 
-    UInt32 geom_type;
+    UInt32 geom_type = 0;
     readBinaryEndian(geom_type, in_buffer, endian_to_read);
 
     switch (static_cast<WKBGeometry>(geom_type))

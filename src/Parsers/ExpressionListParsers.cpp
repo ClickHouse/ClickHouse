@@ -254,7 +254,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
         else
         {
             /// try to find any of the valid operators
-            const char ** it;
+            const char ** it = nullptr;
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -570,9 +570,9 @@ struct Operator
              OperatorType type_ = OperatorType::None)
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
-    OperatorType type;
-    int priority;
-    int arity;
+    OperatorType type{};
+    int priority{};
+    int arity{};
     std::string function_name;
 };
 
@@ -1326,8 +1326,8 @@ private:
     bool has_all = false;
     bool has_distinct = false;
 
-    const char * contents_begin;
-    const char * contents_end;
+    const char * contents_begin{};
+    const char * contents_end{};
 
     String function_name;
     ASTPtr parameters;
@@ -1732,7 +1732,7 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind;
+    IntervalKind::Kind kind{};
     if (tryParseIntervalKindFromLowerString(unit_lower, kind))
     {
         interval_kind = IntervalKind{kind};
@@ -2600,7 +2600,7 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         {
             /// Non-leading fields: constrained per SQL standard.
             /// MONTH 0-11, HOUR 0-23, MINUTE 0-59, SECOND 0-59.
-            UInt64 max_value;
+            UInt64 max_value = 0;
             switch (range[i].kind)
             {
                 case Kind::Month: max_value = 11; break;
@@ -2879,7 +2879,7 @@ public:
     }
 
 private:
-    bool has_case_expr;
+    bool has_case_expr{};
 };
 
 /// Layer for table function 'view' and 'viewIfPermitted'

@@ -126,7 +126,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
 size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, istr);
 
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)

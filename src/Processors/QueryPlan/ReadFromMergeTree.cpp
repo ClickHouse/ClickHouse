@@ -936,8 +936,8 @@ struct PartRangesReadInfo
 
         auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
 
-        size_t min_rows_for_concurrent_read;
-        size_t min_bytes_for_concurrent_read;
+        size_t min_rows_for_concurrent_read = 0;
+        size_t min_bytes_for_concurrent_read = 0;
         if (all_parts_on_remote_disk)
         {
             min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
