@@ -325,7 +325,7 @@ Session::~Session()
             const auto & client_info = getClientInfo();
             std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
             LOG_AUDIT(audit_log, "User, {}, {}, Logout",
-                    user ? user->getName() : "", host);
+                    escapeForAuditField(user ? user->getName() : ""), host);
         }
 
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
@@ -364,7 +364,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
             std::string host = client_info.current_address
                 ? client_info.current_address->host().toString()
                 : address.host().toString();
-            LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", user_name, host);
+            LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure", escapeForAuditField(user_name), host);
         }
 
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
@@ -442,7 +442,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     if (auto audit_log = getAuditLoggerIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginFailure",
-                user_name.has_value() ? user_name.value() : "",
+                escapeForAuditField(user_name.has_value() ? user_name.value() : ""),
                 address_.host().toString());
     }
 
@@ -772,7 +772,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
         const auto & client_info = getClientInfo();
         std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
         LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
-                user ? user->getName() : "", host);
+                escapeForAuditField(user ? user->getName() : ""), host);
     }
 
     notified_session_log_about_login = true;

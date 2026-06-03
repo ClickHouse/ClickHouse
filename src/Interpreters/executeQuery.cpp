@@ -91,7 +91,6 @@
 
 #include <Poco/Net/SocketAddress.h>
 
-#include <algorithm>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -1086,16 +1085,9 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
     /// Ensure the audit record occupies exactly one physical line.
     /// toOneLineQuery collapses most whitespace but preserves newlines after
     /// line comments; unconditionally strip CR/LF from all free-form fields.
-    auto escape_for_audit = [](String s)
-    {
-        std::replace(s.begin(), s.end(), '\n', ' ');
-        std::replace(s.begin(), s.end(), '\r', ' ');
-        return s;
-    };
-
-    String safe_query = escape_for_audit(toOneLineQuery(elem.query));
-    String safe_object_names = escape_for_audit(object_names);
-    String safe_user = escape_for_audit(elem.client_info.current_user);
+    String safe_query = escapeForAuditField(toOneLineQuery(elem.query));
+    String safe_object_names = escapeForAuditField(object_names);
+    String safe_user = escapeForAuditField(elem.client_info.current_user);
 
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
