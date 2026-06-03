@@ -1,16 +1,30 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool compress_per_column_in_compact_parts;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char compact_part_writer_fail_in_add_streams[];
 }
 
 MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
@@ -22,7 +36,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -31,7 +44,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     : MergeTreeDataPartWriterOnDisk(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
-        columns_list_, metadata_snapshot_, virtual_columns_,
+        columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
         static_cast<WrittenOffsetSubstreams *>(nullptr))
@@ -66,7 +79,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        assert(!substream_path.empty());
+        chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
@@ -83,11 +96,18 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
         UInt64 codec_id = compression_codec->getHash();
-        auto & stream = streams_by_codec[codec_id];
-        if (!stream)
-            stream = std::make_shared<CompressedStream>(plain_hashing, compression_codec);
+        /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
+        auto it = streams_by_codec.find(codec_id);
+        if (it == streams_by_codec.end())
+        {
+            fiu_do_on(FailPoints::compact_part_writer_fail_in_add_streams,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Compact part writer addStreams");
+            });
+            it = streams_by_codec.emplace(codec_id, std::make_shared<CompressedStream>(plain_hashing, compression_codec)).first;
+        }
 
-        compressed_streams.emplace(stream_name, stream);
+        compressed_streams.emplace(stream_name, it->second);
     };
 
     ISerialization::EnumerateStreamsSettings enumerate_settings;
@@ -203,8 +223,14 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     return serialize_settings;
 }
 
-void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation, Block * /*permuted_columns_cache*/)
 {
+    /// The permuted columns cache is intentionally ignored in the Compact writer:
+    /// `permuteBlockIfNeeded` below permutes the whole block once, and the subsequent
+    /// `getIndexBlockAndPermute` calls in `writeDataBlockPrimaryIndexAndSkipIndices`
+    /// pass `permutation = nullptr` (they only re-pick columns by name from the
+    /// already-permuted block). So the cache would only ever be written to, never
+    /// read from — pure overhead.
     Block result_block = block;
 
     /// For some columns the set of streams may depend on the actual column data.
@@ -222,11 +248,11 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(result_block);
-        assert(index_granularity_for_block >= 1);
+        chassert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
-    result_block = permuteBlockIfNeeded(result_block, permutation);
+    result_block = permuteBlockIfNeeded(result_block, permutation, nullptr);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -257,6 +283,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 {
     writeDataBlock(block, granules_to_write);
 
+    /// `block` here is already fully permuted by `permuteBlockIfNeeded` in `write`,
+    /// so we pass `permutation = nullptr` and no cache — only Wide writer benefits
+    /// from the permuted columns cache (see comment in `MergeTreeDataPartWriterCompact::write`).
     if (settings.rewrite_primary_key)
     {
         Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);
@@ -273,14 +302,15 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
     for (const auto & granule : granules)
     {
+        /// Tricky part, because we share compressed streams between different columns substreams.
+        /// Compressed streams write data to the single file, but with different compression codecs.
+        /// So we flush each stream (using next()) before using new one, because otherwise we will override
+        /// data in result file.
+        CompressedStreamPtr prev_stream;
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            /// Tricky part, because we share compressed streams between different columns substreams.
-            /// Compressed streams write data to the single file, but with different compression codecs.
-            /// So we flush each stream (using next()) before using new one, because otherwise we will override
-            /// data in result file.
-            CompressedStreamPtr prev_stream;
+            bool is_first_substream = true;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -294,14 +324,14 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 if (prev_stream && prev_stream != result_stream)
                 {
                     /// Offset should be 0, because compressed block is written for every granule.
-                    assert(result_stream->hashing_buf.offset() == 0);
+                    chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
 
                 /// We have 2 types of marks in Compact part. With or without substreams.
                 /// In format without substreams we write single mark per column (here once on the first requested substream).
                 /// In format with substreams we write a mark for each column substream.
-                if (!prev_stream || index_granularity_info.mark_type.with_substreams)
+                if (is_first_substream || index_granularity_info.mark_type.with_substreams)
                 {
                     MarkInCompressedFile mark{plain_hashing.count(), result_stream->hashing_buf.offset()};
                     writeBinaryLittleEndian(mark.offset_in_compressed_file, marks_out);
@@ -309,6 +339,8 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
                     if (!cached_marks.empty())
                         cached_marks.begin()->second->push_back(mark);
+
+                    is_first_substream = false;
                 }
 
                 prev_stream = result_stream;
@@ -327,9 +359,15 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 getSerialization(name_and_type->name),
                 stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
 
-            /// Each type always have at least one substream
-            prev_stream->hashing_buf.next();
+            if (settings.compress_per_column_in_compact_parts)
+            {
+                prev_stream->hashing_buf.next();
+                prev_stream = nullptr;
+            }
         }
+
+        if (!settings.compress_per_column_in_compact_parts && prev_stream)
+            prev_stream->hashing_buf.next();
 
         writeBinaryLittleEndian(granule.rows_to_write, marks_out);
         data_written = true;
@@ -357,7 +395,7 @@ void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
     for (const auto & [_, stream] : streams_by_codec)
-        assert(stream->hashing_buf.offset() == 0);
+        chassert(stream->hashing_buf.offset() == 0);
 #endif
 
     WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;
@@ -407,10 +445,7 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)
 {
     if (sync)
-    {
-        plain_file->sync();
-        marks_file->sync();
-    }
+        parallelSyncFiles({plain_file.get(), marks_file.get()});
 
     plain_file->finalize();
     marks_file->finalize();

@@ -28,6 +28,8 @@ from typing import Any, List, Sequence, Tuple, Union
 import requests
 import urllib3
 
+temp_dir = "../../ci/tmp"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -147,6 +149,7 @@ def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
     shell=False,
+    input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
     timeout=300,
@@ -175,6 +178,7 @@ def run_and_check(
     try:
         res = subprocess.run(
             args,
+            input=input,
             stdout=stdout,
             stderr=stderr,
             env=env,
@@ -338,6 +342,14 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+def check_postgresql_dotnet_client_is_available(docker_id):
+    p = subprocess.Popen(
+        docker_exec(docker_id, "dotnet", "--version"),
         stdout=subprocess.PIPE,
     )
     p.communicate()
@@ -632,10 +644,13 @@ class ClickHouseCluster:
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
+        self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
         self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -646,6 +661,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -691,6 +707,7 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
@@ -814,6 +831,12 @@ class ClickHouseCluster:
             self.postgresql_java_client_host
         )
 
+        # available when with_postgresql_dotnet_client = True
+        self.postgresql_dotnet_client_host = "postgresql-dotnet-client"
+        self.postgresql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_dotnet_client_host
+        )
+
         # available when with_mysql_dotnet_client = True
         self.mysql_dotnet_client_host = "dotnet"
         self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
@@ -879,19 +902,11 @@ class ClickHouseCluster:
 
         # available when with_prometheus == True
         self.with_prometheus = False
-        self.prometheus_writer_host = "prometheus_writer"
-        self.prometheus_writer_port = 9090
-        self.prometheus_writer_ip = None
-        self.prometheus_writer_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_writer/logs"))
-        self.prometheus_reader_host = "prometheus_reader"
-        self.prometheus_reader_port = 9091
-        self.prometheus_reader_ip = None
-        self.prometheus_reader_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_reader/logs"))
-        self.prometheus_receiver_host = "prometheus_receiver"
-        self.prometheus_receiver_port = 9092
-        self.prometheus_receiver_ip = None
-        self.prometheus_receiver_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_receiver/logs"))
-        self.prometheus_servers = []
+        self.prometheus_host = "prometheus"
+        self.prometheus_port = {"writer": 9090, "reader": 9091, "receiver": 9092}
+        self.prometheus_ip = {"writer": None, "reader": None, "receiver": None}
+        self.prometheus_logs_dir = "prometheus_{}/logs"
+        self.prometheus_servers = set()
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
@@ -1013,6 +1028,13 @@ class ClickHouseCluster:
         return self._iceberg_rest_catalog_port
 
     @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
+
+    @property
     def glue_catalog_port(self):
         if self._glue_catalog_port:
             return self._glue_catalog_port
@@ -1046,6 +1068,20 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
 
     @property
     def ytsaurus_port(self):
@@ -1506,6 +1542,29 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
 
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    "docker_compose_postgresql_dotnet_client.yml",
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(
+                docker_compose_yml_dir,
+                "docker_compose_postgresql_dotnet_client.yml",
+            ),
+        )
+
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1534,6 +1593,17 @@ class ClickHouseCluster:
         env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
             self.schema_registry_auth_port
         )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -1686,6 +1756,10 @@ class ClickHouseCluster:
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
         )
@@ -1754,6 +1828,9 @@ class ClickHouseCluster:
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
         env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
         self.base_cmd.extend(
             [
                 "--file",
@@ -1921,53 +1998,39 @@ class ClickHouseCluster:
         )
         return self.base_letsencrypt_pebble_cmd
 
-    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        if "writer" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_WRITER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_writer_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_writer_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_writer_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir, prometheus_server):
+        if prometheus_server in self.prometheus_servers:
+            return self.base_prometheus_cmd
 
-        if "reader" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_READER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_reader_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_reader_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_reader_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        prefix = f"PROMETHEUS_{prometheus_server.upper()}"
+        env_variables[f"{prefix}_HOST"] = f"{self.prometheus_host}_{prometheus_server}"
+        env_variables[f"{prefix}_PORT"] = str(self.prometheus_port[prometheus_server])
+        env_variables[f"{prefix}_LOGS"] = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+        env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        docker_compose_path = p.join(docker_compose_yml_dir, f"docker_compose_prometheus_{prometheus_server}.yml")
+        self.base_cmd.extend(["--file", docker_compose_path])
 
-        if "receiver" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_RECEIVER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_receiver_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_receiver_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_receiver_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        if not self.prometheus_servers:
+            self.base_prometheus_cmd = self.compose_cmd()
+        self.base_prometheus_cmd.extend(["--env-file", instance.env_file, "--file", docker_compose_path])
 
+        self.prometheus_servers.add(prometheus_server)
+        self.with_prometheus = True
+        return self.base_prometheus_cmd
+
+    def setup_prometheus_remote_write_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_write_handlers.append((instance.hostname, handler_port, handler_path))
         handler_urls = []
-        for handler_host, handler_port, handler_path in self.prometheus_remote_write_handlers:
-            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        for host, port, path in self.prometheus_remote_write_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
         env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
 
+    def setup_prometheus_remote_read_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_read_handlers.append((instance.hostname, handler_port, handler_path))
         handler_urls = []
-        for handler_host, handler_port, handler_path in self.prometheus_remote_read_handlers:
-            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        for host, port, path in self.prometheus_remote_read_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
         env_variables["PROMETHEUS_REMOTE_READ_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
-
-        if not self.with_prometheus:
-            self.with_prometheus = True
-            self.base_cmd.extend(
-                [
-                    "--file",
-                    p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
-                ]
-            )
-            self.base_prometheus_cmd = self.compose_cmd(
-                "--env-file",
-                instance.env_file,
-                "--file",
-                p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
-            )
-        return self.base_prometheus_cmd
 
     def add_instance(
         self,
@@ -1996,6 +2059,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2164,6 +2228,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2275,6 +2340,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
             cmds.append(
                 self.setup_mysql_dotnet_client_cmd(
@@ -2357,6 +2429,10 @@ class ClickHouseCluster:
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
+
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2435,21 +2511,21 @@ class ClickHouseCluster:
             )
 
         if with_prometheus_writer:
-            self.prometheus_servers.append('writer')
-        if with_prometheus_reader:
-            self.prometheus_servers.append('reader')
-        if with_prometheus_receiver:
-            self.prometheus_servers.append('receiver')
-        if handle_prometheus_remote_write:
-            self.prometheus_remote_write_handlers.append((instance.hostname,) + handle_prometheus_remote_write)
-        if handle_prometheus_remote_read:
-            self.prometheus_remote_read_handlers.append((instance.hostname,) + handle_prometheus_remote_read)
-        if self.prometheus_servers:
             cmds.append(
-                self.setup_prometheus_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'writer')
             )
+        if with_prometheus_reader:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'reader')
+            )
+        if with_prometheus_receiver:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'receiver')
+            )
+        if handle_prometheus_remote_write:
+            self.setup_prometheus_remote_write_handler(instance, env_variables, *handle_prometheus_remote_write)
+        if handle_prometheus_remote_read:
+            self.setup_prometheus_remote_read_handler(instance, env_variables, *handle_prometheus_remote_read)
 
         ### !!!! This is the last step after combining all cmds, don't put anything after
         if self.with_net_trics:
@@ -2974,6 +3050,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_postgresql_dotnet_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_dotnet_client_is_available(
+                    self.postgresql_dotnet_client_docker_id
+                ):
+                    logging.debug("PostgreSQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL C# Client container")
+
     def wait_mysql_dotnet_client(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
@@ -3018,20 +3109,6 @@ class ClickHouseCluster:
                 time.sleep(0.5)
 
         raise RuntimeError("Cannot wait RabbitMQ container")
-
-    @contextmanager
-    def pause_rabbitmq(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
-        )
-
-        try:
-            yield
-        finally:
-            run_rabbitmqctl(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-            )
-            self.wait_rabbitmq_to_start(timeout)
 
     def reset_rabbitmq(self, timeout=120):
         try:
@@ -3252,6 +3329,48 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
+
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
@@ -3385,18 +3504,38 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def wait_prometheus_to_start(self):
-        if "writer" in self.prometheus_servers:
-            self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
-            self.wait_for_url(f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/status/runtimeinfo")
-        if "reader" in self.prometheus_servers:
-            self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
-            self.wait_for_url(f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/status/runtimeinfo")
-        if "receiver" in self.prometheus_servers:
-            self.prometheus_receiver_ip = self.get_instance_ip(self.prometheus_receiver_host)
-            self.wait_for_url(f"http://{self.prometheus_receiver_ip}:{self.prometheus_receiver_port}/api/v1/status/runtimeinfo")
+        for prometheus_server in self.prometheus_servers:
+            ip = self.get_instance_ip(f"{self.prometheus_host}_{prometheus_server}")
+            self.prometheus_ip[prometheus_server] = ip
+            self.wait_for_url(f"http://{ip}:{self.prometheus_port[prometheus_server]}/api/v1/status/runtimeinfo")
 
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
+
+    def login_to_ecr(self):
+        if Path(f"{temp_dir}/ecr_token.json").exists():
+            with open(f"{temp_dir}/ecr_token.json", "r") as f:
+                tokens = json.load(f)
+
+            registries = set()
+            for i in self.instances.values():
+                registries.add(i.image.split("/", 1)[0])
+
+            for instance_registry in registries:
+                for region in tokens.keys():
+                    if region in instance_registry:
+                        user, password = (
+                            base64.b64decode(tokens[region])
+                            .decode("utf-8")
+                            .split(":", 1)
+                        )
+                        logging.info(
+                            f"Logging into {instance_registry}"
+                        )
+                        run_and_check(
+                            ["docker", "login", instance_registry, "-u", user, "--password-stdin"],
+                            input=password.encode(),
+                        )
 
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
@@ -3463,6 +3602,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
+            self.login_to_ecr()
             retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
 
             def logging_compose_up(**kwargs):
@@ -3508,6 +3648,11 @@ class ClickHouseCluster:
                     os.makedirs(dir)
 
                 if self.use_keeper:  # TODO: remove hardcoded paths from here
+                    nuraft_streaming_mode = (
+                        random.randint(0, 1)
+                        if self.keeper_randomize_feature_flags
+                        else 0
+                    )
                     for i in range(1, 4):
                         current_keeper_config_dir = os.path.join(
                             f"{self.keeper_instance_dir_prefix}{i}", "config"
@@ -3557,6 +3702,16 @@ class ClickHouseCluster:
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+
+                                if self.keeper_randomize_feature_flags:
+                                    indentation = 4 * " "
+                                    ff_config.write(
+                                        f"{indentation}coordination_settings:\n"
+                                    )
+                                    indentation *= 2
+                                    ff_config.write(
+                                        f"{indentation}nuraft_streaming_mode: {nuraft_streaming_mode}\n"
                                     )
                         else:
                             basename = os.path.basename(
@@ -3685,6 +3840,17 @@ class ClickHouseCluster:
                 )
                 self.up_called = True
                 self.wait_postgresql_java_client()
+
+            if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
 
             if (
                 self.with_mysql_dotnet_client
@@ -3835,23 +4001,44 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
+                logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
 
             if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Starting HMS catalog...")
                 subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                logging.info("Starting Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
@@ -3895,15 +4082,10 @@ class ClickHouseCluster:
                 )
 
             if self.with_prometheus and self.base_prometheus_cmd:
-                if "writer" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_writer_logs_dir)
-                    os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                if "reader" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_reader_logs_dir)
-                    os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                if "receiver" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_receiver_logs_dir)
-                    os.chmod(self.prometheus_receiver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                for prometheus_server in self.prometheus_servers:
+                    logs_dir = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+                    os.makedirs(logs_dir)
+                    os.chmod(logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 prometheus_start_cmd = self.base_prometheus_cmd + common_opts
 
@@ -3950,6 +4132,7 @@ class ClickHouseCluster:
                 )
             )
             self.up_called = True
+
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
@@ -4167,22 +4350,209 @@ class ClickHouseCluster:
     def _unpause_container_using_signal(self, instance_name):
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
+    def _wait_for_pause_effective(self, instance_name, timeout):
+        """Block until pausing `instance_name` is observably effective for
+        fresh client connections.
+
+        Docker's cgroup freezer (and `SIGSTOP`) suspends user-space tasks
+        asynchronously with respect to in-flight TCP traffic. After
+        `docker compose pause` returns, the kernel can still complete the
+        TCP three-way handshake for new connections — and a short
+        application-level greeting that is already buffered in the socket
+        can still flow back to the client — for a brief window before the
+        freeze fully blocks the server's accept/read/write loop. Tests
+        that assert on connection failure under `pause_container` can
+        therefore see the very first probe succeed, producing chronic
+        flakes (see issues `#103819`, `#103820`).
+
+        Probe strategy: open a fresh TCP connection from the test process
+        directly to `<instance>:9000` on every iteration, send one byte
+        that the ClickHouse native protocol treats as an unexpected
+        first packet (varint `0x05`, `Protocol::Client::TablesStatusRequest`
+        — anything other than `Hello`/`G`/`P`), and wait for the
+        server's response with a tight read timeout. A live ClickHouse
+        server immediately raises `UNEXPECTED_PACKET_FROM_CLIENT` from
+        `TCPHandler::receiveHello` and sends a `Server::Exception`
+        packet back, which we observe within milliseconds. A paused
+        server can complete the kernel-level handshake but cannot run
+        the `TCPHandler` accept/read/write loop in user space, so the
+        read times out and the probe declares the pause effective.
+
+        Why not reuse a sibling ClickHouse node and `remote()`? Each
+        ClickHouse server keeps a per-target connection pool keyed by
+        host/port/user/etc. (see `src/Client/ConnectionPool.h`). A cached
+        native-protocol connection to a paused node has a live kernel
+        socket, so `Connection::forceConnected` short-circuits to a
+        `ping(timeouts)` that can either succeed against stale buffered
+        data or block for `sync_request_timeout` (default 5s) rather than
+        the per-query `handshake_timeout_ms`. The probe ended up reporting
+        the paused node as reachable for its entire budget, even after
+        the freeze was fully in effect. By probing from the test process
+        directly we guarantee a fresh TCP+greeting handshake every
+        attempt and bypass that pool entirely. This was the chronic root
+        cause behind the `pause_container('node1') did not become
+        observably effective within 30.0s` reports on slow sanitizer
+        shards even after `wait_timeout` was raised to 90s.
+
+        For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
+        speak the native protocol on port 9000, so we skip the wait. The
+        current Kafka callers do not assert on the timing of the freeze
+        — they wait for log lines that the paused side emits well after
+        the freeze is effective — so the absence of a global probe is
+        benign for them.
+        """
+        if instance_name not in self.instances:
+            return
+        instance = self.instances[instance_name]
+        addr = getattr(instance, "ip_address", None)
+        if not addr:
+            # The instance has not been started yet (or had its IP
+            # resolved). Without a routable address we cannot probe;
+            # fall back to the caller's expectation that the freeze is
+            # effective when `docker compose pause` returns.
+            return
+        port = 9000  # native TCP — the protocol every existing caller relies on
+        deadline = time.time() + timeout
+        last_log = time.time()
+        iter_count = 0
+        last_outcome = "no probe attempted yet"
+        while time.time() < deadline:
+            iter_count += 1
+            sock = None
+            try:
+                # Fresh TCP connect every iteration — required to avoid
+                # any pooling/caching the test process or kernel might do.
+                sock = socket.create_connection((addr, port), timeout=0.5)
+                sock.settimeout(0.5)
+                # ClickHouse native server reads the client `Hello`
+                # packet first; the first byte on the wire is a varint
+                # packet type. `Hello` is `0x00`, so sending `\x00`
+                # would put the server into reading the rest of the
+                # `Hello` body (`client_name`, versions, user, etc.)
+                # and it would not reply until the full handshake is
+                # received — making a live server look identical to a
+                # frozen one. See `TCPHandler::receiveHello` in
+                # `src/Server/TCPHandler.cpp`.
+                #
+                # Instead, send a single-byte varint that is a valid
+                # client packet type but is NOT `Hello` (e.g. `0x05`,
+                # `Protocol::Client::TablesStatusRequest`). The server
+                # immediately raises `UNEXPECTED_PACKET_FROM_CLIENT`
+                # and sends a `Server::Exception` packet back to us
+                # before any further handshake reads, which we observe
+                # within milliseconds. A paused server cannot run the
+                # `TCPHandler` code path at all, so `recv` times out.
+                # We must also avoid `0x47` (`G`) and `0x50` (`P`),
+                # which the server treats as wrong-port HTTP requests.
+                try:
+                    sock.sendall(b"\x05")
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    last_outcome = f"sendall raised {type(e).__name__}"
+                    return
+                try:
+                    data = sock.recv(4)
+                except socket.timeout:
+                    last_outcome = "recv timed out (server unresponsive)"
+                    return
+                if not data:
+                    last_outcome = "EOF on recv"
+                    return
+                last_outcome = f"server replied ({len(data)} bytes)"
+            except (socket.timeout, ConnectionError, OSError) as e:
+                # Kernel-level connect refused/timed out: pause is
+                # observably effective even at the TCP layer.
+                last_outcome = f"connect failed: {type(e).__name__}"
+                return
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            now = time.time()
+            if now - last_log >= 5.0:
+                logging.warning(
+                    "_wait_for_pause_effective(%s): not yet effective "
+                    "after %.1fs (%d iters); last probe outcome: %s",
+                    instance_name,
+                    now - (deadline - timeout),
+                    iter_count,
+                    last_outcome,
+                )
+                last_log = now
+            time.sleep(0.1)
+        raise Exception(
+            f"pause_container({instance_name!r}) did not become observably "
+            f"effective within {timeout}s — connections to "
+            f"{instance_name}:{port} ({addr}) still succeed after "
+            f"{iter_count} probe iterations; last outcome: {last_outcome}"
+        )
+
     @contextmanager
-    def pause_container(self, instance_name):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
+
+        When `instance_name` refers to a ClickHouse instance, this helper
+        blocks until the pause is observably effective for fresh
+        TCP-plus-ClickHouse-handshake connections, removing a chronic
+        race where Docker's cgroup freezer takes effect asynchronously
+        with respect to in-flight traffic. The probe runs from the test
+        process and uses raw sockets — it does not require a sibling
+        ClickHouse instance and bypasses any internal connection pooling
+        a sibling might have. Set `wait_for_paused=False` to opt out and
+        keep the older non-blocking behavior.
+
+        The default `wait_timeout` is 90 seconds. In practice the freeze
+        becomes observable within milliseconds once `docker compose
+        pause` returns — each probe iteration is a fresh TCP connect +
+        one-byte send + read with a 0.5s read timeout, so the probe
+        normally exits on the very first iteration. The 90-second budget
+        is intentional safety margin for unusual conditions (cold
+        cgroups, heavily-overcommitted sanitizer shards, transient
+        kernel-level slowness during heavy CI load); the cost when the
+        freeze is already in effect is negligible.
+
+        Cleanup: once the container has been paused (whether via
+        `docker compose pause` or the `SIGSTOP` fallback), unpausing must
+        always run on context exit — even if `_wait_for_pause_effective`
+        times out. Otherwise a probe failure would leave the container
+        permanently paused and cascade into unrelated test failures in
+        the same suite.
         """
-        self._pause_container(instance_name)
+        used_signal = False
         try:
+            self._pause_container(instance_name)
+        except Exception as e:
+            logging.warning(
+                "docker compose pause failed for %s: %s, falling back to SIGSTOP",
+                instance_name,
+                e,
+            )
+            self._pause_container_using_signal(instance_name)
+            used_signal = True
+
+        try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
-            self._unpause_container(instance_name)
+            if used_signal:
+                self._unpause_container_using_signal(instance_name)
+            else:
+                self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Same semantics as `pause_container`, but always uses the
+        `SIGSTOP`/`SIGCONT` mechanism instead of `docker compose pause`.
+        See `pause_container` for the rationale behind the 90s default.
+        """
         self._pause_container_using_signal(instance_name)
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             self._unpause_container_using_signal(instance_name)
@@ -4395,6 +4765,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgresql_dotnet_client,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4487,6 +4858,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
@@ -5630,7 +6002,7 @@ class ClickHouseInstance:
                         f.write(key + "=" + value + "\n")
 
     @contextmanager
-    def with_replace_config(self, path, replacement):
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
         """Create a copy of existing config (if exists) and revert on leaving the context"""
         _directory, filename = os.path.split(path)
         basename, extension = os.path.splitext(filename)
@@ -5642,12 +6014,16 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
         )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
         try:
             yield
         finally:
             self.exec_in_container(
                 ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
             )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(
@@ -6140,4 +6516,4 @@ class ClickHouseKiller(object):
 
 @cache
 def is_arm():
-    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
+    return platform.machine().lower() in ("arm64", "aarch64")

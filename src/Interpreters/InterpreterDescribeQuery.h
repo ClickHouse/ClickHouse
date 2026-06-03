@@ -27,7 +27,7 @@ private:
     void fillColumnsFromSubquery(const ASTTableExpression & table_expression);
     void fillColumnsFromSubqueryImpl(const ASTPtr & select_query, const ContextPtr & current_context);
     void fillColumnsFromTableFunction(const ASTTableExpression & table_expression);
-    void fillColumnsFromTable(const ASTTableExpression & table_expression);
+    void fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary = false);
 
     void addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns);
     void addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns);
