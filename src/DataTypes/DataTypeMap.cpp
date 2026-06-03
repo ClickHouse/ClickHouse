@@ -67,7 +67,7 @@ DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
 
 DataTypeMap::DataTypeMap(const DataTypes & elems_)
 {
-    assert(elems_.size() == 2);
+    chassert(elems_.size() == 2);
     key_type = elems_[0];
     value_type = elems_[1];
 
