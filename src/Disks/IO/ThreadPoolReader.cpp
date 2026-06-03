@@ -101,7 +101,7 @@ ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
 std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request request)
 {
     /// If size is zero, then read() cannot be distinguished from EOF
-    assert(request.size);
+    chassert(request.size);
 
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 

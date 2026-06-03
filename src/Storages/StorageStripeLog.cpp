@@ -48,9 +48,6 @@
 
 #include <base/insertAtEnd.h>
 
-#include <cassert>
-
-
 namespace DB
 {
 namespace Setting
@@ -362,7 +359,7 @@ StorageStripeLog::~StorageStripeLog() = default;
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
+    chassert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -739,6 +736,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

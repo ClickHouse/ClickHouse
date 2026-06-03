@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
 
@@ -127,7 +128,7 @@ public:
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
             size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            std::vector<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -344,13 +345,13 @@ private:
         String key;
     };
 
-    static std::vector<FunctionJSONHelpers::Move> prepareMoves(
+    static VectorWithMemoryTracking<FunctionJSONHelpers::Move> prepareMoves(
         const char * function_name,
         const ColumnsWithTypeAndName & columns,
         size_t first_index_argument,
         size_t num_index_arguments)
     {
-        std::vector<Move> moves;
+        VectorWithMemoryTracking<Move> moves;
         moves.reserve(num_index_arguments);
         for (const auto i : collections::range(first_index_argument, first_index_argument + num_index_arguments))
         {
@@ -384,7 +385,7 @@ private:
     /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     template <typename JSONParser, bool case_insensitive = false>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
-                             const typename JSONParser::Element & document, const std::vector<Move> & moves,
+                             const typename JSONParser::Element & document, const VectorWithMemoryTracking<Move> & moves,
                              typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
@@ -829,7 +830,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        size_t size;
+        size_t size = 0;
         if (element.isArray())
             size = element.getArray().size();
         else if (element.isObject())
@@ -876,7 +877,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
@@ -893,7 +894,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        UInt8 type;
+        UInt8 type = 0;
         switch (element.type())
         {
             case ElementType::INT64:
@@ -983,7 +984,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        bool value;
+        bool value = false;
         switch (element.type())
         {
             case ElementType::BOOL:
