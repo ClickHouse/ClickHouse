@@ -11,7 +11,6 @@
 #    include <boost/algorithm/string/case_conv.hpp>
 #    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 #    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
 
@@ -114,7 +113,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
     if (!result.ok())
         throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
@@ -200,6 +199,7 @@ std::optional<size_t> ORCSchemaReader::readNumberOrRows()
     return file_reader->NumberOfRows();
 }
 
+void registerInputFormatORC(FormatFactory & factory);
 void registerInputFormatORC(FormatFactory & factory)
 {
     factory.registerRandomAccessInputFormat(
@@ -217,9 +217,9 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 const bool has_file_size = isBufferWithFileSize(buf);
                 auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&buf);
-                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
+                const bool use_prefetch = is_remote_fs && read_settings.remote_fs_settings.prefetch && has_file_size && seekable_in
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
-                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
+                const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_fs_settings.min_bytes_for_seek : 0;
                 res = std::make_shared<NativeORCBlockInputFormat>(
                     buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }
@@ -231,6 +231,7 @@ void registerInputFormatORC(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
+void registerORCSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -259,6 +260,8 @@ void registerORCSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatORC(FormatFactory &);
+    void registerORCSchemaReader(FormatFactory &);
     void registerInputFormatORC(FormatFactory &)
     {
     }

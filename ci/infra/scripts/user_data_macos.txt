@@ -3,6 +3,7 @@
 # Based on prepare-ci-ami.sh but adapted for macOS
 
 set -xeuo pipefail
+trap reboot EXIT
 
 echo "Running macOS runner prepare script"
 
@@ -15,9 +16,6 @@ export USER="${SUDO_USER:-$(whoami)}"
 if [ "$EUID" -eq 0 ]; then
   export USER="ec2-user"
 fi
-
-export RUNNER_VERSION=2.331.0
-export RUNNER_HOME="${HOME}/actions-runner"
 
 runner_arch() {
   case $(uname -m) in
@@ -37,12 +35,17 @@ cloudwatch_arch() {
   esac
 }
 
+export RUNNER_HOME="${HOME}/actions-runner"
+
 # Check if already installed - if success marker exists, skip to cloud-init
 if [ -f /tmp/clickhouse-ci-macos-runner.success ]; then
   echo "Success marker found - skipping installation steps"
   echo "Jumping directly to cloud-init..."
 else
   echo "No success marker found - proceeding with installation"
+
+  # Disable greedy system service
+  launchctl disable system/com.apple.bluetoothd
 
   # Install Homebrew if not already installed
   if ! sudo -u "$USER" -i command -v brew &> /dev/null; then
@@ -70,15 +73,22 @@ else
     zstd \
     python@3 \
     wget \
-    unzip
+    unzip \
+    gnu-sed \
+    grep \
+    bash \
+    coreutils
 
   # Install Python packages into a virtual environment using Homebrew Python
   echo "Installing Python packages into venv..."
   sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv ~/venv && ~/venv/bin/pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
 
-  # Add venv/bin to PATH for both bash and zsh login shells
-  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:\$PATH\"' >> ~/.bash_profile"
-  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:\$PATH\"' >> ~/.zprofile"
+  # Add venv/bin and GNU tools to PATH for both bash and zsh login shells
+  GNU_COREUTILS_BIN=$(sudo -u "$USER" -i brew --prefix coreutils)/libexec/gnubin
+  GNU_SED_BIN=$(sudo -u "$USER" -i brew --prefix gnu-sed)/libexec/gnubin
+  GNU_GREP_BIN=$(sudo -u "$USER" -i brew --prefix grep)/libexec/gnubin
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:${GNU_COREUTILS_BIN}:${GNU_SED_BIN}:${GNU_GREP_BIN}:\$PATH\"' >> ~/.bash_profile"
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:${GNU_COREUTILS_BIN}:${GNU_SED_BIN}:${GNU_GREP_BIN}:\$PATH\"' >> ~/.zprofile"
 
   # Download and install CloudWatch agent
   echo "Installing Amazon CloudWatch agent..."
@@ -99,6 +109,7 @@ else
     -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
   # Download and install GitHub Actions runner
+  export RUNNER_VERSION=$(curl -fsSL "https://api.github.com/repos/actions/runner/releases/latest" | jq -r '.tag_name | ltrimstr("v")')
   echo "Installing GitHub Actions runner..."
   rm -rf "$RUNNER_HOME"  # if it's a reinstall
   mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
@@ -113,20 +124,7 @@ else
   # Note: installdependencies.sh is Linux-only, macOS dependencies are handled via Homebrew above
 
   echo "GitHub Actions runner installed at: $RUNNER_HOME"
-  echo ""
-  echo "To configure the runner, run:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO --token YOUR_TOKEN"
-  echo ""
-  echo "To run the runner:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./run.sh"
-  echo ""
-  echo "To install as a service:"
-  echo "  cd $RUNNER_HOME"
-  echo "  ./svc.sh install"
-  echo "  ./svc.sh start"
-  echo ""
+  echo "See https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/adding-self-hosted-runners for configuration instructions."
 
   # Create a success marker
   touch /tmp/clickhouse-ci-macos-runner.success
@@ -136,5 +134,5 @@ fi
 # Download and execute cloud-init script
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
+rm -rf "$RUNNER_HOME/_work"
 sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
-reboot

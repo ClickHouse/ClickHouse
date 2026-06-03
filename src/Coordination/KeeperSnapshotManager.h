@@ -1,6 +1,7 @@
 #pragma once
 #include "config.h"
 
+#include <atomic>
 #include <Common/CopyableAtomic.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
@@ -63,6 +64,14 @@ struct SnapshotDeserializationResult
 ///
 /// This representation of snapshot has to be serialized into NuRaft
 /// buffer and sent over network or saved to file.
+///
+/// Tricky to use correctly:
+///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
+///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
+///  * At most one instance of KeeperStorageSnapshot can exist at a time, for a given KeeperStorage.
+///    NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
+///    is not called again until when_done callback is called).
+///  * Destructor must be called with storage mutex held (for the disableSnapshotMode() call).
 template<typename Storage>
 struct KeeperStorageSnapshot
 {
@@ -122,6 +131,10 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
+
+    /// Set when the file should be unlinked after the last `shared_ptr` drops.
+    /// A false value keeps the file across manager destruction.
+    std::atomic<bool> retired_for_removal{false};
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
@@ -201,6 +214,11 @@ public:
 
     SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
 
+    SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
+
+    /// Deserialize pinned snapshot from disk into compressed nuraft buffer.
+    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(const SnapshotFileInfo & snapshot_info) const;
+
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
 
@@ -218,9 +236,18 @@ public:
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
 
+    /// Return the map entry for `log_idx`, or `nullptr` if absent. Holding the
+    /// result pins the file against unlink and cross-disk moves.
+    /// Caller must hold `IKeeperStateMachine::snapshots_lock`.
+    SnapshotFileInfoPtr getSnapshotPin(uint64_t log_idx) const;
+
 private:
     void removeOutdatedSnapshotsIfNeeded();
     void moveSnapshotsIfNeeded();
+
+    /// Build a `shared_ptr<SnapshotFileInfo>` whose deleter unlinks only when
+    /// `retired_for_removal` is set.
+    SnapshotFileInfoPtr makeManagedSnapshotFileInfo(std::string path, DiskPtr disk, uint64_t log_idx) const;
 
     DiskPtr getDisk() const;
     DiskPtr getLatestSnapshotDisk() const;
