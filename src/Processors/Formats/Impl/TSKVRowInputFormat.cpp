@@ -290,6 +290,7 @@ NamesAndTypesList TSKVSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     return names_and_types;
 }
 
+void registerInputFormatTSKV(FormatFactory & factory);
 void registerInputFormatTSKV(FormatFactory & factory)
 {
     factory.registerInputFormat("TSKV", [](
@@ -303,6 +304,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");
 }
+void registerTSKVSchemaReader(FormatFactory & factory);
 void registerTSKVSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("TSKV", [](ReadBuffer & buf, const FormatSettings & settings)
