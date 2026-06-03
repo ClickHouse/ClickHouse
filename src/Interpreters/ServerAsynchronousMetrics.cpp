@@ -158,8 +158,11 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     {
         vm_smaps.emplace("/proc/self/smaps");
     }
-    catch (...) /// NOLINT(bugprone-empty-catch) Ok, /proc/self/smaps may not exist (non-Linux, sandbox, etc.).
-    {           /// The thread-stack metrics will simply not be published in that case
+    catch (...)
+    {
+        /// /proc/self/smaps may not be accessible (sandbox, restricted container, etc.).
+        /// The thread-stack metrics will simply not be published in that case.
+        LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
     }
 #endif
 }
@@ -728,12 +731,20 @@ void ServerAsynchronousMetrics::updateThreadStackStats()
         thread_stack_stats.count = stack_count;
         thread_stack_stats.resident_bytes = stack_rss_kb * 1024;
         thread_stack_stats.virtual_bytes = stack_size_kb * 1024;
+        thread_stack_stats.available = true;
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        try { vm_smaps.emplace("/proc/self/smaps"); }
-        catch (...) { vm_smaps.reset(); } /// NOLINT(bugprone-empty-catch) Ok, re-open failed; disable on next call.
+        try
+        {
+            vm_smaps.emplace("/proc/self/smaps");
+        }
+        catch (...)
+        {
+            vm_smaps.reset();
+            LOG_WARNING(log, "MemoryThreadStacks* metrics are disabled: failed to access /proc/self/smaps. {}", getCurrentExceptionMessage(/*with_stacktrace=*/ true));
+        }
     }
 #endif
 }
@@ -810,23 +821,27 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     new_values["NumberOfPendingMutationsOverExecutionTime"] = { mutation_stats.pending_mutations_over_execution_time, "The total number of mutations which have data part left to be mutated over the specified max_pending_mutations_execution_time_to_warn setting." };
 
 #if defined(OS_LINUX)
-    /// Re-emit cached thread-stack stats on every scrape so the metrics
-    /// stay present between heavy-cadence refreshes. Values are zero until
-    /// the first heavy update has completed.
-    new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
-        "Approximate resident set size of pthread stacks, summed from `Rss:`"
-        " of /proc/self/smaps VMAs whose start address matches the snapshot"
-        " of currently-registered thread stack bases at the start of the"
-        " scrape. Refreshed on the heavy-metrics cadence. May slightly"
-        " undercount under heavy thread churn (Linux only)." };
-    new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
-        "Approximate virtual size of pthread stacks, summed from `Size:`"
-        " of matching /proc/self/smaps VMAs. Refreshed on the heavy-metrics"
-        " cadence (Linux only)." };
-    new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
-        "Number of pthread stack VMAs matched in /proc/self/smaps against"
-        " the snapshot taken at the start of the scrape. Refreshed on the"
-        " heavy-metrics cadence (Linux only)." };
+    /// Re-emit cached thread-stack stats on every scrape so the metrics stay
+    /// present between heavy-cadence refreshes. They are emitted only after a
+    /// successful /proc/self/smaps sample; in environments where smaps cannot
+    /// be read the metrics stay absent rather than reporting a fake zero.
+    if (thread_stack_stats.available)
+    {
+        new_values["MemoryThreadStacksResident"] = { thread_stack_stats.resident_bytes,
+            "Approximate resident set size of pthread stacks, summed from `Rss:`"
+            " of /proc/self/smaps VMAs whose start address matches the snapshot"
+            " of currently-registered thread stack bases at the start of the"
+            " scrape. Refreshed on the heavy-metrics cadence. May slightly"
+            " undercount under heavy thread churn (Linux only)." };
+        new_values["MemoryThreadStacksVirtual"] = { thread_stack_stats.virtual_bytes,
+            "Approximate virtual size of pthread stacks, summed from `Size:`"
+            " of matching /proc/self/smaps VMAs. Refreshed on the heavy-metrics"
+            " cadence (Linux only)." };
+        new_values["MemoryThreadStacksCount"] = { thread_stack_stats.count,
+            "Number of pthread stack VMAs matched in /proc/self/smaps against"
+            " the snapshot taken at the start of the scrape. Refreshed on the"
+            " heavy-metrics cadence (Linux only)." };
+    }
 #endif
 }
 

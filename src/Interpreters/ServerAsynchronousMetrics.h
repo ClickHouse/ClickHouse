@@ -49,6 +49,11 @@ private:
 
     struct ThreadStackStats
     {
+        /// Whether at least one successful /proc/self/smaps sample has been
+        /// collected. Until then the values are meaningless and the metrics
+        /// are not emitted, so an environment where smaps cannot be read does
+        /// not report a fake zero stack footprint.
+        bool available = false;
         UInt64 count = 0;
         UInt64 resident_bytes = 0;
         UInt64 virtual_bytes = 0;
