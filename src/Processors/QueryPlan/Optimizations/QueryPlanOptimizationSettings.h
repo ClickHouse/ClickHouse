@@ -179,6 +179,9 @@ struct QueryPlanOptimizationSettings
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
+    size_t min_columns_for_join_lazy_indexing = 0;
+    size_t max_limit_for_join_lazy_indexing = 0;
+
     /// Please, avoid using this
     ///
     /// We should not have the number of threads in query plan.

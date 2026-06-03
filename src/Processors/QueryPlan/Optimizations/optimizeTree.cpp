@@ -280,6 +280,16 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Run after runtime filter push-down so that chains of joins are detected correctly.
+    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
+    }
+
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
