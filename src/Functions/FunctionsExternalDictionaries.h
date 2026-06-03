@@ -1050,7 +1050,17 @@ private:
         ColumnPtr result;
 
         WhichDataType dictionary_get_result_data_type(dictionary_get_result_type);
-        auto dictionary_get_result_column_mutable = dictionary_get_result_column->assumeMutable();
+
+        /// We need to mutate the result column's null map below (via `addNullMap`).
+        /// `IColumn::mutate` performs a deep clone of any shared sub-columns, while
+        /// `assumeMutable` only casts away const without checking for sharing.
+        /// This matters when the dictionary key argument is `Nullable`: in that case
+        /// `FunctionDictGetNoType::executeImpl` calls `wrapInNullable`, which produces a
+        /// `ColumnNullable` whose null map shares storage with the input key column's
+        /// null map. Mutating that shared null map would corrupt the input column —
+        /// see issue #73633 where `dictGetOrNull` with a `Nullable` key column was
+        /// silently overwriting other columns in the SELECT projection with `NULL`.
+        auto dictionary_get_result_column_mutable = IColumn::mutate(std::move(dictionary_get_result_column));
 
         if (dictionary_get_result_data_type.isTuple())
         {
@@ -1085,11 +1095,11 @@ private:
             {
                 auto & null_map_data = nullable_column->getNullMapData();
                 addNullMap(null_map_data, is_key_in_dictionary_data);
-                result = std::move(dictionary_get_result_column);
+                result = std::move(dictionary_get_result_column_mutable);
             }
             else
             {
-                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
+                result = ColumnNullable::create(std::move(dictionary_get_result_column_mutable), std::move(is_key_in_dictionary_column_mutable));
             }
         }
 
@@ -1098,7 +1108,7 @@ private:
 
     static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
     {
-        assert(null_map.size() == null_map_to_add.size());
+        chassert(null_map.size() == null_map_to_add.size());
 
         for (size_t i = 0; i < null_map.size(); ++i)
             null_map[i] = null_map[i] || null_map_to_add[i];

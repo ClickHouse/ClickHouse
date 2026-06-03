@@ -25,6 +25,7 @@
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
+#include <Common/Concepts.h>
 #include <Common/StringUtils.h>
 #include <Common/exp10_i32.h>
 
@@ -177,8 +178,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
+template <StdVector V>
+void readVectorBinary(V & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -201,7 +202,7 @@ void assertNotEOF(ReadBuffer & buf);
 
 inline bool checkChar(char c, ReadBuffer & buf)
 {
-    char a;
+    char a = 0;
     if (!buf.peek(a) || a != c)
         return false;
     buf.ignore();
@@ -219,7 +220,7 @@ inline void assertChar(char symbol, ReadBuffer & buf)
 
 inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
 {
-    char a;
+    char a = 0;
     if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
         return false;
     buf.ignore();
@@ -550,8 +551,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             return error();
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
-        UInt8 month;
-        UInt8 day;
+        UInt8 month = 0;
+        UInt8 day = 0;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
@@ -1458,9 +1459,9 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    int16_t hours;
-    int16_t minutes;
-    int16_t seconds;
+    int16_t hours = 0;
+    int16_t minutes = 0;
+    int16_t seconds = 0;
 
     readIntText(hours, buf);
 
@@ -1493,7 +1494,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf)
 template <typename ReturnType>
 inline ReturnType readTimeTextImpl(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 {
-    time_t whole;
+    time_t whole = 0;
     if (!readTimeTextImpl<bool>(whole, buf))
     {
         return ReturnType(false);
@@ -1652,7 +1653,7 @@ inline bool tryReadText(LocalDate & x, ReadBuffer & buf) { return tryReadDateTex
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline bool tryReadText(LocalDateTime & x, ReadBuffer & buf)
 {
-    time_t time;
+    time_t time = 0;
     if (!tryReadDateTimeText(time, buf))
         return false;
     x = LocalDateTime(time, DateLUT::instance());
@@ -1857,8 +1858,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
+template <StdVector V>
+void readBinary(V & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1871,8 +1872,8 @@ void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
         readBinary(x[i], buf);
 }
 
-template <typename T>
-void readQuoted(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readQuoted(V & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1888,14 +1889,14 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readDoubleQuoted(V & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1911,14 +1912,14 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readText(std::vector<T> & x, ReadBuffer & buf)
+template <StdVector V>
+void readText(V & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }
@@ -1964,7 +1965,7 @@ static inline const char * tryReadIntText(T & x, const char * pos, const char * 
 template <typename T>
 inline T parse(const char * data, size_t size)
 {
-    T res;
+    T res{};
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     assertEOF(buf);
