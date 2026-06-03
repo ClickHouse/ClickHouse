@@ -10,11 +10,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   * Aggregate functions with the `Merge` suffix accept `DataTypeAggregateFunction` as an argument
@@ -26,18 +21,11 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
+    AggregateFunctionPtr argument_func;
+    bool merge_state_from_different_variant = false;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
-        , nested_func(nested_)
-    {
-        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
-
-        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
-                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
-    }
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
 
     String getName() const override
     {
@@ -137,6 +125,18 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertResultInto(place, to, arena);
+    }
+
+    /// `isState` is propagated from the nested function, so for chains like
+    /// `sumStateMerge` (`Merge` wrapping a `State`-returning nested function)
+    /// callers — e.g. `runningAccumulate` — pick the `insertMergeResultInto`
+    /// path. Without this override they'd hit the base implementation in
+    /// `IAggregateFunction::insertMergeResultInto`, which throws
+    /// `NOT_IMPLEMENTED` whenever `isState` is true. Delegate to the nested
+    /// function so the right materialization path is chosen.
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_func->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override

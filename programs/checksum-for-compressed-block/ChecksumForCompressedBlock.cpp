@@ -27,13 +27,18 @@ echo -ne "\x82\x6b\x00\x00\x00\x62\x00\x00\x00\xf2\x3b\x01\x00\x02\xff\xff\xff\x
   */
 
 
+namespace
+{
+
 std::string flipBit(std::string s, size_t pos)
 {
     s[pos / 8] ^= 1 << pos % 8;
     return s;
 }
 
+}
 
+int mainEntryClickHouseChecksumForCompressedBlock(int, char **);
 int mainEntryClickHouseChecksumForCompressedBlock(int, char **)
 {
     using namespace DB;

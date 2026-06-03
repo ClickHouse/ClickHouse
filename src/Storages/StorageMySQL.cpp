@@ -89,8 +89,8 @@ StorageMySQL::StorageMySQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMySQL::createVirtuals()
@@ -162,7 +162,7 @@ void StorageMySQL::readImpl(
 }
 
 
-class StorageMySQLSink : public SinkToStorage
+class StorageMySQLSink final : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(
@@ -393,6 +393,7 @@ void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
 }
 
 
+void registerStorageMySQL(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)

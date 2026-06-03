@@ -1,30 +1,32 @@
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -73,7 +75,8 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
+            const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+            const auto & sorting_key = storage_metadata->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -126,6 +129,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
         return findReadingStep(*node.children.front(), data);
 
+    if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        return findReadingStep(*node.children.front(), data);
 
     if (data.read_in_order_through_join)
     {
@@ -222,10 +227,10 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (const auto prewhere_info = reading->getPrewhereInfo())
         {
@@ -250,7 +255,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         return;
     }
 
-    if (typeid_cast<JoinStep *>(step) || typeid_cast<FilledJoinStep *>(step))
+    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
     {
         limit = 0;
     }
@@ -260,12 +265,12 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
     buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
 
-    if (typeid_cast<DistinctStep *>(step))
+    if (typeid_cast<const DistinctStep *>(step))
     {
         limit = 0;
     }
 
-    if (auto * expression = typeid_cast<ExpressionStep *>(step))
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
 
@@ -276,7 +281,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         appendExpression(dag, actions);
     }
 
-    if (auto * filter = typeid_cast<FilterStep *>(step))
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
     {
         /// Should ignore limit if there is filtering.
         limit = 0;
@@ -286,7 +291,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
     }
 
-    if (auto * array_join = typeid_cast<ArrayJoinStep *>(step))
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
@@ -674,7 +679,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         size_t next_pk_name = 0;
         for (const auto & info : match_infos)
         {
-            const ActionsDAG::Node * output;
+            const ActionsDAG::Node * output = nullptr;
             if (info.fixed_column)
                 output = &virtual_row_dag.addColumn({info.fixed_column->column, info.fixed_column->result_type, info.fixed_column->result_name});
             else
@@ -949,16 +954,83 @@ SortingInputOrder buildInputOrderFromSortDescription(
 }
 
 
+/// Build a per-child-plan DAG suitable for matching sort columns against a `MergeTree`'s
+/// sorting key. The inner plan (the child plan of `ReadFromMerge`) executes first and feeds
+/// into the outer plan; this function builds them in that order:
+///
+/// 1. Walk the child plan to collect its prewhere/expression/filter chain into `combined_dag`.
+///    After filter push-down moves the WHERE condition into the inner `MergeTree`'s prewhere,
+///    the renaming and `materialize` aliasing performed by `convertAndFilterSourceStream`
+///    lives entirely inside the merge node — this is the chain we recover here.
+/// 2. Clone the outer DAG (which originally lives in the caller and outlives this call) and
+///    merge it on top using `mergeInplace`, recording the input remapping it performs.
+/// 3. Remap the original `outer_fixed_columns` through the clone mapping plus the
+///    `mergeInplace` input remapping, so the resulting `FixedColumns` point at the right
+///    nodes in the combined DAG.
+///
+/// `matchTrees` itself looks through `materialize`/`identity` wrappers, so we do not need
+/// to mutate the DAG to strip them.
+void buildCombinedDAGForMergeChildPlan(
+    QueryPlan * child_plan,
+    const std::optional<ActionsDAG> & outer_dag,
+    const FixedColumns & outer_fixed_columns,
+    std::optional<ActionsDAG> & combined_dag,
+    FixedColumns & combined_fixed_columns,
+    size_t & limit)
+{
+    if (child_plan && child_plan->isInitialized())
+        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+
+    if (outer_dag)
+    {
+        ActionsDAG::NodeMapping clone_mapping;
+        ActionsDAG outer_clone = outer_dag->clone(clone_mapping);
+
+        if (!combined_dag)
+        {
+            combined_dag.emplace(std::move(outer_clone));
+
+            for (const auto * outer_node : outer_fixed_columns)
+            {
+                auto it = clone_mapping.find(outer_node);
+                if (it != clone_mapping.end())
+                    combined_fixed_columns.insert(it->second);
+            }
+        }
+        else
+        {
+            ActionsDAG::NodeMapping inputs_map;
+            combined_dag->mergeInplace(std::move(outer_clone), inputs_map, /*remove_dangling_inputs=*/ false);
+
+            for (const auto * outer_node : outer_fixed_columns)
+            {
+                auto it = clone_mapping.find(outer_node);
+                if (it == clone_mapping.end())
+                    continue;
+                const auto * mapped = it->second;
+                if (auto remap_it = inputs_map.find(mapped); remap_it != inputs_map.end())
+                    mapped = remap_it->second;
+                combined_fixed_columns.insert(mapped);
+            }
+        }
+    }
+
+    if (combined_dag && !combined_fixed_columns.empty())
+        enrichFixedColumns(*combined_dag, combined_fixed_columns);
+}
+
 SortingInputOrder buildInputOrderFromSortDescription(
     ReadFromMerge * merge,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const FixedColumns & outer_fixed_columns,
+    const std::optional<ActionsDAG> & outer_dag,
     const SortDescription & description,
-    size_t limit)
+    size_t outer_limit)
 {
     const auto & tables = merge->getSelectedTables();
+    auto child_plans = merge->getAllChildPlans();
 
     SortingInputOrder order_info;
+    size_t table_idx = 0;
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
@@ -969,12 +1041,19 @@ SortingInputOrder buildInputOrderFromSortDescription(
         if (sorting_key.column_names.empty())
             return {};
 
+        std::optional<ActionsDAG> combined_dag;
+        FixedColumns combined_fixed_columns;
+        size_t combined_limit = outer_limit;
+        QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
+        buildCombinedDAGForMergeChildPlan(
+            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, combined_limit);
+
         auto table_order_info = buildInputOrderFromSortDescription(
-            fixed_columns,
-            dag, description,
+            combined_fixed_columns,
+            combined_dag, description,
             sorting_key,
             {},
-            limit);
+            combined_limit);
 
         if (!table_order_info.input_order)
             return {};
@@ -983,6 +1062,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             order_info = std::move(table_order_info);
         else if (*order_info.input_order != *table_order_info.input_order)
             return {};
+
+        ++table_idx;
     }
 
     return order_info;
@@ -1020,25 +1101,35 @@ InputOrder buildInputOrderFromUnorderedKeys(
 
 InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMerge * merge,
-    const FixedColumns & fixed_columns,
-    const std::optional<ActionsDAG> & dag,
+    const FixedColumns & outer_fixed_columns,
+    const std::optional<ActionsDAG> & outer_dag,
     const Names & unordered_keys)
 {
     const auto & tables = merge->getSelectedTables();
+    auto child_plans = merge->getAllChildPlans();
 
     InputOrder order_info;
+    size_t table_idx = 0;
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr(merge->getContext(), false)->getSortingKey();
+        const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+        const auto & sorting_key = storage_metadata->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())
             return {};
 
+        std::optional<ActionsDAG> combined_dag;
+        FixedColumns combined_fixed_columns;
+        size_t unused_limit = 0;
+        QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
+        buildCombinedDAGForMergeChildPlan(
+            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, unused_limit);
+
         auto table_order_info = buildInputOrderFromUnorderedKeys(
-            fixed_columns,
-            dag, unordered_keys,
+            combined_fixed_columns,
+            combined_dag, unordered_keys,
             sorting_key.expression->getActionsDAG(), sorting_key_columns);
 
         if (!table_order_info.input_order)
@@ -1048,6 +1139,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
             order_info = table_order_info;
         else if (*order_info.input_order != *table_order_info.input_order)
             return {};
+
+        ++table_idx;
     }
 
     return order_info;
@@ -1065,6 +1158,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
+    const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1119,7 +1213,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                query_limit);
 
             if (!can_read)
                 return nullptr;
@@ -1140,7 +1235,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return nullptr;
 
@@ -1390,6 +1485,35 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
     return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step);
 }
 
+}
+
+bool wouldReadInOrderBeUseful(
+    const SortingStep & sorting,
+    const KeyDescription & sorting_key,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return false;
+    if (sorting_key.column_names.empty())
+        return false;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    auto order_info = buildInputOrderFromSortDescription(
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        sorting_key,
+        sorting_key.column_names,
+        limit);
+
+    return order_info.input_order != nullptr;
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)

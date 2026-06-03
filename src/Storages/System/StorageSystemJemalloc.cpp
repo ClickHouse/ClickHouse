@@ -23,7 +23,7 @@ namespace DB
 
 #if USE_JEMALLOC
 
-UInt64 getJeMallocValue(const char * name)
+static UInt64 getJeMallocValue(const char * name)
 {
     UInt64 value{};
     size_t size = sizeof(value);
@@ -39,7 +39,7 @@ UInt64 getJeMallocValue(const char * name)
     return value;
 }
 
-void fillJemallocBins(MutableColumns & res_columns)
+static void fillJemallocBins(MutableColumns & res_columns)
 {
     /// Bins for small allocations
     auto small_bins_count = getJeMallocValue("arenas.nbins");
@@ -89,7 +89,7 @@ void fillJemallocBins(MutableColumns & res_columns)
 
 #else
 
-void fillJemallocBins(MutableColumns &)
+static void fillJemallocBins(MutableColumns &)
 {
     LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }
@@ -103,8 +103,8 @@ StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemJemallocBins::createVirtuals()
@@ -148,7 +148,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

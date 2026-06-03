@@ -44,7 +44,9 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -182,8 +184,8 @@ StorageBuffer::StorageBuffer(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (num_shards > 1)
     {
@@ -204,7 +206,7 @@ VirtualColumnsDescription StorageBuffer::createVirtuals()
 }
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource final : public ISource
 {
     ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
     {
@@ -223,7 +225,7 @@ public:
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , buffer(buffer_)
         , storage_id(storage_id_)
-        , virtual_columns(storage_snapshot->virtual_columns)
+        , metadata(storage_snapshot->metadata)
         , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
@@ -248,10 +250,12 @@ protected:
         {
             const auto & [name, type] = packed;
 
-            if (buffer.data.has(name))
-                columns.emplace_back(getColumnFromBlock(buffer.data, packed));
+            if (metadata->isVirtualColumn(name))
+                columns.push_back(fillVirtualColumn(name, type, buffer.data.rows()));
+            else if (auto physical_column = tryGetColumnFromBlock(buffer.data, metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name)))
+                columns.push_back(std::move(physical_column));
             else
-                columns.emplace_back(fillVirtualColumn(name, type, buffer.data.rows()));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column or subcolumn '{}' not found in Buffer table", name);
         }
 
         res.setColumns(std::move(columns), buffer.data.rows());
@@ -261,7 +265,7 @@ protected:
 private:
     StorageBuffer::Buffer & buffer;
     StorageID storage_id;
-    VirtualsDescriptionPtr virtual_columns;
+    StorageMetadataPtr metadata;
     int32_t metadata_version;
     bool has_been_read = false;
 };
@@ -275,7 +279,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto & destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
+        const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -497,7 +501,7 @@ void StorageBuffer::read(
                     getStorageID(),
                     storage_snapshot->getAllColumnsDescription(),
                     std::move(pipe_from_buffers),
-                    *getVirtualsPtr());
+                    storage_snapshot->metadata->virtuals);
 
             auto interpreter
                 = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
@@ -699,7 +703,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage, WithContext
+class BufferSink final : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
@@ -1284,7 +1288,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     setInMemoryMetadata(new_metadata);
 }
 
-UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
+static UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
       * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
@@ -1306,6 +1310,7 @@ UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
 }
 
+void registerStorageBuffer(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory)
 {
     /** Buffer(db, table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)

@@ -1,6 +1,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
@@ -84,6 +85,20 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
         throw S3Exception(
             fmt::format("{} (Code: {}, S3 exception: '{}')",
                         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
+            err.GetErrorType());
+    }
+}
+
+template <typename Result, typename Error, typename... Args>
+void throwIfError(const Aws::Utils::Outcome<Result, Error> & response, fmt::format_string<Args...> context_fmt, Args &&... args)
+{
+    if (!response.IsSuccess())
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(
+            fmt::format("{} (Code: {}, S3 exception: '{}'), {}",
+                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(),
+                        fmt::format(context_fmt, std::forward<Args>(args)...)),
             err.GetErrorType());
     }
 }
@@ -212,9 +227,20 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>) const
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
     auto settings_ptr = s3_settings.get();
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
@@ -222,12 +248,13 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         uri.version_id,
         settings_ptr->request_settings,
         patchSettings(read_settings),
-        read_settings.remote_read_buffer_use_external_buffer,
+        use_external_buffer,
         /* offset */0,
         /* read_until_position */0,
-        read_settings.remote_read_buffer_restrict_seek,
+        restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        credentials_refresh_callback);
+        credentials_refresh_callback,
+        std::move(blob_storage_log));
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -321,7 +348,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
         outcome = client.get()->ListObjectsV2(request);
-        throwIfError(outcome);
+        throwIfError(outcome, "while listing objects in bucket '{}' with prefix '{}' on disk '{}'", uri.bucket, path, disk_name);
 
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
@@ -370,7 +397,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     Strings local_paths_for_blob_storage_log;
-    std::vector<size_t> file_sizes_for_blob_storage_log;
+    VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
     if (blob_storage_log)
     {
         local_paths_for_blob_storage_log.reserve(objects.size());
@@ -400,7 +427,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-void putObjectsTagOnS3(
+static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & object_keys,
@@ -513,7 +540,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
         }
         if (!updated)
         {
-            e.addMessage("while reading " + path);
+            e.addMessage("while reading '{}' in bucket '{}' on disk '{}'", path, uri.bucket, disk_name);
             throw;
         }
     }
@@ -651,17 +678,20 @@ void S3ObjectStorage::applyNewSettings(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
-    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
-
+    /// Apply global <s3> endpoint settings first (lowest priority).
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
     {
         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
+
+    /// Apply disk config settings on top (higher priority than global <s3> section).
+    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+
+    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
     auto current_settings = s3_settings.get();
     if (options.allow_client_change

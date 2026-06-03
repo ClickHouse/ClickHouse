@@ -16,6 +16,7 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+class ColumnsDescription;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
@@ -49,6 +50,11 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -108,7 +114,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 template <typename T>
 void filterByPathOrFile(
@@ -117,9 +124,10 @@ void filterByPathOrFile(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -148,12 +156,18 @@ struct VirtualsForFileLikeStorage
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with
 /// the "need only count" optimization that skips actual row parsing.
 bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
+
+/// Append virtual columns to a physical columns list for expression analysis.
+/// Virtual columns that already exist in the list are skipped.
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
 
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
@@ -169,7 +183,6 @@ DataPartsVector filterDataPartsWithExpression(
 Names filterVirtualColumns(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    const VirtualsDescriptionPtr & virtual_columns,
     const VirtualsKind & kind_to_filter,
     const VirtualsMaterializationPlace & place_to_filter);
 
