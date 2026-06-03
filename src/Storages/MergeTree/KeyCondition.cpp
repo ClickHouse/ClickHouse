@@ -3240,7 +3240,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return true;
         }
     }
-
     return false;
 }
 

@@ -19,7 +19,7 @@ Expression
       PrimaryKey
         Keys:
           x
-        Condition: (x not in [0, 0])
+        Condition: (x not in [0., 0.])
         Parts: 1/1
         Granules: 1/1
         Search Algorithm: generic exclusion search
