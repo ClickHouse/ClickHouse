@@ -67,6 +67,7 @@ class WriteBuffer;
     M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
@@ -104,6 +105,7 @@ class WriteBuffer;
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, TextIndexPostingListApplyMode) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
@@ -117,9 +119,11 @@ class WriteBuffer;
     M(CLASS_NAME, JoinOrderAlgorithm) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
+    M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
+
 struct Settings
 {
     Settings();

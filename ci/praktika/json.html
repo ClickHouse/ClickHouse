@@ -711,6 +711,10 @@
 
             return `${formattedHours}${formattedMinutes}${formattedSeconds}`.trim();
         } else {
+            if (duration < 1) {
+                // Sub-second durations: show milliseconds
+                return `${Math.floor(duration * 1000)}ms`;
+            }
             // Format in the default format with seconds and milliseconds
             const seconds = Math.floor(duration);
             const milliseconds = Math.floor((duration % 1) * 1000);
@@ -799,6 +803,40 @@
         element.style.fontWeight = 'bold';
         element.style.display = 'inline-block';
         element.style.verticalAlign = 'middle';
+    }
+
+    // Render the current Result's own labels in the sidebar. Without this the
+    // labels of a drilled-into job would only be visible in the parent
+    // overview row, never on the job's own page.
+    function addLabelsWidget(ext) {
+        const labels = normalizeLabels(ext?.labels, ext?.hlabels);
+        if (labels.length === 0) return;
+
+        const statusContainer = document.getElementById('status-container');
+        const widget = document.createElement('div');
+        widget.className = 'status-widget';
+        widget.style.textAlign = 'left';
+
+        labels.forEach(({name, link, hint}) => {
+            const element = link ? document.createElement('a') : document.createElement('span');
+            if (link) {
+                element.href = link;
+                element.target = '_blank';
+                element.rel = 'noopener noreferrer';
+            }
+            applyLabelStyles(element, name);
+            element.style.marginLeft = '0';
+            if (hint) {
+                element.title = hint;
+                element.style.cursor = link ? 'pointer' : 'help';
+            }
+            const line = document.createElement('div');
+            line.style.margin = '4px 0';
+            line.appendChild(element);
+            widget.appendChild(line);
+        });
+
+        statusContainer.appendChild(widget);
     }
 
     function addFileLinksWidget(links) {
@@ -2000,6 +2038,7 @@
             duration: result.duration
         };
         let statusWidget = addStatusWidget(result.name, result.status, result.start_time, result.duration);
+        addLabelsWidget(result.ext);
         if (nameParams.length > 1) {
             addFileLinksWidget(result.links);
             if (nameParams.length === 2) {
