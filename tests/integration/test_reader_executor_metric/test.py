@@ -130,10 +130,8 @@ def _drop_caches():
     node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
 
-def _measure(query, drop_cache, live):
+def _measure(query, live):
     qid = str(uuid.uuid4())
-    if drop_cache:
-        _drop_caches()
     node.query(query, query_id=qid, settings=_settings(live))
     node.query("SYSTEM FLUSH LOGS")
     cols = ", ".join(f"ProfileEvents['{e}']" for e in ALL_EVENTS.values())
@@ -176,8 +174,9 @@ def test_metric_values_and_stability(started_cluster):
         for name, query in LOADS.items():
             for state in ("cold", "warm", "fragmented"):
                 if state == "warm":
-                    _measure(query, drop_cache=True, live=live)  # prime once, then measure warm
-                    samples = [_measure(query, drop_cache=False, live=live) for _ in range(SAMPLES)]
+                    _drop_caches()
+                    _measure(query, live)  # prime once, then measure the warm cache
+                    samples = [_measure(query, live) for _ in range(SAMPLES)]
                 elif state == "fragmented":
                     # Re-establish the half-warm cache per sample (measuring it would
                     # otherwise populate the cold blocks and turn the cache fully warm).
@@ -185,9 +184,12 @@ def test_metric_values_and_stability(started_cluster):
                     for _ in range(SAMPLES):
                         _drop_caches()
                         _warm_even_blocks(live)
-                        samples.append(_measure(query, drop_cache=False, live=live))
+                        samples.append(_measure(query, live))
                 else:  # cold
-                    samples = [_measure(query, drop_cache=True, live=live) for _ in range(SAMPLES)]
+                    samples = []
+                    for _ in range(SAMPLES):
+                        _drop_caches()
+                        samples.append(_measure(query, live))
 
                 st = _stats(samples)
                 cost = sum(_cost_ms(s) for s in samples) / len(samples)
