@@ -84,28 +84,32 @@ void MergeTreeReaderCompact::fillColumnPositions()
 
         /// Stale-slot guard for column-IDs tables.  After a DROP COLUMN b /
         /// ADD COLUMN b cycle (across two ALTERs), the table mapping points
-        /// `b` to a fresh column ID, but in-memory part objects can still
-        /// have the original column at logical name "b".  Reading by
+        /// `b` to a fresh column ID, but the on-disk part still has the
+        /// old `b` data under its original physical name.  Reading by
         /// logical name would hand back the old bytes through the new
-        /// column.  Reset the slot when the part has an explicit column_id
-        /// that disagrees.
+        /// column.  Reset the slot when the part's effective ID disagrees
+        /// with the requested column_id.
         ///
-        /// Known gap: pre-activation parts where `part_col.column_id` is
-        /// empty are NOT covered here.  A symmetric files-existence check
-        /// against the requested ID would over-fire on normal compact
-        /// reads where `columns.txt` persists logical names but the
-        /// in-memory mapping still points to a column ID (write path does
-        /// not populate column_id on every part).  Pre-activation
-        /// DROP+ADD-same-name is acknowledged technical debt for the
-        /// experimental column-IDs feature; the two-ALTER path is the
-        /// supported workflow and the wide-reader has its own check.
+        /// Read column_id from the part's underlying `NamesAndTypesList`
+        /// (`getColumns()`) rather than from `part_columns` -- the latter
+        /// is a `ColumnsDescription` view that DOES NOT preserve
+        /// `column_id`, so the older `part_columns.tryGetColumn(...)`
+        /// path always observed an empty column_id and could not
+        /// distinguish the stale-slot case from the normal case.
+        /// Treat an empty part-side `column_id` as the part's logical
+        /// name (pre-activation parts persist columns under their logical
+        /// names with no explicit column_id, and `remapColumnsWithPhysicalNames`
+        /// preserves the column unchanged in the columns list to keep
+        /// compact ordinal slots stable).  This is the same convention
+        /// `MergeTreeReaderWide::getStream` uses.
         if (position.has_value() && !column_to_read.column_id.empty())
         {
-            if (auto part_col = part_columns.tryGetColumn(GetColumnsOptions::All, column_to_read.getNameInStorage()))
-            {
-                if (!part_col->column_id.empty() && part_col->column_id != column_to_read.column_id)
-                    position.reset();
-            }
+            auto it = data_part_info_for_read->getColumns().begin();
+            std::advance(it, *position);
+            const String & part_effective_id = it->column_id.empty()
+                ? it->getNameInStorage() : it->column_id;
+            if (part_effective_id != column_to_read.column_id)
+                position.reset();
         }
 
         if (position.has_value() && column_to_read.isSubcolumn())

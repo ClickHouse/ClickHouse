@@ -1073,6 +1073,22 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             create_query_zk_retries_info);
     }
 
+    /// Validate the experimental gate BEFORE the `StorageMergeTree` constructor
+    /// runs.  The constructor calls `initializeDirectoriesAndFormatVersion`,
+    /// which creates the table's data directory and writes `format_version.txt`
+    /// as visible side effects.  If `allow_experimental_column_ids` is missing
+    /// and the throw happened after construction, normal drop cleanup could
+    /// not run (the database never received a StoragePtr) and a retry would
+    /// observe an existing data directory.
+    if (args.mode == LoadingStrictnessLevel::CREATE
+        && (*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_column_ids])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Column IDs require setting `allow_experimental_column_ids = 1`");
+    }
+
     auto storage = std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,
@@ -1086,11 +1102,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (args.mode == LoadingStrictnessLevel::CREATE
         && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
     {
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_column_ids])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Column IDs require setting `allow_experimental_column_ids = 1`");
-
         auto column_id_mapping = ColumnIdMapping::createForNewTable(metadata.getColumns().getAllPhysical());
         storage->setColumnIdMapping(std::move(column_id_mapping));
         storage->writeColumnIdMappingToDisk();

@@ -2227,7 +2227,23 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
         else if (mapping.hasLogicalName(column.name))
         {
             /// Case (c): the mapping knows the column but its physical files are
-            /// not in this part -- skip so the reader uses defaults.
+            /// not in this part.  We MUST keep the column in the list with its
+            /// original `column_id` (empty for pre-activation parts, equal to
+            /// `name` for post-activation parts) so the compact-part ordinal
+            /// layout is preserved: compact readers look up substreams by
+            /// `column_position`, and columns_substreams.txt is indexed by the
+            /// write-time slot order in columns.txt.  Erasing the column here
+            /// would shift later slots and the reader would read the wrong
+            /// bytes (e.g. for `a,b,c` with `b` dropped, `c` would shift from
+            /// slot 2 to slot 1).  The reader's stale-slot guards
+            /// (`MergeTreeReaderCompact::fillColumnPositions`,
+            /// `MergeTreeReaderWide::getStream`) then reset the position so
+            /// the requested column reads defaults.
+            auto remapped_column = column;
+            /// column_id stays as-is on `column` (empty for pre-activation,
+            /// equal to logical name for post-activation); the reader's
+            /// guard treats empty as the logical name.
+            remapped_columns.push_back(remapped_column);
         }
         else
         {

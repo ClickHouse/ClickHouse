@@ -215,6 +215,52 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                     data_part_storage.getFullPath(), phys,
                     it->second->getName(), col.type->getName());
         }
+
+        /// Compact parts use ordinal positions to seek into the single data
+        /// file -- the compact reader resolves substream offsets from
+        /// `columns_substreams.txt` by `column_position` (the position in
+        /// `columns.txt`).  Membership equality alone is too weak: a
+        /// `columns.txt` reordered to `a,c,b` with the same IDs and types
+        /// would pass the loop above while the reader still seeks via
+        /// `columns_substreams.txt`'s original `a,b,c` slots and swap
+        /// values.  Cross-validate the per-slot column order against
+        /// `columns_substreams.txt` for compact parts.
+        ///
+        /// Name-domain note: `columns.txt` writes the on-disk name (the
+        /// `column_id` when present), while `columns_substreams.txt`
+        /// writes the LOGICAL column name.  Translate each `columns.txt`
+        /// entry through the mapping (column_id->logical, or pass-through
+        /// when the entry is already logical) before handing it to
+        /// `validateColumns`, otherwise a healthy renamed column would
+        /// falsely report `CORRUPTED_DATA`.
+        if (part_type == MergeTreeDataPartType::Compact)
+        {
+            const auto & cols_substreams = data_part->getColumnsSubstreams();
+            if (!cols_substreams.empty())
+            {
+                std::vector<String> columns_txt_logical_names;
+                columns_txt_logical_names.reserve(columns_txt.size());
+                for (const auto & col : columns_txt)
+                {
+                    if (pn_mapping->hasColumnId(col.name))
+                        columns_txt_logical_names.push_back(pn_mapping->getLogicalName(col.name));
+                    else
+                        columns_txt_logical_names.push_back(col.name);
+                }
+                try
+                {
+                    cols_substreams.validateColumns(columns_txt_logical_names);
+                }
+                catch (const Exception & e)
+                {
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Compact part {} has columns.txt order inconsistent with columns_substreams.txt; "
+                        "the compact reader uses ordinal positions to resolve substreams, so a reorder "
+                        "would swap values silently. Details: {}",
+                        data_part_storage.getFullPath(), e.message());
+                }
+            }
+        }
     }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
