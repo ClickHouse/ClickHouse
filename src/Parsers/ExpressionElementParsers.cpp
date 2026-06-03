@@ -84,10 +84,12 @@ String ilikePatternToRegexp(const String & pattern)
     return "(?i)" + likePatternToRegexp(pattern);
 }
 
-bool parseColumnsMatcherFromILikePattern(IParser::Pos & pos, Expected & expected, bool qualified, ASTPtr & node)
+bool parseColumnsMatcherFromLikePattern(IParser::Pos & pos, Expected & expected, bool qualified, ASTPtr & node)
 {
-    ParserKeyword ilike(Keyword::ILIKE);
-    if (!ilike.ignore(pos, expected))
+    bool case_insensitive = false;
+    if (ParserKeyword(Keyword::ILIKE).ignore(pos, expected))
+        case_insensitive = true;
+    else if (!ParserKeyword(Keyword::LIKE).ignore(pos, expected))
         return false;
 
     ParserStringLiteral string_literal;
@@ -95,7 +97,8 @@ bool parseColumnsMatcherFromILikePattern(IParser::Pos & pos, Expected & expected
     if (!string_literal.parse(pos, like_pattern, expected))
         return true;
 
-    const auto pattern = ilikePatternToRegexp(like_pattern->as<ASTLiteral &>().value.safeGet<String>());
+    const auto & like_pattern_str = like_pattern->as<ASTLiteral &>().value.safeGet<String>();
+    const auto pattern = case_insensitive ? ilikePatternToRegexp(like_pattern_str) : likePatternToRegexp(like_pattern_str);
     if (qualified)
     {
         auto columns_matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
@@ -2001,7 +2004,7 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
 
         ASTPtr res;
-        if (parseColumnsMatcherFromILikePattern(pos, expected, false /*qualified*/, res) && !res)
+        if (parseColumnsMatcherFromLikePattern(pos, expected, false /*qualified*/, res) && !res)
             return false;
         if (!res)
             res = make_intrusive<ASTAsterisk>();
@@ -2037,7 +2040,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ++pos;
 
     ASTPtr res;
-    if (parseColumnsMatcherFromILikePattern(pos, expected, true /*qualified*/, res) && !res)
+    if (parseColumnsMatcherFromLikePattern(pos, expected, true /*qualified*/, res) && !res)
         return false;
     if (!res)
         res = make_intrusive<ASTQualifiedAsterisk>();
