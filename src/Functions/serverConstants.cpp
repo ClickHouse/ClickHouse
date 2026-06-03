@@ -20,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+
 namespace
 {
 
@@ -72,14 +77,20 @@ namespace
 
 
     /// Returns timezone for current session.
-    /// The session timezone is propagated to remote shards with the query settings, so it
-    /// is query-wide constant — always pass is_distributed=false to allow constant folding.
+    /// When session_timezone is explicitly set it is propagated to every remote shard as
+    /// a query setting, so the value is query-wide constant and can always be folded.
+    /// When session_timezone is empty the effective timezone falls back to the server's
+    /// local timezone, which may differ per shard — preserve per-shard evaluation then.
     class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone([[maybe_unused]] ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), false) {}
+        explicit FunctionTimezone(ContextPtr context)
+            : FunctionServerConstantBase(
+                DateLUT::instance().getTimeZone(),
+                context->isDistributed() && context->getSettingsRef()[Setting::session_timezone].value.empty())
+        {}
     };
 
     /// Returns the server time zone (timezone in which server runs).
