@@ -2067,7 +2067,7 @@ FileCache::~FileCache()
 void FileCache::onSegmentEvicted(const FileSegment & segment)
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.range().size());
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
 }
 
 void FileCache::deactivateBackgroundOperations()
