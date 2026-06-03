@@ -179,21 +179,22 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
 
     if (!table_function_ptr)
     {
+        /// The name may refer to a parameterized view rather than a table function. Look it up without throwing:
+        /// a missing or inaccessible object must still produce the `UNKNOWN_FUNCTION` error (with hints) below,
+        /// not a table-resolution or access-check exception.
         auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
-        auto table_id = getContext()->resolveStorageID({database_name, table_name});
-        getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
-        auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        StoragePtr table;
+        if (!table_name.empty())
+            table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, current_context);
 
-        if (auto * storage_view = table->as<StorageView>())
+        if (auto * storage_view = table ? table->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
         {
-            if (storage_view->isParameterizedView())
-            {
-                auto query = storage_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
-                NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
-                StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
-                fillColumnsFromSubqueryImpl(query, current_context);
-                return;
-            }
+            current_context->checkAccess(AccessType::SHOW_COLUMNS, storage_view->getStorageID());
+            auto query = storage_view->getInMemoryMetadataPtr(current_context, false)->getSelectQuery().inner_query->clone();
+            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
+            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
+            fillColumnsFromSubqueryImpl(query, current_context);
+            return;
         }
 
         auto hints = TableFunctionFactory::instance().getHints(table_function_name);

@@ -23,3 +23,7 @@ select arrayReduce('sum', (select groupArray(number) from paramview(top=10)));
 
 create view test_pv as select number from numbers({limit:UInt64});
 with (select sum(number) from test_pv(limit=10)) as sm select sm;
+
+-- An unknown name must still be reported as an unknown table function (with hints), not as a missing table.
+describe this_table_function_does_not_exist(x = 1); -- { serverError UNKNOWN_FUNCTION }
+describe numbersx(10); -- { serverError UNKNOWN_FUNCTION }
