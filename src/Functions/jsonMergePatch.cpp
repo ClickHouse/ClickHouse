@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_RAPIDJSON
@@ -110,7 +111,7 @@ namespace
             if (!first_column_arg_string)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be strings", getName());
 
-            std::vector<rapidjson::Document> merged_jsons;
+            VectorWithMemoryTracking<rapidjson::Document> merged_jsons;
             merged_jsons.reserve(input_rows_count);
 
             for (size_t i = 0; i < input_rows_count; ++i)
