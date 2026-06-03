@@ -767,7 +767,13 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
             if (!inserted)
             {
                 ++it->second;
-                auto unique_name = node_name + "_" + std::to_string(it->second);
+                String unique_name;
+                for (size_t suffix = it->second;; ++suffix)
+                {
+                    unique_name = node_name + "_" + std::to_string(suffix);
+                    if (!actions_stack.front().containsNode(unique_name))
+                        break;
+                }
                 dag_node = actions_stack.front().addAliasIfNecessary(unique_name, dag_node);
             }
 

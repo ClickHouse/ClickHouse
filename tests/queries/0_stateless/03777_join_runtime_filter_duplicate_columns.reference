@@ -8,10 +8,14 @@ Header: number UInt64
   Header: __table1.number UInt64
           __table1.e UInt64
           __table3.k UInt64
+          __table1.e_1 UInt64
+          __table3.k_1 UInt64
     Expression ((Before ORDER BY + Projection))
     Header: __table1.number UInt64
             __table1.e UInt64
             __table3.k UInt64
+            __table1.e_1 UInt64
+            __table3.k_1 UInt64
       JoinLogical
       Header: __table1.number UInt64
               __table1.number UInt64
@@ -49,10 +53,14 @@ Header: number UInt64
   Header: __table1.number UInt64
           __table1.e UInt64
           __table3.k UInt64
+          __table1.e_1 UInt64
+          __table3.k_1 UInt64
     Expression ((Before ORDER BY + Projection))
     Header: __table1.number UInt64
             __table1.e UInt64
             __table3.k UInt64
+            __table1.e_1 UInt64
+            __table3.k_1 UInt64
       JoinLogical
       Header: __table1.number UInt64
               __table1.number UInt64
