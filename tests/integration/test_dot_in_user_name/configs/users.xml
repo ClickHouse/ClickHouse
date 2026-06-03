@@ -41,6 +41,19 @@
                 </default>
             </databases>
         </dotted.user>
+        <legacy.user>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <!-- References the dotted entities using the old escaped work-around spelling
+                 that used to be required to match the previously-stored escaped name. -->
+            <profile>my\.profile</profile>
+            <quota>my\.quota</quota>
+            <grants>
+                <query>GRANT `my\.role`</query>
+            </grants>
+        </legacy.user>
     </users>
     <roles>
         <my.role>

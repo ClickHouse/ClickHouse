@@ -112,3 +112,28 @@ def test_row_policy_for_user_with_dot():
     ) == "1\n"
 
     node.query("DROP TABLE default.test_row_policy")
+
+
+def test_legacy_escaped_references_to_dotted_entities():
+    """A config written for an older server may reference an entity defined in users.xml using the
+    escaped spelling (e.g. <profile>my\\.profile</profile>) that used to be required to match the
+    previously-stored escaped name. Such references must still resolve after the un-escaping change."""
+
+    # Profile reference written as `my\.profile` must still apply the profile's settings.
+    assert node.query(
+        "SELECT getSetting('max_memory_usage')",
+        user="legacy.user",
+    ) == "10000000\n"
+
+    # Quota reference written as `my\.quota` must still associate the user with the quota.
+    assert node.query(
+        "SELECT count()>0 FROM system.quota_usage "
+        "WHERE quota_name = 'my.quota' AND quota_key = 'legacy.user'",
+        user="legacy.user",
+    ) == "1\n"
+
+    # Role granted as `my\.role` must still take effect.
+    assert node.query(
+        "SELECT count()>0 FROM system.current_roles WHERE role_name = 'my.role'",
+        user="legacy.user",
+    ) == "1\n"
