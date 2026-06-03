@@ -88,7 +88,7 @@ VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
     return result;
 }
 
-CompressionCodecPtr AdaptiveCodec::select(const std::vector<CompressionCodecPtr> & pool, const char * source, UInt32 source_size)
+CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * source, UInt32 source_size)
 {
     chassert(!pool.empty());
 
