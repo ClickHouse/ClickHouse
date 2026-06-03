@@ -61,6 +61,10 @@ public:
       */
     const ColumnIdentifier & createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
 
+    /** Create column identifier for column and column source, or return existing one if already registered.
+      */
+    const ColumnIdentifier & createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
+
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 

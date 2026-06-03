@@ -566,7 +566,7 @@ struct ChangelogReadResult
 ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & filepath)
 {
     /// Read checksum
-    Checksum record_checksum;
+    Checksum record_checksum = 0;
     readIntBinary(record_checksum, read_buf);
 
     /// Read header
@@ -2377,6 +2377,17 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// wait for all appends to finish before changing active changelog file
     flush();
+
+    {
+        /// After flush(), last_durable_idx == old max_log_id. But we are about to
+        /// truncate entries from 'index' onward and rewrite them. The new entries
+        /// are not durable until the write thread fsyncs them, so we must decrease
+        /// last_durable_idx to reflect that entries at 'index' and beyond are no
+        /// longer durably persisted. Without this, the NuRaft follower durability
+        /// loop would see the stale high value and skip waiting for the fsync.
+        std::lock_guard lock{durable_idx_mutex};
+        last_durable_idx = std::min(last_durable_idx, index - 1);
+    }
 
     {
         std::lock_guard lock(writer_mutex);

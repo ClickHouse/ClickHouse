@@ -16,6 +16,7 @@
 #include <Common/PageCache.h>
 #include <Common/quoteString.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/TCPSocketMemInfo.h>
 
 
@@ -27,11 +28,31 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+namespace HistogramMetrics
+{
+    extern Metric & HTTPPoolTCPBufBytesDiskRcv;
+    extern Metric & HTTPPoolTCPBufBytesDiskSnd;
+    extern Metric & HTTPPoolTCPBufBytesStorageRcv;
+    extern Metric & HTTPPoolTCPBufBytesStorageSnd;
+    extern Metric & HTTPPoolTCPBufBytesHTTPRcv;
+    extern Metric & HTTPPoolTCPBufBytesHTTPSnd;
+}
+#endif
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_READ_ONLY;
+}
 
 namespace
 {
@@ -51,66 +72,36 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
         max = x;
 }
 
-}
-
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 
-double percentile(const std::vector<uint32_t> & sorted, double p)
-{
-    size_t n = sorted.size();
-    size_t idx = static_cast<size_t>(std::ceil(p * static_cast<double>(n))) - 1;
-    idx = std::min(idx, n - 1);
-    return static_cast<double>(sorted[idx]);
-}
-
-/// Emit p50/p75/p90/p95 of kernel TCP buffer memory for one connection pool group.
-/// Looks up rmem/wmem from the netlink dump by inode.
-void emitTCPBufferPercentiles(
+/// For one connection pool group, observe each tracked socket's rmem/wmem into the
+/// corresponding histogram and emit per-group total async metrics.
+void emitTCPBufferMetrics(
     const std::vector<uint64_t> & inodes,
     const char * group_name,
+    HistogramMetrics::Metric & rcv_histogram,
+    HistogramMetrics::Metric & snd_histogram,
     const std::unordered_map<uint64_t, TCPSocketMemInfo> & meminfo_by_inode,
     AsynchronousMetricValues & new_values)
 {
-    std::vector<uint32_t> rmem_values;
-    std::vector<uint32_t> wmem_values;
-    rmem_values.reserve(inodes.size());
-    wmem_values.reserve(inodes.size());
+    bool any = false;
+    uint64_t rmem_total = 0;
+    uint64_t wmem_total = 0;
 
     for (uint64_t inode : inodes)
     {
         if (auto it = meminfo_by_inode.find(inode); it != meminfo_by_inode.end())
         {
-            rmem_values.push_back(it->second.rmem);
-            wmem_values.push_back(it->second.wmem);
+            any = true;
+            rcv_histogram.observe(static_cast<double>(it->second.rmem));
+            snd_histogram.observe(static_cast<double>(it->second.wmem));
+            rmem_total += it->second.rmem;
+            wmem_total += it->second.wmem;
         }
     }
 
-    if (rmem_values.empty())
+    if (!any)
         return;
-
-    std::sort(rmem_values.begin(), rmem_values.end());
-    std::sort(wmem_values.begin(), wmem_values.end());
-
-    static constexpr std::array<std::pair<const char *, double>, 4> quantiles = {{
-        {"p50", 0.5}, {"p75", 0.75}, {"p90", 0.9}, {"p95", 0.95}
-    }};
-
-    for (auto [suffix, p] : quantiles)
-    {
-        new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufBytes_{}", group_name, suffix)]
-            = {percentile(rmem_values, p),
-               "Kernel TCP receive buffer memory (sk_rmem_alloc) for HTTP connection pool sockets."};
-        new_values[fmt::format("HTTPConnectionPool{}TCPSndBufBytes_{}", group_name, suffix)]
-            = {percentile(wmem_values, p),
-               "Kernel TCP transmit buffer memory (sk_wmem_alloc) for HTTP connection pool sockets."};
-    }
-
-    uint64_t rmem_total = 0;
-    for (uint32_t v : rmem_values)
-        rmem_total += v;
-    uint64_t wmem_total = 0;
-    for (uint32_t v : wmem_values)
-        wmem_total += v;
 
     new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufTotalBytes", group_name)]
         = {static_cast<double>(rmem_total),
@@ -120,8 +111,8 @@ void emitTCPBufferPercentiles(
            "Total kernel TCP transmit buffer memory (sk_wmem_alloc) across all HTTP connection pool sockets."};
 }
 
-/// Emit p50/p75/p90/p95 metrics for kernel TCP buffer memory of HTTP connection pool sockets.
-/// Queries sock_diag netlink to get per-socket rmem/wmem, then joins with pool inodes.
+/// Observe kernel TCP buffer memory of HTTP connection pool sockets into per-group histograms,
+/// and emit per-group total async metrics. Uses sock_diag netlink to read per-socket rmem/wmem.
 void updateHTTPConnectionPoolTCPBufferMetrics(
     const HTTPConnectionPools::PoolSocketInodes & pool_inodes,
     AsynchronousMetricValues & new_values)
@@ -133,12 +124,20 @@ void updateHTTPConnectionPoolTCPBufferMetrics(
     if (meminfo_by_inode.empty())
         return;
 
-    emitTCPBufferPercentiles(pool_inodes.disk, "Disk", meminfo_by_inode, new_values);
-    emitTCPBufferPercentiles(pool_inodes.storage, "Storage", meminfo_by_inode, new_values);
-    emitTCPBufferPercentiles(pool_inodes.http, "HTTP", meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.disk, "Disk",
+        HistogramMetrics::HTTPPoolTCPBufBytesDiskRcv, HistogramMetrics::HTTPPoolTCPBufBytesDiskSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.storage, "Storage",
+        HistogramMetrics::HTTPPoolTCPBufBytesStorageRcv, HistogramMetrics::HTTPPoolTCPBufBytesStorageSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.http, "HTTP",
+        HistogramMetrics::HTTPPoolTCPBufBytesHTTPRcv, HistogramMetrics::HTTPPoolTCPBufBytesHTTPSnd,
+        meminfo_by_inode, new_values);
 }
 
 #endif
+
+}
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
@@ -254,20 +253,20 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 auto unreserved = disk->getUnreservedSpace();
 
                 new_values[fmt::format("DiskTotal_{}", name)] = { *total,
-                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                    "The total size in bytes of the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
 
                 if (available)
                 {
                     new_values[fmt::format("DiskUsed_{}", name)] = { *total - *available,
-                        "Used bytes on the disk (virtual filesystem). Remote filesystems not always provide this information." };
+                        "Used bytes on the disk (virtual filesystem). Remote filesystems do not always provide this information." };
 
                     new_values[fmt::format("DiskAvailable_{}", name)] = { *available,
-                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information." };
+                        "Available bytes on the disk (virtual filesystem). Remote filesystems may not provide this information and can show a large value like 16 EiB." };
                 }
 
                 if (unreserved)
                     new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
-                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information." };
+                        "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
             }
 
 #if USE_AWS_S3
@@ -293,7 +292,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -415,8 +414,17 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (...)
                         {
+                            /// The table can transition to readonly between the `status.is_readonly`
+                            /// check above and the call to `getReplicaDelays` (which calls
+                            /// `assertNotReadonly` internally). This is a benign race for a
+                            /// background metrics thread, so do not pollute the error log /
+                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
+                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
+                                ? LogsLevel::debug
+                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
+                                level);
                         }
                     }
                 }
@@ -453,8 +461,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
         new_values["TotalPrimaryKeyBytesInMemory"] = { total_primary_key_bytes_memory, "The total amount of memory (in bytes) used by primary key values (only takes active parts into account)." };
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
-        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granules (only takes active parts into account)." };
+        new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granules (only takes active parts into account)." };
 
         new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
         new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
@@ -471,11 +479,16 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             queries_memory_usage += info.memory_usage;
             queries_peak_memory_usage += info.peak_memory_usage;
         }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage,
+            "Total memory currently used by all running queries on the server, in bytes."
+            " Useful for attributing memory pressure to the concurrent query load." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage,
+            "Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes."
+            " Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries."
+            " This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup." };
     }
 
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper."};
 
     {
         Float64 max_merge_elapsed = 0;
@@ -513,7 +526,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (db.second->isExternal())
             continue;
@@ -619,7 +632,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
         }
         new_values["DictionaryMaxUpdateDelay"] = {
             std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
-        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Sum of sequantially failed updates in all dictionaries"};
+        new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Number of errors since last successful loading in all dictionaries."};
     }
 
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };
