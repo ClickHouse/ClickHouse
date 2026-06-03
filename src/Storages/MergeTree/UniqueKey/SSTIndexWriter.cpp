@@ -126,6 +126,15 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr cont
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "SSTIndexWriter: no temporary volume configured");
     auto tmp_disk = tmp_volume->getDisks().front();
+    /// RocksDB `SstFileWriter::Open` needs a real POSIX path; a remote
+    /// `tmp_policy` disk (e.g. `DiskObjectStorage`) would hand back a
+    /// metadata path and silently mis-route writes/removes. Require a
+    /// local disk and fail fast if the operator pointed `tmp_policy`
+    /// elsewhere.
+    if (tmp_disk->isRemote())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SSTIndexWriter: temporary disk '{}' is remote; UNIQUE KEY SST staging requires a local tmp_policy disk",
+            tmp_disk->getName());
     /// `tmp` prefix is required: `Context::setupTmpPath` only sweeps names
     /// starting with `tmp` on startup, so an unclean exit before the dtor
     /// would otherwise leak the staging file.
@@ -385,6 +394,16 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
 
     IColumn::Permutation uk_perm;
     stableGetPermutation(block, uk_sort_desc, uk_perm);
+    /// `stableGetPermutation` leaves `uk_perm` empty when every sort
+    /// column is `ColumnConst` (rows are already "sorted" by definition).
+    /// `encodeBlock` would then index a zero-length permutation; expand
+    /// to identity so downstream code stays on the same shape.
+    if (uk_perm.empty())
+    {
+        uk_perm.resize(num_rows);
+        for (size_t i = 0; i < num_rows; ++i)
+            uk_perm[i] = i;
+    }
 
     std::vector<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, &uk_perm, max_encoded_size, encoded);
