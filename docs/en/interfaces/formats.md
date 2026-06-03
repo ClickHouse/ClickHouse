@@ -133,6 +133,7 @@ The supported formats are:
 | [RawBLOB](./formats/RawBLOB.md)                                                                            | ✔   | ✔     |
 | [MsgPack](./formats/MsgPack.md)                                                                            | ✔   | ✔     |
 | [MySQLDump](./formats/MySQLDump.md)                                                                        | ✔   | ✗     |
+| [SQLite](./formats/SQLite.md)                                                                              | ✔   | ✔     |
 | [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |
 | [Markdown](./formats/Markdown.md)                                                                          | ✗   | ✔     |
 | [Form](./formats/Form.md)                                                                                  | ✔   | ✗     |
