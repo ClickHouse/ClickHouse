@@ -52,7 +52,7 @@ public:
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
-        bool is_internal_backup);
+        bool allow_config_credentials);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -86,7 +86,7 @@ public:
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
-        bool is_internal_backup);
+        bool allow_config_credentials);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;

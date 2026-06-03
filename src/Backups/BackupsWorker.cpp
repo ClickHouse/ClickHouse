@@ -620,6 +620,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.password = backup_settings.password;
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
+    backup_create_params.is_user_controlled_backup_destination = !backup_settings.internal || !backup_settings.cluster_host_ids.empty();
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
     chassert(backup_settings.data_file_name_prefix_length);
@@ -1044,6 +1045,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
     backup_open_params.read_settings = getReadSettingsForRestore(context);
     backup_open_params.write_settings = getWriteSettingsForRestore(context);
     backup_open_params.is_internal_backup = restore_settings.internal;
+    backup_open_params.is_user_controlled_backup_destination = !restore_settings.internal || !restore_settings.cluster_host_ids.empty();
     auto backup = BackupFactory::instance().createBackup(backup_open_params);
     LOG_TRACE(log, "Opened backup for reading");
     return backup;

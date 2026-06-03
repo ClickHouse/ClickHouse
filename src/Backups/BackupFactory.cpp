@@ -18,6 +18,7 @@ BackupFactory::CreateParams BackupFactory::CreateParams::getCreateParamsForBaseB
     read_params.backup_info = std::move(base_backup_info_);
     read_params.context = context;
     read_params.is_internal_backup = is_internal_backup;
+    read_params.is_user_controlled_backup_destination = is_user_controlled_backup_destination;
     read_params.data_file_name_generator = data_file_name_generator;
     read_params.data_file_name_prefix_length = data_file_name_prefix_length;
     read_params.allow_s3_native_copy = allow_s3_native_copy;

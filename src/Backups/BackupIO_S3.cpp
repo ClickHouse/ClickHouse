@@ -268,14 +268,14 @@ BackupReaderS3::BackupReaderS3(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
-    bool is_internal_backup)
+    bool allow_config_credentials)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
+    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/allow_config_credentials);
     if (!access_key_id_.empty())
         s3_settings.resetCredentialsForUserControlledRequest();
 
@@ -365,7 +365,7 @@ BackupWriterS3::BackupWriterS3(
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
-    bool is_internal_backup)
+    bool allow_config_credentials)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
@@ -374,7 +374,7 @@ BackupWriterS3::BackupWriterS3(
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
+    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/allow_config_credentials);
     if (!access_key_id_.empty())
         s3_settings.resetCredentialsForUserControlledRequest();
 

@@ -36,6 +36,7 @@ public:
         String s3_storage_class;
         ContextPtr context;
         bool is_internal_backup = false;
+        bool is_user_controlled_backup_destination = true;
         bool is_lightweight_snapshot = false;
         BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
         size_t data_file_name_prefix_length = 3;
