@@ -28,7 +28,7 @@ namespace
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>(), Documentation{
-        .description = "Like the `State` combinator, but returns the state as a `SimpleAggregateFunction` value where possible.",
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumSimpleState`), it returns the final aggregation result value, but typed as `SimpleAggregateFunction` instead of the plain result type, for storage in engines such as `AggregatingMergeTree`. Unlike the `State` combinator, it does not return a serialized intermediate state; it is only supported for functions whose partial results can be merged by reapplying the function itself.",
         .syntax = "<aggregate_function>SimpleState",
         .related = {"State"}});
 }
