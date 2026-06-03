@@ -2,7 +2,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
-#include <base/scope_guard_safe.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorToString.h>
