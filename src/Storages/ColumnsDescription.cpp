@@ -28,6 +28,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -1610,6 +1611,13 @@ ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_defaul
 
     auto expression = column_default.expression->clone();
     expandColumnMatchersInExpression(expression, columns, context);
+    return expression;
+}
+
+ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto expression = cloneAndExpandColumnDefaultExpression(column_default, columns, context);
+    replaceAliasColumnsInQuery(expression, columns, {}, context);
     return expression;
 }
 

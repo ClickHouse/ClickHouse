@@ -455,7 +455,7 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         auto default_desc = columns_desc.getDefault(column_name);
         if (default_desc && default_desc->kind == ColumnDefaultKind::Materialized)
         {
-            auto query = cloneAndExpandColumnDefaultExpression(*default_desc, columns_desc, context);
+            auto query = cloneAndExpandColumnDefaultExpressionWithAliases(*default_desc, columns_desc, context);
             auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
             const auto & dependencies = syntax_result->requiredSourceColumns();
 

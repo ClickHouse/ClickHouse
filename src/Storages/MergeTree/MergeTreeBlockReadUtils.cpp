@@ -142,7 +142,7 @@ bool injectRequiredColumnsRecursively(
 
     /// collect identifiers required for evaluation
     IdentifierNameSet identifiers;
-    auto default_expression = cloneAndExpandColumnDefaultExpression(*column_default, storage_snapshot->metadata->getColumns(), context);
+    auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
     default_expression->collectIdentifierNames(identifiers);
 
     bool result = false;

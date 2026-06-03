@@ -151,7 +151,7 @@ void addColumnsRequiredForDefaultConversions(
         if (!default_desc)
             continue;
 
-        auto default_expression = cloneAndExpandColumnDefaultExpression(*default_desc, columns_desc, context);
+        auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*default_desc, columns_desc, context);
         auto syntax_result = TreeRewriter(context).analyze(default_expression, source_columns);
         for (const auto & dependency : syntax_result->requiredSourceColumns())
         {
@@ -763,7 +763,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 && available_columns_set.contains(column.name)
                 && column.default_desc.expression)
             {
-                auto query = cloneAndExpandColumnDefaultExpression(column.default_desc, columns_desc, context);
+                auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns_desc, context);
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
                 auto required_columns = syntax_result->requiredSourceColumns();
@@ -989,7 +989,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
                         ASTPtr materialized_column = makeASTFunction("_CAST",
-                            cloneAndExpandColumnDefaultExpression(column.default_desc, columns_desc, context),
+                            cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns_desc, context),
                             type_literal);
 
                         /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
@@ -1029,7 +1029,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
             auto materialized_column = makeASTFunction(
-                "_CAST", cloneAndExpandColumnDefaultExpression(column.default_desc, columns_desc, context), make_intrusive<ASTLiteral>(column.type->getName()));
+                "_CAST", cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns_desc, context), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -1296,7 +1296,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     || !column.default_desc.expression)
                     continue;
 
-                auto query = cloneAndExpandColumnDefaultExpression(column.default_desc, columns_desc, context);
+                auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns_desc, context);
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const auto & dep : syntax_result->requiredSourceColumns())
@@ -1438,7 +1438,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
                 ASTPtr materialized_column = makeASTFunction("_CAST",
-                    cloneAndExpandColumnDefaultExpression(column.default_desc, columns_desc, context),
+                    cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns_desc, context),
                     type_literal);
 
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
