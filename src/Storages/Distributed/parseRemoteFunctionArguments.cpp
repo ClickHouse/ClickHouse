@@ -38,7 +38,8 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     const std::string & name,
     bool is_cluster_function,
     bool secure,
-    const PreformattedMessage & help_message)
+    const PreformattedMessage & help_message,
+    const StorageID * dependent_table_id)
 {
     ParsedRemoteFunctionArguments result;
     ClusterPtr & cluster = result.cluster;
@@ -60,7 +61,7 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> complex_args;
-    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
+    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args, dependent_table_id)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
