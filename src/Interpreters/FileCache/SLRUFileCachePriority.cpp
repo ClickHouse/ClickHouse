@@ -489,21 +489,24 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         IteratorPtr slru_iterator;
         /// Entry size as it was in protected queue.
         size_t entry_size = 0;
-        /// Previous iterator to entry in protected queue.
+        /// Previous entry/iterator in protected queue.
+        /// The strong `prev_entry` lets rollback reset the flag without the throwing `getEntry`.
+        EntryPtr prev_entry;
         LRUIterator prev_nested_iterator;
         /// New iterator to entry in probationary queue.
         LRUIterator new_nested_iterator;
         bool rollbacked = false;
 
-        void rollbackState()
+        void rollbackState() noexcept
         {
+            chassert(!rollbacked, "State is already rollbacked");
             if (rollbacked)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "State is already rollbacked");
+                return;
 
             /// Invalidate the new probationary `PreActive` entry, and
             /// reset the old protected entry's `Evicting` flag back to `Active`.
             new_nested_iterator.invalidate();
-            prev_nested_iterator.getEntry()->resetFlag(Entry::State::Evicting);
+            prev_entry->resetFlag(Entry::State::Evicting);
             rollbacked = true;
         }
     };
@@ -528,9 +531,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
 
         ~DowngradedEntriesInfos()
         {
-            /// Roll back unfinalized downgrades on destruction.
-            /// A non-empty list here means the write- or state-finalization callbacks
-            /// threw partway.
+            /// Roll back unfinalized downgrades. `rollbackState` is noexcept, so one
+            /// entry cannot abort the loop or escape the destructor.
             for (auto & entry : *this)
                 entry.rollbackState();
         }
@@ -563,6 +565,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 downgraded_entries->add(DowngradedEntryInfo{
                     .slru_iterator = iterator,
                     .entry_size = entry->size,
+                    .prev_entry = entry,
                     .prev_nested_iterator = slru_iterator->lru_iterator,
                     .new_nested_iterator = new_iterator
                 });

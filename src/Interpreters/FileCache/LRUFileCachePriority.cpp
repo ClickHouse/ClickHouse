@@ -629,14 +629,16 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
     iterator = LRUQueue::iterator{};
 }
 
-void LRUFileCachePriority::LRUIterator::invalidate()
+void LRUFileCachePriority::LRUIterator::invalidate() noexcept
 {
     auto entry_ptr = entry.lock();
     chassert(entry_ptr);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
     LOG_TEST(cache_priority->log,
              "Invalidating entry in LRU queue {}: {}",
              entry_ptr->toString(), cache_priority->getApproxStateInfoForLog());
+#endif
 
     size_t entry_size = entry_ptr->size;
     entry_ptr->size = 0;

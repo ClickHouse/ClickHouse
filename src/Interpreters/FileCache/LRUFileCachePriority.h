@@ -248,7 +248,7 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() override;
+    void invalidate() noexcept override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
