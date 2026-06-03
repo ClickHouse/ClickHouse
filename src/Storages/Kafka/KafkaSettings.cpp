@@ -53,6 +53,7 @@ namespace ErrorCodes
     DECLARE(String, kafka_compression_codec, "", "Compression codec used for producing messages. Supported: empty string, none, gzip, snappy, lz4, zstd. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used.", 0) \
     DECLARE(Int64, kafka_compression_level, -1, "Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; [0-12] for zstd; -1 = codec-dependent default compression level.", 0) \
     DECLARE(UInt64, kafka_schema_registry_skip_bytes, 0, "Number of bytes to skip from the beginning of each Kafka message (e.g., 5 for Confluent Schema Registry, 19 for AWS Glue Schema Registry envelope header). Maximum: 255 bytes.", 0) \
+    DECLARE(Milliseconds, kafka_consumer_acquire_timeout_ms, 30000, "Timeout in milliseconds for acquiring a Kafka consumer during direct SELECT queries. When multiple concurrent direct SELECTs run on the same Kafka2 table, each query must wait for consumers to become available. A timeout is needed to break potential deadlocks when queries hold different subsets of consumers.", 0) \
     DECLARE(Bool, kafka_map_virtual_columns_on_write, false, "If enabled, columns with special names (`_key`, `_timestamp`, `_headers.name`, `_headers.value`) in the Kafka table are mapped to the corresponding Kafka message metadata on INSERT and are excluded from the message payload.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
@@ -78,9 +79,7 @@ KafkaSettings::KafkaSettings(const KafkaSettings & settings) : impl(std::make_un
 {
 }
 
-KafkaSettings::KafkaSettings(KafkaSettings && settings) noexcept : impl(std::make_unique<KafkaSettingsImpl>(std::move(*settings.impl)))
-{
-}
+KafkaSettings::KafkaSettings(KafkaSettings && settings) noexcept = default;
 
 KafkaSettings::~KafkaSettings() = default;
 
