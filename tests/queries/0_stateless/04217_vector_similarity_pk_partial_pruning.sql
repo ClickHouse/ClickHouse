@@ -15,8 +15,9 @@ SET log_queries = 1;
 
 DROP TABLE IF EXISTS tab_pk_partial;
 
--- Cases D/E need multiple data marks and skip-index granules; CI randomizes index_granularity unless pinned here.
-CREATE TABLE tab_pk_partial(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 0;
+-- Cases D/E need multiple data marks and skip-index granules. vector_similarity requires index_granularity_bytes != 0;
+-- use a large byte limit so 12 rows still split only by index_granularity = 3.
+CREATE TABLE tab_pk_partial(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 3, index_granularity_bytes = 10485760;
 
 INSERT INTO tab_pk_partial VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]),
@@ -174,7 +175,7 @@ CREATE TABLE tab_time_tickets(
     issue_type LowCardinality(String),
     vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2
-) ENGINE = MergeTree ORDER BY (created_date, id) SETTINGS index_granularity = 3, index_granularity_bytes = 0;
+) ENGINE = MergeTree ORDER BY (created_date, id) SETTINGS index_granularity = 3, index_granularity_bytes = 10485760;
 
 INSERT INTO tab_time_tickets VALUES
     (1, '2024-01-15', 'network', [0.2, 1.8]), (2, '2024-02-10', 'disk', [0.1, 1.7]), (3, '2024-03-12', 'cpu', [0.0, 1.6]),
