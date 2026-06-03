@@ -143,16 +143,9 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
         if (info.removal_tid == tid)
             return false;
 
-        /// Refuse to write a non-transactional removal over a part whose creating
-        /// transaction has not yet committed. The resulting shape (`creation_csn == 0`
-        /// together with `removal_csn == NonTransactionalCSN`) is rejected by
-        /// `validateInfo`: a removed part with no committed creation point is
-        /// unrecoverable on restart. Returning `SERIALIZATION_ERROR` here lets the
-        /// caller retry once the in-flight creation finalizes (either to a real CSN
-        /// or to `Tx::RolledBackCSN`).
-        ///
-        /// The guard inspects only `info`, so it is correct regardless of which
-        /// replica the creating transaction is running on.
+        /// Refuse a non-tx removal over a part whose tx creation has not committed:
+        /// the resulting `creation_csn = 0 + removal_csn = 1` shape would be rejected
+        /// by `validateInfo` and is unrecoverable on restart.
         if (tid.isNonTransactional()
             && !info.creation_csn
             && !info.creation_tid.isNonTransactional())
