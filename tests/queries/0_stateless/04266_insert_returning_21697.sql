@@ -67,6 +67,13 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_temporary_data_on_disk_size_for_query=1) VALUES (107, 'tempdisk'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_tempdisk FROM t_insert_returning WHERE id = 107;
 
+-- Network-bandwidth limits in the RETURNING subquery are rejected for the same reason (the user/all-user throttlers
+-- are bound once from the INSERT phase), while the INSERT still completes first
+SELECT 'returning network bandwidth rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS max_network_bandwidth_for_user=1) VALUES (109, 'netbw'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_netbw FROM t_insert_returning WHERE id = 109;
+
 -- AST size/depth limits in the RETURNING subquery's SETTINGS are enforced when the subquery is planned (after the
 -- INSERT persists), exactly as for a standalone SELECT
 SELECT 'returning ast size limit';
