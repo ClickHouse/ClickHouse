@@ -13,6 +13,8 @@
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocCacheArena.h>
+#include <Common/JemallocJITArena.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
 #include <Common/logger_useful.h>
@@ -25,6 +27,10 @@
 #include <string_view>
 
 #include "config.h"
+
+#if USE_EMBEDDED_COMPILER
+#include <Interpreters/JIT/CompiledExpressionCache.h>
+#endif
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -477,18 +483,21 @@ uint64_t updateJemallocEpoch()
 }
 
 template <typename Value>
-Value saveJemallocMetricImpl(
+std::optional<Value> saveJemallocMetricImpl(
     AsynchronousMetricValues & values,
     const std::string & jemalloc_full_name,
     const std::string & clickhouse_full_name)
 {
-    auto value = Jemalloc::getValue<Value>(jemalloc_full_name.c_str());
+    Value value{};
+    if (!Jemalloc::tryGetValue(jemalloc_full_name.c_str(), value))
+        return std::nullopt;
+
     values[clickhouse_full_name] = AsynchronousMetricValue(value, "An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html");
     return value;
 }
 
 template<typename Value>
-Value saveJemallocMetric(AsynchronousMetricValues & values,
+std::optional<Value> saveJemallocMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -497,7 +506,7 @@ Value saveJemallocMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-Value saveAllArenasMetric(AsynchronousMetricValues & values,
+std::optional<Value> saveAllArenasMetric(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -506,7 +515,7 @@ Value saveAllArenasMetric(AsynchronousMetricValues & values,
 }
 
 template<typename Value>
-Value saveJemallocProf(AsynchronousMetricValues & values,
+std::optional<Value> saveJemallocProf(AsynchronousMetricValues & values,
     const std::string & metric_name)
 {
     return saveJemallocMetricImpl<Value>(values,
@@ -872,7 +881,7 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
         };
 }
 
-void readPressureFile(
+static void readPressureFile(
     AsynchronousMetricValues & new_values, const std::string & type, ReadBufferFromFilePRead & in,
     std::unordered_map<String, uint64_t> & prev_pressure_vals, bool first_run)
 {
@@ -903,7 +912,7 @@ void readPressureFile(
         readStringUntilEquals(skip, in);
         ++in.position();
 
-        uint64_t counter;
+        uint64_t counter = 0;
         readText(counter, in);
 
         String metric_key = fmt::format("PSI_{}_{}", type, stall_type);
@@ -1120,11 +1129,25 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     // to guarantee fresh statistics. The update_jemalloc_epoch flag is false when MemoryWorker
     // owns epoch advancement on the periodic background path, but an explicit user request
     // should always return up-to-date values.
-    auto epoch = (update_jemalloc_epoch || force_update) ? updateJemallocEpoch() : Jemalloc::getValue<uint64_t>("epoch");
-    new_values["jemalloc.epoch"]
-        = {epoch,
-           "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
-           "`jemalloc` metrics."};
+    if (update_jemalloc_epoch || force_update)
+    {
+        const auto epoch = updateJemallocEpoch();
+        new_values["jemalloc.epoch"]
+            = {epoch,
+               "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
+               "`jemalloc` metrics."};
+    }
+    else
+    {
+        uint64_t epoch = 0;
+        if (Jemalloc::tryGetValue("epoch", epoch))
+        {
+            new_values["jemalloc.epoch"]
+                = {epoch,
+                   "An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other "
+                   "`jemalloc` metrics."};
+        }
+    }
 
     // Collect the statistics themselves.
     saveJemallocMetric<size_t>(new_values, "allocated");
@@ -1157,6 +1180,100 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         saveJemallocMetricImpl<size_t>(new_values,
             fmt::format("stats.arenas.{}.pdirty", cache_arena),
             "jemalloc.cache_arena.pdirty");
+    }
+
+    /// jemalloc reports per-arena `pactive`/`pdirty` as a count of jemalloc pages. The
+    /// `*_bytes` variants below multiply by jemalloc's compiled-in page size (read once from
+    /// `arenas.page`), not the OS page size: the two differ on platforms where jemalloc is
+    /// built with `LG_PAGE=16` (64 KiB pages — aarch64, ppc64le, riscv64) but the kernel uses
+    /// 4 KiB pages. Using `getPageSize()` would under-report by 16× there.
+    static const Jemalloc::MibCache<size_t> jemalloc_page_size_mib{"arenas.page"};
+
+    /// Per-arena metrics for the dedicated JIT arena (LLVM bookkeeping: TargetMachine, IR modules,
+    /// optimization passes, RuntimeDyld relocation tables, etc.).
+    if (JemallocJITArena::isEnabled())
+    {
+        unsigned jit_arena = JemallocJITArena::getArenaIndex();
+        auto jit_pactive = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", jit_arena),
+            "jemalloc.jit_arena.pactive");
+        auto jit_pdirty = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", jit_arena),
+            "jemalloc.jit_arena.pdirty");
+
+        if (jit_pactive && jit_pdirty)
+        {
+            const size_t page_size = jemalloc_page_size_mib.getValue();
+            new_values["jemalloc.jit_arena.active_bytes"] = { *jit_pactive * page_size,
+                "Active bytes in the dedicated jemalloc JIT arena. Includes both (a) LLVM heap state "
+                "(TargetMachine and its target-specific Subtarget, IR modules, optimization-pass analyses, "
+                "RuntimeDyld relocation tables) and (b) the page-aligned reserved blocks that "
+                "`JITModuleMemoryManager` allocates via `posix_memalign` for executable/data sections "
+                "(intercepted into `je_posix_memalign`, so it goes through jemalloc). "
+                "`CompiledExpressionCacheBytes` (CurrentMetric) is a *subset* of this — it tracks only the "
+                "reserved page-block capacity for executable/data sections, not the actual code/data bytes "
+                "in use within those blocks."};
+            new_values["jemalloc.jit_arena.dirty_bytes"] = { *jit_pdirty * page_size,
+                "Dirty bytes in the JIT arena that are eligible for purging back to the OS."};
+        }
+    }
+
+    /// Per-arena metrics for the dedicated MergeTree heap arena. Holds long-lived MergeTree state:
+    ///   - per-part metadata (allocations from `IMergeTreeDataPart::setColumns` /
+    ///     `setColumnsSubstreams` / `loadColumnsChecksumsIndexes` / `loadProjections` /
+    ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
+    ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
+    ///     `resetSerializationHints`, `updateSerializationHints`).
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        unsigned mergetree_arena = JemallocMergeTreeArena::getArenaIndex();
+        auto mt_pactive = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pactive", mergetree_arena),
+            "jemalloc.mergetree_arena.pactive");
+        auto mt_pdirty = saveJemallocMetricImpl<size_t>(new_values,
+            fmt::format("stats.arenas.{}.pdirty", mergetree_arena),
+            "jemalloc.mergetree_arena.pdirty");
+
+        if (mt_pactive && mt_pdirty)
+        {
+            const size_t page_size = jemalloc_page_size_mib.getValue();
+            new_values["jemalloc.mergetree_arena.active_bytes"] = { *mt_pactive * page_size,
+                "Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTree heap "
+                "state: per-part metadata (`NamesAndTypesList`, `SerializationInfoByName`, the "
+                "`serializations` map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, the "
+                "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
+                "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
+                "`MergeTreeDataPart{Compact,Wide}` object itself) plus per-table metadata "
+                "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
+                "set up by `setProperties`, the `serialization_hints` aggregation, and the "
+                "`columns_descriptions_cache`). Active parts and outdated parts pending cleanup both "
+                "contribute. Disjoint from the cache arena and JIT arena. The per-part columns "
+                "`system.parts.primary_key_bytes_in_memory[_allocated]` and "
+                "`system.parts.index_granularity_bytes_in_memory[_allocated]` are subsets of this metric "
+                "(when their values are non-zero — they can also live in `PrimaryIndexCacheBytes` instead, "
+                "which is in the cache arena and not counted here)."};
+            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { *mt_pdirty * page_size,
+                "Dirty bytes in the MergeTree arena that are eligible for purging back to the OS."};
+        }
+    }
+#endif
+
+#if USE_EMBEDDED_COMPILER
+    /// Compiled-expression cache: configured limits (the current usage is exposed via the
+    /// `CompiledExpressionCacheBytes` and `CompiledExpressionCacheCount` CurrentMetrics).
+    /// Note: `CompiledExpressionCacheBytes` is the page-block capacity reserved by
+    /// `JITModuleMemoryManager` for cached compiled functions. Those blocks are allocated via
+    /// `posix_memalign` (intercepted into `je_posix_memalign` in `Common/malloc.cpp`), so they
+    /// go through jemalloc and are accounted within the dedicated JIT arena — i.e. this metric
+    /// is a *subset* of `jemalloc.jit_arena.active_bytes` above, not a separate quantity.
+    if (auto * compiled_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+    {
+        new_values["CompiledExpressionCacheBytesMax"] = { compiled_cache->maxSizeInBytes(),
+            "Configured maximum bytes of the compiled-expression cache. "
+            "Available headroom = this minus `CompiledExpressionCacheBytes` (CurrentMetric)." };
+        new_values["CompiledExpressionCacheCountMax"] = { compiled_cache->maxCount(),
+            "Configured maximum entries of the compiled-expression cache. "
+            "Available headroom = this minus `CompiledExpressionCacheCount` (CurrentMetric)." };
     }
 #endif
 
@@ -1546,7 +1663,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t usage = cgroupmem_reader->readMemoryUsage();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
+                "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
+                "In both cases the kernel OS page cache (file-backed cache) is excluded." };
+
+            UInt64 userspace_page_cache_bytes = 0;
+            if (context && context->getPageCache())
+                userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
+
+            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
+                                                   ? (usage - userspace_page_cache_bytes)
+                                                   : 0;
+
+            new_values["CGroupMemoryUsedWithoutPageCache"] = {
+                cgroup_usage_without_page_cache,
+                "The amount of memory used in cgroup, in bytes, excluding the ClickHouse userspace page cache. "
+                "This is CGroupMemoryUsed minus the userspace page cache size. "
+                "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
+            };
         }
         catch (...)
         {
@@ -1913,7 +2047,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 interface_name.pop_back();
 
                 NetworkInterfaceStatValues current_values{};
-                uint64_t unused;
+                uint64_t unused = 0;
 
                 skipWhitespaceIfAny(*net_dev, true);
                 readText(current_values.recv_bytes, *net_dev);

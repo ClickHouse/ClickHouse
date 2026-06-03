@@ -7,8 +7,6 @@ title: 'Query cache'
 doc_type: 'guide'
 ---
 
-# Query cache
-
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
@@ -174,6 +172,38 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 ```
 
 To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
+
+## Subquery Caching {#subquery-caching}
+
+By default, `use_query_cache` on the outer query does not propagate to subqueries. This means each subquery must explicitly opt in to caching:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = true)
+WHERE number > 500;
+```
+
+In this example, only the inner subquery result is cached. The outer query is not cached.
+
+To enable caching for all subqueries at once, use the setting `query_cache_for_subqueries`:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+To explicitly disable caching for a specific subquery while bulk propagation is enabled, set `use_query_cache = false` on that subquery:
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = false)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+Subquery cache entries are visible in [system.query_cache](system-tables/query_cache.md) with `is_subquery = 1`. The `query_cache_ttl` setting also applies to subquery cache entries and can be set per subquery.
 
 ClickHouse reads table data in blocks of [max_block_size](/operations/settings/settings#max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
