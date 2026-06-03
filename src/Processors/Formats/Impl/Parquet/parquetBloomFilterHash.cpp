@@ -1,5 +1,7 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 
+#include <Columns/ColumnNullable.h>
+
 #if USE_PARQUET
 
 #include <parquet/metadata.h>
@@ -8,7 +10,7 @@
 namespace DB
 {
 
-bool isParquetStringTypeSupportedForBloomFilters(
+static bool isParquetStringTypeSupportedForBloomFilters(
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type)
 {
@@ -29,7 +31,7 @@ bool isParquetStringTypeSupportedForBloomFilters(
     return true;
 }
 
-bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+static bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
     if (logical_type && !logical_type->is_none() && !logical_type->is_int())
     {
@@ -59,7 +61,7 @@ uint64_t hashSpecialFLBATypes(const Field & field)
     return hasher.Hash(&flba, sizeof(T));
 };
 
-std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
+static std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
 {
     const auto field_type = field.getType();
 
@@ -74,7 +76,7 @@ std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & fie
     return hasher.Hash(&ba);
 }
 
-std::optional<uint64_t> tryHashString(
+static std::optional<uint64_t> tryHashString(
     const Field & field,
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type)
@@ -87,7 +89,7 @@ std::optional<uint64_t> tryHashString(
     return tryHashStringWithoutCompatibilityCheck(field);
 }
 
-std::optional<uint64_t> tryHashFLBA(
+static std::optional<uint64_t> tryHashFLBA(
     const Field & field,
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type,
@@ -166,12 +168,16 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
 
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
+    const IColumn * column = data_column;
+    if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
+        column = nullable_column->getNestedColumnPtr().get();
+
     std::vector<uint64_t> hashes;
 
-    for (size_t i = 0u; i < data_column->size(); i++)
+    for (size_t i = 0u; i < column->size(); i++)
     {
         Field f;
-        data_column->get(i, f);
+        column->get(i, f);
 
         auto hashed_value = parquetTryHashField(f, parquet_column_descriptor);
 

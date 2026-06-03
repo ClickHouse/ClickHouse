@@ -1,6 +1,8 @@
 #pragma once
 
-#include "Pool.h"
+#include <map>
+
+#include <mysqlxx/Pool.h>
 
 
 /// NOLINTBEGIN(modernize-macro-to-enum)

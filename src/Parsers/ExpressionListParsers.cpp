@@ -1,7 +1,14 @@
+#include <charconv>
+#include <limits>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 
+#include <base/scope_guard.h>
+
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/ParserSetQuery.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -26,7 +33,7 @@
 
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+#include <Parsers/ExpressionOperatorPrettyLookup.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
@@ -57,10 +64,10 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     };
 
-    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
+    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty, allow_trailing_separator))
         return false;
 
-    node = std::make_shared<ASTExpressionList>(result_separator);
+    node = make_intrusive<ASTExpressionList>(result_separator);
     node->children = std::move(elements);
 
     return true;
@@ -126,7 +133,7 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseUtil(pos, parse_element, parse_separator))
         return false;
 
-    node = std::make_shared<ASTExpressionList>();
+    node = make_intrusive<ASTExpressionList>();
     node->children = std::move(elements);
     return true;
 }
@@ -196,36 +203,33 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         return false;
 
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
-    auto aggregate_function = makeASTFunction(aggregate_function_name, std::make_shared<ASTAsterisk>());
+    auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
 
-    auto table_expression = std::make_shared<ASTTableExpression>();
+    auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
     table_expression->children.push_back(table_expression->subquery);
 
-    auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables_in_select_element = make_intrusive<ASTTablesInSelectQueryElement>();
     tables_in_select_element->table_expression = std::move(table_expression);
     tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
 
-    auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+    auto tables_in_select = make_intrusive<ASTTablesInSelectQuery>();
     tables_in_select->children.push_back(std::move(tables_in_select_element));
 
-    auto select_exp_list = std::make_shared<ASTExpressionList>();
+    auto select_exp_list = make_intrusive<ASTExpressionList>();
     select_exp_list->children.push_back(aggregate_function);
 
-    auto select_query = std::make_shared<ASTSelectQuery>();
-    select_query->children.push_back(select_exp_list);
-    select_query->children.push_back(tables_in_select);
-
+    auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_exp_list);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
 
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
 
-    auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
+    auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
 
     return true;
@@ -250,7 +254,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
         else
         {
             /// try to find any of the valid operators
-            const char ** it;
+            const char ** it = nullptr;
             for (it = operators; *it; it += 2)
                 if (parseOperator(pos, *it, expected))
                     break;
@@ -264,7 +268,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
-            auto function = makeASTFunction(it[1], node, elem);
+            auto function = makeASTOperator(it[1], node, elem);
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
@@ -288,20 +292,73 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 }
 
 
-ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
+static ASTPtr makeBetweenOperator(bool negative, ASTs arguments)
 {
     // SUBJECT = arguments[0], LEFT = arguments[1], RIGHT = arguments[2]
 
     if (negative)
     {
-        auto f_left_expr = makeASTFunction("less", arguments[0], arguments[1]);
-        auto f_right_expr = makeASTFunction("greater", arguments[0], arguments[2]);
-        return makeASTFunction("or", f_left_expr, f_right_expr);
+        auto f_left_expr = makeASTOperator("less", arguments[0], arguments[1]);
+        auto f_right_expr = makeASTOperator("greater", arguments[0], arguments[2]);
+        return makeASTOperator("or", f_left_expr, f_right_expr);
     }
 
-    auto f_left_expr = makeASTFunction("greaterOrEquals", arguments[0], arguments[1]);
-    auto f_right_expr = makeASTFunction("lessOrEquals", arguments[0], arguments[2]);
-    return makeASTFunction("and", f_left_expr, f_right_expr);
+    auto f_left_expr = makeASTOperator("greaterOrEquals", arguments[0], arguments[1]);
+    auto f_right_expr = makeASTOperator("lessOrEquals", arguments[0], arguments[2]);
+    return makeASTOperator("and", f_left_expr, f_right_expr);
+}
+
+static ASTPtr makeTruthValuePredicateOperator(std::string_view predicate_name, const ASTPtr & argument)
+{
+    auto is_not_distinct_from_true = [&]
+    {
+        return makeASTOperator("isNotDistinctFrom", argument, make_intrusive<ASTLiteral>(true));
+    };
+
+    auto is_not_distinct_from_false = [&]
+    {
+        return makeASTOperator("isNotDistinctFrom", argument, make_intrusive<ASTLiteral>(false));
+    };
+
+    auto is_null = [&]
+    {
+        return makeASTOperator("isNull", argument);
+    };
+
+    auto is_not_null = [&]
+    {
+        return makeASTOperator("isNotNull", argument);
+    };
+
+    auto is_distinct_from_true = [&]
+    {
+        return makeASTOperator("isDistinctFrom", argument, make_intrusive<ASTLiteral>(true));
+    };
+
+    auto is_distinct_from_false = [&]
+    {
+        return makeASTOperator("isDistinctFrom", argument, make_intrusive<ASTLiteral>(false));
+    };
+
+    if (predicate_name == "isTruePredicate")
+        return is_not_distinct_from_true();
+
+    if (predicate_name == "isFalsePredicate")
+        return is_not_distinct_from_false();
+
+    if (predicate_name == "isUnknownPredicate")
+        return is_null();
+
+    if (predicate_name == "isNotTruePredicate")
+        return is_distinct_from_true();
+
+    if (predicate_name == "isNotFalsePredicate")
+        return is_distinct_from_false();
+
+    if (predicate_name == "isNotUnknownPredicate")
+        return is_not_null();
+
+    return {};
 }
 
 ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_alias_without_as_keyword, bool is_table_function, bool allow_trailing_commas)
@@ -345,7 +402,7 @@ bool ParserAliasesExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto command_list = std::make_shared<ASTExpressionList>();
+    auto command_list = make_intrusive<ASTExpressionList>();
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
@@ -366,7 +423,7 @@ bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & nod
             {
                 return false;
             }
-            auto list = std::make_shared<ASTExpressionList>(',');
+            auto list = make_intrusive<ASTExpressionList>(',');
             list->children.push_back(command);
             command = std::move(list);
         }
@@ -402,7 +459,7 @@ bool ParserInterpolateExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+    return ParserList(std::make_unique<ParserTTLElement>(), std::make_unique<ParserToken>(TokenType::Comma), /* allow_empty_ = */ false)
         .parse(pos, node, expected);
 }
 
@@ -438,7 +495,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         with_brackets = true;
     }
 
-    auto pair = std::make_shared<ASTPair>(with_brackets);
+    auto pair = make_intrusive<ASTPair>(with_brackets);
     pair->first = Poco::toLower(identifier->as<ASTIdentifier>()->name());
     pair->set(pair->second, value);
     node = pair;
@@ -486,6 +543,7 @@ enum class OperatorType : uint8_t
     ArrayElement,
     TupleElement,
     IsNull,
+    IsTruthValue,
     StartBetween,
     StartNotBetween,
     FinishBetween,
@@ -512,21 +570,21 @@ struct Operator
              OperatorType type_ = OperatorType::None)
         : type(type_), priority(priority_), arity(arity_), function_name(function_name_) {}
 
-    OperatorType type;
-    int priority;
-    int arity;
+    OperatorType type{};
+    int priority{};
+    int arity{};
     std::string function_name;
 };
 
 template <typename... Args>
-static std::shared_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
+static boost::intrusive_ptr<ASTFunction> makeASTFunction(Operator & op, Args &&... args)
 {
-    auto ast_function = makeASTFunction(op.function_name, std::forward<Args>(args)...);
+    auto ast_function = makeASTOperator(op.function_name, std::forward<Args>(args)...);
 
     if (op.type == OperatorType::Lambda)
     {
-        ast_function->is_lambda_function = true;
-        ast_function->kind = ASTFunction::Kind::LAMBDA_FUNCTION;
+        ast_function->setIsLambdaFunction(true);
+        ast_function->setKind(ASTFunction::Kind::LAMBDA_FUNCTION);
     }
     return ast_function;
 }
@@ -623,6 +681,20 @@ public:
         return operators.back().type;
     }
 
+    /// True when any operator of the given type is pending anywhere on the
+    /// operators stack of the current element. Used to detect a pending lambda
+    /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
+    /// a lambda body can leave higher-priority binary operators on top of the
+    /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
+    /// inspecting only the stack top via `previousType` would miss the lambda.
+    bool hasPendingOperator(OperatorType type) const
+    {
+        for (const auto & op : operators)
+            if (op.type == type)
+                return true;
+        return false;
+    }
+
     int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
@@ -635,7 +707,7 @@ public:
 
         asts.reserve(asts.size() + n);
 
-        auto * start = operands.begin() + operands.size() - n;
+        auto start = operands.begin() + operands.size() - n;
         asts.insert(asts.end(), std::make_move_iterator(start), std::make_move_iterator(operands.end()));
         operands.erase(start, operands.end());
 
@@ -738,7 +810,7 @@ public:
         // 1. If empty - create function tuple with 0 args
         if (isCurrentElementEmpty())
         {
-            auto function = makeASTFunction("tuple");
+            auto function = makeASTOperator("tuple");
             pushOperand(function);
             return true;
         }
@@ -755,7 +827,7 @@ public:
         /// 3. Put all elements in a single tuple
         else
         {
-            auto function = makeASTFunction("tuple", std::move(elements));
+            auto function = makeASTOperator("tuple", std::move(elements));
             elements.clear();
             pushOperand(function);
         }
@@ -827,6 +899,73 @@ protected:
     int state = 0;
 };
 
+/// Tweaks for better highlighting of LIKE and REGEXP functions.
+static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
+{
+    static constexpr size_t max_depth = 1000;
+    if (depth > max_depth)
+        return;
+
+    if (!expected.enable_highlighting)
+        return;
+
+    ASTFunction * func = node->as<ASTFunction>();
+    if (!func)
+        return;
+
+    if (func->parameters)
+        return;
+
+    ASTExpressionList * args = func->arguments->as<ASTExpressionList>();
+    if (!args)
+        return;
+
+    bool is_like = false;
+    bool is_regexp = false;
+    if (func->name == "like" || func->name == "notLike"
+        || func->name == "ilike" || func->name == "notILike")
+    {
+        is_like = true;
+    }
+    else if (func->name == "match"
+             || func->name == "extract" || func->name == "extractAll"
+             || func->name == "extractGroups" || func->name == "extractAllGroups"
+             || func->name == "replaceRegexpOne" || func->name == "replaceRegexpAll"
+             || func->name == "countMatches" || func->name == "splitByRegexp"
+             || func->name == "regexp_replace" || func->name == "REGEXP_REPLACE")
+    {
+        is_regexp = true;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    }
+    else
+    {
+        for (const auto & arg : args->children)
+            highlightRegexps(arg, expected, depth + 1);
+        return;
+    }
+
+    if (args->children.size() < 2)
+        return;
+
+    auto * literal = args->children[1]->as<ASTLiteral>();
+
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return;
+
+    /// Look up token position from the map stored in Expected
+    if (!expected.literal_token_map)
+        return;
+
+    auto it = expected.literal_token_map->find(literal);
+    if (it == expected.literal_token_map->end())
+        return;
+
+    chassert(is_like || is_regexp);
+    expected.highlight({
+       .begin = it->second.begin,
+       .end = it->second.end,
+       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
+}
+
 struct ParserExpressionImpl
 {
     static const std::vector<std::pair<std::string_view, Operator>> operators_table;
@@ -846,6 +985,7 @@ struct ParserExpressionImpl
 
     ParserKeyword any_parser{Keyword::ANY};
     ParserKeyword all_parser{Keyword::ALL};
+    ParserKeyword some_parser{Keyword::SOME};
 
     // Recursion
     ParserQualifiedAsterisk qualified_asterisk_parser;
@@ -987,8 +1127,8 @@ public:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_){}
+    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false, bool is_operator_ = false)
+        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_), is_operator(is_operator_) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1079,7 +1219,7 @@ public:
 
                 if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
                 {
-                    parameters = std::make_shared<ASTExpressionList>();
+                    parameters = make_intrusive<ASTExpressionList>();
                     std::swap(parameters->children, elements);
                     action = Action::OPERAND;
 
@@ -1129,7 +1269,8 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
+            function_node->setIsCompoundName(is_compound_name);
+            function_node->setIsOperator(is_operator);
 
             if (parameters)
             {
@@ -1157,14 +1298,14 @@ public:
             }
 
             if (respect_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::RESPECT_NULLS;
+                function_node->setNullsAction(NullsAction::RESPECT_NULLS);
             else if (ignore_nulls.ignore(pos, expected))
-                function_node->nulls_action = NullsAction::IGNORE_NULLS;
+                function_node->setNullsAction(NullsAction::IGNORE_NULLS);
 
             if (over.ignore(pos, expected))
             {
-                function_node->is_window_function = true;
-                function_node->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+                function_node->setIsWindowFunction(true);
+                function_node->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
 
                 ASTPtr function_node_as_iast = function_node;
 
@@ -1185,17 +1326,39 @@ private:
     bool has_all = false;
     bool has_distinct = false;
 
-    const char * contents_begin;
-    const char * contents_end;
+    const char * contents_begin{};
+    const char * contents_end{};
 
     String function_name;
     ASTPtr parameters;
 
     bool allow_function_parameters;
     bool is_compound_name;
+    bool is_operator;
 };
 
-/// Layer for priority brackets and tuple function
+/// Check if all elements are ASTLiteral nodes without aliases, and their field types
+/// are either scalar or match `allowed_compound_type`. This mirrors the cases that
+/// ParserCollectionOfLiterals handles: same-bracket nesting only (arrays inside arrays,
+/// tuples inside tuples) with scalar leaf literals and no aliases.
+static bool allElementsAreCompatibleLiterals(const ASTs & elements, Field::Types::Which allowed_compound_type)
+{
+    for (const auto & elem : elements)
+    {
+        const auto * literal = elem->as<ASTLiteral>();
+        if (!literal)
+            return false;
+        if (!elem->tryGetAlias().empty())
+            return false;
+        auto field_type = literal->value.getType();
+        if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
+            if (field_type != allowed_compound_type)
+                return false;
+    }
+    return true;
+}
+
+/// Layer for priority brackets and the tuple function
 class RoundBracketsLayer : public Layer
 {
 public:
@@ -1219,10 +1382,30 @@ public:
 
             if (!is_tuple && elements.size() == 1)
             {
-                // Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// Special case for (('a', 'b')) = tuple(('a', 'b'))
+                /// When a single element is an ASTLiteral(Tuple), unwrap it into
+                /// individual elements so that getResultImpl re-converts them to
+                /// a single ASTLiteral(Tuple) — preserving the same AST shape as
+                /// the original inner parse, without an extra tuple() wrapper.
+                /// This keeps `1 IN (((1), (2)))` equivalent to `1 IN (1, 2)`.
                 if (auto * literal = elements[0]->as<ASTLiteral>())
-                    if (literal->value.getType() == Field::Types::Tuple)
+                {
+                    if (literal->value.getType() == Field::Types::Tuple && elements[0]->tryGetAlias().empty())
+                    {
+                        /// Save the tuple value before clearing elements,
+                        /// because elements.clear() destroys the ASTLiteral
+                        /// that owns it.
+                        Tuple tup = literal->value.safeGet<Tuple>();
+                        elements.clear();
+                        elements.reserve(tup.size());
+                        for (auto & elem : tup)
+                            elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
+                        /// Outer parens were grouping (single inner literal-tuple), not tuple delimiters,
+                        /// so the resulting literal is parenthesized and must round-trip back to `((1, 2))`.
+                        outer_paren_was_grouping = true;
+                    }
+                }
 
                 // Special case for f(x, (y) -> z) = f(x, tuple(y) -> z)
                 if (pos->type == TokenType::Arrow)
@@ -1238,17 +1421,38 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        // Round brackets can mean priority operator as well as function tuple()
+        // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
+        {
             node = std::move(elements[0]);
+            node->setParenthesized(true);
+        }
+        else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
+        {
+            /// Produce ASTLiteral(Tuple) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which requires >= 2 elements
+            /// for tuples and accepts same-bracket nesting only).
+            Tuple tup;
+            tup.reserve(elements.size());
+            for (auto & elem : elements)
+                tup.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(tup));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
+        }
         else
-            node = makeASTFunction("tuple", std::move(elements));
+        {
+            node = makeASTOperator("tuple", std::move(elements));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
+        }
 
         return true;
     }
 
 private:
     bool is_tuple = false;
+    bool outer_paren_was_grouping = false;
 };
 
 /// Layer for array square brackets operator
@@ -1263,7 +1467,20 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        node = makeASTFunction("array", std::move(elements));
+        if (allElementsAreCompatibleLiterals(elements, Field::Types::Array))
+        {
+            /// Produce ASTLiteral(Array) to be consistent with the fast-path
+            /// ParserCollectionOfLiterals result (which accepts same-bracket nesting only).
+            Array arr;
+            arr.reserve(elements.size());
+            for (auto & elem : elements)
+                arr.push_back(elem->as<ASTLiteral &>().value);
+            node = make_intrusive<ASTLiteral>(std::move(arr));
+        }
+        else
+        {
+            node = makeASTOperator("array", std::move(elements));
+        }
         return true;
     }
 };
@@ -1383,6 +1600,167 @@ public:
     }
 };
 
+enum class ExtractUnit : uint8_t
+{
+    None,
+    Epoch,
+    Dow,
+    Doy,
+    Isodow,
+    Isoyear,
+    Century,
+    Decade,
+    Millennium,
+};
+
+/// Builds the AST corresponding to `EXTRACT(unit FROM expr)` /
+/// `date_part('unit', expr)`. Exactly one of `interval_kind` (when
+/// `extract_unit == ExtractUnit::None`) and `extract_unit` describes the unit.
+static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit extract_unit, const ASTPtr & expr)
+{
+    if (extract_unit == ExtractUnit::None)
+        return makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+
+    switch (extract_unit)
+    {
+        case ExtractUnit::Epoch:
+            return makeASTFunction("toUnixTimestamp", expr);
+        case ExtractUnit::Dow:
+            /// PostgreSQL DOW: 0 = Sunday, 6 = Saturday (toDayOfWeek mode 2)
+            return makeASTFunction("toDayOfWeek", expr, make_intrusive<ASTLiteral>(UInt64(2)));
+        case ExtractUnit::Doy:
+            return makeASTFunction("toDayOfYear", expr);
+        case ExtractUnit::Isodow:
+            /// ISO day of week: 1 = Monday, 7 = Sunday
+            return makeASTFunction("toDayOfWeek", expr);
+        case ExtractUnit::Isoyear:
+            return makeASTFunction("toISOYear", expr);
+        case ExtractUnit::Century:
+            /// century = (year - 1) / 100 + 1
+            return makeASTFunction("plus",
+                makeASTFunction("intDiv",
+                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    make_intrusive<ASTLiteral>(UInt64(100))),
+                make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::Decade:
+            /// decade = year / 10
+            return makeASTFunction("intDiv",
+                makeASTFunction("toYear", expr),
+                make_intrusive<ASTLiteral>(UInt64(10)));
+        case ExtractUnit::Millennium:
+            /// millennium = (year - 1) / 1000 + 1
+            return makeASTFunction("plus",
+                makeASTFunction("intDiv",
+                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    make_intrusive<ASTLiteral>(UInt64(1000))),
+                make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::None:
+            UNREACHABLE();
+    }
+}
+
+/// Maps a lowercased unit string to an `IntervalKind`, accepting the same
+/// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
+/// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
+/// `ns`). Keep in sync with `parseIntervalKind.cpp`.
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+{
+    if (IntervalKind::tryParseString(unit_lower, result))
+        return true;
+
+    if (unit_lower == "nanoseconds" || unit_lower == "sql_tsi_nanosecond" || unit_lower == "ns")
+    {
+        result = IntervalKind::Kind::Nanosecond;
+        return true;
+    }
+    if (unit_lower == "microseconds" || unit_lower == "sql_tsi_microsecond")
+    {
+        result = IntervalKind::Kind::Microsecond;
+        return true;
+    }
+    if (unit_lower == "milliseconds" || unit_lower == "sql_tsi_millisecond" || unit_lower == "ms")
+    {
+        result = IntervalKind::Kind::Millisecond;
+        return true;
+    }
+    if (unit_lower == "seconds" || unit_lower == "sql_tsi_second" || unit_lower == "ss" || unit_lower == "s")
+    {
+        result = IntervalKind::Kind::Second;
+        return true;
+    }
+    if (unit_lower == "minutes" || unit_lower == "sql_tsi_minute" || unit_lower == "mi" || unit_lower == "n")
+    {
+        result = IntervalKind::Kind::Minute;
+        return true;
+    }
+    if (unit_lower == "hours" || unit_lower == "sql_tsi_hour" || unit_lower == "hh" || unit_lower == "h")
+    {
+        result = IntervalKind::Kind::Hour;
+        return true;
+    }
+    if (unit_lower == "days" || unit_lower == "sql_tsi_day" || unit_lower == "dd" || unit_lower == "d")
+    {
+        result = IntervalKind::Kind::Day;
+        return true;
+    }
+    if (unit_lower == "weeks" || unit_lower == "sql_tsi_week" || unit_lower == "wk" || unit_lower == "ww")
+    {
+        result = IntervalKind::Kind::Week;
+        return true;
+    }
+    if (unit_lower == "months" || unit_lower == "sql_tsi_month" || unit_lower == "mm" || unit_lower == "m")
+    {
+        result = IntervalKind::Kind::Month;
+        return true;
+    }
+    if (unit_lower == "quarters" || unit_lower == "sql_tsi_quarter" || unit_lower == "qq" || unit_lower == "q")
+    {
+        result = IntervalKind::Kind::Quarter;
+        return true;
+    }
+    if (unit_lower == "years" || unit_lower == "sql_tsi_year" || unit_lower == "yyyy" || unit_lower == "yy")
+    {
+        result = IntervalKind::Kind::Year;
+        return true;
+    }
+    return false;
+}
+
+/// Parses a unit string (lowercased) like 'year' or 'epoch' into either an
+/// IntervalKind (standard units) or an ExtractUnit (PostgreSQL-specific extra
+/// units). Returns false if the string does not name a known unit.
+static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
+{
+    extract_unit = ExtractUnit::None;
+    IntervalKind::Kind kind{};
+    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
+    {
+        interval_kind = IntervalKind{kind};
+        return true;
+    }
+
+    if (unit_lower == "epoch")
+        extract_unit = ExtractUnit::Epoch;
+    else if (unit_lower == "dow")
+        extract_unit = ExtractUnit::Dow;
+    else if (unit_lower == "doy")
+        extract_unit = ExtractUnit::Doy;
+    else if (unit_lower == "isodow")
+        extract_unit = ExtractUnit::Isodow;
+    else if (unit_lower == "isoyear")
+        extract_unit = ExtractUnit::Isoyear;
+    else if (unit_lower == "century")
+        extract_unit = ExtractUnit::Century;
+    else if (unit_lower == "decade")
+        extract_unit = ExtractUnit::Decade;
+    else if (unit_lower == "millennium")
+        extract_unit = ExtractUnit::Millennium;
+    else
+        return false;
+
+    return true;
+}
+
 class ExtractLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
@@ -1392,7 +1770,10 @@ public:
     {
         /// extract(haystack, pattern) or EXTRACT(DAY FROM Date)
         ///
-        /// 0. If we parse interval_kind and 'FROM' keyword (-> 2), otherwise (-> 1)
+        /// Supports both standard interval kinds (YEAR, MONTH, DAY, etc.)
+        /// and PostgreSQL-compatible extract-only units (EPOCH, DOW, DOY, ISODOW, ISOYEAR, CENTURY, DECADE, MILLENNIUM).
+        ///
+        /// 0. If we parse an extract unit and 'FROM' keyword (-> 2), otherwise (-> 1)
         /// 1. Basic parser
         /// 2. Parse closing bracket (finished)
 
@@ -1401,7 +1782,8 @@ public:
             IParser::Pos begin = pos;
             ParserKeyword s_from(Keyword::FROM);
 
-            if (parseIntervalKind(pos, expected, interval_kind) && s_from.ignore(pos, expected))
+            if ((parseIntervalKind(pos, expected, interval_kind) || parseExtractOnlyUnit(pos, expected))
+                && s_from.ignore(pos, expected))
             {
                 state = 2;
                 return true;
@@ -1439,7 +1821,7 @@ protected:
             if (elements.empty())
                 return false;
 
-            node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), elements[0]);
+            node = buildExtractTimePartAST(interval_kind, extract_unit, elements[0]);
         }
         else
         {
@@ -1449,9 +1831,63 @@ protected:
         return true;
     }
 
-
 private:
     IntervalKind interval_kind;
+    ExtractUnit extract_unit = ExtractUnit::None;
+
+    bool parseExtractOnlyUnit(IParser::Pos & pos, Expected & expected)
+    {
+        if (ParserKeyword(Keyword::EPOCH).ignore(pos, expected))
+            extract_unit = ExtractUnit::Epoch;
+        else if (ParserKeyword(Keyword::DOW).ignore(pos, expected))
+            extract_unit = ExtractUnit::Dow;
+        else if (ParserKeyword(Keyword::DOY).ignore(pos, expected))
+            extract_unit = ExtractUnit::Doy;
+        else if (ParserKeyword(Keyword::ISODOW).ignore(pos, expected))
+            extract_unit = ExtractUnit::Isodow;
+        else if (ParserKeyword(Keyword::ISOYEAR).ignore(pos, expected))
+            extract_unit = ExtractUnit::Isoyear;
+        else if (ParserKeyword(Keyword::CENTURY).ignore(pos, expected))
+            extract_unit = ExtractUnit::Century;
+        else if (ParserKeyword(Keyword::DECADE).ignore(pos, expected))
+            extract_unit = ExtractUnit::Decade;
+        else if (ParserKeyword(Keyword::MILLENNIUM).ignore(pos, expected))
+            extract_unit = ExtractUnit::Millennium;
+        else
+            return false;
+
+        return true;
+    }
+};
+
+/// PostgreSQL-style `date_part('unit', expr)` is syntactic sugar for
+/// `EXTRACT(unit FROM expr)`. The unit must be a constant string and is
+/// recognised at parse time, producing the same AST as the `EXTRACT` form.
+class DatePartLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
+{
+public:
+    DatePartLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (elements.size() != 2)
+            return false;
+
+        const auto * literal = elements[0]->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return false;
+
+        const String unit_lower = Poco::toLower(literal->value.safeGet<String>());
+
+        IntervalKind interval_kind;
+        ExtractUnit extract_unit = ExtractUnit::None;
+        if (!tryParseExtractUnitFromString(unit_lower, interval_kind, extract_unit))
+            return false;
+
+        node = buildExtractTimePartAST(interval_kind, extract_unit, elements[1]);
+        return true;
+    }
 };
 
 class SubstringLayer : public Layer
@@ -1463,7 +1899,9 @@ public:
     {
         /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
         ///
-        /// 0: Parse first separator: FROM or comma (-> 1)
+        /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1478,6 +1916,29 @@ public:
                     return false;
 
                 state = 1;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar (`mapApply`,
+            /// `arrayFold`, …): the formatter emits `substring((x, y) -> z)`
+            /// for `substring(lambda(tuple(x, y), z))` and the re-parser must
+            /// accept that exact form to keep the AST format/re-parse
+            /// round-trip invariant in `executeQueryImpl`. We must scan the
+            /// whole stack — and not just the top via `previousType` — because
+            /// a lambda body can leave higher-priority binary operators above
+            /// the `lambda` operator (e.g. `[..., Lambda, Plus]` for
+            /// `(x) -> x + 1`); `mergeElement` below drains them in priority
+            /// order before combining the lambda. Bare `substring(x)`
+            /// continues to fail with `SYNTAX_ERROR` at parse time —
+            /// `02154_parser_backtracking` depends on this for
+            /// exponential-backtracking protection. See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -1517,6 +1978,128 @@ protected:
     }
 };
 
+class OverlayLayer : public Layer
+{
+    String function_name;
+    bool keyword_mode = false; /// true after seeing PLACING, locks to SQL standard syntax
+    bool comma_mode = false;   /// true after seeing a comma, locks to functional syntax
+public:
+    explicit OverlayLayer(String function_name_)
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
+        , function_name(std::move(function_name_))
+    {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        /// Two mutually exclusive forms, locked by the first separator:
+        ///   Keyword mode:  OVERLAY(string PLACING replacement FROM start [FOR length])
+        ///   Comma mode:    overlay(string, replacement, start[, length])
+
+        if (state == 0)
+        {
+            if (!keyword_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (!comma_mode && ParserKeyword(Keyword::PLACING).ignore(pos, expected))
+            {
+                keyword_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+        }
+
+        if (state == 1)
+        {
+            if (comma_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (keyword_mode && ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+        }
+
+        if (state == 2)
+        {
+            if (comma_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 3;
+            }
+            else if (keyword_mode && ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 3;
+            }
+        }
+
+        /// In comma mode, accept extra arguments so the function itself
+        /// can report NUMBER_OF_ARGUMENTS_DOESNT_MATCH instead of a syntax error.
+        if (comma_mode && state == 3)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+            }
+        }
+
+        /// In comma mode, allow closing bracket in any state so that calls with
+        /// too few arguments are rejected by the function, not the parser.
+        /// In keyword mode, require at least FROM (state >= 2) before closing.
+        if (!finished
+            && ((comma_mode && state >= 0) || (keyword_mode && state >= 2) || state == 0)
+            && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            if (!mergeElement())
+                return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction(function_name, std::move(elements));
+        return true;
+    }
+};
+
 class PositionLayer : public Layer
 {
 public:
@@ -1526,7 +2109,9 @@ public:
     {
         /// position(haystack, needle[, start_pos]) or position(needle IN haystack)
         ///
-        /// 0: Parse separator: comma (-> 1) or IN (-> 2)
+        /// 0: Parse separator: comma (-> 1) or IN (-> 2), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: comma
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1541,7 +2126,7 @@ public:
 
                 state = 1;
             }
-            if (ParserKeyword(Keyword::IN).ignore(pos, expected))
+            else if (ParserKeyword(Keyword::IN).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1549,6 +2134,27 @@ public:
                     return false;
 
                 state = 2;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar: the formatter
+            /// emits `position((x, y) -> z)` for `position(lambda(tuple(x, y), z))`
+            /// and the re-parser must accept that exact form to keep the
+            /// round-trip invariant. We must scan the whole stack — and not
+            /// just the top via `previousType` — because a lambda body can
+            /// leave higher-priority binary operators above the `lambda`
+            /// operator (e.g. `[..., Lambda, Plus]` for `(x) -> x + 1`);
+            /// `mergeElement` drains them in priority order before combining
+            /// the lambda. Bare `position(x)` continues to fail with
+            /// `SYNTAX_ERROR` — `02154_parser_backtracking` depends on this.
+            /// See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -1604,8 +2210,8 @@ public:
         if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             return false;
 
-        auto subquery = std::make_shared<ASTSubquery>(std::move(node));
-        elements = {makeASTFunction("exists", subquery)};
+        auto subquery = make_intrusive<ASTSubquery>(std::move(node));
+        elements = {makeASTOperator("exists", subquery)};
 
         finished = true;
 
@@ -1696,6 +2302,12 @@ public:
 
         if (state == 2)
         {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+                return mergeElement();
+            }
+
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 if (!mergeElement())
@@ -1838,9 +2450,9 @@ protected:
         if (parsed_interval_kind)
         {
             if (elements.size() == 2)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
+                node = makeASTFunction("dateDiff", make_intrusive<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1]);
             else if (elements.size() == 3)
-                node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
+                node = makeASTFunction("dateDiff", make_intrusive<ASTLiteral>(interval_kind.toDateDiffUnit()), elements[0], elements[1], elements[2]);
             else
                 return false;
         }
@@ -1863,7 +2475,7 @@ public:
     {
         bool result = LayerWithSeparator::parse(pos, expected, action);
 
-        /// Check that after the tuple() function there is no lambdas operator
+        /// Check that after the tuple(...) function there is no lambdas operator
         if (finished && pos->type == TokenType::Arrow)
             return false;
 
@@ -1879,6 +2491,139 @@ protected:
 };
 
 
+/// Parses a compound interval literal string according to the SQL-standard
+/// field separators. See IntervalLayer::parse for the full list of supported
+/// combinations. Returns nullopt on failure.
+struct ParsedCompoundInterval
+{
+    std::vector<std::pair<UInt64, IntervalKind>> parts;
+    /// Sign of the whole compound expression (from an optional leading +/- sign).
+    bool is_negative = false;
+};
+
+static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
+    const String & literal,
+    IntervalKind from_kind,
+    IntervalKind to_kind)
+{
+    using Kind = IntervalKind::Kind;
+
+    /// Each entry describes an interval kind and the separator character that precedes it
+    /// (0 means no separator — it is the first field in its group).
+    struct KindWithSeparator
+    {
+        Kind kind;
+        char separator_before;
+    };
+
+    static const std::vector<KindWithSeparator> year_month_group = {
+        {Kind::Year, 0},
+        {Kind::Month, '-'},
+    };
+
+    static const std::vector<KindWithSeparator> day_time_group = {
+        {Kind::Day, 0},
+        {Kind::Hour, ' '},
+        {Kind::Minute, ':'},
+        {Kind::Second, ':'},
+    };
+
+    /// Extract the sub-range [from_kind .. to_kind] from a group.
+    auto extract_range = [](const std::vector<KindWithSeparator> & group, Kind from, Kind to)
+        -> std::vector<KindWithSeparator>
+    {
+        size_t from_idx = group.size();
+        size_t to_idx = group.size();
+        for (size_t i = 0; i < group.size(); ++i)
+        {
+            if (group[i].kind == from)
+                from_idx = i;
+            if (group[i].kind == to)
+                to_idx = i;
+        }
+        if (from_idx >= group.size() || to_idx >= group.size() || from_idx >= to_idx)
+            return {};
+        return {group.begin() + from_idx, group.begin() + to_idx + 1};
+    };
+
+    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    if (range.empty())
+        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+    if (range.empty())
+        return {};
+
+    /// Parse the string according to the expected separators.
+    /// Per SQL standard, the sign on the leading field applies to the whole literal.
+    /// All component values are stored as UInt64; the caller applies negate() to the
+    /// whole toInterval*() AST node when is_negative is set.  This ensures the AST
+    /// round-trips correctly (negative Int64 literals format as -N which re-parses
+    /// as negate(N), causing an AST inconsistency check failure).
+    ParsedCompoundInterval parsed;
+    size_t str_pos = 0;
+
+    for (size_t i = 0; i < range.size(); ++i)
+    {
+        /// Expect separator before every field except the first.
+        if (i > 0)
+        {
+            if (str_pos >= literal.size() || literal[str_pos] != range[i].separator_before)
+                return {};
+            ++str_pos;
+        }
+
+        /// Parse digits; an optional +/- sign is allowed only on the leading field
+        /// and applies to all components of the compound literal.
+        if (i == 0 && str_pos < literal.size() && (literal[str_pos] == '+' || literal[str_pos] == '-'))
+        {
+            parsed.is_negative = (literal[str_pos] == '-');
+            ++str_pos;
+        }
+        size_t digits_start = str_pos;
+        while (str_pos < literal.size() && literal[str_pos] >= '0' && literal[str_pos] <= '9')
+            ++str_pos;
+
+        if (str_pos == digits_start) /// no digits found
+            return {};
+
+        UInt64 uvalue = 0;
+        auto [ptr, ec] = std::from_chars(literal.data() + digits_start, literal.data() + str_pos, uvalue);
+        if (ec != std::errc() || ptr != literal.data() + str_pos)
+            return {};
+
+        if (i == 0)
+        {
+            /// Leading field: limited to Int64 range to avoid sign-flip.
+            if (uvalue > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return {};
+        }
+        else
+        {
+            /// Non-leading fields: constrained per SQL standard.
+            /// MONTH 0-11, HOUR 0-23, MINUTE 0-59, SECOND 0-59.
+            UInt64 max_value = 0;
+            switch (range[i].kind)
+            {
+                case Kind::Month: max_value = 11; break;
+                case Kind::Hour: max_value = 23; break;
+                case Kind::Minute: max_value = 59; break;
+                case Kind::Second: max_value = 59; break;
+                default: max_value = 59; break;
+            }
+            if (uvalue > max_value)
+                return {};
+        }
+
+        parsed.parts.emplace_back(uvalue, IntervalKind{range[i].kind});
+    }
+
+    /// The entire string must be consumed.
+    if (str_pos != literal.size())
+        return {};
+
+    return parsed;
+}
+
+
 class IntervalLayer : public Layer
 {
 public:
@@ -1886,10 +2631,34 @@ public:
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// INTERVAL 1 HOUR or INTERVAL expr HOUR
+        /// Supported INTERVAL syntax variants:
         ///
-        /// 0. Try to parse interval_kind (-> 1)
-        /// 1. Basic parser
+        ///   (a) INTERVAL <expr> <kind>
+        ///       A single expression followed by an interval kind keyword.
+        ///       Example: INTERVAL 1 HOUR, INTERVAL (1 + 2) DAY
+        ///
+        ///   (b) INTERVAL '<number> <kind> [<number> <kind> ...]'
+        ///       A string literal containing one or more <number> <kind> pairs.
+        ///       Example: INTERVAL '1 HOUR', INTERVAL '1 HOUR 30 MINUTE'
+        ///
+        ///   (c) INTERVAL '<compound>' <from_kind> TO <to_kind>
+        ///       A string literal in compound format with a range of interval kinds.
+        ///       The string is parsed according to the SQL-standard field separators:
+        ///         Year-Month group: YEAR TO MONTH         format: Y-M
+        ///         Day-Time group:   DAY TO HOUR           format: D H
+        ///                           DAY TO MINUTE          format: D H:M
+        ///                           DAY TO SECOND          format: D H:M:S
+        ///                           HOUR TO MINUTE         format: H:M
+        ///                           HOUR TO SECOND         format: H:M:S
+        ///                           MINUTE TO SECOND       format: M:S
+        ///       An optional leading +/- sign applies to all components.
+        ///       Example: INTERVAL '1:30' HOUR TO MINUTE
+        ///                INTERVAL '-2-6' YEAR TO MONTH
+        ///                INTERVAL '5 12:30:45' DAY TO SECOND
+        ///
+        /// Parse states:
+        /// 0. Try to parse a string literal for cases (b) and (c) (-> 1)
+        /// 1. Fall back: parse <expr> <kind> for case (a)
 
         if (state == 0)
         {
@@ -1900,9 +2669,9 @@ public:
             ASTPtr string_literal;
             String literal;
 
-            //// A String literal followed INTERVAL keyword,
+            /// A string literal after the INTERVAL keyword:
             /// the literal can be a part of an expression or
-            /// include Number and INTERVAL TYPE at the same time
+            /// include Number and INTERVAL TYPE at the same time.
             if (ParserStringLiteral{}.parse(pos, string_literal, expected)
                 && string_literal->as<ASTLiteral &>().value.tryGet(literal))
             {
@@ -1912,10 +2681,18 @@ public:
                 ASTPtr expr;
 
                 if (!ParserNumber{}.parse(token_pos, expr, token_expected))
-                    return false;
+                {
+                    /// Case (c) when ParserNumber fails:
+                    /// Strings like '-1:30' cause the tokenizer to split '-' as a separate
+                    /// token, so ParserNumber does not consume the whole literal.
+                    /// Try compound TO syntax directly.
+                    if (!tryParseCompoundIntervalTO(literal, pos, expected))
+                        return false;
+                    return true;
+                }
 
-                /// case: INTERVAL '1' HOUR
-                /// back to begin
+                /// Case (b): INTERVAL '1' HOUR — single number, no interval kind inside.
+                /// Back to begin so the number is re-parsed as a regular expression.
                 if (!token_pos.isValid())
                 {
                     pos = begin;
@@ -1923,13 +2700,20 @@ public:
                     return true;
                 }
 
-                /// case: INTERVAL '1 HOUR'
+                /// Case (b): INTERVAL '1 HOUR' or INTERVAL '1 HOUR 30 MINUTE'
                 if (!parseIntervalKind(token_pos, token_expected, interval_kind))
-                    return false;
+                {
+                    /// Case (c) when ParserNumber succeeds partially:
+                    /// For '1:30', ParserNumber parses '1' but ':30' is not an interval
+                    /// kind. Fall back to compound TO syntax.
+                    if (!tryParseCompoundIntervalTO(literal, pos, expected))
+                        return false;
+                    return true;
+                }
 
                 pushResult(makeASTFunction(interval_kind.toNameOfFunctionToIntervalDataType(), expr));
 
-                /// case: INTERVAL '1 HOUR 1 SECOND ...'
+                /// Continue parsing remaining <number> <kind> pairs inside the string.
                 while (token_pos.isValid())
                 {
                     if (!ParserNumber{}.parse(token_pos, expr, token_expected) ||
@@ -1944,6 +2728,7 @@ public:
             return true;
         }
 
+        /// Case (a): INTERVAL <expr> <kind>
         if (state == 1)
         {
             if (action == Action::OPERATOR && parseIntervalKind(pos, expected, interval_kind))
@@ -1965,13 +2750,43 @@ protected:
         if (elements.size() == 1)
             node = elements[0];
         else
-            node = makeASTFunction("tuple", std::move(elements));
+            node = makeASTOperator("tuple", std::move(elements));
 
         return true;
     }
 
 private:
     IntervalKind interval_kind;
+
+    /// Try to parse INTERVAL '<compound>' <from_kind> TO <to_kind>.
+    /// On success, pushes toInterval*() nodes (wrapped with negate() if needed)
+    /// and sets finished = true. Returns false on parse failure.
+    bool tryParseCompoundIntervalTO(const String & literal, IParser::Pos & pos, Expected & expected)
+    {
+        IntervalKind from_kind;
+        IntervalKind to_kind;
+        if (!parseIntervalKind(pos, expected, from_kind)
+            || !ParserKeyword(Keyword::TO).ignore(pos, expected)
+            || !parseIntervalKind(pos, expected, to_kind))
+            return false;
+
+        auto compound = parseCompoundIntervalString(literal, from_kind, to_kind);
+        if (!compound)
+            return false;
+
+        for (const auto & [value, kind] : compound->parts)
+        {
+            auto interval_node = makeASTFunction(
+                kind.toNameOfFunctionToIntervalDataType(),
+                make_intrusive<ASTLiteral>(Field(value)));
+            pushResult(compound->is_negative
+                ? makeASTFunction("negate", std::move(interval_node))
+                : std::move(interval_node));
+        }
+
+        finished = true;
+        return true;
+    }
 };
 
 class CaseLayer : public Layer
@@ -2022,7 +2837,7 @@ public:
 
                 Field field_with_null;
                 ASTLiteral null_literal(field_with_null);
-                elements.push_back(std::make_shared<ASTLiteral>(null_literal));
+                elements.push_back(make_intrusive<ASTLiteral>(null_literal));
 
                 if (has_case_expr)
                     elements = {makeASTFunction("caseWithExpression", elements)};
@@ -2064,7 +2879,7 @@ public:
     }
 
 private:
-    bool has_case_expr;
+    bool has_case_expr{};
 };
 
 /// Layer for table function 'view' and 'viewIfPermitted'
@@ -2144,58 +2959,15 @@ private:
     bool if_permitted;
 };
 
-/// Layer for table function 'kql'
-class KustoLayer : public Layer
+/// We use Layers to parse elements consisting of other elements.
+/// In some cases, we are interested in the first element that is an identifier
+/// e.g. for a table function it would be the name of the function
+static bool isFirstIdentifier(ParserExpressionImpl::Layers & layers)
 {
-public:
+    return layers.size() == 1 && dynamic_cast<ExpressionLayer *>(layers.front().get()) != nullptr;
+}
 
-    KustoLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
-    {
-        /// kql('table|project ...')
-        /// 0. Parse the kql query
-        /// 1. Parse closing token
-        if (state == 0)
-        {
-            ASTPtr query;
-            --pos;
-            if (!ParserKQLTableFunction().parse(pos, query, expected))
-                return false;
-            --pos;
-            pushResult(query);
-
-            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                return false;
-
-            finished = true;
-            state = 1;
-            return true;
-        }
-
-        if (state == 1)
-        {
-            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            {
-                if (!mergeElement())
-                    return false;
-
-                finished = true;
-            }
-        }
-
-        return true;
-    }
-
-protected:
-    bool getResultImpl(ASTPtr & node) override
-    {
-        node = makeASTFunction("view", std::move(elements)); // reuse view function for kql
-        return true;
-    }
-};
-
-std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool allow_function_parameters_ = true)
+static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_function, bool is_first_identifier, bool allow_function_parameters_ = true)
 {
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
@@ -2220,6 +2992,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     /// TRIM(BOTH|LEADING|TRAILING x FROM y)
     /// SUBSTRING(x FROM a)
     /// SUBSTRING(x FROM a FOR b)
+    /// OVERLAY(x PLACING y FROM a)
+    /// OVERLAY(x PLACING y FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
@@ -2230,8 +3004,6 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
-        if (function_name_lowercase == "kql")
-            return std::make_unique<KustoLayer>();
     }
 
     if (function_name == "tuple")
@@ -2241,8 +3013,14 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<CastLayer>();
     if (function_name_lowercase == "extract")
         return std::make_unique<ExtractLayer>();
+    if (function_name_lowercase == "date_part" || function_name_lowercase == "datepart")
+        return std::make_unique<DatePartLayer>();
     if (function_name_lowercase == "substring")
         return std::make_unique<SubstringLayer>();
+    if (function_name_lowercase == "overlay")
+        return std::make_unique<OverlayLayer>("overlay");
+    if (function_name_lowercase == "overlayutf8")
+        return std::make_unique<OverlayLayer>("overlayUTF8");
     if (function_name_lowercase == "position")
         return std::make_unique<PositionLayer>();
     if (function_name_lowercase == "exists")
@@ -2264,11 +3042,20 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<DateDiffLayer>();
     if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
+
+    /// NOT is parsed as an operator because there is no difference between
+    /// the operator form: NOT (1 + 2), and the functional form: not(1 + 2), when the operand has to be in parentheses.
+    /// If it's in a table function and it's the first identifier in the Layer we are constructing,
+    /// it means `not` represents name of the table function and we should parse it as a function.
+    /// This is the only case where we cannot parse it as operator.
+    if (function_name_lowercase == "not" && (!is_table_function || !is_first_identifier))
+        return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_, false, true);
+
     return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
 }
 
 
-bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     IParser::Pos begin = pos;
 
@@ -2286,7 +3073,7 @@ bool ParseCastExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     return false;
 }
 
-bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
 
@@ -2305,7 +3092,7 @@ bool ParseDateOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
+static bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
 
@@ -2327,8 +3114,20 @@ bool ParseTimestampOperatorExpression(IParser::Pos & pos, ASTPtr & node, Expecte
 
 bool ParserExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Set up map to capture literal token positions for regex highlighting.
+    /// Only needed when highlighting is enabled and no map is already set.
+    LiteralTokenMap local_token_map;
+    SCOPE_EXIT({ expected.literal_token_map = nullptr; });
+    if (expected.enable_highlighting && !expected.literal_token_map)
+        expected.literal_token_map = &local_token_map;
+
     auto start = std::make_unique<ExpressionLayer>(false, allow_trailing_commas);
-    return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+    if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+    {
+        highlightRegexps(node, expected, 0);
+        return true;
+    }
+    return false;
 }
 
 bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2351,9 +3150,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ParserFunctionName().parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
+        auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);
         start->is_table_function = is_table_function;
-        return ParserExpressionImpl().parse(std::move(start), pos, node, expected);
+        if (ParserExpressionImpl().parse(std::move(start), pos, node, expected))
+            return true;
     }
 
     return false;
@@ -2370,7 +3170,7 @@ bool ParserExpressionWithOptionalArguments::parseImpl(Pos & pos, ASTPtr & node, 
     if (ParserIdentifier().parse(pos, node, expected))
     {
         node = makeASTFunction(node->as<ASTIdentifier>()->name());
-        node->as<ASTFunction &>().no_empty_args = true;
+        node->as<ASTFunction &>().setNoEmptyArgs(true);
         return true;
     }
 
@@ -2385,6 +3185,13 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_DISTINCT_FROM), Operator("isDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_NOT_UNKNOWN), Operator("isNotUnknownPredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_UNKNOWN),    Operator("isUnknownPredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_NOT_FALSE),  Operator("isNotFalsePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_FALSE),      Operator("isFalsePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_NOT_TRUE),   Operator("isNotTruePredicate", 6, 1, OperatorType::IsTruthValue)},
+    {toStringView(Keyword::IS_TRUE),       Operator("isTruePredicate", 6, 1, OperatorType::IsTruthValue)},
     {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
@@ -2430,6 +3237,55 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::u
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
 
+std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(std::string_view function_name)
+{
+    static const std::unordered_map<std::string, ExpressionOperatorPrettyInfo> map = []
+    {
+        std::unordered_map<std::string, ExpressionOperatorPrettyInfo> result;
+
+        auto consider = [&](std::string_view lexeme, const Operator & op)
+        {
+            if (op.function_name.empty())
+                return;
+            if (op.type == OperatorType::Lambda
+                || op.type == OperatorType::StartIf
+                || op.type == OperatorType::FinishIf
+                || op.type == OperatorType::StartBetween
+                || op.type == OperatorType::StartNotBetween
+                || op.type == OperatorType::Cast)
+                return;
+            if (op.function_name == "match")
+                return;
+
+            result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
+        };
+
+        for (const auto & [lexeme, op] : ParserExpressionImpl::operators_table)
+            consider(lexeme, op);
+        for (const auto & [lexeme, op] : ParserExpressionImpl::unary_operators_table)
+            consider(lexeme, op);
+
+        /// Canonical spellings / precedence not achieved by last-wins alone (e.g. `<>` follows `!=` in the table).
+        result.insert_or_assign("equals", ExpressionOperatorPrettyInfo{"=", 9});
+        result.insert_or_assign("notEquals", ExpressionOperatorPrettyInfo{"!=", 9});
+        result.insert_or_assign("isNotDistinctFrom", ExpressionOperatorPrettyInfo{"<=>", 6});
+
+        for (const char * name : {"not", "isNull", "isNotNull", "negate", "tupleElement", "arrayElement"})
+            if (auto it = result.find(name); it != result.end())
+                it->second.symbol = {};
+
+        result.insert_or_assign("nullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("globalNullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("notNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+        result.insert_or_assign("globalNotNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+
+        return result;
+    }();
+
+    if (auto it = map.find(std::string{function_name}); it != map.end())
+        return it->second;
+    return std::nullopt;
+}
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2500,12 +3356,12 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.front()->is_table_function)
     {
-        if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
+        if (typeid_cast<ViewLayer *>(layers.back().get()))
         {
             if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
             {
-                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
+                layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
                 return Action::OPERAND;
             }
             return Action::NONE;
@@ -2544,7 +3400,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
 
-        if (any_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
+        /// ANY and SOME are semantically identical
+        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ANY;
         else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
             subquery_function_type = SubqueryFunctionType::ALL;
@@ -2588,16 +3445,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (cur_op != unary_operators_table.end())
     {
-        if (cur_op->second.type == OperatorType::Not && pos->type == TokenType::OpeningRoundBracket)
-        {
-            ++pos;
-            auto identifier = std::make_shared<ASTIdentifier>(cur_op->second.function_name);
-            layers.push_back(getFunctionLayer(identifier, layers.front()->is_table_function));
-        }
-        else
-        {
-            layers.back()->pushOperator(cur_op->second);
-        }
+        layers.back()->pushOperator(cur_op->second);
         return Action::OPERAND;
     }
 
@@ -2637,7 +3485,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (function_name_parser.parse(pos, tmp, expected) && pos->type == TokenType::OpeningRoundBracket)
         {
             ++pos;
-            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function));
+            layers.push_back(getFunctionLayer(tmp, layers.front()->is_table_function, isFirstIdentifier(layers)));
             return Action::OPERAND;
         }
         pos = old_pos;
@@ -2652,12 +3500,15 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
-
             if (subquery_parser.parse(pos, tmp, expected))
             {
                 layers.back()->pushOperand(std::move(tmp));
                 return Action::OPERATOR;
             }
+
+            /// If subquery starts with a valid "SELECT" or "EXPLAIN", but failed later. It means there is a syntax error.
+            if (subquery_parser.startsWithValidSelectOrExplain())
+                return Action::NONE;
 
             ++pos;
             layers.push_back(std::make_unique<RoundBracketsLayer>());
@@ -2692,7 +3543,69 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
+    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
+    if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
+    {
+        /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
+        /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        constexpr int like_priority = 9;
+        while (layers.back()->previousPriority() > like_priority)
+        {
+            Operator higher_op;
+            if (!layers.back()->popOperator(higher_op))
+                break;
+
+            auto function = makeASTFunction(higher_op);
+            if (!layers.back()->popLastNOperands(function->children[0]->children, higher_op.arity))
+            {
+                layers.back()->pushOperator(higher_op);
+                break;
+            }
+            layers.back()->pushOperand(function);
+        }
+
+        Operator top_op;
+        bool popped = layers.back()->popOperator(top_op);
+
+        bool is_like = popped
+            && (top_op.function_name == "like" || top_op.function_name == "ilike"
+                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
+
+        if (is_like)
+        {
+            auto saved_pos = pos;
+
+            /// Consume the ESCAPE keyword
+            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
+
+            ASTPtr escape_ast;
+            if (ParserStringLiteral().parse(pos, escape_ast, expected))
+            {
+                ASTs arguments;
+                if (layers.back()->popLastNOperands(arguments, 2))
+                {
+                    auto function = makeASTFunction(top_op.function_name, arguments[0], arguments[1], escape_ast);
+                    function->setIsOperator(true);
+
+                    layers.back()->pushOperand(std::move(function));
+                    return Action::OPERATOR;
+                }
+            }
+
+            /// Parsing ESCAPE clause failed — restore operator stack and position
+            pos = saved_pos;
+            layers.back()->pushOperator(top_op);
+            return Action::NONE;
+        }
+
+        /// Not a LIKE operator on top, push the popped operator back and fall through
+        if (popped)
+            layers.back()->pushOperator(top_op);
+    }
+
     /// Try to find operators from 'operators_table'
+    auto saved_pos = pos;
     auto cur_op = operators_table.begin();
     for (; cur_op != operators_table.end(); ++cur_op)
     {
@@ -2720,7 +3633,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (op.type == OperatorType::Lambda)
     {
         if (!layers.back()->parseLambda())
+        {
+            /// Restore the position: parseOperator already advanced past '->',
+            /// but parseLambda failed, so we must not consume the token.
+            pos = saved_pos;
             return Action::NONE;
+        }
 
         layers.back()->pushOperator(op);
         return Action::OPERAND;
@@ -2809,7 +3727,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (ParserIdentifier().parse(pos, tmp, expected))
         {
             layers.back()->pushOperator(op);
-            layers.back()->pushOperand(std::make_shared<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
+            layers.back()->pushOperand(make_intrusive<ASTLiteral>(tmp->as<ASTIdentifier>()->name()));
             return Action::OPERATOR;
         }
     }
@@ -2825,7 +3743,19 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         layers.back()->pushOperand(std::move(function));
         return Action::OPERATOR;
     }
+    if (op.type == OperatorType::IsTruthValue)
+    {
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
 
+        ASTPtr function = makeTruthValuePredicateOperator(op.function_name, argument);
+        if (!function)
+            return Action::NONE;
+
+        layers.back()->pushOperand(std::move(function));
+        return Action::OPERATOR;
+    }
     layers.back()->pushOperator(op);
 
     if (op.type == OperatorType::Cast)
@@ -2834,7 +3764,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!ParserDataType().parse(pos, type_ast, expected))
             return Action::NONE;
 
-        layers.back()->pushOperand(std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
         return Action::OPERATOR;
     }
 

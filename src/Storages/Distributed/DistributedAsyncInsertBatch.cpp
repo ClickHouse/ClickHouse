@@ -3,17 +3,24 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
+#include <Disks/IDisk.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <fmt/ranges.h>
+#include <filesystem>
 #include <ranges>
 
 namespace CurrentMetrics
@@ -47,7 +54,7 @@ namespace ErrorCodes
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
-bool isSplittableErrorCode(int code, bool remote)
+static bool isSplittableErrorCode(int code, bool remote)
 {
     return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         /// FunctionRange::max_elements and similar
@@ -188,7 +195,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
-            UInt64 idx;
+            UInt64 idx = 0;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }
@@ -212,7 +219,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
         try
         {
-            ReadBufferFromFile header_buffer(files.back());
+            ReadBufferFromFile header_buffer(file);
             const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
             if (header.rows)
             {
@@ -260,7 +267,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
             if (!remote)
             {
-                Settings insert_settings = distributed_header.insert_settings;
+                Settings insert_settings = *distributed_header.insert_settings;
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
@@ -279,6 +286,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                     distributed_header.insert_query,
                     insert_settings,
                     distributed_header.client_info);
+                remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
@@ -314,7 +322,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
-            Settings insert_settings = distributed_header.insert_settings;
+            Settings insert_settings = *distributed_header.insert_settings;
             insert_settings.applyChanges(settings_changes);
 
             // This function is called in a separated thread, so we set up the trace context from the file
@@ -332,6 +340,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 distributed_header.insert_query,
                 insert_settings,
                 distributed_header.client_info);
+            remote.initialize();
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
             remote.onFinish();

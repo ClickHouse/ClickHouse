@@ -24,7 +24,7 @@ namespace Poco {
 namespace Net {
 
 
-QuotedPrintableEncoderBuf::QuotedPrintableEncoderBuf(std::ostream& ostr): 
+QuotedPrintableEncoderBuf::QuotedPrintableEncoderBuf(std::ostream& ostr):
 	_pending(-1),
 	_lineLength(0),
 	_ostr(ostr)
@@ -135,10 +135,11 @@ QuotedPrintableEncoderBuf* QuotedPrintableEncoderIOS::rdbuf()
 }
 
 
-QuotedPrintableEncoder::QuotedPrintableEncoder(std::ostream& ostr): 
-	QuotedPrintableEncoderIOS(ostr), 
+QuotedPrintableEncoder::QuotedPrintableEncoder(std::ostream& ostr):
+	QuotedPrintableEncoderIOS(ostr),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
@@ -17,12 +19,19 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Access/Common/SQLSecurityDefs.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -42,8 +51,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace ErrorCodes
@@ -58,6 +67,132 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Walk the AST and expand parameterized view "table function" calls into their inlined,
+    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
+    ///
+    /// In the analyzer path, without this expansion the query tree would show the unexpanded
+    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
+    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
+    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
+    /// parameterized views that appear on the right side of a JOIN as well.
+    struct ExpandParameterizedViewsMatcher
+    {
+        struct Data : public WithContext
+        {
+            explicit Data(ContextPtr context_) : WithContext(context_) {}
+        };
+
+        static bool needChildVisit(ASTPtr &, ASTPtr &)
+        {
+            return true;
+        }
+
+        static void visit(ASTPtr & ast, Data & data)
+        {
+            if (auto * select = ast->as<ASTSelectQuery>())
+                expandTables(*select, data);
+        }
+
+        /// Iterate all table expressions in the SELECT (FROM and JOINs) and expand
+        /// any that are parameterized view calls.
+        static void expandTables(ASTSelectQuery & select, const Data & data)
+        {
+            if (!select.tables() || select.tables()->children.empty())
+                return;
+
+            for (auto & child : select.tables()->children)
+            {
+                auto * table_element = child->as<ASTTablesInSelectQueryElement>();
+                if (!table_element || !table_element->table_expression)
+                    continue;
+
+                auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+                if (!table_expr || !table_expr->table_function)
+                    continue;
+
+                tryExpandTableExpression(*table_expr, data);
+            }
+        }
+
+        /// If the table expression is a parameterized view call, replace it with
+        /// the parameter-substituted inner query as a subquery.
+        static void tryExpandTableExpression(ASTTableExpression & table_expr, const Data & data)
+        {
+            const auto * func = table_expr.table_function->as<ASTFunction>();
+            if (!func)
+                return;
+
+            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
+            /// rewriting the view call into a subquery here would attach them to the
+            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
+            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
+            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
+                return;
+
+            auto query_context = data.getContext()->getQueryContext();
+
+            /// A registered table function (e.g. `numbers`) takes precedence over a view with
+            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
+            /// a user view shadowing a built-in table function would be expanded here while
+            /// regular execution would still resolve the built-in.
+            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
+                return;
+
+            String database_name = query_context->getCurrentDatabase();
+            String table_name = func->name;
+            if (func->isCompoundName())
+            {
+                std::vector<std::string> parts;
+                splitInto<'.'>(parts, func->name);
+                if (parts.size() != 2)
+                    return;
+                database_name = parts[0];
+                table_name = parts[1];
+            }
+
+            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
+            if (!storage)
+                return;
+
+            const auto * storage_view = storage->as<StorageView>();
+            if (!storage_view || !storage_view->isParameterizedView())
+                return;
+
+            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+
+            /// For views created with `SQL SECURITY DEFINER` or `NONE`, execution resolves the
+            /// inner tables via `StorageView::getSQLSecurityOverriddenContext`. Inlining the view
+            /// here would instead re-analyze the inner query under the invoker's context, so
+            /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
+            /// tables. Leave the original parameterized call intact in that case.
+            if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
+                return;
+
+            auto view_query = metadata->getSelectQuery().inner_query->clone();
+            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
+            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
+
+            /// Replace the table function with a subquery in-place on this table expression,
+            /// rather than using `StorageView::replaceWithSubquery` which only handles the
+            /// first table expression in the SELECT. Preserve the explicit alias from the
+            /// original table function (e.g. `... FROM my_pv(n=1) AS t`) so identifiers in
+            /// the outer query keep resolving; otherwise fall back to the view's table name
+            /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
+            String alias = table_expr.table_function->tryGetAlias();
+            if (alias.empty())
+                alias = table_name;
+
+            table_expr.table_function = nullptr;
+            table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
+            table_expr.subquery->setAlias(alias);
+
+            table_expr.children.clear();
+            table_expr.children.push_back(table_expr.subquery);
+        }
+    };
+
+    using ExpandParameterizedViewsVisitor = InDepthNodeVisitor<ExpandParameterizedViewsMatcher, true>;
+
     struct ExplainAnalyzedSyntaxMatcher
     {
         struct Data : public WithContext
@@ -109,14 +244,25 @@ namespace
 
             if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
             {
-                auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
                 for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
                 {
+                    ConstantNode * constant_node = nullptr;
                     if (secret_arguments.are_named)
-                        argument_nodes[n]->as<FunctionNode&>().getArguments().getNodes()[1]->as<ConstantNode&>().setMaskId();
-                    else
-                        argument_nodes[n]->as<ConstantNode&>().setMaskId();
+                    {
+                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
+                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
+                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
+                    }
+
+                    if (!constant_node)
+                    {
+                        constant_node = argument_nodes[n]->as<ConstantNode>();
+                    }
+
+                    if (constant_node)
+                        constant_node->setMaskId();
                 }
             }
         }
@@ -212,6 +358,9 @@ struct QueryTreeSettings
     bool dump_ast = false;
     Int64 passes = -1;
 
+    /// Only for EXPLAIN SYNTAX
+    bool ast_one_line = false;
+
     constexpr static char name[] = "QUERY TREE";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
@@ -245,11 +394,18 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
+            {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
+            {"input_headers", query_plan_options.input_headers},
+            {"column_structure", query_plan_options.column_structure},
+            {"compact", query_plan_options.compact},
+            {"pretty", query_plan_options.pretty},
+
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -268,6 +424,8 @@ struct QueryPipelineSettings
             {"header", query_pipeline_options.header},
             {"graph", graph},
             {"compact", compact},
+            {"distributed", query_pipeline_options.distributed},
+            {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -337,15 +495,21 @@ struct ExplainSettings : public Settings
 struct QuerySyntaxSettings
 {
     bool oneline = false;
+    bool run_query_tree_passes = false;
+    Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"oneline", oneline},
+        {"run_query_tree_passes", run_query_tree_passes}
     };
 
-    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
+    {
+        {"query_tree_passes", query_tree_passes}
+    };
 };
 
 template <typename Settings>
@@ -387,6 +551,63 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
     return settings;
 }
 
+bool explainQueryTree(
+    ASTPtr explained_query,
+    ContextPtr query_context,
+    const QueryTreeSettings & settings,
+    WriteBuffer & buf)
+{
+    if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
+        return false;
+
+    auto query_tree = buildQueryTree(explained_query, query_context);
+    bool need_newline = false;
+
+    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    {
+        TableFunctionSecretsVisitor visitor;
+        visitor.visit(query_tree);
+    }
+
+    if (settings.run_passes)
+    {
+        auto query_tree_pass_manager = QueryTreePassManager(query_context);
+        addQueryTreePasses(query_tree_pass_manager);
+
+        size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
+
+        if (settings.dump_passes)
+        {
+            query_tree_pass_manager.dump(buf, pass_index);
+            need_newline = true;
+        }
+
+        query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    if (settings.dump_tree)
+    {
+        if (need_newline)
+            buf << "\n\n";
+
+        query_tree->dumpTree(buf);
+        need_newline = true;
+    }
+
+    if (settings.dump_ast)
+    {
+        if (need_newline)
+            buf << "\n\n";
+
+        IAST::FormatSettings format_settings(settings.ast_one_line);
+        format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+
+        query_tree->toAST()->format(buf, format_settings);
+    }
+
+    return true;
+}
+
 }
 
 QueryPipeline InterpreterExplainQuery::executeImpl()
@@ -400,9 +621,19 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    options.setExplain();
-
     ContextPtr query_context = getContext();
+
+    options.setExplain();
+    options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+    /// https://github.com/ClickHouse/ClickHouse/issues/88467
+    /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
+    /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
+    auto explain_query_context = Context::createCopy(query_context);
+    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+    explain_query_context->setSetting("use_query_condition_cache", false);
+    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {
@@ -425,6 +656,29 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
+            /// Inline any parameterized view calls with their parameter-substituted inner queries,
+            /// so EXPLAIN SYNTAX shows what the view actually expands to.
+            ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+            ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
+                    .run_passes = settings.run_query_tree_passes,
+                    .dump_tree = false,
+                    .dump_passes = false,
+                    .dump_ast = true,
+                    .passes = settings.query_tree_passes,
+                    .ast_one_line = settings.oneline,
+                }, buf);
+
+                if (explain_ok)
+                    break;
+                auto query_context_mutable = Context::createCopy(query_context);
+                query_context_mutable->setSetting("allow_experimental_analyzer", false);
+                query_context = std::move(query_context_mutable);
+            }
+
             ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
@@ -435,59 +689,14 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
-
-            if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
+                    "EXPLAIN QUERY TREE is only supported with the analyzer. SET enable_analyzer = 1.");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
 
-            auto query_tree = buildQueryTree(ast.getExplainedQuery(), query_context);
-            bool need_newline = false;
-
-            if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-            {
-                TableFunctionSecretsVisitor visitor;
-                visitor.visit(query_tree);
-            }
-
-            if (settings.run_passes)
-            {
-                auto query_tree_pass_manager = QueryTreePassManager(query_context);
-                addQueryTreePasses(query_tree_pass_manager);
-
-                size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
-
-                if (settings.dump_passes)
-                {
-                    query_tree_pass_manager.dump(buf, pass_index);
-                    need_newline = true;
-                }
-
-                query_tree_pass_manager.run(query_tree, pass_index);
-            }
-
-            if (settings.dump_tree)
-            {
-                if (need_newline)
-                    buf << "\n\n";
-
-                query_tree->dumpTree(buf);
-                need_newline = true;
-            }
-
-            if (settings.dump_ast)
-            {
-                if (need_newline)
-                    buf << "\n\n";
-
-                IAST::FormatSettings format_settings(false);
-                format_settings.show_secrets = getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
-
-                query_tree->toAST()->format(buf, format_settings);
-            }
+            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             break;
         }
@@ -519,6 +728,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 auto optimization_settings = QueryPlanOptimizationSettings(context);
                 optimization_settings.keep_logical_steps = settings.keep_logical_steps;
                 optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
                 plan.optimize(optimization_settings);
             }
 
@@ -544,7 +754,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -568,10 +778,16 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
+                    if (settings.query_pipeline_options.distributed)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'graph'");
+
                     /// Pipe holds QueryPlan, should not go out-of-scope
                     QueryPlanResourceHolder resources;
                     auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
@@ -589,16 +805,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
+                auto insert_context = Context::createCopy(getContext());
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    query_context,
+                    insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
+                // we do not need it anymore, it would not be executed
                 io.pipeline.cancel();
             }
             else
@@ -643,7 +860,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            auto metadata_snapshot = storage->getInMemoryMetadata();
+            StorageInMemoryMetadata metadata_snapshot = *storage->getInMemoryMetadataPtr(query_context, false);
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
@@ -677,9 +894,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
+void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

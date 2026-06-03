@@ -32,6 +32,8 @@ def start_cluster():
 def test_max_bytes_ratio_before_external_group_by(node):
     if node.is_built_with_thread_sanitizer():
         pytest.skip("TSan build is skipped due to memory overhead")
+    if node.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer uses more memory, making precise memory limit testing unreliable")
 
     # Peak memory usage: 15-16GiB
     query = """
@@ -45,6 +47,8 @@ def test_max_bytes_ratio_before_external_group_by(node):
         "max_memory_usage": "0",
         "max_bytes_before_external_group_by": 0,
         "max_bytes_ratio_before_external_group_by": 0.3,
+        # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+        "enable_sharding_aggregator": 0,
     }
     node.query(query, settings=settings)
 
@@ -77,11 +81,12 @@ def test_max_bytes_ratio_before_external_sort(node):
 
     settings = {
         "max_memory_usage": "0",
-        "max_bytes_before_external_sort": 0,
+        "max_bytes_before_external_sort": "1Gi",
         "max_bytes_ratio_before_external_sort": 0.3,
     }
     node.query(query, settings=settings)
 
+    settings["max_bytes_before_external_sort"] = 0
     settings["max_bytes_ratio_before_external_sort"] = 0
     with pytest.raises(QueryRuntimeException):
         node.query(query, settings=settings)

@@ -1,5 +1,5 @@
 #include <Interpreters/Context.h>
-#include "ICommand.h"
+#include <ICommand.h>
 #include <Common/logger_useful.h>
 
 namespace DB

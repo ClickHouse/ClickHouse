@@ -24,7 +24,7 @@ class JSONCompactEachRowRowInputFormat final : public RowInputFormatWithNamesAnd
 {
 public:
     JSONCompactEachRowRowInputFormat(
-        const Block & header_,
+        SharedHeader header_,
         ReadBuffer & in_,
         Params params_,
         bool with_names_,
@@ -81,7 +81,7 @@ private:
     bool yield_strings;
 };
 
-class JSONCompactEachRowRowSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);

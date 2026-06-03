@@ -4,20 +4,17 @@
 
 #if USE_AVRO
 
-#include <unordered_map>
 #include <map>
+#include <unordered_map>
 #include <vector>
-
-#include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Schema.hh>
 #include <ValidSchema.hh>
-
 
 namespace DB
 {
@@ -29,6 +26,13 @@ namespace ErrorCodes
 
 class Block;
 
+/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
+/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
+/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
+/// levels, so 256 is more than enough.
+static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
+
+class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -51,6 +55,12 @@ class AvroDeserializer
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+
+    AvroDeserializer(const AvroDeserializer &) = delete;
+    AvroDeserializer & operator=(const AvroDeserializer &) = delete;
+    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer & operator=(AvroDeserializer &&) = delete;
+
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
@@ -66,7 +76,7 @@ private:
         enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
-        int target_column_idx;
+        int target_column_idx{};
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
@@ -86,10 +96,12 @@ private:
 
         explicit Action(SkipFn skip_fn_)
             : type(Skip)
+            , target_column_idx(0)
             , skip_fn(skip_fn_) {}
 
         Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
             : type(Nested)
+            , target_column_idx(0)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
@@ -130,6 +142,7 @@ private:
     private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
+            , target_column_idx(0)
             , actions(actions_) {}
 
         void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
@@ -146,6 +159,10 @@ private:
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 
+    /// Guard against infinite recursion in createDeserializeFn and createAction
+    /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
+    std::unordered_set<std::string> symbolic_deserialize_guard;
+
     bool null_as_default = false;
 
     const FormatSettings & settings;
@@ -154,7 +171,7 @@ private:
 class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
-    AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "AvroRowInputFormat"; }
 
@@ -179,10 +196,8 @@ private:
 class AvroConfluentRowInputFormat final : public IRowInputFormat
 {
 public:
-    AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
-
-    class SchemaRegistry;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
@@ -191,7 +206,7 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::shared_ptr<SchemaRegistry> schema_registry;
+    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
@@ -201,7 +216,7 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader : public ISchemaReader
+class AvroSchemaReader final : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
@@ -210,6 +225,7 @@ public:
 
     static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
 
     bool confluent;
     const FormatSettings format_settings;

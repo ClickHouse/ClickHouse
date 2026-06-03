@@ -4,11 +4,10 @@
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
-#include <Interpreters/Cache/FileCache_fwd.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 namespace DB
 {
@@ -17,24 +16,51 @@ class MMappedFileCache;
 class PageCache;
 class Context;
 
-struct ReadSettings
+/// Settings controlling reads from a remote filesystem (S3, Azure, HDFS, GCS, …).
+/// Used by the transport-level read buffers (`ReadBufferFromS3`, `ReadBufferFromHDFS`, …).
+struct RemoteFSReadSettings
 {
-    ReadSettings() = default;
-    explicit ReadSettings(const Context & context);
+    /// Method to use reading from remote filesystem (read | threadpool).
+    RemoteFSReadMethod method = RemoteFSReadMethod::threadpool;
 
+    /// Buffer size for remote filesystem reads.
+    size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Enable async prefetching for remote reads.
+    bool prefetch = false;
+
+    /// TODO: `max_backoff_ms` / `max_retries` are dead — assigned from public
+    /// Settings `remote_fs_read_max_backoff_ms` / `remote_fs_read_backoff_max_tries`
+    /// but no internal read path actually consumes them. Either wire them into
+    /// a real retry policy or remove both the fields and the Settings together.
+    size_t max_backoff_ms = 10000;
+    size_t max_retries = 4;
+
+    /// Minimum bytes between successive reads before a seek becomes a new request.
+    size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// Floor for `buffer_size` when filesystem cache is active, to reduce cache fragmentation.
+    /// Backed by the public Setting `prefetch_buffer_size` (name preserved for compatibility).
+    size_t large_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// HDFS-specific: use pread for non-async reads.
+    bool enable_hdfs_pread = true;
+
+    /// Log every blob storage read operation to system.blob_storage_log.
+    bool enable_blob_storage_log = false;
+};
+
+/// Settings controlling reads from the local filesystem.
+/// Used by `createReadBufferFromFileBase` to pick a read method and buffer size.
+struct LocalFSReadSettings
+{
     /// Method to use reading from local filesystem.
-    LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
-    /// Method to use reading from remote filesystem.
-    RemoteFSReadMethod remote_fs_method = RemoteFSReadMethod::threadpool;
+    LocalFSReadMethod method = LocalFSReadMethod::pread;
 
     /// https://eklitzke.org/efficient-file-copying-on-linux
-    size_t local_fs_buffer_size = 128 * 1024;
+    size_t buffer_size = 128 * 1024;
 
-    size_t remote_fs_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-    size_t prefetch_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-
-    bool local_fs_prefetch = false;
-    bool remote_fs_prefetch = false;
+    bool prefetch = false;
 
     /// For 'read', 'pread' and 'pread_threadpool' methods.
     size_t direct_io_threshold = 0;
@@ -42,41 +68,78 @@ struct ReadSettings
     /// For 'mmap' method.
     size_t mmap_threshold = 0;
     MMappedFileCache * mmap_cache = nullptr;
+};
 
-    /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
+/// Settings controlling HTTP transport retry/backoff and behavior.
+/// Used by `ReadWriteBufferFromHTTP`.
+struct HTTPReadSettings
+{
+    size_t max_tries = 10;
+    size_t retry_initial_backoff_ms = 100;
+    size_t retry_max_backoff_ms = 1600;
+    bool skip_not_found_url_for_globs = true;
+    bool make_head_request = true;
+};
+
+/// Settings controlling the in-memory page cache behavior.
+/// Used by CachedInMemoryReadBufferFromFile and the ReadPipeline memory cache stage.
+struct PageCacheSettings
+{
+    bool read_if_exists_otherwise_bypass = false;
+    /// Test-only: randomly evict cache entries to exercise the eviction path.
+    bool random_eviction_for_tests = false;
+    size_t block_size = 1 << 20;
+    size_t lookahead_blocks = 16;
+    size_t max_coalesced_bytes = 16 << 20;
+    /// The page-cache instance (shared global cache). Null when the stage is disabled.
+    std::shared_ptr<PageCache> cache;
+};
+
+/// Settings controlling the filesystem (disk) cache behavior.
+/// Used by CachedOnDiskReadBufferFromFile and the ReadPipeline disk cache stage.
+struct FilesystemCacheSettings
+{
+    bool read_if_exists_otherwise_bypass = false;
+    size_t segments_batch_size = 20;
+    std::optional<size_t> boundary_alignment;
+    bool allow_background_download = true;
+    bool allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool allow_background_download_during_fetch = true;
+    /// Hint to callers (DiskObjectStorage / StorageObjectStorageSource) to enlarge the remote-FS
+    /// read buffer when this cache is active — reduces cache fragmentation. Not the cache's own buffer.
+    /// Name kept aligned with the public setting `filesystem_cache_prefer_bigger_buffer_size` and
+    /// the sister `DistributedCacheSettings::prefer_bigger_buffer_size`.
+    bool prefer_bigger_buffer_size = true;
+    size_t reserve_space_wait_lock_timeout_milliseconds = 1000;
+    size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
+    bool skip_download_if_exceeds_per_query_cache_write_limit = true;
+    bool enable_log = false;
+};
+
+struct ReadSettings
+{
+    /// Local filesystem source parameters (read method, buffer size, mmap/direct-io thresholds).
+    LocalFSReadSettings local_fs_settings;
+
+    /// Remote filesystem source parameters (S3/Azure/HDFS/GCS read method, buffer size, retry policy).
+    RemoteFSReadSettings remote_fs_settings;
+
+    /// For 'pread_threadpool'/'io_uring' method and async prefetch. Lower value is higher priority.
     Priority priority;
-
-    bool load_marks_asynchronously = true;
-
-    size_t remote_fs_read_max_backoff_ms = 10000;
-    size_t remote_fs_read_backoff_max_tries = 4;
 
     bool enable_filesystem_read_prefetches_log = false;
 
+    /// Toggle for the filesystem cache stage. The stage parameters live in `filesystem_cache_settings`.
     bool enable_filesystem_cache = true;
-    bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
-    bool enable_filesystem_cache_log = false;
-    size_t filesystem_cache_segments_batch_size = 20;
-    size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
-    bool filesystem_cache_allow_background_download = true;
-    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
-    bool filesystem_cache_allow_background_download_during_fetch = true;
-    bool filesystem_cache_prefer_bigger_buffer_size = true;
-    std::optional<size_t> filesystem_cache_boundary_alignment;
+    FilesystemCacheSettings filesystem_cache_settings;
 
+    /// Toggles for the page cache stage (decided per-disk before composing the pipeline).
+    /// The stage parameters live in `page_cache_settings`.
     bool use_page_cache_for_disks_without_file_cache = false;
-    [[ maybe_unused ]] bool use_page_cache_with_distributed_cache = false;
-    bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
-    bool page_cache_inject_eviction = false;
-    std::shared_ptr<PageCache> page_cache;
-
-    size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
-
-    size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
-
-    bool remote_read_buffer_restrict_seek = false;
-    bool remote_read_buffer_use_external_buffer = false;
+    bool use_page_cache_with_distributed_cache = false;
+    bool use_page_cache_for_local_disks = false;
+    bool use_page_cache_for_object_storage = false;
+    PageCacheSettings page_cache_settings;
 
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
@@ -84,33 +147,23 @@ struct ReadSettings
 
     IOSchedulingSettings io_scheduling;
 
-    size_t http_max_tries = 10;
-    size_t http_retry_initial_backoff_ms = 100;
-    size_t http_retry_max_backoff_ms = 1600;
-    bool http_skip_not_found_url_for_globs = true;
-    bool http_make_head_request = true;
+    /// HTTP transport retry/backoff parameters.
+    HTTPReadSettings http_settings;
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
-    std::optional<FileCacheUserInfo> filecache_user_info;
-    bool enable_hdfs_pread = true;
 
-    ReadSettings adjustBufferSize(size_t file_size) const
-    {
-        ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
-        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
-        return res;
-    }
+    ReadSettings adjustBufferSize(size_t file_size) const;
 
-    ReadSettings withNestedBuffer() const
-    {
-        ReadSettings res = *this;
-        res.remote_read_buffer_restrict_seek = true;
-        res.remote_read_buffer_use_external_buffer = true;
-        return res;
-    }
+    /// Verification/metadata-read mode: disable every read-side cache (and the
+    /// cache-stage logs that come with them). Used by `checkDataPart`,
+    /// restore, and iceberg metadata reads.
+    void disableCaches();
+
+    /// Configure the remote-FS source for reading a small object-storage file
+    /// (sets threadpool method, disables prefetch, shrinks the buffer). Used by
+    /// metadata-storage operations that fetch small per-object files.
+    void useForSmallRemoteRead(size_t buffer_size);
 };
 
 ReadSettings getReadSettings();

@@ -3,6 +3,11 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Databases/DatabaseShared.h>
+#endif
+
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -29,11 +34,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
+    auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
-    if (!db_disk->isSymlinkSupported())
+    if (!default_db_disk->isSymlinkSupported())
         return;
 
     const String & engine_name = create.storage->engine->name;
@@ -42,10 +47,10 @@ void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & me
     if (engine_name != "Ordinary")
         return;
 
-    if (!db_disk->isSymlink(metadata_path))
+    if (!default_db_disk->isSymlink(metadata_path))
         return;
 
-    String target_path = db_disk->readSymlink(metadata_path);
+    String target_path = default_db_disk->readSymlink(metadata_path);
     fs::path path_to_remove = metadata_path;
     if (path_to_remove.filename().empty())
         path_to_remove = path_to_remove.parent_path();
@@ -91,7 +96,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
 {
     const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
@@ -108,7 +113,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -132,7 +137,15 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    if (it == database_engines.end())
+        return false;
+    return it->second.features.is_external;
+}
+
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -150,7 +163,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .database_name = database_name,
         .metadata_path = metadata_path,
         .uuid = create.uuid,
-        .context = context};
+        .context = context,
+        .mode = mode};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;

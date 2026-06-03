@@ -5,9 +5,8 @@ sidebar_label: 'Enum'
 sidebar_position: 20
 slug: /sql-reference/data-types/enum
 title: 'Enum'
+doc_type: 'reference'
 ---
-
-# Enum
 
 Enumerated type consisting of named values.
 
@@ -76,7 +75,7 @@ Ok.
 ```
 
 ```sql
-INSERT INTO t_enum values('a')
+INSERT INTO t_enum VALUES('a')
 ```
 
 ```text
@@ -143,7 +142,7 @@ ENGINE = TinyLog
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
 ```sql
-INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_nullable VALUES('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.

@@ -4,22 +4,21 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
-#include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <base/EnumReflection.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -27,6 +26,7 @@
 #include <vector>
 
 #include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -128,7 +128,7 @@ public:
             if (!thread.joinable())
                 thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
-            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, toString(key.first));
+            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
 
             return {session, true};
         }
@@ -136,7 +136,7 @@ public:
         /// Use existing session.
         const auto & session = it->second;
 
-        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, toString(key.first));
+        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
 
         if (!isSharedPtrUnique(session))
             throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -164,14 +164,13 @@ public:
     void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
         session_data = nullptr;
 
         Key key{user_id, session_id};
         auto it = sessions.find(key);
         if (it == sessions.end())
         {
-            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, toString(user_id));
+            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
             return;
         }
 
@@ -218,23 +217,27 @@ private:
         bucket_sessions.insert(session.key);
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
-            session.key.second, toString(session.key.first));
+            session.key.second, session.key.first);
     }
 
     void cleanThread()
     {
-        setThreadName("SessionCleaner");
+        DB::setThreadName(ThreadName::SESSION_CLEANUP);
         std::unique_lock lock{mutex};
         while (!quit)
         {
-            closeSessions(lock);
+            auto closed_sessions = closeSessions(lock);
+            lock.unlock();
+            closed_sessions.clear();
+            lock.lock();
             if (cond.wait_for(lock, close_interval, [this]() -> bool { return quit; }))
                 break;
         }
     }
 
-    void closeSessions(std::unique_lock<std::mutex> & lock)
+    std::vector<std::shared_ptr<NamedSessionData>> closeSessions(std::unique_lock<std::mutex> & lock)
     {
+        std::vector<std::shared_ptr<NamedSessionData>> closed_sessions;
         const auto now = std::chrono::steady_clock::now();
 
         for (auto bucket_it = close_time_buckets.begin(); bucket_it != close_time_buckets.end(); bucket_it = close_time_buckets.erase(bucket_it))
@@ -254,8 +257,15 @@ private:
 
                 if (session.use_count() != 1)
                 {
+                    /// We can get here only if the session is still in use somehow. But since we don't allow concurrent usage
+                    /// of the same session, the only way we can get here is when the session was released, but the pointer
+                    /// wasn't reset yet. And since the pointer is reset without a lock, it's technically possible to get
+                    /// into a situation when refcount > 1. In this case, we want to delay closing the session, but set the
+                    /// timeout to 0 explicitly. This should be a very rare situation, since in order for it to happen, we should
+                    /// have a session timeout less than close_interval, and also be able to reach this code before
+                    /// resetting a pointer.
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
-                        key.second, toString(key.first), session.use_count());
+                        key.second, key.first, session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
                     session->close_time_bucket = std::chrono::steady_clock::time_point{};
@@ -263,11 +273,13 @@ private:
                     continue;
                 }
 
-                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
-
+                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
+                closed_sessions.push_back(session);
                 sessions.erase(session_it);
             }
         }
+
+        return closed_sessions;
     }
 
     std::mutex mutex;
@@ -308,7 +320,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
             session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
@@ -346,12 +358,12 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -366,10 +378,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     LOG_DEBUG(log, "Authenticating user '{}' from {}",
             credentials_.getUserName(), address.toString());
 
+    AuthResult auth_result;
     try
     {
-        auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
+        auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -390,8 +402,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
+    chassert(!auth_result.user_name.empty());
+    prepared_client_info->current_user = auth_result.user_name;
+    prepared_client_info->authenticated_user = auth_result.user_name;
     prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
+    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()

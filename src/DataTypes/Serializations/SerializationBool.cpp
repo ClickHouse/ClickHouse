@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationBool.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -17,6 +18,14 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_BOOL;
+}
+
+UInt128 SerializationBool::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Bool");
+    hash.update(nested_->getHash());
+    return hash.get128();
 }
 
 namespace
@@ -189,7 +198,7 @@ ReturnType deserializeImpl(
     }
 
     buf.rollbackToCheckpoint();
-    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
+    if (settings.allow_special_bool_values && tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
@@ -429,6 +438,13 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
     }
 
     return ReturnType(true);
+}
+
+SerializationPtr SerializationBool::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationBool(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationBool(nested_); });
 }
 
 void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

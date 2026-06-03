@@ -4,6 +4,7 @@ sidebar_label: 'ATTACH'
 sidebar_position: 40
 slug: /sql-reference/statements/attach
 title: 'ATTACH Statement'
+doc_type: 'reference'
 ---
 
 Attaches a table or a dictionary, for example, when moving a database to another server.
@@ -14,7 +15,7 @@ Attaches a table or a dictionary, for example, when moving a database to another
 ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ```
 
-The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the specified table, dictionary or database to the server. After executing the `ATTACH` query, the server will know about the existence of the table, dictionary or database.
+The query does not create data on disk, but assumes that data is already in the appropriate places, and just adds information about the specified table, dictionary or database to the server. After executing the `ATTACH` query, the server will know about the existence of the table, dictionary or database.
 
 If a table was previously detached ([DETACH](../../sql-reference/statements/detach.md) query), meaning that its structure is known, you can use shorthand without defining the structure.
 
@@ -44,17 +45,14 @@ ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 DROP TABLE IF EXISTS test;
 INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
 ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
 SELECT * FROM test;
 ```
-Result:
 
-```sql
+```sql title="Response"
 ┌─s────┬──n─┐
 │ test │ 42 │
 └──────┴────┘
@@ -97,17 +95,16 @@ SYSTEM RESTORE REPLICA test;
 
 Get ZooKeeper path and replica name for table:
 
-```sql
+```sql title="Query"
 SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
 ```
-Result:
-```sql
+```sql title="Response"
 ┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
 │ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
 Attach table as not replicated and delete replica's data from ZooKeeper:
-```sql
+```sql title="Query"
 DETACH TABLE test;
 ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';

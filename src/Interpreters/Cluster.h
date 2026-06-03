@@ -1,14 +1,18 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
+#include <Client/ConnectionPool_fwd.h>
+#include <Core/Protocol.h>
+#include <Core/Types.h>
 #include <Common/Macros.h>
+#include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/Priority.h>
 
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/Timespan.h>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_set>
 
@@ -35,7 +39,11 @@ struct DatabaseReplicaInfo
     String hostname;
     String shard_name;
     String replica_name;
+    std::optional<bool> is_local;
 };
+
+/// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
+using HostsByShard = std::vector<Strings>;
 
 struct ClusterConnectionParameters
 {
@@ -72,14 +80,15 @@ public:
     /// Used for remote() function.
     Cluster(
         const Settings & settings,
-        const std::vector<std::vector<String>> & names,
+        const HostsByShard & names,
         const ClusterConnectionParameters & params);
 
 
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
-        const ClusterConnectionParameters & params);
+        const ClusterConnectionParameters & params,
+        bool internal_replication = false);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -129,6 +138,7 @@ public:
         /// This database is selected when no database is specified for Distributed table
         String default_database;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
+        /// The locality can be auto-reinitialized by reloading cluster config if DNSCacheUpdater is enabled
         bool is_local = false;
         bool user_specified = false;
 
@@ -228,6 +238,7 @@ public:
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
         bool has_internal_replication = false;
+        String default_database;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
@@ -304,7 +315,6 @@ private:
         UInt32 current_shard_num,
         String current_shard_name = "",
         UInt32 weight = 1,
-        ShardInfoInsertPathForInternalReplication insert_paths = {},
         bool internal_replication = false);
 
     /// Inter-server secret

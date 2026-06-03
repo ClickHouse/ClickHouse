@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
+# Tag no-fasttest - requires S3
+# Tag no-parallel - in case of parallel test DROP TABLE execution time is unpredictable (due to other tables can be queued for removal)
 
 # Test from https://github.com/ClickHouse/ClickHouse/issues/68663
 

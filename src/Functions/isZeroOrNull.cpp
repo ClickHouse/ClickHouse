@@ -21,7 +21,7 @@ namespace
 /// Returns 1 if argument is zero or NULL.
 /// It can be used to negate filter in WHERE condition.
 /// "WHERE isZeroOrNull(expr)" will return exactly the same rows that "WHERE expr" will filter out.
-class FunctionIsZeroOrNull : public IFunction
+class FunctionIsZeroOrNull final : public IFunction
 {
 public:
     static constexpr auto name = "isZeroOrNull";
@@ -127,7 +127,43 @@ private:
 
 REGISTER_FUNCTION(IsZeroOrNull)
 {
-    factory.registerFunction<FunctionIsZeroOrNull>();
+    FunctionDocumentation::Description description = R"(
+Checks if the argument is either zero (`0`) or `NULL`.
+    )";
+    FunctionDocumentation::Syntax syntax = "isZeroOrNull(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A numeric value.", {"UInt"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is `NULL` or equal to zero, otherwise `0`.", {"UInt8/16/32/64", "Float32/Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t_null
+(
+  x Int32,
+  y Nullable(Int32)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_null VALUES (1, NULL), (2, 0), (3, 3);
+
+SELECT x FROM t_null WHERE isZeroOrNull(y);
+        )",
+        R"(
+┌─x─┐
+│ 1 │
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIsZeroOrNull>(documentation);
 }
 
 }

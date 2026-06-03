@@ -5,6 +5,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -46,6 +49,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     std::exception_ptr saved_exception;
 
     bool need_to_save_exception = true;
+
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeMutateTaskBase::executeStep");
     try
     {
         /// We don't have any backoff for failed entries
@@ -113,7 +118,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             auto source_part_info = MergeTreePartInfo::fromPartName(
                 log_entry->source_parts.at(0), storage.queue.format_version);
 
-            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.partition_id);
+            auto in_partition = storage.queue.mutations_by_partition.find(source_part_info.getPartitionId());
             if (in_partition != storage.queue.mutations_by_partition.end())
             {
                 auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());
@@ -143,7 +148,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -293,7 +298,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
+            double start_to_sleep_seconds = static_cast<double>(std::logf(static_cast<float>(min_parts_size_sleep)));
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

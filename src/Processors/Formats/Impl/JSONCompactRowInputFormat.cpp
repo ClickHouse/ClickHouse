@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 JSONCompactRowInputFormat::JSONCompactRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
+    SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>(
         header_, in_, params_, false, false, false, format_settings_, std::make_unique<JSONCompactFormatReader>(in_, format_settings_), false, false)
 {
@@ -65,6 +65,7 @@ bool JSONCompactFormatReader::checkForSuffix()
     return JSONUtils::checkAndSkipArrayEnd(*in);
 }
 
+void registerInputFormatJSONCompact(FormatFactory & factory);
 void registerInputFormatJSONCompact(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONCompact", [](
@@ -73,7 +74,7 @@ void registerInputFormatJSONCompact(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
     {
-        return std::make_shared<JSONCompactRowInputFormat>(sample, buf, std::move(params), settings);
+        return std::make_shared<JSONCompactRowInputFormat>(std::make_unique<const Block>(sample), buf, std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSONCompact");

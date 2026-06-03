@@ -1,8 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -11,6 +12,7 @@
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
 #include <arrow/memory_pool_internal.h>
+#include <Common/Allocator.h>
 #include <Core/Settings.h>
 
 
@@ -182,7 +184,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
 RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
 {
     if (io_pool)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, "ArrowFile");
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, ThreadName::ARROW_FILE);
 }
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()
@@ -261,16 +263,17 @@ arrow::Status ArrowMemoryPool::Allocate(int64_t size, int64_t alignment, uint8_t
         return arrow::Status::OK();
     }
 
-    try // is arrow exception-safe? idk, let's avoid throwing, just in case
+    try
     {
         void * p = Allocator<false>().alloc(size_t(size), size_t(alignment));
-        *out = reinterpret_cast<uint8_t*>(p);
+        *out = reinterpret_cast<uint8_t *>(p);
     }
     catch (...)
     {
-        return arrow::Status::OutOfMemory("allocation of size ", size, " failed");
+        return arrow::Status::OutOfMemory("allocation of size ", size, " failed: ", getCurrentExceptionMessage(false));
     }
 
+    stats.DidAllocateBytes(size);
     return arrow::Status::OK();
 }
 
@@ -291,17 +294,18 @@ arrow::Status ArrowMemoryPool::Reallocate(int64_t old_size, int64_t new_size, in
     try
     {
         void * p = Allocator<false>().realloc(*ptr, size_t(old_size), size_t(new_size), size_t(alignment));
-        *ptr = reinterpret_cast<uint8_t*>(p);
+        *ptr = reinterpret_cast<uint8_t *>(p);
     }
     catch (...)
     {
-        return arrow::Status::OutOfMemory("reallocation of size ", new_size, " failed");
+        return arrow::Status::OutOfMemory("reallocation of size ", new_size, " failed: ", getCurrentExceptionMessage(false));
     }
 
+    stats.DidReallocateBytes(old_size, new_size);
     return arrow::Status::OK();
 }
 
-void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /*alignment*/)
+void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
 {
     if (size == 0)
     {
@@ -309,7 +313,8 @@ void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /*alignment*/
         return;
     }
 
-    Allocator<false>().free(buffer, size_t(size));
+    Allocator<false>().free(buffer, size_t(size), alignment);
+    stats.DidFreeBytes(size);
 }
 
 
@@ -325,6 +330,11 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
+    // When the source is not seekable (or seekable_read is off), we cannot use
+    // RandomAccessFileFromSeekableReadBuffer / RandomAccessFileFromRandomAccessReadBuffer.
+    // We then load the entire file into memory and optionally log a warning for schema inference.
+    std::string fallback_reason;
+
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
@@ -332,9 +342,30 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);
+
+        fallback_reason = "checkIfActuallySeekable() returned false";
+    }
+    else if (!settings.seekable_read)
+    {
+        fallback_reason = "seekable_read disabled in format settings";
+    }
+    else if (!has_file_size)
+    {
+        fallback_reason = "file size unavailable";
+    }
+    else
+    {
+        fallback_reason = "stream is not seekable";
     }
 
-    // fallback to loading the entire file in memory
+    if (settings.log_full_buffer_fallback_during_schema_inference)
+    {
+        LOG_WARNING(
+            getLogger("ArrowBufferedInputStream"),
+            "Cannot read {} as seekable stream ({}), falling back to loading the entire file into memory",
+            format_name,
+            fallback_reason);
+    }
     return asArrowFileLoadIntoMemory(in, is_cancelled, format_name, magic_bytes);
 }
 

@@ -51,12 +51,16 @@ class ResourceRequest : public boost::intrusive::list_base_hook<>
 public:
     /// Cost of request execution; should be filled before request enqueueing and remain constant until `finish()`.
     /// NOTE: If cost is not known in advance, ResourceBudget should be used (note that every ISchedulerQueue has it)
-    ResourceCost cost;
+    ResourceCost cost{};
+
+    /// If true, request is not throttled by the scheduler
+    /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
+    bool ignore_throttling = false;
 
     /// Scheduler nodes to be notified on consumption finish
     /// Auto-filled during request dequeue
     /// Vector is not used to avoid allocations in the scheduler thread
-    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints;
+    std::array<ISchedulerConstraint *, ResourceMaxConstraints> constraints{};
 
     explicit ResourceRequest(ResourceCost cost_ = 1)
     {

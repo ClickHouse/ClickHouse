@@ -45,7 +45,7 @@ def prepare_cluster(use_replicated_table):
     for node in all_nodes:
         node.rotate_logs()
         node.query(f"CREATE TABLE test_table(x UInt32) ENGINE {engine} ORDER BY x")
-        node.query("INSERT INTO test_table SELECT * FROM system.numbers LIMIT 10")
+        node.query("INSERT INTO test_table SELECT * FROM numbers(10) ORDER BY ALL")
 
 
 @pytest.fixture(scope="module")
@@ -247,9 +247,22 @@ def test_no_backoff_after_killing_mutation(started_cluster, replicated_table):
     node.query(
         f"KILL MUTATION WHERE table = 'test_table' AND mutation_id = '{mutation_ids[0]}'"
     )
-    node.rotate_logs()
-    assert not node.contains_in_log(
-        REPLICATED_POSTPONE_LOG
-        if replicated_table
-        else NON_REPLICATED_POSTPONE_MUTATION_LOG
-    )
+
+    retry_count = 10
+    for retry in range(retry_count):
+        node.rotate_logs()
+        try:
+            node.wait_for_log_line(
+                (
+                    REPLICATED_POSTPONE_LOG
+                    if replicated_table
+                    else NON_REPLICATED_POSTPONE_MUTATION_LOG
+                ),
+                timeout=5,
+            )
+        except Exception:
+            ## the log line not found.
+            break
+
+        if retry == retry_count - 1:
+            assert False, "After killing the mutatuion it is still executed"

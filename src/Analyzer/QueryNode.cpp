@@ -1,3 +1,4 @@
+#include <memory>
 #include <Analyzer/QueryNode.h>
 
 #include <fmt/core.h>
@@ -8,6 +9,7 @@
 
 #include <Core/NamesAndTypes.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -22,6 +24,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -33,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -46,6 +50,7 @@ QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_change
     children[window_child_index] = std::make_shared<ListNode>();
     children[order_by_child_index] = std::make_shared<ListNode>();
     children[limit_by_child_index] = std::make_shared<ListNode>();
+    children[correlated_columns_list_index] = std::make_shared<ListNode>();
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_)
@@ -108,6 +113,64 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     }
 }
 
+ColumnNodePtrWithHashSet QueryNode::getCorrelatedColumnsSet() const
+{
+    ColumnNodePtrWithHashSet result;
+
+    const auto & correlated_columns = getCorrelatedColumns().getNodes();
+    result.reserve(correlated_columns.size());
+
+    for (const auto & column : correlated_columns)
+    {
+        result.insert(std::static_pointer_cast<ColumnNode>(column));
+    }
+    return result;
+}
+
+void QueryNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
+{
+    auto & correlated_columns = getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        if (column->isEqual(*correlated_column))
+            return;
+    }
+    correlated_columns.push_back(correlated_column);
+}
+
+DataTypePtr QueryNode::getResultType() const
+{
+    if (isCorrelated())
+    {
+        if (projection_columns.size() == 1)
+        {
+            /// Scalar correlated subquery must return nullable result,
+            /// because it must return NULL value if subquery produces an empty result set.
+            ///
+            /// Example:
+            ///
+            /// SELECT
+            ///     *
+            /// FROM partsupp as ps
+            /// WHERE ps.ps_availqty > (
+            ///         SELECT 0.5 * sum(l.l_quantity)
+            ///         FROM lineitem as l
+            ///         WHERE (l.l_partkey = ps.ps_partkey) AND (l.l_suppkey = ps.ps_suppkey)
+            ///     )
+            ///
+            /// In this case, if the subquery returns a non-nullable value, it'll be evaluate to `0` for empty result set.
+            /// It will lead to incorrect result, because the condition `ps.ps_availqty > 0` will be true.
+            /// To avoid this, we return Null value here and the condition will evaluate to false.
+            return makeNullableOrLowCardinalityNullableSafe(projection_columns[0].type);
+        }
+        else
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Method getResultType is supported only for correlated query node with 1 column, but got {}",
+                projection_columns.size());
+    }
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is supported only for correlated query node");
+}
+
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
     buffer << std::string(indent, ' ') << "QUERY id: " << format_state.getNodeId(this);
@@ -120,6 +183,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
+
+    if (is_materialized)
+        buffer << ", is_materialized: " << is_materialized;
 
     if (is_recursive_with)
         buffer << ", is_recursive_with: " << is_recursive_with;
@@ -139,6 +205,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_order_by_all)
         buffer << ", is_order_by_all: " << is_order_by_all;
 
+    if (is_limit_by_all)
+        buffer << ", is_limit_by_all: " << is_limit_by_all;
+
     std::string group_by_type;
     if (is_group_by_with_rollup)
         group_by_type = "rollup";
@@ -152,6 +221,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
+
+    if (isCorrelated())
+    {
+        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
+        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     if (hasWith())
     {
@@ -266,16 +341,16 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
     }
 }
 
-bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
+bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        is_cte == rhs_typed.is_cte &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -285,18 +360,27 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
         is_order_by_all == rhs_typed.is_order_by_all &&
-        cte_name == rhs_typed.cte_name &&
+        is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
         settings_changes == rhs_typed.settings_changes;
 }
 
-void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
+void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) const
 {
     state.update(is_subquery);
-    state.update(is_cte);
 
-    state.update(cte_name.size());
-    state.update(cte_name);
+    if (options.ignore_cte)
+    {
+        state.update(false);
+        state.update(size_t(0));
+        state.update(std::string());
+    }
+    else
+    {
+        state.update(is_cte);
+        state.update(cte_name.size());
+        state.update(cte_name);
+    }
 
     state.update(projection_columns.size());
     for (const auto & projection_column : projection_columns)
@@ -304,9 +388,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_column.name.size());
         state.update(projection_column.name);
 
-        auto projection_column_type_name = projection_column.type->getName();
-        state.update(projection_column_type_name.size());
-        state.update(projection_column_type_name);
+        projection_column.type->updateHash(state);
     }
 
     for (const auto & projection_alias : projection_aliases_to_override)
@@ -315,6 +397,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_alias);
     }
 
+    state.update(is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -324,6 +407,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
     state.update(is_order_by_all);
+    state.update(is_limit_by_all);
 
     state.update(settings_changes.size());
 
@@ -344,6 +428,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
+    result_query_node->is_materialized = is_materialized;
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
@@ -353,6 +438,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
     result_query_node->is_order_by_all = is_order_by_all;
+    result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
@@ -363,7 +449,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     select_query->recursive_with = is_recursive_with;
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
@@ -373,11 +459,12 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     select_query->group_by_all = is_group_by_all;
     select_query->order_by_all = is_order_by_all;
+    select_query->limit_by_all = is_limit_by_all;
 
     if (hasWith())
     {
         const auto & with = getWith();
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto expression_list_ast = make_intrusive<ASTExpressionList>();
         expression_list_ast->children.reserve(with.getNodes().size());
 
         for (const auto & with_node : with)
@@ -400,10 +487,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             if (with_node_ast_subquery)
                 with_node_ast_subquery->cte_name = "";
 
-            auto with_element_ast = std::make_shared<ASTWithElement>();
+            auto with_element_ast = make_intrusive<ASTWithElement>();
             with_element_ast->name = with_node_cte_name;
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
+            with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
             expression_list_ast->children.back() = std::move(with_element_ast);
         }
@@ -430,7 +518,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
@@ -475,16 +563,16 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasSettingsChanges())
     {
-        auto settings_query = std::make_shared<ASTSetQuery>();
+        auto settings_query = make_intrusive<ASTSetQuery>();
         settings_query->changes = settings_changes;
         settings_query->is_standalone = false;
         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     }
 
-    auto result_select_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto result_select_query = make_intrusive<ASTSelectWithUnionQuery>();
     result_select_query->union_mode = SelectUnionMode::UNION_DEFAULT;
 
-    auto list_of_selects = std::make_shared<ASTExpressionList>();
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
     list_of_selects->children.push_back(std::move(select_query));
 
     result_select_query->children.push_back(std::move(list_of_selects));
@@ -492,8 +580,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>(std::move(result_select_query));
-        subquery->cte_name = cte_name;
+        auto subquery = make_intrusive<ASTSubquery>(std::move(result_select_query));
+        if (options.set_subquery_cte_name)
+            subquery->cte_name = cte_name;
         return subquery;
     }
 

@@ -3,13 +3,18 @@ Trace visualizer is a tool for representation of a tracing data as a Gantt diagr
 # Quick start
 For now this tool is not integrated into ClickHouse and requires manual actions. Open `trace-visualizer/index.html` in your browser. It will show an example of data. To visualize your data click `Load` button and select your trace data JSON file.
 
-Single page version hosted on Pastila is available [here](https://pastila.nl/?0006e1ce/e72c2b3c90557337b43499e14eb2bf57.html).
+Single page version is available at https://trace-visualizer.clickhouse.com.
 
 
 # Visualizing query trace
 First of all [opentelemetry_span_log](https://clickhouse.com/docs/operations/opentelemetry/) system table must be enabled to save query traces. Then run a query you want to trace with a setting:
 ```sql
 SET opentelemetry_start_trace_probability=1, opentelemetry_trace_processors=1;
+```
+After this is run, the `opentelemetry_span_log` table will be created as traces will be logged there.
+
+Run a simple query:
+```sql
 SELECT 1;
 ```
 
@@ -17,11 +22,11 @@ The easiest way to extract the query trace information from a single node enviro
 ```
 collect_query_traces.sh your-query-id
 ```
-The script should create a `query_trace_your-query-id.json` file that can be imported on the above mentioned `index.html`.
+The script should create a `query_trace_your-query-id.json` file that can be imported on the above-mentioned `index.html`.
 
-To find out `trace_id` of a query run the following command:
+To find out `trace_id` of a query, run the following command:
 ```sql
-SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id';
+SELECT DISTINCT trace_id FROM system.opentelemetry_span_log WHERE attribute['clickhouse.query_id'] = 'your-query-id' ORDER BY start_time_us DESC;
 ```
 
 ## Collect traces in local/development environment

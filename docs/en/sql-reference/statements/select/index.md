@@ -4,9 +4,8 @@ sidebar_label: 'SELECT'
 sidebar_position: 32
 slug: /sql-reference/statements/select/
 title: 'SELECT Query'
+doc_type: 'reference'
 ---
-
-# SELECT Query
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
@@ -30,7 +29,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION  ...]
-[INTO OUTFILE filename [COMPRESSION type [LEVEL level]] ]
+[INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
 [FORMAT format]
 ```
 
@@ -64,7 +63,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 [Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
-
 
 ### Dynamic column selection {#dynamic-column-selection}
 
@@ -177,77 +175,11 @@ For more information, see the section "Settings". It is possible to use external
 
 You can use the following modifiers in `SELECT` queries.
 
-### APPLY {#apply}
-
-Allows you to invoke some function for each row returned by an outer table expression of a query.
-
-**Syntax:**
-
-```sql
-SELECT <expr> APPLY( <func> ) FROM [db.]table_name
-```
-
-**Example:**
-
-```sql
-CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
-INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
-SELECT * APPLY(sum) FROM columns_transformers;
-```
-
-```response
-┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
-│    220 │     18 │    347 │
-└────────┴────────┴────────┘
-```
-
-### EXCEPT {#except}
-
-Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
-
-**Syntax:**
-
-```sql
-SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
-```
-
-**Example:**
-
-```sql
-SELECT * EXCEPT (i) from columns_transformers;
-```
-
-```response
-┌──j─┬───k─┐
-│ 10 │ 324 │
-│  8 │  23 │
-└────┴─────┘
-```
-
-### REPLACE {#replace}
-
-Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
-
-This modifier does not change the names or order of columns. However, it can change the value and the value type.
-
-**Syntax:**
-
-```sql
-SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
-```
-
-**Example:**
-
-```sql
-SELECT * REPLACE(i + 1 AS i) from columns_transformers;
-```
-
-```response
-┌───i─┬──j─┬───k─┐
-│ 101 │ 10 │ 324 │
-│ 121 │  8 │  23 │
-└─────┴────┴─────┘
-```
+| Modifier                            | Description                                                                                                                                                                                                                                                                                                                                                                              |
+|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`APPLY`](./apply_modifier.md)     | Allows you to invoke some function for each row returned by an outer table expression of a query.                                                                                                                                                                                                                                                                                        |
+| [`EXCEPT`](./except_modifier.md)   | Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.                                                                                                                                                                                                                                                            |
+| [`REPLACE`](./replace_modifier.md) | Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`. This modifier does not change the names or order of columns. However, it can change the value and the value type. |
 
 ### Modifier Combinations {#modifier-combinations}
 
@@ -258,7 +190,7 @@ You can use each modifier separately or combine them.
 Using the same modifier multiple times.
 
 ```sql
-SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
 ```
 
 ```response
@@ -284,6 +216,8 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
 Other ways to make settings see [here](/operations/settings/overview).
+
+For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
 
 **Example**
 

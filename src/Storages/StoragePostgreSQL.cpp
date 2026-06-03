@@ -1,4 +1,4 @@
-#include "StoragePostgreSQL.h"
+#include <Storages/StoragePostgreSQL.h>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -14,15 +14,12 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Serializations/SerializationFixedString.h>
 
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -56,6 +53,7 @@
 
 #include <base/range.h>
 
+
 namespace DB
 {
 namespace Setting
@@ -71,10 +69,9 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StoragePostgreSQL::StoragePostgreSQL(
@@ -87,7 +84,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     ContextPtr context_,
     const String & remote_table_schema_,
     const String & on_conflict_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
@@ -106,7 +103,16 @@ StoragePostgreSQL::StoragePostgreSQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StoragePostgreSQL::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
@@ -137,21 +143,36 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
         String remote_table_name_,
-        postgres::ConnectionHolderPtr connection_)
+        postgres::PoolWithFailoverPtr pool_
+    )
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_name(remote_table_name_)
-        , connection(std::move(connection_))
+        , pool(std::move(pool_))
     {
     }
 
     std::string getName() const override { return "ReadFromPostgreSQL"; }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromPostgreSQL>(
+            requiredSourceColumns(),
+            query_info,
+            storage_snapshot,
+            context,
+            getOutputHeader(),
+            max_block_size,
+            remote_table_schema,
+            remote_table_name,
+            pool);
+    }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -173,19 +194,19 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
     String remote_table_name;
-    postgres::ConnectionHolderPtr connection;
+    postgres::PoolWithFailoverPtr pool;
 };
 
 }
 
-void StoragePostgreSQL::read(
+void StoragePostgreSQL::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -212,80 +233,16 @@ void StoragePostgreSQL::read(
         query_info,
         storage_snapshot,
         local_context,
-        sample_block,
+        std::make_shared<const Block>(sample_block),
         max_block_size,
         remote_table_schema,
         remote_table_name,
-        pool->get());
+        pool);
     query_plan.addStep(std::move(reading));
 }
 
-class SerializationPostgreSQLFixedString : public SerializationFixedString
-{
-private:
-    size_t size;
 
-public:
-    explicit SerializationPostgreSQLFixedString(size_t n_) : SerializationFixedString(n_), size(n_) {}
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
-    {
-        const auto * nested_column = &column;
-        if (column.isNullable())
-        {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(&column);
-            nested_column = &column_nullable->getNestedColumn();
-        }
-
-        const auto column_type = nested_column->getDataType();
-        const char * data = nullptr;
-        if (isFixedString(column_type))
-        {
-            data = reinterpret_cast<const char *>(
-                &assert_cast<const ColumnFixedString *>(nested_column)->getChars()[size * row_num]);
-        }
-        else if (isString(column_type))
-            data = assert_cast<const ColumnString &>(column).getDataAt(row_num).data;
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't serialize type {} as a FixedString", nested_column->getName());
-
-        /// Write only the amount of UTF-8 characters actually used. PostgreSQL complains if we pass
-        /// any \0 because it doesn't interpret them as valid UTF-8. We assume that any ending \0 is
-        /// padding and replace any intermediate \0 with a whitespace. This is a trade-off we have
-        /// to make since PostgreSQL doesn't accept intermediate \0's.
-        std::string_view str(data, size);
-        const auto end_pos = str.find_last_not_of('\0');
-        auto write_size = end_pos != std::string::npos ? end_pos + 1 : size;
-        str = std::string_view(data, write_size);
-
-        /// Replace any intermediate \0 with a whitespace, allocating a new buffer only if needed.
-        /// Because of SSO, new_buffer will only allocate heap memory in case the size is not small.
-        std::string new_buffer;
-        if (str.find('\0') != std::string::npos)
-        {
-            new_buffer = str;
-            std::replace(new_buffer.begin(), new_buffer.end(), '\0', ' ');
-            data = new_buffer.data();
-        }
-        writeString(data, write_size, ostr);
-    }
-};
-
-static void changeSerializationForPostgreSQLFixedString(const ColumnPtr & column, DataTypePtr & data_type)
-{
-    /// pqxx throws an error when trying to ingest fixed-size strings padded with \0:
-    /// pqxx::data_exception: Failure during '[END COPY]': ERROR:  invalid byte sequence for encoding "UTF8": 0x00
-    auto non_nullable_type = removeNullable(data_type);
-    auto non_nullable_column = removeNullable(column);
-    if (isFixedString(non_nullable_type) && !data_type->getCustomSerialization())
-    {
-        auto n = assert_cast<const DataTypeFixedString &>(*non_nullable_type).getN();
-        auto custom_desc = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(fmt::format("FixedString({})", n)), std::make_shared<SerializationPostgreSQLFixedString>(n));
-        DataTypeFactory::setCustom(data_type, std::move(custom_desc));
-    }
-}
-
-class PostgreSQLSink : public SinkToStorage
+class PostgreSQLSink final : public SinkToStorage
 {
 
 using Row = std::vector<std::optional<std::string>>;
@@ -297,7 +254,7 @@ public:
         const String & remote_table_name_,
         const String & remote_table_schema_,
         const String & on_conflict_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
@@ -329,7 +286,7 @@ public:
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows();
         const size_t num_cols = block.columns();
-        auto data_types = block.getDataTypes();
+        const auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
@@ -352,7 +309,6 @@ public:
                     }
                     else
                     {
-                        changeSerializationForPostgreSQLFixedString(columns[j], data_types[j]);
                         data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
                     }
 
@@ -360,7 +316,18 @@ public:
                 }
             }
 
-            inserter->insert(row);
+            try
+            {
+                inserter->insert(row);
+            }
+            catch (const pqxx::argument_error & e)
+            {
+                /// libpqxx throws pqxx::argument_error when the string contains invalid UTF-8.
+                /// Since pqxx::argument_error is a std::invalid_argument, which is a std::logic_error,
+                /// and unhandled std::logic_error is treated as a "Logical error" with code 1001,
+                /// we need to wrap it into a DB::Exception.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot insert data into PostgreSQL: {}", e.what());
+            }
         }
     }
 
@@ -411,22 +378,14 @@ public:
     static void parseArrayContent(const Array & array_field, const DataTypePtr & data_type, WriteBuffer & ostr)
     {
         auto nested_type = typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-        auto array_column = ColumnArray::create(createNested(nested_type));
+        auto array_column = ColumnArray::create(nested_type->createColumn());
         array_column->insert(array_field);
 
         const IColumn & nested_column = array_column->getData();
-        const auto parent_type = nested_type;
+        const auto serialization = nested_type->getDefaultSerialization();
 
         FormatSettings settings;
         settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
-
-        if (nested_type->isNullable())
-            nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
-
-        /// We need to patch first the nested type in case the the parent is nullable because
-        /// getDefaultSerialization() takes the serialization used for the nested type
-        changeSerializationForPostgreSQLFixedString(nested_column.getPtr(), nested_type);
-        const auto serialization = parent_type->getDefaultSerialization();
 
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
@@ -460,6 +419,7 @@ public:
         else if (which.isFloat32())                      nested_column = ColumnFloat32::create();
         else if (which.isFloat64())                      nested_column = ColumnFloat64::create();
         else if (which.isDate())                         nested_column = ColumnUInt16::create();
+        else if (which.isDate32())                       nested_column = ColumnInt32::create();
         else if (which.isDateTime())                     nested_column = ColumnUInt32::create();
         else if (which.isUUID())                         nested_column = ColumnUUID::create();
         else if (which.isDateTime64())
@@ -490,10 +450,11 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0)));
 
         return nested_column;
     }
+
 
 private:
     struct Inserter
@@ -638,10 +599,10 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, const StorageID * table_id)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context);
     }
@@ -686,12 +647,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 }
 
 
+void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
-        const auto & settings = args.getContext()->getSettingsRef();
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &args.table_id);
+        const auto & settings = args.getLocalContext()->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
             settings[Setting::postgresql_connection_pool_size],
@@ -713,7 +675,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::POSTGRES,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 

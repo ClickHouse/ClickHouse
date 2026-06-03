@@ -1,9 +1,10 @@
 #pragma once
 
-#include "IDictionarySource.h"
+#include <Dictionaries/IDictionarySource.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Logger_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
-#include <unordered_map>
 #include <boost/noncopyable.hpp>
 
 namespace Poco
@@ -12,8 +13,6 @@ namespace Util
 {
     class AbstractConfiguration;
 }
-
-class Logger;
 }
 
 namespace DB
@@ -32,6 +31,7 @@ public:
     /// It is used as default_database for ClickHouse dictionary source when no explicit database was specified.
     /// Does not make sense for other sources.
     using Creator = std::function<DictionarySourcePtr(
+        const String & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
@@ -43,6 +43,8 @@ public:
     DictionarySourceFactory();
 
     void registerSource(const std::string & source_type, Creator create_source);
+
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     DictionarySourcePtr create(
         const std::string & name,
@@ -57,7 +59,7 @@ public:
     void checkSourceAvailable(const std::string & source_type, const std::string & dictionary_name, const ContextPtr & context) const;
 
 private:
-    using SourceRegistry = std::unordered_map<std::string, Creator>;
+    using SourceRegistry = UnorderedMapWithMemoryTracking<std::string, Creator>;
     SourceRegistry registered_sources;
 
     LoggerPtr log;

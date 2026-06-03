@@ -1,0 +1,7 @@
+<clickhouse>
+    <!--
+        Remove all masking rules (enabled by default in every test).
+        This config will be enabled for the old instance only.
+    -->
+    <query_masking_rules remove="remove"></query_masking_rules>
+</clickhouse>

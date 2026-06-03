@@ -107,7 +107,6 @@ class DisksClient(object):
 
         initialized_disks = []
         unitialized_disks = []
-
         disk_ref = []
 
         for line in lines:
@@ -147,7 +146,7 @@ class DisksClient(object):
                 answer[directory] = files
             return answer
         else:
-            return output.split("\n")
+            return output.split("\n") if output else []
 
     def switch_disk(self, disk: str, directory: Optional[str] = None):
         directory_addition = f"--path {directory} " if directory is not None else ""
@@ -244,7 +243,8 @@ def test_disks_app_interactive_list_files_local():
 
 def test_disks_app_interactive_list_directories_default():
     client = DisksClient.getLocalDisksClient(True)
-    traversed_dir = client.ls(".", recursive=True)
+    client.mkdir("test")
+    client.cd("test")
     client.mkdir("dir1")
     client.mkdir("dir2")
     client.mkdir(".dir3")
@@ -306,7 +306,9 @@ def test_disks_app_interactive_list_directories_default():
     }
     client.rm("dir1", recursive=True)
     client.rm(".dir3", recursive=True)
-    assert client.ls(".", recursive=True, show_hidden=False) == {".": []}
+    assert client.ls(".", recursive=True, show_hidden=False) == {'.': []}
+    client.cd('..')
+    client.rm('test')
 
 
 def test_disks_app_interactive_cp_and_read():
@@ -338,13 +340,15 @@ def test_disks_app_interactive_test_move_and_write():
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
-    client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
+    client.mkdir("test")
+    client.cd("test")
+    client.copy("a.txt", "/test/a.txt", disk_from="local", disk_to="default")
     files = client.ls(".")
     assert files == ["a.txt"]
     client.move("a.txt", "b.txt")
     files = client.ls(".")
     assert files == ["b.txt"]
-    read_text = client.read("/b.txt")
+    read_text = client.read("/test/b.txt")
     assert read_text == initial_text
     client.write("b.txt", "c.txt")
     read_text = client.read("c.txt")
@@ -352,3 +356,5 @@ def test_disks_app_interactive_test_move_and_write():
     client.rm("b.txt")
     client.rm("c.txt")
     os.remove("a.txt")
+    client.cd('..')
+    client.rm('test')

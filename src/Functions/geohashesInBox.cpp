@@ -11,7 +11,6 @@
 #include <memory>
 #include <string>
 
-
 namespace DB
 {
 
@@ -25,7 +24,7 @@ extern const int TOO_LARGE_ARRAY_SIZE;
 namespace
 {
 
-class FunctionGeohashesInBox : public IFunction
+class FunctionGeohashesInBox final : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
@@ -113,14 +112,15 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
-            const Float64 lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
-            const Float64 lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
-            const Float64 lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
+            const LonAndLatType lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
+            const LonAndLatType lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
+            const LonAndLatType lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
+            const LonAndLatType lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
             const PrecisionType precision_value = precision->getElement(precision_const ? 0 : row);
 
             const auto prepared_args = geohashesInBoxPrepare(
-                lon_min_value, lat_min_value, lon_max_value, lat_max_value,
+                static_cast<Float64>(lon_min_value), static_cast<Float64>(lat_min_value),
+                static_cast<Float64>(lon_max_value), static_cast<Float64>(lat_max_value),
                 precision_value);
 
             if (prepared_args.items_count > max_array_size)
@@ -131,7 +131,7 @@ public:
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
-            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * (prepared_args.precision + 1));
+            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * prepared_args.precision);
             const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
@@ -139,7 +139,7 @@ public:
             geohashesInBox(prepared_args, out);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
-                res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
+                res_strings_offsets.push_back(starting_offset + prepared_args.precision * i);
             res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
 
@@ -179,7 +179,42 @@ public:
 
 REGISTER_FUNCTION(GeohashesInBox)
 {
-    factory.registerFunction<FunctionGeohashesInBox>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded strings of given precision that fall inside and intersect boundaries of given box, essentially a 2D grid flattened into an array.
+
+:::note
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+:::
+
+This function throws an exception if the size of the resulting array exceeds more than 10,000,000 items.
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude_min", "Minimum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_min", "Minimum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"longitude_max", "Maximum longitude. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude_max", "Maximum latitude. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Geohash precision. Range: `[1, 12]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of precision-long strings of geohash-boxes covering the provided area, or an empty array if the minimum longitude and latitude values aren't less than the corresponding maximum values.",
+        {"Array(String)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            "SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos",
+            R"(
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
 
@@ -11,9 +12,6 @@
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -37,7 +35,6 @@ public:
     DataTypePtr get(const ASTPtr & ast) const;
     DataTypePtr getCustom(DataTypeCustomDescPtr customization) const;
     DataTypePtr getCustom(const String & base_name, DataTypeCustomDescPtr customization) const;
-    static void setCustom(DataTypePtr & type, DataTypeCustomDescPtr customization);
 
     /// Return nullptr in case of error.
     DataTypePtr tryGet(const String & full_name) const;
@@ -85,11 +82,13 @@ void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
 void registerDataTypeDate32(DataTypeFactory & factory);
 void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
 void registerDataTypeEnum(DataTypeFactory & factory);
 void registerDataTypeArray(DataTypeFactory & factory);
 void registerDataTypeTuple(DataTypeFactory & factory);
+void registerDataTypeQBit(DataTypeFactory & factory);
 void registerDataTypeMap(DataTypeFactory & factory);
 void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNothing(DataTypeFactory & factory);
@@ -102,7 +101,6 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
-void registerDataTypeObjectDeprecated(DataTypeFactory & factory);
 void registerDataTypeVariant(DataTypeFactory & factory);
 void registerDataTypeDynamic(DataTypeFactory & factory);
 void registerDataTypeJSON(DataTypeFactory & factory);

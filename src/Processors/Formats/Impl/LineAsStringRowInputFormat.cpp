@@ -13,11 +13,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LineAsStringRowInputFormat::LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
+LineAsStringRowInputFormat::LineAsStringRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_) :
     IRowInputFormat(header_, in_, std::move(params_))
 {
-    if (header_.columns() != 1
-        || !typeid_cast<const ColumnString *>(header_.getByPosition(0).column.get()))
+    if (header_->columns() != 1
+        || !typeid_cast<const ColumnString *>(header_->getByPosition(0).column.get()))
     {
         throw Exception(ErrorCodes::INCORRECT_QUERY, "This input format is only suitable for tables with a single column of type String.");
     }
@@ -35,7 +35,6 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
     auto & offsets = column_string.getOffsets();
 
     readStringUntilNewlineInto(chars, *in);
-    chars.push_back(0);
     offsets.push_back(chars.size());
 
     if (!in->eof())
@@ -63,6 +62,7 @@ size_t LineAsStringRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
+void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("LineAsString", [](
@@ -71,7 +71,7 @@ void registerInputFormatLineAsString(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings &)
     {
-        return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
+        return std::make_shared<LineAsStringRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
 }
 
@@ -103,12 +103,14 @@ static std::pair<bool, size_t> segmentationEngine(ReadBuffer & in, DB::Memory<> 
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
+void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("LineAsString", &segmentationEngine);
 }
 
 
+void registerLineAsStringSchemaReader(FormatFactory & factory);
 void registerLineAsStringSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("LineAsString", [](

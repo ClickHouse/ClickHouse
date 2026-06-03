@@ -3,10 +3,7 @@
 ERROR
 10
 50
-SELECT
-    Name,
-    Price,
-    Quantity
+SELECT *
 FROM
 (
     SELECT *

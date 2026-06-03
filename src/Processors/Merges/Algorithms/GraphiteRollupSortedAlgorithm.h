@@ -22,13 +22,18 @@ class GraphiteRollupSortedAlgorithm final : public IMergingAlgorithmWithSharedCh
 {
 public:
     GraphiteRollupSortedAlgorithm(
-        const Block & header,
+        SharedHeader header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         Graphite::Params params_,
         time_t time_of_merge_);
+
+    /// Reset merged_data before params is destroyed, because GraphiteRollupMergedData
+    /// holds raw pointers into params.patterns and its destructor accesses them.
+    ~GraphiteRollupSortedAlgorithm() override;
 
     const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
@@ -37,10 +42,10 @@ public:
 
     struct ColumnsDefinition
     {
-        size_t path_column_num;
-        size_t time_column_num;
-        size_t value_column_num;
-        size_t version_column_num;
+        size_t path_column_num{};
+        size_t time_column_num{};
+        size_t value_column_num{};
+        size_t version_column_num{};
 
         DataTypePtr time_column_type;
 

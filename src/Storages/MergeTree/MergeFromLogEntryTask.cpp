@@ -3,11 +3,13 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/FailPoint.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -16,6 +18,8 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMergeDiffersFromReplica;
+    extern const Event MergeCommitMilliseconds;
+    extern const Event MergeTotalMilliseconds;
     extern const Event ReplicatedPartMerges;
 }
 
@@ -31,6 +35,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
     extern const MergeTreeSettingsSeconds try_fetch_recompressed_part_timeout;
+}
+
+namespace FailPoints
+{
+    extern const char rmt_merge_task_sleep_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -58,7 +67,12 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
         fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
-    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr();
+    fiu_do_on(FailPoints::rmt_merge_task_sleep_in_prepare,
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    });
+
+    StorageMetadataPtr metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 
@@ -68,7 +82,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
+            {}, this->projections_merge_time);
     };
 
     if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part])
@@ -117,6 +132,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 
     for (const String & source_part_name : entry.source_parts)
     {
@@ -145,7 +161,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
             String message;
             LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
-            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
+            if (!source_part_or_covering->info.contains(new_part_info))
                 throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 
             return PrepareResult{
@@ -168,6 +184,27 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
 
         parts.push_back(source_part_or_covering);
+    }
+
+    for (const auto & patch_part_name : entry.patch_parts)
+    {
+        auto patch_part = storage.getActiveContainingPart(patch_part_name);
+
+        if (!patch_part || patch_part->name != patch_part_name)
+        {
+            /// We do not have one of source parts locally, try to take some already merged part from someone.
+            LOG_DEBUG(log, "Don't have all patch parts (at least {} is missing) for merge {}; "
+                "will try to fetch part instead. Either pool for fetches is starving, see background_fetches_pool_size, or none of active replicas has it",
+                patch_part_name, entry.new_part_name);
+
+            return PrepareResult{
+                .prepared_successfully = false,
+                .need_to_check_missing_part_in_fetch = true,
+                .part_log_writer = part_log_writer,
+            };
+        }
+
+        patch_parts.push_back(patch_part);
     }
 
     /// All source parts are found locally, we can execute merge
@@ -214,7 +251,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
-    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>(parts, entry.new_part_format);
+    auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
+    future_merged_part->assign(parts, patch_parts, entry.new_part_format);
+
     if (future_merged_part->name != entry.new_part_name)
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
@@ -308,10 +347,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
-    task_context = Context::createCopy(storage.getContext());
+    task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
     task_context->makeQueryContextForMerge(*storage.getSettings());
     task_context->setCurrentQueryId(getQueryId());
-    task_context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
 
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
@@ -321,7 +359,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
-        entry.new_part_name, part, parts, merge_mutate_entry.get(), {});
+        entry.new_part_name, part, parts, merge_mutate_entry.get(), {}, {}, {});
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
@@ -356,6 +394,11 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
 {
     part = merge_task->getFuture().get();
     auto cached_marks = merge_task->releaseCachedMarks();
+    auto cached_index_marks = merge_task->releaseCachedIndexMarks();
+    projections_merge_time = merge_task->grabProjectionsMergeTime();
+#if CLICKHOUSE_CLOUD
+    part->is_prewarmed = true;
+#endif
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will
@@ -365,6 +408,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// temp directories which guards temporary dir from background removal. So it's right place to reset the task
     /// and it's really needed.
     merge_task.reset();
+
+    Stopwatch commit_watch;
 
     try
     {
@@ -376,6 +421,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         {
             transaction_ptr->rollback();
 
+            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+            ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+            ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             Strings files_with_size;
@@ -426,18 +474,25 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
+    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
+    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
+
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
+    auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
-    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
-        addMarksToCache(*part, cached_marks, mark_cache.get());
+    if (prewarm_caches.mark_cache)
+        addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
+
+    if (prewarm_caches.index_mark_cache)
+        addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
 
     /// Move index to cache and reset it here because we need
     /// a correct part name after rename for a key of cache entry.
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-        part->moveIndexToCache(*index_cache);
+    if (prewarm_caches.primary_index_cache)
+        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

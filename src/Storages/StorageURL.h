@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatFilterInfo.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Processors/SourceWithKeyCondition.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
@@ -24,7 +25,11 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
+struct StorageID;
 class PullingPipelineExecutor;
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 /**
  * This class represents table engine for external urls.
@@ -103,6 +108,9 @@ protected:
     String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
     bool distributed_processing;
+    bool supports_prewhere = false;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 
     virtual std::string getReadMethod() const;
 
@@ -123,6 +131,12 @@ protected:
         size_t max_block_size) const;
 
     virtual bool supportsSubsetOfColumns(const ContextPtr & context) const;
+
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
 
     bool prefersLargeBlocks() const override;
 
@@ -146,7 +160,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public SourceWithKeyCondition, WithContext
+class StorageURLSource final : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -154,7 +168,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -179,22 +193,21 @@ public:
         UInt64 max_block_size,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        size_t max_parsing_threads,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false);
+        bool need_only_count_ = false,
+        StorageID storage_id_ = StorageID::createEmpty());
 
     ~StorageURLSource() override;
 
     String getName() const override { return name; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & filter_actions_dag, ContextPtr context_) override
-    {
-        setKeyConditionImpl(filter_actions_dag, context_, block_for_format);
-    }
-
     Chunk generate() override;
+
+    void onFinish() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -227,11 +240,16 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
+    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
+    StorageID storage_id;
     size_t total_rows_in_file = 0;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -244,19 +262,19 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink : public SinkToStorage
+class StorageURLSink final : public SinkToStorage
 {
 public:
     StorageURLSink(
-        const String & uri,
-        const String & format,
+        String uri_,
+        String format_,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         const ContextPtr & context,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers = {},
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
+        const CompressionMethod & compression_method,
+        HTTPHeaderEntries headers = {},
+        String method = Poco::Net::HTTPRequest::HTTP_POST);
 
     ~StorageURLSink() override;
 
@@ -268,6 +286,16 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    void initBuffers();
+
+    String uri;
+    String format;
+    std::optional<FormatSettings> format_settings;
+    ContextPtr context;
+    ConnectionTimeouts timeouts;
+    CompressionMethod compression_method;
+    HTTPHeaderEntries headers;
+    String http_method;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
@@ -304,7 +332,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
@@ -318,7 +346,7 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
@@ -326,6 +354,18 @@ public:
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
+
+    /// Resolve a possibly relative URL against a base URL per RFC 3986.
+    /// If the URL already contains a scheme, it is returned as-is.
+    /// Otherwise, it is resolved relative to the base:
+    /// - `//host/path` → scheme-relative (uses scheme from base)
+    /// - `/path` → host-relative (uses scheme and host from base)
+    /// - `path` → path-relative (merged with base URL path: replaces everything
+    ///   after the last `/` in the base path, then normalizes dot segments)
+    /// - `?query` → replaces base query/fragment, preserves base path
+    /// - `#frag` → replaces base fragment, preserves base path and query
+    /// The resolution is done by string manipulation to allow malformed URLs.
+    static String resolveURLBase(const String & url, const String & base);
 };
 
 

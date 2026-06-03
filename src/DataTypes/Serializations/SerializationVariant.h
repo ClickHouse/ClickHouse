@@ -3,10 +3,10 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -48,7 +48,7 @@ namespace ErrorCodes
 /// and use them to calculate the limit for each variant. Each variant is deserialized from
 /// corresponding stream using calculated limit. Offsets column is not deserialized and constructed
 /// according to discriminators.
-class SerializationVariant : public ISerialization
+class SerializationVariant final : public ISerialization
 {
 public:
     struct DiscriminatorsSerializationMode
@@ -72,14 +72,14 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
-    explicit SerializationVariant(
-        const VariantSerializations & variants_,
-        const std::vector<String> & variant_names_,
-        const std::vector<size_t> & deserialize_text_order_,
-        const String & variant_name_)
-        : variants(variants_), variant_names(variant_names_), deserialize_text_order(deserialize_text_order_), variant_name(variant_name_)
-    {
-    }
+private:
+    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+
+public:
+    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
+    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -113,7 +113,7 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state,
-        std::unordered_map<String, size_t> & variants_statistics,
+        UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
@@ -129,6 +129,8 @@ public:
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -208,20 +210,39 @@ private:
 
     static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
 
-    bool tryDeserializeTextEscapedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
+    /// Shared implementation for Escaped and Raw text deserialization.
+    /// Checks for NULL representation in the raw buffer before escape processing
+    /// (using three-path approach similar to `SerializationNullable`),
+    /// then reads the field and tries to deserialize it as each variant.
+    /// ReadField signature: void(String & field, ReadBuffer & buf).
+    /// TryDeserializeVariant signature: bool(IColumn &, const SerializationPtr &, ReadBuffer &, const FormatSettings &).
+    template <typename ReadField, typename TryDeserializeVariant>
+    bool tryDeserializeTextEscapedOrRawImpl(
+        IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+        ReadField && read_field, TryDeserializeVariant && try_deserialize_variant) const;
+
+    /// Try to deserialize the field as each variant type in priority order.
+    /// Returns true if any variant matched.
+    bool tryDeserializeVariantFromField(
+        IColumn & column,
+        const String & field,
+        std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        const FormatSettings & settings) const;
+
     bool tryDeserializeTextQuotedImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeWholeTextImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextCSVImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextJSONImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
-    bool tryDeserializeTextRawImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
 
     bool tryDeserializeImpl(
         IColumn & column,
         const String & field,
         std::function<bool(ReadBuffer &)> check_for_null,
-        std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &)> try_deserialize_nested) const;
+        std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+        const FormatSettings & settings) const;
 
-    VariantSerializations variants;
+    DataTypes variant_types;
+    VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.

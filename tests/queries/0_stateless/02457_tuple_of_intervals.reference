@@ -1,4 +1,5 @@
 SELECT (toIntervalSecond(-1), toIntervalMinute(2), toIntervalMonth(-3), toIntervalYear(1))
+FROM system.one
 ---
 -1
 2022-10-12
