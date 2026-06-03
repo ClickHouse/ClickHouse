@@ -742,77 +742,87 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         const auto & expected_names = projection_analysis_result.projection_column_names;
         size_t projection_size = expected_names.size();
 
-        bool has_duplicate_names = false;
-        {
-            NameSet seen;
-            for (const auto & name : expected_names)
-            {
-                if (!seen.insert(name).second)
-                {
-                    has_duplicate_names = true;
-                    break;
-                }
-            }
-        }
-
         bool needs_reorder = false;
-        if (!has_duplicate_names)
+        for (size_t i = 0; i < projection_size && i < current_output_columns.size(); ++i)
         {
-            for (size_t i = 0; i < projection_size && i < current_output_columns.size(); ++i)
+            if (current_output_columns[i].name != expected_names[i])
             {
-                if (current_output_columns[i].name != expected_names[i])
-                {
-                    needs_reorder = true;
-                    break;
-                }
+                needs_reorder = true;
+                break;
             }
         }
 
         if (needs_reorder)
         {
-            std::unordered_map<std::string_view, size_t> name_to_pos;
+            /// Build a list of positions for each name so that duplicate projection
+            /// names (e.g. two aliases expanding to the same expression) are handled
+            /// correctly: each occurrence consumes the next available position.
+            std::unordered_map<std::string_view, std::vector<size_t>> name_to_positions;
             for (size_t i = 0; i < current_output_columns.size(); ++i)
-                name_to_pos.emplace(current_output_columns[i].name, i);
+                name_to_positions[current_output_columns[i].name].push_back(i);
+
+            /// Track which position each name has consumed so far.
+            std::unordered_map<std::string_view, size_t> name_next_idx;
 
             ColumnsWithTypeAndName reordered_columns;
             reordered_columns.reserve(current_output_columns.size());
 
+            bool can_reorder = true;
             for (size_t i = 0; i < projection_size; ++i)
             {
-                auto it = name_to_pos.find(expected_names[i]);
-                chassert(it != name_to_pos.end());
-                reordered_columns.push_back(current_output_columns[it->second]);
-            }
-            NameSet projection_name_set(expected_names.begin(), expected_names.end());
-            for (const auto & col : current_output_columns)
-            {
-                if (!projection_name_set.contains(col.name))
-                    reordered_columns.push_back(col);
-            }
-
-            current_output_columns = std::move(reordered_columns);
-            actions_chain.getLastStep()->getAvailableOutputColumns() = current_output_columns;
-
-            auto & dag_outputs = projection_analysis_result.projection_actions->dag.getOutputs();
-            if (projection_size <= dag_outputs.size())
-            {
-                std::unordered_map<std::string_view, const ActionsDAG::Node *> dag_name_to_node;
-                for (const auto * node : dag_outputs)
-                    dag_name_to_node.emplace(node->result_name, node);
-
-                ActionsDAG::NodeRawConstPtrs reordered_outputs;
-                reordered_outputs.reserve(dag_outputs.size());
-
-                for (size_t i = 0; i < projection_size; ++i)
+                auto positions_it = name_to_positions.find(expected_names[i]);
+                if (positions_it == name_to_positions.end())
                 {
-                    auto it = dag_name_to_node.find(expected_names[i]);
-                    chassert(it != dag_name_to_node.end());
-                    reordered_outputs.push_back(it->second);
+                    can_reorder = false;
+                    break;
                 }
-                for (size_t i = projection_size; i < dag_outputs.size(); ++i)
-                    reordered_outputs.push_back(dag_outputs[i]);
+                size_t & idx = name_next_idx[expected_names[i]];
+                if (idx >= positions_it->second.size())
+                {
+                    can_reorder = false;
+                    break;
+                }
+                reordered_columns.push_back(current_output_columns[positions_it->second[idx]]);
+                ++idx;
+            }
 
-                dag_outputs = std::move(reordered_outputs);
+            if (can_reorder)
+            {
+                NameSet projection_name_set(expected_names.begin(), expected_names.end());
+                for (const auto & col : current_output_columns)
+                {
+                    if (!projection_name_set.contains(col.name))
+                        reordered_columns.push_back(col);
+                }
+
+                current_output_columns = std::move(reordered_columns);
+                actions_chain.getLastStep()->getAvailableOutputColumns() = current_output_columns;
+
+                auto & dag_outputs = projection_analysis_result.projection_actions->dag.getOutputs();
+                if (projection_size <= dag_outputs.size())
+                {
+                    /// Same position-based approach for DAG outputs.
+                    std::unordered_map<std::string_view, std::vector<size_t>> dag_name_to_positions;
+                    for (size_t i = 0; i < dag_outputs.size(); ++i)
+                        dag_name_to_positions[dag_outputs[i]->result_name].push_back(i);
+
+                    std::unordered_map<std::string_view, size_t> dag_name_next_idx;
+
+                    ActionsDAG::NodeRawConstPtrs reordered_dag;
+                    reordered_dag.reserve(dag_outputs.size());
+
+                    for (size_t i = 0; i < projection_size; ++i)
+                    {
+                        auto pos_it = dag_name_to_positions.find(expected_names[i]);
+                        size_t & idx = dag_name_next_idx[expected_names[i]];
+                        reordered_dag.push_back(dag_outputs[pos_it->second[idx]]);
+                        ++idx;
+                    }
+                    for (size_t i = projection_size; i < dag_outputs.size(); ++i)
+                        reordered_dag.push_back(dag_outputs[i]);
+
+                    dag_outputs = std::move(reordered_dag);
+                }
             }
         }
     }
