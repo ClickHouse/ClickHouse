@@ -948,23 +948,13 @@ static bool isBooleanProducingFunction(const String & name)
     return names.contains(name);
 }
 
-/// Rewrite a boolean-position `ifNull(<predicate>, 0)` / `coalesce(<predicate>, 0)` into just
-/// `<predicate>` for key analysis, so the inner comparison becomes a normal key atom and primary-key
-/// / skip indexes can prune granules. In a WHERE/PREWHERE a row passes only when the filter is
-/// truthy, and `ifNull(X, 0)` is truthy exactly when `X` is truthy, so dropping the wrapper is
-/// equivalent for filtering. Complements `tryRewriteCoalesceComparison`, which handles the other
-/// shape `<cmp>(coalesce|ifNull(col, ...), const)`.
-///
-/// Only valid when this wrapper is itself truth-tested. The caller checks `need_inversion == false`
-/// (under `NOT`, `ifNull(X, 0)` is not equivalent to `X` on NULL rows) and `boolean_context == true`
-/// (the node is at the filter root or reached only through `and`/`or`/`not` and transparent wrappers,
-/// not a value argument of another function such as `equals(ifNull(X, 0), 0)`, where dropping the
-/// wrapper would change the value, not just the truthiness). Both inverted and value-context wrappers
-/// fall through to FUNCTION_UNKNOWN, the safe over-approximation. Two further guards:
-///   * the fallback must be a constant that is FALSE in a boolean context (numeric zero);
-///   * the wrapped expression must itself be a boolean-producing function.
-/// Returns nullptr if the pattern does not match. Handles the two-argument form (what query
-/// generators emit); multi-argument `coalesce(pred, ..., 0)` is left for a follow-up.
+/// Rewrite a truth-tested `ifNull(<predicate>, 0)` / `coalesce(<predicate>, 0)` to `<predicate>` for
+/// key analysis, so the inner comparison becomes a prunable key atom. `ifNull(X, 0)` has the same
+/// truthiness as `X` but not the same value, so the caller restricts this to non-inverted
+/// (`need_inversion == false`) boolean position (`boolean_context == true`); under `NOT` or as a value
+/// argument like `equals(ifNull(X, 0), 0)` it would change the result on NULL rows. Also requires a
+/// falsy (numeric zero) fallback and a boolean-producing inner function; returns nullptr otherwise.
+/// Two-argument form only. Complements `tryRewriteCoalesceComparison`.
 static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
     const ActionsDAG::Node & node,
     const String & name,
