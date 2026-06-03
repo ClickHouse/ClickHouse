@@ -218,9 +218,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
 {
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
-        auto object_key = getKeyForPath(object_storage->getCommonKeyPrefix(), it->path());
-        metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
-        objects_to_remove.push_back(StoredObject(object_key.serialize()));
+        unlinkFile(it->path(), true, true);
     }
 }
 
