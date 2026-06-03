@@ -399,7 +399,7 @@ public:
     std::filesystem::path client_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path server_file_path = "/var/lib/clickhouse/user_files";
     std::filesystem::path fuzzer_out_file = std::filesystem::temp_directory_path() / "out.data";
-    std::filesystem::path lakes_path = "/var/lib/clickhouse/user_files/lakehouses";
+    std::filesystem::path lakes_path = "lakehouses";
 
     FuzzConfig()
         : cb(nullptr)
