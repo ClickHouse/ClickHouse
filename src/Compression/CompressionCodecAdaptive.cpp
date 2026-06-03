@@ -1,6 +1,6 @@
 #include <Compression/CompressionCodecAdaptive.h>
 
-#include <Compression/CompressedSizeEstimator.h>
+#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Defines.h>
 #include <Core/TypeId.h>
@@ -51,7 +51,7 @@ constexpr std::array<CandidateGroup, 1> CANDIDATES = {{
 }};
 
 /// Build the codec described by `expr` for `type` so type-aware codecs get the type they need.
-/// E.g. T64 derives its type_idx from it, to compress and to predict its size.
+/// E.g. T64 derives its type_idx from it, to compress and to calculate its size.
 CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & type)
 {
     ParserCodec parser;
@@ -94,11 +94,11 @@ CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * sour
 
     PODArray<char> scratch;
     size_t best_idx = 0;
-    UInt32 best_size = CompressedSizeEstimator::getCompressedBlockSize(*pool[0], source, source_size, scratch);
+    UInt32 best_size = CompressedSizeCalculator::getCompressedBlockSize(*pool[0], source, source_size, scratch);
 
     for (size_t i = 1; i < pool.size(); ++i)
     {
-        const UInt32 size = CompressedSizeEstimator::getCompressedBlockSize(*pool[i], source, source_size, scratch);
+        const UInt32 size = CompressedSizeCalculator::getCompressedBlockSize(*pool[i], source, source_size, scratch);
         const bool is_smaller = size < best_size;
         best_idx = is_smaller ? i : best_idx;
         best_size = is_smaller ? size : best_size;

@@ -19,7 +19,7 @@ namespace AdaptiveCodec
 Codecs poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
 
 /// Pick the codec from `pool` whose compressed block is smallest.
-/// TODO: return the winner's compressed bytes alongside the codec so compress() can skip re-compressing when a non-predicting codec wins.
+/// TODO: return the winner's compressed bytes alongside the codec so compress() can skip re-compressing when a codec that can't report its size cheaply wins.
 CompressionCodecPtr select(const Codecs & pool, const char * source, UInt32 source_size);
 
 /// The distinct types that can get a non-default codec.

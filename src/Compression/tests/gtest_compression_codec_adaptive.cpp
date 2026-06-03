@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Compression/CompressedSizeEstimator.h>
+#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
@@ -262,7 +262,7 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
     EXPECT_TRUE(ok);
 }
 
-TEST(GetCompressedBlockSize, PredictMatchesCompressForT64)
+TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
 {
     std::vector<UInt32> values(50000);
     for (size_t i = 0; i < values.size(); ++i)
@@ -276,10 +276,10 @@ TEST(GetCompressedBlockSize, PredictMatchesCompressForT64)
     ASSERT_EQ(t64->getMethodByte(), T64);
 
     PODArray<char> scratch;
-    const UInt32 predicted = CompressedSizeEstimator::getCompressedBlockSize(*t64, bytes.data(), size, scratch);
+    const UInt32 calculated = CompressedSizeCalculator::getCompressedBlockSize(*t64, bytes.data(), size, scratch);
 
-    /// Re-derive size from a real compress: prediction must match exactly
+    /// Re-derive size from a real compress: calculation must match exactly
     PODArray<char> encoded(t64->getCompressedReserveSize(size));
     const UInt32 actual = t64->compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(predicted, actual);
+    EXPECT_EQ(calculated, actual);
 }

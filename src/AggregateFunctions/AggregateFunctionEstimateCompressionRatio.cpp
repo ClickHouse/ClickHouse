@@ -8,7 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
-#include <Compression/CompressedSizeEstimator.h>
+#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/Defines.h>
@@ -48,14 +48,14 @@ struct AggregationFunctionEstimateCompressionRatioData
     UInt64 merged_compressed_size = 0;
     UInt64 merged_uncompressed_size = 0;
 
-    std::unique_ptr<CompressedSizeEstimator> estimator;
+    std::unique_ptr<CompressedSizeCalculator> calculator;
 
     [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
     {
         /// Real cancellation can happen only in case of exception
         /// In other cases the data will be read via finalizeAndGetSizes()
-        if (estimator)
-            estimator->cancel();
+        if (calculator)
+            calculator->cancel();
     }
 };
 
@@ -68,7 +68,7 @@ private:
     std::optional<UInt64> block_size_bytes;
 
 
-    void resetEstimatorIfNeeded(AggregateDataPtr __restrict place) const
+    void resetCalculatorIfNeeded(AggregateDataPtr __restrict place) const
     {
         Data & data_ref = data(place);
 
@@ -76,8 +76,8 @@ private:
         /// calls updateAggregationState + writeOutCurrentRow in a loop.
         /// writeOutCurrentRow finalizes the buffer to flush and compute sizes, but doesn't deletes it.
         /// Ideally on finalized buffers we could "reinitialize" without reconstructing the whole object buffer.
-        if (!data_ref.estimator || data_ref.estimator->isFinalized())
-            data_ref.estimator = std::make_unique<CompressedSizeEstimator>(
+        if (!data_ref.calculator || data_ref.calculator->isFinalized())
+            data_ref.calculator = std::make_unique<CompressedSizeCalculator>(
                 getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
     }
 
@@ -88,12 +88,12 @@ private:
         UInt64 uncompressed_size = data_ref.merged_uncompressed_size;
         UInt64 compressed_size = data_ref.merged_compressed_size;
 
-        if (data_ref.estimator)
+        if (data_ref.calculator)
         {
-            data_ref.estimator->finalize();
+            data_ref.calculator->finalize();
 
-            uncompressed_size += data_ref.estimator->getUncompressedBytes();
-            compressed_size += data_ref.estimator->getCompressedBytes();
+            uncompressed_size += data_ref.calculator->getUncompressedBytes();
+            compressed_size += data_ref.calculator->getCompressedBytes();
         }
 
         return {uncompressed_size, compressed_size};
@@ -132,13 +132,13 @@ public:
     {
         const auto & column = columns[0];
 
-        resetEstimatorIfNeeded(place);
+        resetCalculatorIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
-        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).estimator, {});
+        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).calculator, {});
     }
 
     void addBatchSparseSinglePlace(
@@ -164,7 +164,7 @@ public:
     {
         const auto & column = columns[0];
 
-        resetEstimatorIfNeeded(place);
+        resetCalculatorIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
@@ -172,7 +172,7 @@ public:
 
         ISerialization::SerializeBinaryBulkSettings settings;
 
-        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).estimator.get(); };
+        settings.getter = [place](ISerialization::SubstreamPath) -> WriteBuffer * { return data(place).calculator.get(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
         type_serialization_ptr->serializeBinaryBulkStatePrefix(*column, settings, state);

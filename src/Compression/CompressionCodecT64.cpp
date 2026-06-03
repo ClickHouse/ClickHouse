@@ -749,7 +749,7 @@ UInt32 compressData(const char * src, UInt32 src_size, char * dst, Variant varia
 }
 
 template <typename T>
-UInt32 predictCompressDataSize(const char * src, UInt32 bytes_size)
+UInt32 calculateCompressedDataSize(const char * src, UInt32 bytes_size)
 {
     return computeT64Layout<T>(src, bytes_size).total_size;
 }
@@ -775,21 +775,21 @@ std::optional<UInt32> CompressionCodecT64::tryGetCompressedSize(const char * sou
     switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
-            return COOKIE_SIZE + predictCompressDataSize<Int8>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int8>(source, source_size);
         case TypeIndex::Int16:
-            return COOKIE_SIZE + predictCompressDataSize<Int16>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int16>(source, source_size);
         case TypeIndex::Int32:
-            return COOKIE_SIZE + predictCompressDataSize<Int32>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int32>(source, source_size);
         case TypeIndex::Int64:
-            return COOKIE_SIZE + predictCompressDataSize<Int64>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<Int64>(source, source_size);
         case TypeIndex::UInt8:
-            return COOKIE_SIZE + predictCompressDataSize<UInt8>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt8>(source, source_size);
         case TypeIndex::UInt16:
-            return COOKIE_SIZE + predictCompressDataSize<UInt16>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt16>(source, source_size);
         case TypeIndex::UInt32:
-            return COOKIE_SIZE + predictCompressDataSize<UInt32>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt32>(source, source_size);
         case TypeIndex::UInt64:
-            return COOKIE_SIZE + predictCompressDataSize<UInt64>(source, source_size);
+            return COOKIE_SIZE + calculateCompressedDataSize<UInt64>(source, source_size);
         default:
             return std::nullopt;
     }

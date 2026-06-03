@@ -13,10 +13,10 @@ namespace DB
 /// A write buffer that reports the on-disk size its input would compress to, without writing anything.
 /// Uses `codec->tryGetCompressedSize` when codec can cheaply calculate size.
 /// Otherwise compresses into a scratch buffer, discarding the output.
-class CompressedSizeEstimator : public BufferWithOwnMemory<WriteBuffer>
+class CompressedSizeCalculator : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit CompressedSizeEstimator(CompressionCodecPtr codec_ = nullptr, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit CompressedSizeCalculator(CompressionCodecPtr codec_ = nullptr, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// Compressed size of a single block as `compress` would produce it: framework header + codec payload.
     static UInt32 getCompressedBlockSize(const ICompressionCodec & codec, const char * src, UInt32 src_size, PODArray<char> & scratch);
