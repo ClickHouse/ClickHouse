@@ -7,6 +7,7 @@
 namespace DB
 {
 
+void registerFormatDocumentations(FormatFactory & factory);
 void registerFormatDocumentations(FormatFactory & factory)
 {
     factory.setDocumentation("Arrow", Documentation{
