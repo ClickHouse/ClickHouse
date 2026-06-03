@@ -41,6 +41,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLakeStorageSetting
@@ -669,6 +670,11 @@ ExpireSnapshotsResult expireSnapshots(
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
+
+    if (catalog && catalog->isTransactional())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "expire_snapshots is not supported for Iceberg tables backed by a transactional catalog");
 
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
