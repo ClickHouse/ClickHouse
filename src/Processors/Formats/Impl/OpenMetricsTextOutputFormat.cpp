@@ -334,6 +334,7 @@ void OpenMetricsTextOutputFormat::finalizeImpl()
     writeCString("# EOF\n", out);
 }
 
+void registerOutputFormatOpenMetrics(FormatFactory & factory);
 void registerOutputFormatOpenMetrics(FormatFactory & factory)
 {
     factory.registerOutputFormat(

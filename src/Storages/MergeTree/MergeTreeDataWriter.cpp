@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Disks/createVolume.h>
@@ -128,8 +129,8 @@ void buildScatterSelector(
     for (size_t i = 0; i < num_rows; ++i)
     {
         Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
-        typename Data::LookupResult it;
-        bool inserted;
+        typename Data::LookupResult it = nullptr;
+        bool inserted = false;
         partitions_map.emplace(key, it, inserted);
 
         if (inserted)
@@ -805,7 +806,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     ReservationPtr reservation;
 
-    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
+    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0f))
     {
         ReservationConstraints constraints(min_bytes_to_perform_insert, min_ratio_to_perform_insert);
 
@@ -848,7 +849,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     SerializationInfo::Settings settings
     {
-        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
@@ -944,7 +945,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    out->writeWithPermutation(block, perm_ptr);
+    Block permuted_columns_cache;
+    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
@@ -1035,7 +1037,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     SerializationInfo::Settings settings
     {
-        (*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
@@ -1140,7 +1142,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
-    out->writeWithPermutation(block, perm_ptr);
+    Block permuted_columns_cache;
+    out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
     temp_part->part = new_data_part;

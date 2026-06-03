@@ -587,6 +587,7 @@ NamesAndTypesList OpenMetricsTextSchemaReader::readSchema()
     };
 }
 
+void registerInputFormatOpenMetrics(FormatFactory & factory);
 void registerInputFormatOpenMetrics(FormatFactory & factory)
 {
     factory.registerInputFormat(

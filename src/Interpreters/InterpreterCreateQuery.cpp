@@ -26,6 +26,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -47,7 +48,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
@@ -214,7 +215,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -393,7 +394,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            assert(default_db_disk->existsFile(metadata_file_path));
+            chassert(default_db_disk->existsFile(metadata_file_path));
             default_db_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
@@ -566,7 +567,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (column_type->lowCardinality())
         {
             const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-            assert(low_cardinality_type);
+            chassert(low_cardinality_type);
             column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
         }
         else
@@ -743,8 +744,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
-    if (create.is_time_series_table && (mode < LoadingStrictnessLevel::ATTACH))
-        StorageTimeSeries::normalizeTableDefinition(create, getContext());
+    if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
+        normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
     TableProperties properties;
     TableLockHolder as_storage_lock;
@@ -755,7 +756,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
-        assert(!create.is_dictionary);
+        chassert(!create.is_dictionary);
 
         if (create.columns_list->columns)
         {
@@ -1024,7 +1025,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     validateTableStructure(create, properties);
 
-    assert(as_database_saved.empty() && as_table_saved.empty());
+    chassert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
     std::swap(create.as_table, as_table_saved);
     if (!as_table_saved.empty())
@@ -1570,6 +1571,54 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
+        /// First, reject any user-supplied storage clauses or top-level fields that the
+        /// short-ATTACH path below would silently drop by overwriting `create` with the
+        /// stored table metadata. `InterpreterSetQuery::applySettingsFromQuery` (called from
+        /// `executeQueryImpl` before this interpreter) has already hoisted session settings
+        /// out of `create.storage->settings`, so anything still here is either engine-specific
+        /// (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`, `UNIQUE KEY`, MergeTree
+        /// `SETTINGS`) or a top-level `ASTCreateQuery` field (`COMMENT`, `REFRESH`, `SQL SECURITY`,
+        /// `TO target`, `EMPTY`, `CLONE`, `AS SELECT`, `UUID`, etc.).
+        bool has_dropped_clauses = false;
+
+        if (create.storage)
+        {
+            const auto & storage = *create.storage;
+            has_dropped_clauses
+                = storage.partition_by != nullptr
+                || storage.primary_key != nullptr
+                || storage.order_by != nullptr
+                || storage.sample_by != nullptr
+                || storage.ttl_table != nullptr
+                || storage.unique_key != nullptr
+                || storage.settings != nullptr;
+        }
+
+        has_dropped_clauses = has_dropped_clauses
+            || create.comment != nullptr
+            || create.refresh_strategy != nullptr
+            || create.sql_security != nullptr
+            || create.select != nullptr
+            || create.targets != nullptr
+            || create.as_table_function != nullptr
+            || create.aliases_list != nullptr
+            || create.is_create_empty
+            || create.is_clone_as
+            || !create.as_database.empty()
+            || !create.as_table.empty()
+            || create.has_attach_from_path
+            || create.has_uuid_clause
+            || create.has_inner_uuid_clause;
+
+        if (has_dropped_clauses)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
+                "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' "
+                "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
+                backQuoteIfNeed(create.getTable()));
+        }
+
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))
@@ -2110,7 +2159,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
-        std::bernoulli_distribution fault(probability);
+        std::bernoulli_distribution fault(static_cast<double>(probability));
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
@@ -2245,7 +2294,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         DDLGuardPtr ddl_guard;
         [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
         ddl_guard.reset();
-        assert(done);
+        chassert(done);
         created = true;
 
         /// If table has dependencies - add them to the graph
@@ -2330,6 +2379,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
+
     auto creator = [&](const StorageID & table_id)
     {
         auto res = StorageFactory::instance().get(create,
@@ -2345,9 +2395,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     };
 
     auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
-    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
-    /// It is thread-safe because of internal locking in Context class.
-    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Bare `REPLACE` requires the target to exist (`updateExternalTable` throws `UNKNOWN_TABLE`);
+    /// `CREATE OR REPLACE` accepts either state. Both calls are thread-safe.
+    auto session_context = getContext()->getSessionContext();
+    if (create.create_or_replace)
+        session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    else
+        session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
     /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
     return fillTableIfNeeded(create);
 }
@@ -2608,7 +2662,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
     {
-        SQLSecurityType default_security;
+        SQLSecurityType default_security = {};
 
         if (is_materialized_view)
             default_security = context_->getSettingsRef()[Setting::default_materialized_view_sql_security];
@@ -2780,6 +2834,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
     LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
+void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
