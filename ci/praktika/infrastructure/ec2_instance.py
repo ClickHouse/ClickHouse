@@ -1,5 +1,6 @@
 import base64
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -392,26 +393,67 @@ class EC2Instance:
             if not only_instance_ids:
                 self._create_missing_instances(ec2, existing_instances)
 
-            # Reconcile one instance at a time - never stop the whole fleet at once
-            # (this runs against production). For each instance: if its user_data
-            # changed, stop it and reinstall; then, if it is stopped and
-            # start_on_deploy is set, start it - this also brings up instances that
-            # were merely left stopped, with no user_data change.
-            update_user_data = self.update_user_data_on_change and bool(self.user_data)
-            for inst in existing_instances:
-                instance_id = inst.get("InstanceId")
-                if not instance_id:
-                    continue
-                state = (inst.get("State") or {}).get("Name")
+            # Reconcile user_data without ever stopping the whole fleet at once
+            # (this runs against production). Bring the already-stopped instances
+            # back first (updating them in place costs no downtime), then cycle the
+            # running ones one at a time. Note: starting stopped instances does not
+            # depend on update_user_data_on_change - only the user_data update does
+            # (gated inside the helpers).
+            stopped = [
+                inst
+                for inst in existing_instances
+                if (inst.get("State") or {}).get("Name") == "stopped"
+            ]
+            running = [
+                inst
+                for inst in existing_instances
+                if (inst.get("State") or {}).get("Name") in ("pending", "running")
+            ]
 
-                if update_user_data and not self._user_data_matches(ec2, instance_id):
-                    self._install_user_data(ec2, instance_id, state)
-                    state = "stopped"
+            # 1) Update user_data on the already-stopped instances (modify in place).
+            for inst in stopped:
+                self._update_user_data(ec2, inst)
 
-                if self.start_on_deploy and state == "stopped":
-                    self._start_instances(ec2, [instance_id])
+            # 2) Start all stopped instances, each as soon as its host is available.
+            if self.start_on_deploy:
+                self._start_instances(
+                    ec2, [inst.get("InstanceId") for inst in stopped]
+                )
+
+            # 3) Then the existing sequential algorithm: cycle each running instance
+            #    whose user_data changed on its own (stop -> reinstall -> start).
+            for inst in running:
+                self._reconcile_running_instance(ec2, inst)
 
             return self
+
+        def _update_user_data(self, ec2, inst):
+            """Reinstall user_data on an already-stopped instance if it changed.
+            No-op unless `update_user_data_on_change` is set; the instance is
+            assumed stopped, so this is just a ModifyInstanceAttribute.
+            """
+            if not self.update_user_data_on_change or not self.user_data:
+                return
+            instance_id = inst.get("InstanceId")
+            if not instance_id or self._user_data_matches(ec2, instance_id):
+                return
+            self._install_user_data(ec2, instance_id, "stopped")
+
+        def _reconcile_running_instance(self, ec2, inst):
+            """If a running instance's user_data changed, cycle it on its own -
+            stop, reinstall, start - so only one running instance is ever down at a
+            time. No-op unless `update_user_data_on_change` is set and the user_data
+            differs.
+            """
+            if not self.update_user_data_on_change or not self.user_data:
+                return
+            instance_id = inst.get("InstanceId")
+            if not instance_id or self._user_data_matches(ec2, instance_id):
+                return
+            state = (inst.get("State") or {}).get("Name")
+            self._install_user_data(ec2, instance_id, state)
+            if self.start_on_deploy:
+                self._start_instances(ec2, [instance_id])
 
         def _load_user_data(self):
             """Read user_data from `user_data_file` into `self.user_data` if unset."""
@@ -545,44 +587,66 @@ class EC2Instance:
             )
 
         def _start_instances(self, ec2, instance_ids):
-            """Start the given instances. On EC2 Mac dedicated hosts a stop puts the
-            host into a multi-hour scrub (state `pending`), so `StartInstances` is
-            rejected with `InsufficientHostCapacity` until the host returns to
-            `available`; in that case we block on the scrub (see
-            `_wait_for_hosts_available`) and retry. On success the IAM instance
-            profile is re-synced, which is skipped while an instance is stopped.
+            """Start the given (stopped) instances, each as soon as its EC2 Mac
+            dedicated host finishes scrubbing. A stop puts the host into a multi-hour
+            scrub (state `pending`), so `StartInstances` is rejected with
+            `InsufficientHostCapacity` until the host is `available`. We try every
+            instance up front, then wait for a blocked host to recover and retry - so
+            a ready instance never waits behind a still-scrubbing one. The IAM
+            instance profile is re-synced on the started instances (it is skipped
+            while an instance is stopped).
             """
             from botocore.exceptions import ClientError
 
-            if not instance_ids:
+            pending = [i for i in instance_ids if i]
+            if not pending:
                 return
 
-            print(
-                f"EC2Instance '{self.name}': starting {len(instance_ids)} stopped instance(s)"
-            )
-            try:
-                ec2.start_instances(InstanceIds=instance_ids)
-            except ClientError as e:
-                if e.response.get("Error", {}).get("Code") != "InsufficientHostCapacity":
-                    raise
-                self._wait_for_hosts_available(ec2, instance_ids)
-                ec2.start_instances(InstanceIds=instance_ids)
+            started = []
+            while pending:
+                blocked = []
+                for instance_id in pending:
+                    try:
+                        ec2.start_instances(InstanceIds=[instance_id])
+                    except ClientError as e:
+                        if (
+                            e.response.get("Error", {}).get("Code")
+                            == "InsufficientHostCapacity"
+                        ):
+                            blocked.append(instance_id)
+                            continue
+                        raise
+                    print(f"EC2Instance '{self.name}': starting {instance_id}")
+                    started.append(instance_id)
 
-            ec2.get_waiter("instance_running").wait(InstanceIds=instance_ids)
+                if not blocked:
+                    break
 
-            started = ec2.describe_instances(InstanceIds=instance_ids)
+                # Wait until at least one blocked host becomes available, then retry
+                # all blocked instances (the recovered one(s) start, the rest loop).
+                self._wait_for_hosts_available(ec2, blocked, require_all=False)
+                # A host can report `available` a moment before StartInstances will
+                # accept it; sleep briefly so a transient rejection paces the retry
+                # instead of spinning the loop.
+                time.sleep(10)
+                pending = blocked
+
+            ec2.get_waiter("instance_running").wait(InstanceIds=started)
+
+            started_resp = ec2.describe_instances(InstanceIds=started)
             started_instances = [
                 inst
-                for r in started.get("Reservations", [])
+                for r in started_resp.get("Reservations", [])
                 for inst in r.get("Instances", [])
             ]
             self._sync_iam_instance_profile(ec2, started_instances)
 
-        def _wait_for_hosts_available(self, ec2, instance_ids):
+        def _wait_for_hosts_available(self, ec2, instance_ids, require_all=True):
             """Block until the Dedicated Host(s) backing `instance_ids` finish the
-            EC2 Mac scrub workflow and return to `available`. boto3 has no built-in
-            host waiter, so define one over `DescribeHosts` (poll every 60s for up
-            to 3h, the worst-case Mac scrub window).
+            EC2 Mac scrub workflow and become `available`. boto3 has no built-in host
+            waiter, so define one over `DescribeHosts` (poll every 60s for up to 3h,
+            the worst-case Mac scrub window). With `require_all=False` it returns as
+            soon as any one of the hosts is available.
             """
             from botocore.waiter import WaiterModel, create_waiter_with_client
 
@@ -603,7 +667,7 @@ class EC2Instance:
 
             print(
                 f"EC2Instance '{self.name}': waiting for dedicated host(s) {host_ids} "
-                f"to finish scrubbing (state 'available'); press Ctrl+C to abort waiting"
+                f"to finish scrubbing; press Ctrl+C to abort waiting"
             )
             model = WaiterModel(
                 {
@@ -616,7 +680,7 @@ class EC2Instance:
                             "acceptors": [
                                 {
                                     "state": "success",
-                                    "matcher": "pathAll",
+                                    "matcher": "pathAll" if require_all else "pathAny",
                                     "argument": "Hosts[].State",
                                     "expected": "available",
                                 },
@@ -633,9 +697,6 @@ class EC2Instance:
             )
             waiter = create_waiter_with_client("HostAvailable", model, ec2)
             waiter.wait(HostIds=host_ids)
-            print(
-                f"EC2Instance '{self.name}': dedicated host(s) {host_ids} are available"
-            )
 
         def shutdown(self, force: bool = True):
             """
