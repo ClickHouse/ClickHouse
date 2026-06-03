@@ -352,6 +352,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 }
 
+void registerStorageDictionary(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
