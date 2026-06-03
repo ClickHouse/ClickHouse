@@ -370,6 +370,18 @@ class EC2Instance:
             ec2 = boto3.client("ec2", region_name=self.region)
             existing_instances = self._find_existing_instances()
 
+            # --instance restricts the whole operation to the named instances, so
+            # filter before any mutating reconciliation (tags, IAM, create, start).
+            # Other instances - and other EC2 configs that CloudInfrastructure.deploy
+            # iterates with the same ids - are left untouched.
+            if only_instance_ids:
+                only = set(only_instance_ids)
+                existing_instances = [
+                    inst
+                    for inst in existing_instances
+                    if inst.get("InstanceId") in only
+                ]
+
             if existing_instances:
                 self._store_ext_instances(existing_instances)
                 instance_ids = [inst.get("InstanceId") for inst in existing_instances]
@@ -381,15 +393,14 @@ class EC2Instance:
                 self._create_missing_instances(ec2, existing_instances)
 
             # Reconcile one instance at a time - never stop the whole fleet at once
-            # (this runs against production). For each in-scope instance: if its
-            # user_data changed, stop it and reinstall; then, if it is stopped and
+            # (this runs against production). For each instance: if its user_data
+            # changed, stop it and reinstall; then, if it is stopped and
             # start_on_deploy is set, start it - this also brings up instances that
             # were merely left stopped, with no user_data change.
-            only = set(only_instance_ids or [])
             update_user_data = self.update_user_data_on_change and bool(self.user_data)
             for inst in existing_instances:
                 instance_id = inst.get("InstanceId")
-                if not instance_id or (only and instance_id not in only):
+                if not instance_id:
                     continue
                 state = (inst.get("State") or {}).get("Name")
 
