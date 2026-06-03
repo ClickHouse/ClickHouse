@@ -353,7 +353,7 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
                 continue;
         }
 
-        time_t ttl_time;
+        time_t ttl_time = 0;
 
         if (use_max)
             ttl_time = ttl_info_it->second.max;
