@@ -811,6 +811,18 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                             file_segment.getInfoForLog());
 
                         state.bytes_to_predownload = 0;
+
+                        /// Mark the segment as not-to-be-continued before resetting the
+                        /// downloader, matching the readFromFileSegment EOF handling. Otherwise
+                        /// completePartAndResetDownloader leaves the segment PARTIALLY_DOWNLOADED
+                        /// (downloaded size is the real, truncated object size, which is less than
+                        /// the stale range size). On completion that would enqueue a background
+                        /// download (filesystem_cache_allow_background_download is on by default)
+                        /// or let a later reader become downloader and retry past the real EOF.
+                        /// PARTIALLY_DOWNLOADED_NO_CONTINUATION instead shrinks the segment to the
+                        /// downloaded size and never continues. completePartAndResetDownloader
+                        /// accepts this state and only resets the downloader, preserving it.
+                        file_segment.setDownloadFinishedWithoutContinuation();
                         file_segment.completePartAndResetDownloader();
                         state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
