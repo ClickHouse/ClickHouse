@@ -13,8 +13,9 @@ INSERT INTO t_ddsketch_bad SELECT unhex('020000000000000040000000000000000001040
 SELECT count() FROM t_ddsketch_bad;
 SELECT quantilesDDMerge(0.01, 0.5)(s)[1] > 0 FROM t_ddsketch_bad;
 
--- Bin at key 0 with offset -1023.5: key() truncates toward zero to 0, so this is valid and must be accepted
-SELECT count() FROM (SELECT unhex('0200000000000000400000000000FC8FC001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d);
+-- Nonzero mapping offset (here -1023.5) is unsupported, merge compares mappings by gamma only and would
+-- not remap, so two same-gamma states with different offsets would merge wrong
+SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('0200000000000000400000000000FC8FC001040100000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }
 
 -- Read path rejects the same bad state too
 SELECT quantilesDDMerge(0.01, 0.5)(d) FROM (SELECT unhex('020000000000000040000000000000000001040180F0FFFF0F000000000000F03F030C000002040000000000000000')::AggregateFunction(quantilesDD(0.01, 0.5), Float64) AS d); -- { serverError INCORRECT_DATA }

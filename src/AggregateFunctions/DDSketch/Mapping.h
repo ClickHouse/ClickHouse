@@ -111,6 +111,12 @@ public:
         {
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid offset value after deserialization: {}", offset);
         }
+        /// ClickHouse only produces offset 0, and merge compares mappings by gamma alone, so it
+        /// would merge differing offsets without remapping and corrupt the result
+        if (offset != 0.0)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Nonzero DDSketch mapping offset is not supported: {}", offset);
+        }
         multiplier = 1 / std::log(gamma);
         if (!std::isfinite(multiplier) || multiplier == 0.0)
         {
