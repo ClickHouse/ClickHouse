@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Processors/Sources/ShellCommandSource.h>
 
@@ -20,7 +21,7 @@ public:
         const StorageID & table_id,
         const String & format,
         const ExecutableSettings & settings,
-        const std::vector<ASTPtr> & input_queries,
+        const VectorWithMemoryTracking<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const String & comment);
@@ -43,7 +44,7 @@ public:
 
 private:
     std::unique_ptr<ExecutableSettings> settings;
-    std::vector<ASTPtr> input_queries;
+    VectorWithMemoryTracking<ASTPtr> input_queries;
     LoggerPtr log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
