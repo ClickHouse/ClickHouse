@@ -5,7 +5,7 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
-#include <base/scope_guard.h>
+#include <base/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
@@ -274,7 +274,7 @@ public:
             /// destruct first; `recordReleased` fires from
             /// `~ShellCommandSource` during that destruction and the
             /// sampler holds the final counters by the time this guard runs.
-            SCOPE_EXIT({
+            SCOPE_EXIT_SAFE({
                 if (!sampler)
                     return;
 
