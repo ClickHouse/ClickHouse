@@ -76,18 +76,20 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = current_thread->untracked_memory.add(size);
-        if (new_untracked_memory > current_thread->untracked_memory_limit)
+        Int64 previous_untracked_memory = current_thread->untracked_memory;
+        current_thread->untracked_memory += size;
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit)
         {
-            current_thread->untracked_memory.store(0);
+            Int64 current_untracked_memory = current_thread->untracked_memory;
+            current_thread->untracked_memory = 0;
 
             try
             {
-                return memory_tracker->allocImpl(new_untracked_memory, enforce_memory_limit);
+                return memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit);
             }
             catch (...)
             {
-                current_thread->untracked_memory.add(new_untracked_memory - size);
+                current_thread->untracked_memory += previous_untracked_memory;
                 throw;
             }
         }
@@ -149,11 +151,12 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = current_thread->untracked_memory.add(-size);
-        if (new_untracked_memory < -current_thread->untracked_memory_limit)
+        current_thread->untracked_memory -= size;
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
         {
-            current_thread->untracked_memory.store(0);
-            return memory_tracker->free(-new_untracked_memory);
+            Int64 untracked_memory = current_thread->untracked_memory;
+            current_thread->untracked_memory = 0;
+            return memory_tracker->free(-untracked_memory);
         }
 
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));

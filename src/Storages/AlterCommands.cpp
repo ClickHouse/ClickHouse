@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
 }
 
 namespace MergeTreeSetting
@@ -119,6 +120,18 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
 }
 
+/// Apply the trailing `NULL` / `NOT NULL` column modifier, mirroring the logic in
+/// InterpreterCreateQuery so that ALTER ADD/MODIFY COLUMN behaves like CREATE TABLE.
+void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null_modifier)
+{
+    if (!null_modifier)
+        return;
+    if (data_type->isNullable())
+        throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE, "Can't use [NOT] NULL modifier with Nullable type");
+    if (*null_modifier)
+        data_type = makeNullable(data_type);
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -137,6 +150,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
+            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -194,6 +208,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getType())
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
+            applyNullModifier(command.data_type, ast_col_decl.null_modifier);
         }
 
         if (ast_col_decl.getDefaultExpression())

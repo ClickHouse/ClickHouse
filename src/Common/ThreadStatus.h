@@ -10,7 +10,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/MemorySpillScheduler.h>
-#include <Common/UntrackedMemoryRegistry.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -177,7 +176,7 @@ public:
 
     MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
-    UntrackedMemoryCounter untracked_memory;
+    Int64 untracked_memory = 0;
     /// MemoryTrackerBlockerInThread state corresponding to untracked_memory.
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.

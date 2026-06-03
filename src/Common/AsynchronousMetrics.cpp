@@ -17,7 +17,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
-#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -1337,7 +1336,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
-    new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
 #if defined(OS_LINUX)
     if (loadavg)
