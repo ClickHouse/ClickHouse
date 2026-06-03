@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -247,9 +248,18 @@ private:
         return encodeZigZag(delta);
     }
 
-    /// Emit MoveTo + LineTo for an open path; advances the cursor.
-    static void emitLineTo(String & out, const TilePoints & points, Int64 & cursor_x, Int64 & cursor_y)
+    /// Remove consecutive duplicate vertices, which arise when nearby vertices round to the same pixel. Adjacent
+    /// duplicates would otherwise emit a zero-delta LineTo, which the MVT command stream forbids.
+    static void removeConsecutiveDuplicates(TilePoints & points)
     {
+        points.erase(std::unique(points.begin(), points.end()), points.end());
+    }
+
+    /// Emit MoveTo + LineTo for an open path; advances the cursor. A path with fewer than two distinct vertices is
+    /// degenerate and emits nothing.
+    static void emitLineTo(String & out, TilePoints points, Int64 & cursor_x, Int64 & cursor_y)
+    {
+        removeConsecutiveDuplicates(points);
         if (points.size() < 2)
             return;
         MVT::writeVarint(out, (MvtCommand::MoveTo & 0x7) | (1u << 3));
@@ -287,6 +297,7 @@ private:
     {
         if (points.size() >= 2 && points.front() == points.back())
             points.pop_back();
+        removeConsecutiveDuplicates(points);
         if (points.size() < 3)
             return false;
 

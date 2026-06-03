@@ -51,6 +51,12 @@ SELECT hex(mvtEncode('shapes')(mvtEncodeGeom([[(13.4, 52.5), (13.65, 52.5), (13.
 SELECT '-- mvtEncode: a degenerate (collinear, zero-area) polygon ring is dropped, producing an empty tile';
 SELECT length(mvtEncode('shapes')([[(100.0, 100.0), (200.0, 100.0), (300.0, 100.0), (100.0, 100.0)]]::Polygon::Geometry));
 
+SELECT '-- mvtEncode: a sub-pixel line whose vertices round to one point is dropped (no zero-delta command)';
+SELECT length(mvtEncode('shapes')(mvtEncodeGeom([(13.37000, 52.52000), (13.37001, 52.52000)]::LineString, 10, 550, 335)));
+
+SELECT '-- mvtEncode: adjacent duplicate vertices are pruned, but a line with two distinct vertices still encodes';
+SELECT length(mvtEncode('shapes')([(100.0, 100.0), (100.0, 100.0), (200.0, 200.0)]::LineString::Geometry)) > 0;
+
 SELECT '-- mvtEncode: an empty group produces an empty tile';
 SELECT length(mvtEncode('points')((0.0, 0.0)::Point::Geometry)) FROM numbers(0);
 

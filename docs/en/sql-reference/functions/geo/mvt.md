@@ -60,8 +60,8 @@ mvtEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 - `zoom` — Slippy-map zoom level, in the range `[0, 32]`. [`UInt8`](../../data-types/int-uint.md).
 - `tile_x` — Tile column index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
 - `tile_y` — Tile row index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
-- `extent` — Optional tile extent in pixels per side. Defaults to `4096`, the Mapbox Vector Tile default. [`UInt32`](../../data-types/int-uint.md).
-- `buffer` — Optional clip buffer in pixels. Defaults to `256`. [`UInt32`](../../data-types/int-uint.md).
+- `extent` — Optional tile extent in pixels per side, in the range `[1, 2147483647]`. Defaults to `4096`, the Mapbox Vector Tile default. [`UInt32`](../../data-types/int-uint.md).
+- `buffer` — Optional clip buffer in pixels, in the range `[0, 2147483647]`. Defaults to `256`. [`UInt32`](../../data-types/int-uint.md).
 - `clip` — Optional flag; when nonzero (the default) the geometry is clipped to the tile plus buffer. [`UInt8`](../../data-types/int-uint.md).
 
 **Returned value**
@@ -102,7 +102,7 @@ mvtEncode(layer_name[, extent])(geometry[, properties])
 **Parameters**
 
 - `layer_name` — Name of the vector tile layer. [`String`](../../data-types/string.md).
-- `extent` — Tile extent in pixels per side. Defaults to `4096`. [`UInt32`](../../data-types/int-uint.md).
+- `extent` — Tile extent in pixels per side, in the range `[1, 2147483647]`. Defaults to `4096`. [`UInt32`](../../data-types/int-uint.md).
 
 **Arguments**
 
