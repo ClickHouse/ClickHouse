@@ -24,10 +24,13 @@ static const auto highRangeSetting
 static const auto highRangeNonZeroSetting
     = CHSetting(highRangeNonZero, {"1", "2", "4", "8", "32", "64", "1024", "2048", "4096", "16384"}, false);
 
-/// Valid values: 0 (disabled) or >= 1024
 static const auto indexGranularityBytesSetting = CHSetting(
-    [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextBool() ? 0 : (rg.nextBool() ? 1024 : 10485760)); },
-    {"0", "1024", "2048", "10485760"},
+    [](RandomGenerator & rg, FuzzConfig &)
+    {
+        static const std::vector<uint64_t> choices = {1, 2, 4, 8, 32, 1024, 2048, 4096, 8192, 16384, 32768, 1048576};
+        return std::to_string(rg.pickRandomly(choices));
+    },
+    {"1", "2", "4", "8", "32", "1024", "2048", "4096", "8192", "16384", "1048576"},
     false);
 
 static const auto rowsRangeSetting
