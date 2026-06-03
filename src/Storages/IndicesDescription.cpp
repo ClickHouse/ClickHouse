@@ -104,10 +104,7 @@ ASTPtr makePersistedIndexDefinitionAST(
 
     ASTPtr persisted_expression;
     if (expression_list_ast->children.size() == 1)
-    {
         persisted_expression = expression_list_ast->children.front()->clone();
-        persisted_expression->setParenthesized(true);
-    }
     else
     {
         auto tuple_function = makeASTOperator("tuple");
