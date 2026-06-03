@@ -102,7 +102,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 
         if (profile_callback)
         {
-            ProfileInfo info;
+            ProfileInfo info{};
             info.bytes_requested = to_read;
             info.bytes_read = res;
             info.nanoseconds = watch.elapsed();
@@ -183,7 +183,7 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
         chassert(offset >= 0);
@@ -295,7 +295,7 @@ std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 
 bool ReadBufferFromFileDescriptor::checkIfActuallySeekable()
 {
-    struct stat stat;
+    struct stat stat{};
     auto res = ::fstat(fd, &stat);
     return res == 0 && S_ISREG(stat.st_mode);
 }
