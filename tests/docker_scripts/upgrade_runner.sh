@@ -19,7 +19,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
@@ -358,6 +358,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
 #       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
+# `RaftInstance: session` + `failed to read rpc header from socket` + `due to error` is a benign NuRaft
+#       shutdown-time message emitted by `rpc_session::start` in `contrib/NuRaft/src/asio_service.cxx` when
+#       the peer side of an accepted RPC connection (in single-node Keeper this is a loopback `::1` client)
+#       closes its socket before the acceptor cancels its pending header read. The already-allow-listed sibling
+#       `RaftInstance: failed to accept a rpc connection due to error 125` is the inverse race (acceptor wins);
+#       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       RaftInstance errors are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -437,6 +445,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
