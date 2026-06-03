@@ -1,12 +1,8 @@
 a
 b
 c
-optimize merged parts	1
-after rename	2
-rename preserved merged parts	1
+after rename	1
 t1_renamed after exchange	2	2	2
 s after exchange	1	1	1
-s after exchange	1	2	2
-rows after exchange in t1_renamed	1
-rows after exchange in s	2
+CLUSTER_DOESNT_EXIST
 final	1

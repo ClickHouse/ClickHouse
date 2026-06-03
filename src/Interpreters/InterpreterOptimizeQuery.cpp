@@ -1,9 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DDLGuard.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -31,38 +29,16 @@ BlockIO InterpreterOptimizeQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
-    bool on_cluster_stripped = false;
     if (!ast.cluster.empty())
     {
-        if (!maybeRemoveOnCluster(query_ptr, getContext()))
-        {
-            DDLQueryOnClusterParams params;
-            params.access_to_check = getRequiredAccess();
-            return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-        }
-        on_cluster_stripped = true;
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-
-    /// When `maybeRemoveOnCluster` stripped a matching `ON CLUSTER db_name`, propagate via the
-    /// `Replicated` database's DDL queue (same pattern as `InterpreterAlterQuery::executeToTable`
-    /// and `InterpreterRenameQuery::executeToTables`) so the OPTIMIZE runs on every replica and
-    /// shard rather than only on the initiator. Plain `OPTIMIZE` (no `ON CLUSTER`) keeps its
-    /// historical local-only semantics. `DRY RUN` stays local: it is a per-host diagnostic.
-    if (on_cluster_stripped && !ast.dry_run)
-    {
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
-        {
-            auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
-            guard->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
-        }
-    }
-
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
