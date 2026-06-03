@@ -75,7 +75,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     return {res, type};
 }
 
-std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
@@ -140,12 +140,6 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         {
             result_column = output->column;
             result_type = output->result_type;
-
-            /// All constant (literal) columns in block are added with size 1.
-            /// But if there was no columns in block before executing a function, the result has size 0.
-            /// Change the size to 1.
-            if (result_column->empty() && isColumnConst(*result_column))
-                result_column = result_column->cloneResized(1);
         }
     }
     else
@@ -185,6 +179,12 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column not found): {}", result_name);
+
+    /// All constant (literal) columns in block are added with size 1.
+    /// But if there was no columns in block before executing a function, the result has size 0.
+    /// Change the size to 1.
+    if (result_column->empty() && isColumnConst(*result_column))
+        result_column = result_column->cloneResized(1);
 
     if (result_column->empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
