@@ -2,8 +2,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Core/TypeId.h>
-
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -17,14 +16,14 @@ namespace AdaptiveCodec
 
 /// Candidate codecs for `type`, in priority order. The deployment default is always element 0, so it wins ties in `select` and bounds the
 /// downside to "no worse than the default". Extra candidates come from a per-type table.
-std::vector<CompressionCodecPtr> poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
+Codecs poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
 
 /// Pick the codec from `pool` whose compressed block is smallest.
 /// TODO: return the winner's compressed bytes alongside the codec so compress() can skip re-compressing when a non-predicting codec wins.
-CompressionCodecPtr select(const std::vector<CompressionCodecPtr> & pool, const char * source, UInt32 source_size);
+CompressionCodecPtr select(const Codecs & pool, const char * source, UInt32 source_size);
 
 /// The distinct types that can get a non-default codec.
-std::vector<TypeIndex> candidateTypeIndexes();
+VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
 
 }
 
@@ -59,7 +58,7 @@ protected:
 
 private:
     /// pool[0] is the deployment default
-    std::vector<CompressionCodecPtr> pool;
+    Codecs pool;
     UInt32 skip_threshold;
 };
 

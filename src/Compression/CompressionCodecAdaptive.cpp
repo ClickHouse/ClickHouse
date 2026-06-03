@@ -67,10 +67,10 @@ CompressionCodecPtr buildCodecForType(std::string_view expr, const IDataType & t
 
 }
 
-std::vector<CompressionCodecPtr> AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
+Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
 {
     /// TODO: add NONE to the pool.
-    std::vector<CompressionCodecPtr> pool{deployment_default};
+    Codecs pool{deployment_default};
     const TypeIndex type_id = type.getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
@@ -78,9 +78,9 @@ std::vector<CompressionCodecPtr> AdaptiveCodec::poolForType(const IDataType & ty
     return pool;
 }
 
-std::vector<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
+VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
 {
-    std::vector<TypeIndex> result;
+    VectorWithMemoryTracking<TypeIndex> result;
     for (const auto & group : CANDIDATES)
         for (const TypeIndex type_id : group.types)
             if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group

@@ -102,7 +102,7 @@ TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
         ASSERT_NE(t, nullptr) << "no representative type for candidate TypeIndex " << static_cast<int>(idx)
                               << " -- add a case to representativeType()";
 
-        std::vector<CompressionCodecPtr> pool;
+        Codecs pool;
         ASSERT_NO_THROW(pool = AdaptiveCodec::poolForType(*t, defaultCodec())) << "TypeIndex " << static_cast<int>(idx);
         EXPECT_EQ(pool[0].get(), defaultCodec().get()) << "TypeIndex " << static_cast<int>(idx); /// default is the anchor
         EXPECT_GE(pool.size(), 2u) << "TypeIndex " << static_cast<int>(idx); /// a candidate beyond the default was added
@@ -171,7 +171,7 @@ TEST(AdaptiveCodecSelector, TieGoesToEarliestCandidate)
     auto lz4a = CompressionCodecFactory::instance().get("LZ4", {});
     auto lz4b = CompressionCodecFactory::instance().get("LZ4", {});
     ASSERT_NE(lz4a.get(), lz4b.get());
-    std::vector<CompressionCodecPtr> pool = {lz4a, lz4b};
+    Codecs pool = {lz4a, lz4b};
 
     std::vector<UInt32> values(1000);
     for (size_t i = 0; i < values.size(); ++i)
