@@ -1,5 +1,7 @@
 #include <Storages/StorageDistributed.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
@@ -2178,11 +2180,32 @@ void registerStorageRemote(StorageFactory & factory)
             /* name = */ "remote",
             /* is_cluster_function = */ false,
             secure,
-            help_message);
+            help_message,
+            /* dependent_table_id = */ &args.table_id);
 
         DistributedSettings distributed_settings = args.getContext()->getDistributedSettings();
         if (args.storage_def->settings)
             distributed_settings.loadFromQuery(*args.storage_def);
+
+        /// If the cluster contains a local shard, a query against this table can be routed back to
+        /// this server under the credentials supplied to the engine (e.g. with `prefer_localhost_replica = 0`),
+        /// bypassing the caller's access rights on the local target. `TableFunctionRemote::executeImpl`
+        /// guards against this with a local-shard `SELECT`/`INSERT` check; mirror it here under the user's
+        /// context. A persistent table can be used for both reading and writing, so require both privileges.
+        bool has_local_shard = false;
+        for (const auto & shard_info : parsed.cluster->getShardsInfo())
+        {
+            if (shard_info.isLocal())
+            {
+                has_local_shard = true;
+                break;
+            }
+        }
+        if (has_local_shard)
+        {
+            args.getLocalContext()->checkAccess(AccessType::SELECT, parsed.remote_table_id);
+            args.getLocalContext()->checkAccess(AccessType::INSERT, parsed.remote_table_id);
+        }
 
         /// When the structure is not specified, infer it from the remote table under the user's
         /// context. `StorageDistributed` stores only the global context and would otherwise infer
