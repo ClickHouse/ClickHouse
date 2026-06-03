@@ -46,3 +46,20 @@ EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_nullable WHERE id;
 SELECT id, value FROM test_bool_nullable WHERE id ORDER BY value;
 
 DROP TABLE test_bool_nullable;
+
+SELECT '--- Test 4: Bool column used as boolean condition in WHERE';
+
+DROP TABLE IF EXISTS test_bool_flag;
+
+CREATE TABLE test_bool_flag (flag Bool, value String)
+ENGINE = MergeTree
+ORDER BY flag
+SETTINGS index_granularity = 8192;
+
+INSERT INTO test_bool_flag VALUES (false, 'no'), (true, 'yes');
+
+EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_flag WHERE flag;
+
+SELECT value FROM test_bool_flag WHERE flag ORDER BY value;
+
+DROP TABLE test_bool_flag;

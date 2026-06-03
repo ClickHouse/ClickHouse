@@ -71,12 +71,9 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     auto & dag = result.filter_actions->dag;
     const auto * output = dag.getOutputs().at(0);
 
-    /// If the filter expression is a bare column reference with a numeric type
-    /// (for example `WHERE id` where `id Int32`), rewrite it as `output != 0` so that
-    /// downstream index analysis treats it as a comparison against a constant rather than a
-    /// bare key column. This is scoped to bare INPUT/ALIAS nodes — a complex expression like
-    /// `WHERE sipHash64(...) % -0.` is left alone so that the existing type-strictness checks
-    /// in projection paths continue to reject it. See #89222.
+    /// Rewrite a bare boolean-context column (e.g. `WHERE id` or `WHERE flag`) as `output != 0`
+    /// so index analysis sees a comparison against a constant. Scoped to bare INPUT/ALIAS nodes
+    /// only. See #89222.
     auto is_bare_column = [](const ActionsDAG::Node * n)
     {
         while (n && n->type == ActionsDAG::ActionType::ALIAS)
@@ -87,7 +84,6 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     auto output_filter_type = removeNullable(removeLowCardinality(output->result_type));
     if (is_bare_column(output)
         && !output_filter_type->onlyNull()
-        && !isUInt8(output_filter_type)
         && output->result_type->canBeUsedInBooleanContext())
     {
         /// Zero from the non-nullable type: `getDefault` on `Nullable`/`LowCardinality` yields
