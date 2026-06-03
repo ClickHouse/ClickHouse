@@ -20,7 +20,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <base/sort.h>
-#include <cassert>
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
@@ -83,8 +82,8 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
 {
     std::lock_guard lock(state_mutex);
     /// Can be called only before queue initialization
-    assert(broken_parts_to_enqueue_fetches_on_loading.empty());
-    assert(virtual_parts.size() == 0);
+    chassert(broken_parts_to_enqueue_fetches_on_loading.empty());
+    chassert(virtual_parts.size() == 0);
     broken_parts_to_enqueue_fetches_on_loading = std::move(parts_to_fetch);
 }
 
@@ -252,7 +251,7 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
     /// so actually no race conditions are possible
-    assert(broken_parts == broken_parts_to_enqueue_fetches_on_loading);
+    chassert(broken_parts == broken_parts_to_enqueue_fetches_on_loading);
     broken_parts_to_enqueue_fetches_on_loading.clear();
 }
 
@@ -655,7 +654,7 @@ void ReplicatedMergeTreeQueue::removeCoveredPartsFromMutations(const String & pa
 void ReplicatedMergeTreeQueue::addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info)
 {
     LOG_TEST(log, "Adding part {} to mutations", part_name);
-    assert(!part_info.isFakeDropRangePart());
+    chassert(!part_info.isFakeDropRangePart());
 
     auto in_partition = mutations_by_partition.find(part_info.getPartitionId());
     if (in_partition == mutations_by_partition.end())
@@ -806,7 +805,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
 
 bool ReplicatedMergeTreeQueue::removeFailedQuorumPart(const MergeTreePartInfo & part_info)
 {
-    assert(part_info.level == 0);
+    chassert(part_info.level == 0);
     std::lock_guard lock(state_mutex);
     return virtual_parts.remove(part_info);
 }
@@ -831,7 +830,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
         throw Exception(ErrorCodes::ABORTED, "Log pulling is cancelled");
 
     String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
-    UInt64 index;
+    UInt64 index = 0;
 
     /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
     Coordination::Stat stat;
@@ -1215,7 +1214,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
             const auto & maybe_response = entries[i];
             if (maybe_response.error != Coordination::Error::ZOK)
             {
-                assert(maybe_response.error == Coordination::Error::ZNONODE);
+                chassert(maybe_response.error == Coordination::Error::ZNONODE);
                 /// It's ok if it happened on server startup or table creation and replica loads all mutation entries.
                 /// It's also ok if mutation was killed.
                 LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
@@ -1374,7 +1373,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 {
     if (entry_ptr->type != LogEntry::REPLACE_RANGE)
         return false;
-    assert(entry_ptr->replace_range_entry);
+    chassert(entry_ptr->replace_range_entry);
 
     if (current.type != LogEntry::REPLACE_RANGE && current.type != LogEntry::DROP_RANGE && current.type != LogEntry::DROP_PART)
         return false;
@@ -1394,7 +1393,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 
     /// It must either cover all new parts from REPLACE_RANGE or no one. Otherwise it's a bug in replication,
     /// which may lead to intersecting entries.
-    assert(number_of_covered_parts == 0 || number_of_covered_parts == entry_ptr->replace_range_entry->new_part_names.size());
+    chassert(number_of_covered_parts == 0 || number_of_covered_parts == entry_ptr->replace_range_entry->new_part_names.size());
     return number_of_covered_parts == entry_ptr->replace_range_entry->new_part_names.size();
 }
 
@@ -1415,7 +1414,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
         && covering_entry->replace_range_entry->columns_version < 0;
     [[maybe_unused]] bool called_for_broken_part = !covering_entry;
-    assert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
+    chassert(currently_executing_drop_replace_ranges.contains(part_info) || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
@@ -2002,7 +2001,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
     {
         auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, queue.format_version);
         [[maybe_unused]] bool inserted = queue.currently_executing_drop_replace_ranges.emplace(drop_range_info).second;
-        assert(inserted);
+        chassert(inserted);
     }
     entry->currently_executing = true;
     ++entry->num_tries;
@@ -2071,7 +2070,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     {
         auto drop_range_info = MergeTreePartInfo::fromPartName(*drop_range, queue.format_version);
         [[maybe_unused]] bool removed = queue.currently_executing_drop_replace_ranges.erase(drop_range_info);
-        assert(removed);
+        chassert(removed);
     }
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
@@ -2081,7 +2080,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
         if (!queue.future_parts.erase(part_name))
         {
             LOG_ERROR(queue.log, "Untagging already untagged future part {}. This is a bug.", part_name);
-            assert(false);
+            chassert(false);
         }
     };
 
@@ -2871,7 +2870,7 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
 void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
 {
-    size_t queue_size;
+    size_t queue_size = 0;
     {
         std::lock_guard<SharedMutex> lock(state_mutex);
         queue_size = queue.size();
