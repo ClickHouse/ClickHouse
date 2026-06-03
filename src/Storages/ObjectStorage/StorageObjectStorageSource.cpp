@@ -99,7 +99,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
+static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
 #if USE_AVRO
     if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
@@ -581,7 +581,7 @@ Chunk StorageObjectStorageSource::generate()
 
         total_rows_in_file = 0;
 
-        assert(reader_future.valid());
+        chassert(reader_future.valid());
         reader = reader_future.get();
 
         if (!reader)
@@ -761,7 +761,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
-        CompressionMethod compression_method;
+        CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
         {
             /// `One` produces a single row per object without consuming the underlying `ReadBuffer`.
