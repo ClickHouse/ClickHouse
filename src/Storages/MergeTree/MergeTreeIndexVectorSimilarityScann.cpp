@@ -677,10 +677,11 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     std::vector<float> query(pd, 0.0f);
     for (size_t i = 0; i < orig_dims; ++i)
     {
-        if (!std::isfinite(ref[i]))
+        const float v = static_cast<float>(ref[i]);
+        if (!std::isfinite(v))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Query vector for vector_similarity('scann', ...) must not contain non-finite values (NaN or Inf)");
-        query[i] = static_cast<float>(ref[i]);
+        query[i] = v;
     }
 
     /// Normalize for cosine distance (same as build-time normalization).
