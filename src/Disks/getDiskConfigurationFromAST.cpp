@@ -241,7 +241,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             ErrorCodes::ACCESS_DENIED,
             "Using `use_environment_credentials` in dynamic S3 disk configuration is not allowed");
 
-    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && !has_use_environment_credentials)
+    if (apply_s3_credential_checks && !has_use_environment_credentials)
     {
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement("use_environment_credentials"));
         root->appendChild(key_element);
