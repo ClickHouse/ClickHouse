@@ -310,6 +310,13 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
+
+    /// Stop the assignees before derived member destruction in case shutdown
+    /// did not (flushAndPrepareForShutdown early-returns on flush_called).
+    /// finish is idempotent, so this is a no-op on the normal path.
+    background_operations_assignee.finish();
+    background_streaming_assignee.finish();
+    background_moves_assignee.finish();
 }
 
 void StorageMergeTree::read(
