@@ -1,20 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <expected>
-
-#include <base/UUID.h>
-#include <base/defines.h>
-#include <pcg_random.hpp>
-
-#include <Common/EventNotifier.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Throttler.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/randomSeed.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>
@@ -45,6 +30,19 @@
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/EventNotifier.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Throttler.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
+#include <base/UUID.h>
+#include <base/defines.h>
+
+#include <atomic>
+#include <expected>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -155,6 +153,9 @@ public:
     bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
+    bool supportsStreaming() const override { return true; }
+
+    CursorPromotersMap buildPromoters() override;
 
     void read(
         QueryPlan & query_plan,
@@ -194,8 +195,6 @@ public:
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr query_context) override;
     bool haveCommittingOps(const CommittingBlocks & committing_blocks, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops) const;
     void waitForCommittingOpsToFinish(zkutil::ZooKeeperPtr zookeeper, PartitionIdToMaxBlockPtr partitions, std::set<CommittingBlock::Op> ops, size_t backoff_ms, size_t sync_timeout_ms);
-
-    bool hasLightweightDeletedMask() const override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -511,6 +510,7 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
+    AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
     AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
@@ -583,18 +583,18 @@ private:
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
       */
-    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info);
     bool createTableIfNotExistsAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const;
 
     /**
      * Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
      */
-    void createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    void createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createReplicaAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const;
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */
-    void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    void createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createNewZooKeeperNodesAttempt() const;
 
     /// Returns the ZooKeeper retries info specified for the CREATE TABLE query which is creating and starting this table right now.
@@ -602,7 +602,7 @@ private:
     void clearCreateQueryZooKeeperRetriesInfo();
 
     bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-                             const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+                             const ZooKeeperRetriesInfo & zookeeper_retries_info);
     bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
@@ -683,6 +683,10 @@ private:
     MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
 
     void executeDropRange(const LogEntry & entry);
+
+    /// Wait for parts in PreActive state within the drop range to finish committing.
+    /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
+    void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
@@ -840,6 +844,7 @@ private:
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
+    using WatchEventByPath = std::unordered_map<std::string, Coordination::EventPtr>;
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
       *
@@ -850,18 +855,20 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
+                                             Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
+                                             const String & error_context = {});
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout);
+                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
     bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
-                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout,
+                                            Coordination::EventPtr & watch_event);
 
     /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
-    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
@@ -909,7 +916,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
@@ -945,7 +952,7 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
@@ -956,7 +963,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts) override;
+    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
@@ -986,7 +993,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createTableSharedIDAttempt() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
@@ -1011,8 +1018,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
-            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, BackgroundSchedulePoolPausableTask::PauseHolderPtr && pause_)
+            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1029,7 +1036,9 @@ private:
             return std::distance(it, parts.end());
         }
 
-        std::unique_lock<std::mutex> parts_check_lock;
+        /// Pauses the part check thread while this object exists.
+        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
+        BackgroundSchedulePoolPausableTask::PauseHolderPtr pause;
 
         mutable std::mutex mutex;
         DataPartsVector parts;

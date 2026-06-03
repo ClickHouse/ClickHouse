@@ -1,7 +1,11 @@
 #include <Client.h>
+#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -13,6 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
@@ -64,6 +69,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int REQUIRED_PASSWORD;
     extern const int USER_EXPIRED;
 }
@@ -117,7 +123,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    assert(have_error == (client_exception || server_exception));
+    chassert(have_error == (client_exception || server_exception));
 }
 
 
@@ -134,9 +140,8 @@ void Client::showWarnings()
             output_stream << std::endl;
         }
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
-        /// Ignore exception
     }
 }
 
@@ -337,6 +342,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <server_client_version_message/> unless --server-client-version-message is specified
     if (!config().has("no-server-client-version-message") && !config().getBool("server_client_version_message", true))
         config().setBool("no-server-client-version-message", true);
+
+    /// Use <warnings/> unless --no-warnings is specified
+    if (!config().has("no-warnings") && !config().getBool("warnings", true))
+        config().setBool("no-warnings", true);
 }
 
 
@@ -373,20 +382,46 @@ try
     }
 #endif
 
-    try
+    bool asked_password = false;
+    bool asked_2fa = false;
+    for (;;)
     {
-        connect();
-    }
-    catch (const Exception & e)
-    {
-        if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
-            config().has("password") ||
-            config().getBool("ask-password", false) ||
-            !is_interactive)
-            throw;
+        try
+        {
+            connect();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            auto code = e.code();
 
-        config().setBool("ask-password", true);
-        connect();
+            bool should_ask_password = !asked_password && is_interactive &&
+                (code == ErrorCodes::AUTHENTICATION_FAILED || code == ErrorCodes::REQUIRED_PASSWORD) &&
+                !config().has("password") && !config().getBool("ask-password", false) &&
+                !config().has("ssh-key-file");
+
+            if (should_ask_password)
+            {
+                asked_password = true;
+                config().setBool("ask-password", true);
+                continue;
+            }
+
+            bool should_ask_2fa = !asked_2fa && (code == ErrorCodes::REQUIRED_SECOND_FACTOR) &&
+                (config().getBool("ask-password", false) || is_interactive) && !config().has("one-time-password");
+
+            if (should_ask_2fa)
+            {
+                asked_2fa = true;
+                if (!connection_parameters.password.empty())
+                    config().setString("password", connection_parameters.password);
+                config().setBool("ask-password", false);
+                config().setBool("ask-password-2fa", true);
+                continue;
+            }
+
+            throw;
+        }
     }
 
     /// Show warnings at the beginning of connection.
@@ -413,7 +448,7 @@ try
 
         if (exception)
         {
-            return exception->code() != 0 ? exception->code() : -1;
+            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
         }
 
         if (have_error)
@@ -692,8 +727,45 @@ void Client::printChangedSettings() const
 }
 
 
+String Client::getHelpHeader() const
+{
+    return fmt::format(
+        "Usage: {0} [--query <query>]\n"
+        "{0} is a client application that is used to connect to ClickHouse.\n\n"
+        "It can run queries as a command line tool if you pass queries as an argument\n"
+        "or as an interactive client.\n"
+        "Queries can run one at a time, or in a multiquery mode.\n"
+        "To change settings you may use SET statements and SETTINGS clause\n"
+        "in queries or set them for a session with corresponding arguments.\n"
+        "'{0}' command will try to connect to clickhouse-server running\n"
+        "on the same server. If you have credentials set up, pass them with\n"
+        "--user <username> --password <password> or with --ask-password argument\n"
+        "that will open command prompt.\n\n"
+        "Connect to tcp native port (9000) without encryption:\n"
+        "    {0} --host clickhouse.example.com --password mysecretpassword\n"
+        "Connect to secure endpoint:\n"
+        "    {0} --secure --host clickhouse.example.com --password mysecretpassword\n",
+        app_name);
+}
+
+
+String Client::getHelpFooter() const
+{
+    return fmt::format(
+        "Note: if clickhouse is installed, you can use 'clickhouse-client' invocation with a dash.\n\n"
+        "Example printing current longest running query on a server:\n"
+        "    {0} --query \\\n"
+        "        'SELECT * FROM system.processes ORDER BY elapsed LIMIT 1 FORMAT Vertical'\n"
+        "Example creating table and inserting data:\n"
+        "    {0} --multiquery --query \\\n"
+        "        'CREATE TABLE t (a Int) ENGINE = Memory; INSERT INTO t VALUES (1), (2), (3)'\n",
+        app_name);
+}
+
+
 void Client::printHelpMessage(const OptionsDescription & options_description)
 {
+    output_stream << getHelpHeader() << "\n";
     if (options_description.main_description.has_value())
         output_stream << options_description.main_description.value() << "\n";
     if (options_description.external_description.has_value())
@@ -702,6 +774,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
     output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
+    output_stream << getHelpFooter() << "\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parameterized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }
@@ -723,6 +796,7 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
+        ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
         ("login", po::bool_switch(), "Use OAuth 2.0 to login")
         ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
@@ -757,12 +831,16 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("fake-drop", "Ignore all DROP queries, should be used only for testing")
         ("accept-invalid-certificate",
             "Ignore certificate verification errors, equal to config parameters "
-            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none");
+            "openSSL.client.invalidCertificateHandler.name=AcceptCertificateHandler and openSSL.client.verificationMode=none")
+        ("inline-insert-data",
+            "Send INSERT data as is in the query text instead of converting it to blocks in the native format. "
+            "The server will parse the inline data itself, avoiding the round-trip to receive table structure.");
 
     /// Commandline options related to external tables.
 
     options_description.external_description.emplace(createOptionsDescription("External tables options", terminal_width));
     options_description.external_description->add_options()
+        ("external", "marks the beginning of a clause. You may have multiple sections like this, for the number of tables being transmitted")
         ("file", po::value<std::string>(), "data file or - for stdin")
         ("name", po::value<std::string>()->default_value("_data"), "name of the table")
         ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
@@ -864,6 +942,8 @@ void Client::processOptions(
         config().setString("password", options["password"].as<std::string>());
     if (options.contains("ask-password"))
         config().setBool("ask-password", true);
+    if (options.contains("one-time-password"))
+        config().setString("one-time-password", options["one-time-password"].as<std::string>());
     if (options.contains("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
     if (options.contains("ssh-key-passphrase"))
@@ -880,6 +960,8 @@ void Client::processOptions(
         config().setBool("no-server-client-version-message", true);
     if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
+    if (options.contains("inline-insert-data"))
+        config().setBool("inline-insert-data", true);
     if (options.contains("jwt"))
     {
         if (!options["user"].defaulted())
@@ -960,7 +1042,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope.emplace(client_context);
+    query_scope = QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.
@@ -970,7 +1052,7 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && config().has("queries-file"))
+    if (!queries.empty() && !queries_files.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -981,7 +1063,7 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
+    delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
     if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
@@ -1015,8 +1097,13 @@ void Client::processConfig()
     pager = config().getString("pager", "");
     enable_highlight = config().getBool("highlight", true);
     multiline = config().has("multiline");
+    rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    inline_insert_data = config().getBool("inline-insert-data", false);
+
+    if (inline_insert_data)
+        client_context->setSetting("send_table_structure_on_insert_with_inline_data", false);
 
     setDefaultFormatsAndCompressionFromConfiguration();
 }
@@ -1041,6 +1128,7 @@ void Client::readArguments(
         {
             std::string hostname(argv[1]);
             std::string port;
+            bool has_auth_in_connection_string = false;
 
             try
             {
@@ -1050,13 +1138,15 @@ void Client::readArguments(
                     hostname = host;
                     port = std::to_string(uri.getPort());
                 }
+                /// Check if connection string contains user credentials (e.g., clickhouse://user:password@host)
+                has_auth_in_connection_string = !uri.getUserInfo().empty();
             }
             catch (const Poco::URISyntaxException &) // NOLINT(bugprone-empty-catch)
             {
                 // intentionally ignored. argv[1] is not a uri, but could be a query.
             }
 
-            if (isCloudEndpoint(hostname))
+            if (isCloudEndpoint(hostname) && !has_auth_in_connection_string)
             {
                 is_hostname_argument = true;
 
@@ -1074,8 +1164,8 @@ void Client::readArguments(
                     }
                 }
 
-                /// Only auto-add --login if no authentication credentials provided via command line
-                if (!has_auth_in_cmdline)
+                /// Only auto-add --login if no authentication credentials provided via command line or connection string
+                if (!has_auth_in_cmdline && !has_auth_in_connection_string)
                 {
                     common_arguments.emplace_back("--login");
                     login_was_auto_added = true;
@@ -1110,6 +1200,23 @@ void Client::readArguments(
     for (int arg_num = start_argument_index; arg_num < argc; ++arg_num)
     {
         std::string_view arg = argv[arg_num];
+
+        /// Support arguments with a space on both sides of equals sign.
+        /// Ex: --param = value
+        std::string fused_arg;
+        if (arg.starts_with('-') && arg_num + 2 < argc)
+        {
+            std::string_view next_arg = argv[arg_num + 1];
+            if (next_arg == "=" && !arg.contains('='))
+            {
+                fused_arg = std::string(arg);
+                fused_arg += "=";
+                fused_arg += argv[arg_num + 2];
+
+                arg = fused_arg;
+                arg_num += 2;
+            }
+        }
 
         if (has_connection_string || is_hostname_argument)
             checkIfCmdLineOptionCanBeUsedWithConnectionString(arg);
@@ -1254,8 +1361,7 @@ void Client::readArguments(
 }
 
 
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wmissing-declarations"
+int mainEntryClickHouseClient(int argc, char ** argv);
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

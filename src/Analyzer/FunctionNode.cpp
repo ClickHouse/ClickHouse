@@ -236,16 +236,16 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
 
 ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto function_ast = std::make_shared<ASTFunction>();
+    auto function_ast = make_intrusive<ASTFunction>();
 
     function_ast->name = function_name;
-    function_ast->nulls_action = nulls_action;
-    function_ast->is_operator = is_operator;
+    function_ast->setNullsAction(nulls_action);
+    function_ast->setIsOperator(is_operator);
 
     if (isWindowFunction())
     {
-        function_ast->is_window_function = true;
-        function_ast->kind = ASTFunction::Kind::WINDOW_FUNCTION;
+        function_ast->setIsWindowFunction(true);
+        function_ast->setKind(ASTFunction::Kind::WINDOW_FUNCTION);
     }
 
     const auto & arguments = getArguments();
@@ -266,9 +266,10 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     /// tuple, and adding a type may significantly increase query size.
     /// It should be safe because set type for `column IN tuple` is deduced from `column` type.
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
-        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
+        && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression()
+        && !isArray(argument_nodes[1]->getResultType()))
     {
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto expression_list_ast = make_intrusive<ASTExpressionList>();
 
         expression_list_ast->children.push_back(argument_nodes[0]->toAST(new_options));
 

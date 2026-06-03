@@ -38,13 +38,15 @@ def test_multiple_local_disk():
         "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": 1 << 20,
         "max_bytes_before_external_sort": 1 << 20,
+        # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+        "enable_sharding_aggregator": 0,
     }
 
     assert node_local.contains_in_log(
-        "Setting up .*disk1.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk1'"
     )
     assert node_local.contains_in_log(
-        "Setting up .*disk2.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk2'"
     )
 
     node_local.query(query, settings=settings)
@@ -63,6 +65,8 @@ def test_remote_disk():
         "max_bytes_ratio_before_external_sort": 0,
         "max_bytes_before_external_group_by": 1 << 20,
         "max_bytes_before_external_sort": 1 << 20,
+        # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+        "enable_sharding_aggregator": 0,
     }
 
     node_remote.query(query, settings=settings)

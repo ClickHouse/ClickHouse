@@ -1,12 +1,4 @@
-#include <Functions/CastOverloadResolver.h>
-#include <Functions/FunctionsLogical.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 
 namespace DB
@@ -262,7 +254,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-        const ActionsDAG::Node * result_node;
+        const ActionsDAG::Node * result_node = nullptr;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)

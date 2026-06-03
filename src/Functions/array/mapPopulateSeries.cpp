@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionMapPopulateSeries : public IFunction
+class FunctionMapPopulateSeries final : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
@@ -229,14 +229,14 @@ private:
                 }
                 else if (is_max_key_positive && !is_min_key_positive)
                 {
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
                     max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key) + min_key_unsigned;
                 }
                 else
                 {
                     /// Both max and min key are negative
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
-                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(max_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
+                    KeyTypeUnsigned max_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(max_key));
                     max_min_key_difference = min_key_unsigned - max_key_unsigned;
                 }
             }
@@ -259,8 +259,13 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                size_t key_offset_index = current_key - min_key;
-                size_t insert_index = result_value_data_size + key_offset_index;
+                /// Compute via unsigned arithmetic to avoid signed overflow when
+                /// max_key - min_key does not fit into KeyType (e.g. Int8 with min=-94, max=34).
+                /// The outer cast back to KeyTypeUnsigned discards the int-promotion bits for
+                /// types narrower than int, so the result is the wrap-around difference.
+                KeyTypeUnsigned key_offset_unsigned = static_cast<KeyTypeUnsigned>(
+                    static_cast<KeyTypeUnsigned>(current_key) - static_cast<KeyTypeUnsigned>(min_key));
+                size_t insert_index = result_value_data_size + static_cast<size_t>(key_offset_unsigned);
 
                 result_key_data[insert_index] = current_key;
 
@@ -389,7 +394,7 @@ private:
         MutableColumnPtr result_key_column;
         MutableColumnPtr result_value_column;
         MutableColumnPtr result_offset_column;
-        IColumn * result_offset_column_raw;
+        IColumn * result_offset_column_raw{};
         /// If we return tuple of two arrays, this offset need to be the same as result_offset_column
         MutableColumnPtr result_array_additional_offset_column;
     };

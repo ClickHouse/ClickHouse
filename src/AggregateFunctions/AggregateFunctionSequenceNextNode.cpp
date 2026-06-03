@@ -3,12 +3,13 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -95,7 +96,7 @@ struct NodeBase
 
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         if (unlikely(size > max_node_size_deserialize))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
@@ -105,7 +106,7 @@ struct NodeBase
         buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
-        UInt64 ulong_bitset;
+        UInt64 ulong_bitset = 0;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
         readBinary(node->can_be_base, buf);
@@ -206,7 +207,7 @@ public:
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
         , data_type(this->argument_types[0])
-        , events_size(arguments.size() - min_required_args)
+        , events_size(static_cast<UInt8>(arguments.size() - min_required_args))
         , max_elems(max_elems_)
     {
     }
@@ -328,7 +329,7 @@ public:
     {
         readBinary(data(place).sorted, buf);
 
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
 
         if (unlikely(size == 0))
@@ -429,7 +430,7 @@ public:
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             value[event_idx]->insertInto(to_concrete.getNestedColumn());
-            to_concrete.getNullMapData().push_back(0);
+            to_concrete.getNullMapData().push_back(false);
         }
         else
         {
@@ -466,7 +467,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function '{}' requires 'String' parameters", name);
 
     String param_dir = parameters.at(0).safeGet<String>();
-    std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceDirection> seq_dir_mapping{
         {"forward", SequenceDirection::Forward},
         {"backward", SequenceDirection::Backward},
     };
@@ -475,7 +476,7 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
     SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
-    std::unordered_map<std::string, SequenceBase> seq_base_mapping{
+    UnorderedMapWithMemoryTracking<std::string, SequenceBase> seq_base_mapping{
         {"head", SequenceBase::Head},
         {"tail", SequenceBase::Tail},
         {"first_match", SequenceBase::FirstMatch},
@@ -544,10 +545,11 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
 }
 
+void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNode, {}, properties });
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Formats/BuffersReader.h>
 #include <Formats/BuffersWriter.h>
 #include <Formats/FormatFactory.h>
+#include <IO/WithFileSize.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -82,6 +83,7 @@ private:
     BuffersWriter writer;
 };
 
+void registerInputFormatBuffers(FormatFactory & factory);
 void registerInputFormatBuffers(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -90,6 +92,7 @@ void registerInputFormatBuffers(FormatFactory & factory)
         { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 }
 
+void registerOutputFormatBuffers(FormatFactory & factory);
 void registerOutputFormatBuffers(FormatFactory & factory)
 {
     factory.registerOutputFormat(

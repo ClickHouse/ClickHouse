@@ -3,6 +3,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -33,7 +34,6 @@
 #include <memory>
 #include <variant>
 #include <optional>
-#include <numeric>
 
 
 /** This dictionary stores all content in a hash table in memory
@@ -107,14 +107,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -171,10 +171,10 @@ public:
 
 private:
     template <typename Value>
-    using CollectionsHolder = std::vector<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
+    using CollectionsHolder = VectorWithMemoryTracking<typename HashedDictionaryMapType<dictionary_key_type, sparse, KeyType, Value>::Type>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
-    using NullableSets = std::vector<NullableSet>;
+    using NullableSets = VectorWithMemoryTracking<NullableSet>;
 
     struct Attribute final
     {
@@ -205,7 +205,9 @@ private:
             CollectionsHolder<IPv4>,
             CollectionsHolder<IPv6>,
             CollectionsHolder<std::string_view>,
-            CollectionsHolder<Array>>
+            CollectionsHolder<Array>,
+            CollectionsHolder<Map>,
+            CollectionsHolder<Object>>
             containers;
     };
 
@@ -266,7 +268,7 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryConfiguration configuration;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
@@ -276,8 +278,8 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    std::vector<std::unique_ptr<Arena>> string_arenas;
-    std::vector<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
+    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
+    VectorWithMemoryTracking<typename HashedDictionarySetType<dictionary_key_type, sparse, KeyType>::Type> no_attributes_containers;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 
@@ -333,7 +335,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         if (container.empty())
             return;
 
-        if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
+        if (!pool.trySchedule([&container, thread_group = getCurrentThreadGroup()]
             {
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
@@ -386,7 +388,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
@@ -435,6 +437,45 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     [&](const size_t, const Array & value) { out->insert(value); },
                     [&](size_t) { out->insertDefault(); },
                     default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](const size_t, const Map & value) { out->insert(value); },
+                    [&](size_t) { out->insertDefault(); },
+                    default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+                if (is_attribute_nullable)
+                {
+                    getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        extractor,
+                        [&](size_t row, const Object & value)
+                        {
+                            (*vec_null_map_to)[row] = false;
+                            out->insert(value);
+                        },
+                        [&](size_t row)
+                        {
+                            (*vec_null_map_to)[row] = true;
+                            out->insertDefault();
+                        },
+                        default_mask);
+                }
+                else
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute,
+                        extractor,
+                        [&](const size_t, const Object & value) { out->insert(value); },
+                        [&](size_t) { out->insertDefault(); },
+                        default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -501,6 +542,36 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
                     extractor,
                     [&](const size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    extractor,
+                    [&](const size_t, const Map & value, bool) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        extractor,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        extractor,
+                        [&](const size_t, const Object & value, bool) { out->insert(value); },
+                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -800,7 +871,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getDescendants
         PaddedPODArray<UInt64> keys_backup;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-        size_t keys_found;
+        size_t keys_found = 0;
         auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
         query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -879,12 +950,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -1161,11 +1233,12 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::loadData()
 
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -1329,7 +1402,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 template <typename GetContainersFunc>
 void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func)
 {
-    assert(attribute_index < attributes.size());
+    chassert(attribute_index < attributes.size());
 
     auto & attribute = attributes[attribute_index];
 

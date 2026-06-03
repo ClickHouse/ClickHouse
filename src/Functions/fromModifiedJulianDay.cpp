@@ -23,7 +23,7 @@ namespace DB
     }
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class ExecutableFunctionFromModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionFromModifiedJulianDay final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -57,12 +57,12 @@ namespace DB
                 if constexpr (nullOnErrors)
                 {
                     GregorianDate gd;
-                    (*vec_null_map_to)[i] = !(gd.tryInit(vec_from[i]) && gd.tryWrite(write_buffer));
+                    (*vec_null_map_to)[i] = !(gd.tryInit(static_cast<int64_t>(vec_from[i])) && gd.tryWrite(write_buffer));
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    GregorianDate gd(vec_from[i]);
+                    GregorianDate gd(static_cast<int64_t>(vec_from[i]));
                     gd.write(write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
@@ -82,7 +82,7 @@ namespace DB
     };
 
     template <typename Name, typename FromDataType, bool nullOnErrors>
-    class FunctionBaseFromModifiedJulianDay : public IFunctionBase
+    class FunctionBaseFromModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseFromModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -111,7 +111,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -126,6 +126,17 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple out-of-range inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
+            /// The input is cast to int64_t internally; for types that don't fully fit,
+            /// large values overflow, breaking monotonicity.
+            using T = typename FromDataType::FieldType;
+            constexpr bool fits_in_int64 =
+                (is_signed_v<T> && sizeof(T) <= sizeof(Int64))
+                || (is_unsigned_v<T> && sizeof(T) < sizeof(Int64));
+            if constexpr (!fits_in_int64)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
@@ -135,7 +146,7 @@ namespace DB
     };
 
     template <typename Name, bool nullOnErrors>
-    class FromModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class FromModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -202,7 +213,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 

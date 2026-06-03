@@ -76,6 +76,10 @@ class KeeperException(Exception):
 
 
 class KeeperClient(object):
+    # In tests-mode, the keeper-client writes this separator to stdout after
+    # each command so we can detect where one command's output ends.
+    # Four BEL (0x07) characters were chosen because they never appear in
+    # normal command output.
     SEPARATOR = b"\a\a\a\a\n"
 
     def __init__(
@@ -143,35 +147,40 @@ class KeeperClient(object):
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
+        error = b""
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Keeper client returned no output")
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError(f"Keeper client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
-                file = self._fd_nums[fd_num]
+            # Process stderr events before stdout to ensure errors are
+            # collected before checking the stdout separator.
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stderr:
+                        error += self.proc.stderr.readline()
+                elif not (event & select.EPOLLHUP):
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
 
-                if file == self.proc.stdout:
-                    while True:
-                        chunk = file.readline()
-                        if chunk.endswith(self.SEPARATOR):
-                            break
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stdout:
+                        while True:
+                            chunk = file.readline()
+                            if chunk.endswith(self.SEPARATOR):
+                                if error:
+                                    raise KeeperException(
+                                        error.strip().decode()
+                                    )
+                                return output.getvalue().strip().decode()
 
-                        output.write(chunk)
-
-                elif file == self.proc.stderr:
-                    self.proc.stdout.readline()
-                    raise KeeperException(self.proc.stderr.readline().strip().decode())
-
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
-
-        data = output.getvalue().strip().decode()
-        return data
+                            output.write(chunk)
 
     def cd(self, path: str, timeout: float = 60.0):
         self.execute_query(f"cd '{path}'", timeout)
@@ -260,13 +269,21 @@ class KeeperClient(object):
     def from_cluster(
         cls,
         cluster: ClickHouseCluster,
-        keeper_node: str,
+        keeper_node: Optional[str] = None,
+        keeper_ip: Optional[str] = None,
         port: Optional[int] = None,
         identity: Optional[str] = None,
     ) -> "KeeperClient":
+        if keeper_node is None and keeper_ip is None:
+            raise ValueError("Must specify either keeper_node or keeper_ip")
+
+        instance_ip = keeper_ip
+        if instance_ip is None:
+            instance_ip = cluster.get_instance_ip(keeper_node)
+
         client = cls(
             cluster.server_bin_path,
-            cluster.get_instance_ip(keeper_node),
+            instance_ip,
             port or cluster.zookeeper_port,
             identity=identity,
         )
@@ -291,7 +308,9 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
     try:
         client = get_keeper_socket(cluster, node.name, port, timeout_sec)
         if argument is not None:
-            client.send(cmd.encode() + struct.pack('>L', len(argument)) + argument.encode())
+            client.send(
+                cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
+            )
         else:
             client.send(cmd.encode())
 
@@ -336,7 +355,7 @@ def wait_until_connected(
         while True:
             zk_cli = None
             try:
-                time_passed = min(time.time() - start, 5.0)
+                time_passed = time.time() - start
                 if time_passed >= timeout:
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
@@ -347,7 +366,7 @@ def wait_until_connected(
 
                 zk_cli = KazooClient(
                     hosts=f"{host}:9181",
-                    timeout=timeout - time_passed,
+                    timeout=min(timeout - time_passed, 5.0),
                     client_id=client_id,
                 )
                 zk_cli.start()
@@ -357,7 +376,11 @@ def wait_until_connected(
                 pass
             finally:
                 if zk_cli:
-                    zk_cli.stop()
+                    try:
+                        # stop() can raise if the connection is already broken
+                        zk_cli.stop()
+                    except Exception:
+                        pass
                     zk_cli.close()
 
 

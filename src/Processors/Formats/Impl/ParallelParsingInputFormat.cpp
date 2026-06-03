@@ -27,7 +27,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
             if (parsing_finished)
                 break;
 
-            assert(unit.status == READY_TO_INSERT);
+            chassert(unit.status == READY_TO_INSERT);
 
             // Segmentating the original input.
             unit.segment.resize(0);
@@ -106,7 +106,7 @@ void ParallelParsingInputFormat::parserThreadFunction(size_t current_ticket_numb
             size_t approx_chunk_size = input_format->getApproxBytesReadForChunk();
             /// We could decompress data during file segmentation.
             /// Correct chunk size using original segment size.
-            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / unit.segment.size() * unit.original_segment_size));
+            approx_chunk_size = static_cast<size_t>(std::ceil(static_cast<double>(approx_chunk_size) / static_cast<double>(unit.segment.size()) * static_cast<double>(unit.original_segment_size)));
             unit.chunk_ext.approx_chunk_sizes.push_back(approx_chunk_size);
         }
 
@@ -196,7 +196,7 @@ Chunk ParallelParsingInputFormat::read()
                 return {};
             }
 
-            assert(unit->status == READY_TO_READ);
+            chassert(unit->status == READY_TO_READ);
 
             if (!unit->chunk_ext.chunk.empty())
                 break;
@@ -222,7 +222,7 @@ Chunk ParallelParsingInputFormat::read()
         next_block_in_current_unit = 0;
     }
 
-    assert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
+    chassert(next_block_in_current_unit.value() < unit->chunk_ext.chunk.size());
 
     Chunk res = std::move(unit->chunk_ext.chunk.at(*next_block_in_current_unit));
     last_block_missing_values = std::move(unit->chunk_ext.block_missing_values[*next_block_in_current_unit]);

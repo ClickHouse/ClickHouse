@@ -21,7 +21,6 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
 
@@ -340,7 +339,7 @@ struct AddDaysImpl
     }
     static NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return d + delta;
+        return static_cast<UInt16>(d + delta);
     }
     static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -657,7 +656,7 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
-        Int64 result;
+        Int64 result = 0;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -785,7 +784,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval : public IFunction
+class FunctionDateOrDateTimeAddInterval final : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
@@ -978,7 +977,7 @@ public:
             const auto * datetime64_type = assert_cast<const DataTypeTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
             return DateTimeAddIntervalImpl<DataTypeTime64, TransformResultDataType<DataTypeTime64>, Transform>::execute(
-                Transform{}, arguments, result_type, from_scale, input_rows_count);
+                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
         }
         if (which.isDateTime())
             return DateTimeAddIntervalImpl<DataTypeDateTime, TransformResultDataType<DataTypeDateTime>, Transform>::execute(
@@ -988,7 +987,7 @@ public:
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(from_type);
             auto from_scale = datetime64_type->getScale();
             return DateTimeAddIntervalImpl<DataTypeDateTime64, TransformResultDataType<DataTypeDateTime64>, Transform>::execute(
-                Transform{}, arguments, result_type, from_scale, input_rows_count);
+                Transform{}, arguments, result_type, static_cast<UInt16>(from_scale), input_rows_count);
         }
         if (which.isString())
             return DateTimeAddIntervalImpl<DataTypeString, DataTypeDateTime64, Transform>::execute(

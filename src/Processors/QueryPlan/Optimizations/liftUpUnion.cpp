@@ -25,14 +25,16 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Union does not change header.
         /// We can push down expression and update header.
         auto union_input_headers = child->getInputHeaders();
+        auto expected_output = expression->getOutputHeader();
+
         for (auto & input_header : union_input_headers)
-            input_header = expression->getOutputHeader();
+            input_header = expected_output;
 
         ///                    - Something
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

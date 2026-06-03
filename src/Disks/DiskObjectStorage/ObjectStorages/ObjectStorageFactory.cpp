@@ -19,7 +19,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#include <Disks/DiskType.h>
 
 #include <Interpreters/Context.h>
 
@@ -46,6 +45,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+#if USE_AWS_S3
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsS3UriStyle uri_style;
+}
+
+#endif
 
 ObjectStorageFactory & ObjectStorageFactory::instance()
 {
@@ -91,14 +99,14 @@ ObjectStoragePtr ObjectStorageFactory::create(
 namespace
 {
 
-S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context, S3UriStyle uri_style)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     String endpoint_subpath;
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -117,7 +125,7 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
-void registerS3ObjectStorage(ObjectStorageFactory & factory)
+static void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
      auto creator = [](
         const std::string & name,
@@ -126,11 +134,11 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
-        auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
+        auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -146,11 +154,11 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_HDFS
-void registerHDFSObjectStorage(ObjectStorageFactory & factory)
+static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
         "hdfs",
-        [](const std::string & /* name */,
+        [](const std::string & name,
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
@@ -164,13 +172,13 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
             std::unique_ptr<HDFSObjectStorageSettings> settings = std::make_unique<HDFSObjectStorageSettings>(
                 config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024), context->getSettingsRef()[Setting::hdfs_replication]);
 
-            return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false);
+            return std::make_shared<HDFSObjectStorage>(uri, std::move(settings), config, /* lazy_initialize */false, name);
         });
 }
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerAzureObjectStorage(ObjectStorageFactory & factory)
+static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
@@ -191,7 +199,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
 
         return std::make_shared<AzureObjectStorage>(
@@ -208,7 +216,7 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-void registerWebObjectStorage(ObjectStorageFactory & factory)
+static void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
         const std::string & /* name */,
@@ -235,7 +243,7 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
     });
 }
 
-void registerLocalObjectStorage(ObjectStorageFactory & factory)
+static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
@@ -245,14 +253,14 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
         bool /* skip_access_check */) -> ObjectStoragePtr
     {
         String object_key_prefix;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
 
         bool read_only = config.getBool(config_prefix + ".readonly", false);
-        LocalObjectStorageSettings settings(object_key_prefix, read_only);
+        LocalObjectStorageSettings settings(name, object_key_prefix, read_only);
 
         return std::make_shared<LocalObjectStorage>(settings);
     };
@@ -262,6 +270,8 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain", creator);
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
+
+void registerObjectStorages();
 
 void registerObjectStorages()
 {

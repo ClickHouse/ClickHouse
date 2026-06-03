@@ -2,6 +2,16 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+/**
+ * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
+ * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
+ * to generate traits, storage and accessor helpers.
+ *
+ * Macro structure:
+ *  DECLARE(Type, name, default, description, flags)
+ *  "flags" originate from BaseSettings (e.g. IMPORTANT) and may influence exposure or validation.
+ */
+
 namespace DB
 {
 
@@ -59,6 +69,7 @@ namespace DB
     DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, "Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.", 0) \
     DECLARE(UInt64, min_joined_block_size_bytes, 524288, "Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.)", 0) \
     DECLARE(Bool, joined_block_split_single_row, false, "Allow to chunk hash join result by rows corresponding to single row from left table.", 0) \
+    DECLARE(Bool, parallel_non_joined_rows_processing, true, "Allow parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins.", 0) \
     \
     DECLARE(Bool, use_join_disjunctions_push_down, false, "Enable JOIN disjunction pushdown: allows pushing safe OR-branch predicates from JOIN conditions down to the respective left/right inputs so storages can pre-filter. Applied only when each top-level OR branch contributes a deterministic predicate for the target side.", 0) \
     \
@@ -74,6 +85,9 @@ namespace DB
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
+    \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_join, 0., "Spill threshold for hash joins expressed as a fraction of available memory. Combined with the absolute `max_bytes_before_external_join`, the smaller resulting threshold applies. The ratio is recomputed on each executor against its local memory limits.", 0) \
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
     DECLARE(String, temporary_files_codec, "LZ4", "Sets compression codec for temporary files used in sorting and joining operations on disk.", 0) \
@@ -91,28 +105,20 @@ namespace DB
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
+    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \
+    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, "Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.", 0) \
+    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
+    DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
+    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
 
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
-
-struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSerializationSettingsTraits>
-{
-};
-
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
-
-namespace QueryPlanSerializationSetting
-{
-PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QueryPlanSerializationSettings, QueryPlanSerializationSetting)
 
 
 QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::make_unique<QueryPlanSerializationSettingsImpl>())

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -25,7 +26,7 @@
 namespace DB
 {
 StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     auto projection_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -47,10 +48,19 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Projection settings."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-class ProjectionsSource : public ISource
+VirtualColumnsDescription StorageSystemProjections::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+class ProjectionsSource final : public ISource
 {
 public:
     ProjectionsSource(
@@ -113,7 +123,7 @@ protected:
                 const auto table = tables_it->table();
                 if (!table)
                     continue;
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
@@ -242,7 +252,7 @@ void ReadFromSystemProjections::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-void StorageSystemProjections::read(
+void StorageSystemProjections::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -270,18 +280,14 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
         if (database->isExternal())
             continue;
-
-        /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.
-        /// Skip it to avoid unnecessary tables loading in the Lazy database.
-        if (database->getEngineName() != "Lazy")
-            column->insert(database_name);
+        column->insert(database_name);
     }
 
     /// Condition on "database" in a query acts like an index.

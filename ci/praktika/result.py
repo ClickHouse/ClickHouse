@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import datetime
+import errno
 import io
 import json
 import os
@@ -8,14 +9,29 @@ import random
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
+from .event import Event
 from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import ContextManager, MetaClasses, Shell, Utils
+
+from .info import Info
+
+
+class _Colors:
+    """ANSI color codes for terminal output"""
+
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
 
 
 @dataclasses.dataclass
@@ -37,27 +53,57 @@ class Result(MetaClasses.Serializable):
         info (str): Additional information about the result. Free-form text.
 
     Inner Class:
-        Status: Defines possible statuses for the task, such as "success", "failure", etc.
+        Status: Defines possible statuses for the result.
     """
 
     class Status:
-        SKIPPED = "skipped"
-        DROPPED = "dropped"
-        SUCCESS = "success"
-        FAILED = "failure"
-        PENDING = "pending"
-        RUNNING = "running"
-        ERROR = "error"
-
-    class StatusExtended:
+        # Outcome statuses (used for both job-level and sub-result/test-level results)
         OK = "OK"
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
+        UNKNOWN = "UNKNOWN"
+        XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
+        XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
+        # Lifecycle statuses (used for job-level and workflow-level results)
+        PENDING = "PENDING"
+        RUNNING = "RUNNING"
+        DROPPED = "DROPPED"
+
+    class GHStatus:
+        """GitHub commit status API values — the only four strings GH accepts."""
+
+        PENDING = "pending"
+        SUCCESS = "success"
+        FAILURE = "failure"
+        ERROR = "error"
 
     class Label:
         OK_ON_RETRY = "retry_ok"
         FAILED_ON_RETRY = "retry_failed"
+        BLOCKER = "blocker"
+        ISSUE = "issue"
+        INFRA = "infra"
+        XFAIL = "xfail"
+        CIDB = "cidb"
+        SETTING_VALUE = "setting"
+        FLAKY = "flaky"
+        REPRODUCIBLE = "reproducible"
+
+    # Default hints rendered as a hover tooltip in json.html.
+    # Looked up automatically when set_label is called without an explicit hint.
+    LABEL_HINTS = {
+        Label.OK_ON_RETRY: "Test failed initially but passed on retry",
+        Label.FAILED_ON_RETRY: "Test failed both on the first run and on retry",
+        Label.BLOCKER: "Blocks the merge regardless if a known issue is matched (sanitizer/fatal in server logs, etc.)",
+        Label.ISSUE: "A known open GitHub issue matches this failure",
+        Label.INFRA: "Infrastructure error",
+        Label.XFAIL: "Expected to fail (bugfix validation inverts the status)",
+        Label.CIDB: "Failure history for this test in the CI database",
+        Label.SETTING_VALUE: "Failure caused by a specific randomized setting value",
+        Label.FLAKY: "Failure is reproducible in less than 100% of reruns",
+        Label.REPRODUCIBLE: "Failure is reproducible in 100% of reruns",
+    }
 
     name: str
     status: str
@@ -65,6 +111,7 @@ class Result(MetaClasses.Serializable):
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
     files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
+    assets: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -76,22 +123,21 @@ class Result(MetaClasses.Serializable):
         stopwatch: Utils.Stopwatch = None,
         status="",
         files=None,
+        assets=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
+        labels=None,
     ) -> "Result":
         if isinstance(status, bool):
-            status = Result.Status.SUCCESS if status else Result.Status.FAILED
+            status = Result.Status.OK if status else Result.Status.FAIL
         if not results and not status:
             print(
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        # if not name:
-        #     name = _Environment.get().JOB_NAME
-        #     if not name:
-        #         print("ERROR: Failed to guess the .name")
-        #         raise
+        if not name:
+            name = _Environment.get().JOB_NAME
         start_time = None
         duration = None
         if not stopwatch:
@@ -107,7 +153,7 @@ class Result(MetaClasses.Serializable):
             start_time = stopwatch.start_time
             duration = stopwatch.duration
 
-        result_status = status or Result.Status.SUCCESS
+        result_status = status or Result.Status.OK
         infos = []
         if info:
             if isinstance(info, str):
@@ -117,23 +163,22 @@ class Result(MetaClasses.Serializable):
         if results and not status:
             for result in results:
                 if result.status in (
-                    Result.Status.SUCCESS,
+                    Result.Status.OK,
                     Result.Status.SKIPPED,
-                    Result.StatusExtended.OK,
-                    Result.StatusExtended.SKIPPED,
+                    Result.Status.XFAIL,
                 ):
                     continue
                 elif result.status in (
                     Result.Status.ERROR,
-                    Result.StatusExtended.ERROR,
                 ):
                     result_status = Result.Status.ERROR
                     break
                 elif result.status in (
-                    Result.Status.FAILED,
-                    Result.StatusExtended.FAIL,
+                    Result.Status.FAIL,
+                    Result.Status.UNKNOWN,
+                    Result.Status.XPASS,
                 ):
-                    result_status = Result.Status.FAILED
+                    result_status = Result.Status.FAIL
                 else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
@@ -142,16 +187,22 @@ class Result(MetaClasses.Serializable):
             for result in results:
                 if result.info:
                     infos.append(f"{result.name}: {result.info}")
-        return Result(
+        result = Result(
             name=name,
             status=result_status,
             start_time=start_time,
             duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
+            assets=assets or [],
             files=files or [],
             links=links or [],
         )
+        if isinstance(labels, str):
+            labels = [labels]
+        for label in labels or []:
+            result.set_label(label)
+        return result
 
     @staticmethod
     def get():
@@ -182,47 +233,65 @@ class Result(MetaClasses.Serializable):
 
     def is_ok(self):
         return self.status in (
+            Result.Status.OK,
             Result.Status.SKIPPED,
-            Result.Status.SUCCESS,
-            Result.StatusExtended.OK,
-            Result.StatusExtended.SKIPPED,
+            Result.Status.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK)
+        return self.status in (Result.Status.OK, Result.Status.XFAIL)
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
+        return self.status in (Result.Status.FAIL, Result.Status.XPASS)
 
     def is_error(self):
-        return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
+        return self.status in (Result.Status.ERROR,)
+
+    def _dump_if_persisted(self) -> "Result":
+        """Dump only if a result file already exists on disk.
+
+        Setters use this so that job-level results (already dumped by `complete_job`
+        or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
+        create their own files — avoiding `OSError: File name too long` when a result
+        name is derived from a long error message.
+        """
+        try:
+            exists = Path(self.file_name()).is_file()
+        except OSError as e:
+            if e.errno == errno.ENAMETOOLONG:
+                return self
+            raise
+        if exists:
+            self.dump()
+        return self
 
     def set_status(self, status) -> "Result":
         self.status = status
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_success(self) -> "Result":
-        return self.set_status(Result.Status.SUCCESS)
+        return self.set_status(Result.Status.OK)
 
     def set_failed(self) -> "Result":
-        return self.set_status(Result.Status.FAILED)
+        return self.set_status(Result.Status.FAIL)
 
     def set_error(self) -> "Result":
         return self.set_status(Result.Status.ERROR)
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
-        self.dump()
+        self._dump_if_persisted()
         return self
 
-    def set_files(self, files) -> "Result":
+    def set_files(self, files, strict=True) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
-        for file in files:
-            assert Path(
-                file
-            ).is_file(), f"Not valid file [{file}] from file list [{files}]"
+        if strict:
+            for file in files:
+                assert Path(
+                    file
+                ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
         for file in self.files:
@@ -232,19 +301,84 @@ class Result(MetaClasses.Serializable):
                 )
                 files.remove(file)
         self.files += files
-        self.dump()
+        self._dump_if_persisted()
         return self
+
+    def set_on_error_hook(self, hook: str) -> "Result":
+        """
+        Sets a bash script to execute when the job encounters a critical error.
+
+        This hook runs on job-level failures such as:
+        - Hard timeout exceeded
+        - Job killed or terminated by the system
+        - Infrastructure failures
+
+        The hook script should handle cleanup, log collection, or any other
+        recovery actions needed before the job terminates.
+
+        Args:
+            hook: Bash script/commands to execute on error
+
+        Returns:
+            Self for method chaining
+        """
+        self.ext["on_error_hook"] = hook
+        return self
+
+    def get_on_error_hook(self) -> str:
+        return self.ext.get("on_error_hook", "")
 
     def set_info(self, info: str) -> "Result":
         if self.info:
             self.info += "\n"
         self.info += info
-        self.dump()
+        self._dump_if_persisted()
+        return self
+
+    def add_warning(self, message: str) -> "Result":
+        """
+        Add a warning message to this result only.
+
+        The message is stored in ``self.ext["warnings"]`` as
+        ``{"message": str, "from": str}`` and rendered as a notification panel
+        on the report page for this specific result (workflow, job, sub-task,
+        or test).  It is **not** propagated to parent or child results — use
+        ``Info.add_workflow_warning`` when the message should appear on the job
+        level and be propagated to the top (workflow) level.
+        """
+        self.ext.setdefault("warnings", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_error(self, message: str) -> "Result":
+        """
+        Add an error message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("errors", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
+        return self
+
+    def add_note(self, message: str) -> "Result":
+        """
+        Add a note message to this result only.
+
+        See ``add_warning`` for propagation semantics.
+        """
+        self.ext.setdefault("notes", []).append(
+            {"message": message, "from": self.name}
+        )
+        self._dump_if_persisted()
         return self
 
     def set_link(self, link) -> "Result":
         self.links.append(link)
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def _add_job_summary_to_info(self):
@@ -261,26 +395,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, name):
-        if not name:
-            return cls.experimental_file_name_static()
-        else:
-            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
-
-    @classmethod
-    def experimental_file_name_static(cls):
-        return f"{Settings.TEMP_DIR}/result_job.json"
-
-    @classmethod
-    def experimental_from_fs(cls, name):
-        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-        Shell.check(
-            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
-            verbose=True,
-        )
-        result = Result.from_fs(name)
-        result.name = name
-        result.dump()
-        return result
+        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -307,42 +422,97 @@ class Result(MetaClasses.Serializable):
         self.duration = stopwatch.duration
         return self
 
-    def set_label(self, label):
+    @staticmethod
+    def _label_name(entry):
+        """Return the name of a label entry (handles legacy string entries)."""
+        return entry if isinstance(entry, str) else entry.get("name")
+
+    _UNSET = object()
+
+    def set_label(self, label, link=_UNSET, hint=_UNSET):
+        """Add or update a label.
+
+        Each label is stored as a dict {"name": str, "link"?: str, "hint"?: str}.
+        - link: optional URL — clicking the label opens it in a new tab.
+        - hint: optional tooltip text shown on hover. If omitted on a new label,
+          falls back to Result.LABEL_HINTS[label] when registered. On an existing
+          label, omitting link/hint preserves the current value.
+        """
+        assert isinstance(label, str), (
+            f"label must be a string, got {type(label).__name__}"
+        )
+
+        labels = self.ext.setdefault("labels", [])
+        for i, existing in enumerate(labels):
+            if self._label_name(existing) == label:
+                merged = {"name": label}
+                if isinstance(existing, dict):
+                    for k in ("link", "hint"):
+                        if k in existing:
+                            merged[k] = existing[k]
+                else:
+                    # Legacy string entry — backfill default hint when migrating to dict.
+                    default = self.LABEL_HINTS.get(label)
+                    if default:
+                        merged["hint"] = default
+                if link is not self._UNSET:
+                    if link:
+                        merged["link"] = link
+                    else:
+                        merged.pop("link", None)
+                if hint is not self._UNSET:
+                    if hint:
+                        merged["hint"] = hint
+                    else:
+                        merged.pop("hint", None)
+                labels[i] = merged
+                return self
+
+        entry = {"name": label}
+        if link is not self._UNSET and link:
+            entry["link"] = link
+        resolved_hint = hint if hint is not self._UNSET else self.LABEL_HINTS.get(label)
+        if resolved_hint:
+            entry["hint"] = resolved_hint
+        labels.append(entry)
+        return self
+
+    def remove_label(self, label):
         if not self.ext.get("labels", None):
-            self.ext["labels"] = []
-        self.ext["labels"].append(label)
+            return self
+        self.ext["labels"] = [
+            l for l in self.ext["labels"] if self._label_name(l) != label
+        ]
+        return self
 
     def get_labels(self):
-        return self.ext.get("labels", [])
+        """Return list of label names."""
+        return [self._label_name(l) for l in self.ext.get("labels", [])]
 
     def has_label(self, label):
-        return label in self.ext.get("labels", []) or label in [
-            x[0] for x in self.ext.get("hlabels", [])
-        ]
+        if label in self.get_labels():
+            return True
+        # Legacy fallback for results stored before the label/hlabel unification.
+        return label in [x[0] for x in self.ext.get("hlabels", []) if x]
+
+    def get_label_link(self, label):
+        for l in self.ext.get("labels", []):
+            if isinstance(l, dict) and l.get("name") == label:
+                return l.get("link")
+        # Legacy fallback for results stored before the label/hlabel unification.
+        for h in self.ext.get("hlabels", []):
+            if isinstance(h, (list, tuple)) and len(h) >= 2 and h[0] == label:
+                return h[1]
+        return None
+
+    def get_label_hint(self, label):
+        for l in self.ext.get("labels", []):
+            if isinstance(l, dict) and l.get("name") == label:
+                return l.get("hint")
+        return None
 
     def set_comment(self, comment):
         self.ext["comment"] = comment
-
-    def set_clickable_label(self, label, link):
-        if not self.ext.get("hlabels", None):
-            self.ext["hlabels"] = []
-        for i, (existing_label, existing_link) in enumerate(self.ext["hlabels"]):
-            if existing_label == label:
-                if existing_link != link:
-                    print(
-                        f"WARNING: Updating hlabel '{label}' from '{existing_link}' to '{link}'"
-                    )
-                    self.ext["hlabels"][i] = (label, link)
-                return
-        self.ext["hlabels"].append((label, link))
-
-    def get_hlabel_link(self, label):
-        if not self.ext.get("hlabels", None):
-            return None
-        for hlabel in self.ext["hlabels"]:
-            if hlabel[0] == label:
-                return hlabel[1]
-        return None
 
     @classmethod
     def from_pytest_run(
@@ -352,7 +522,9 @@ class Result(MetaClasses.Serializable):
         name="Tests",
         env=None,
         pytest_report_file=None,
+        pytest_logfile=None,
         logfile=None,
+        timeout=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -364,6 +536,7 @@ class Result(MetaClasses.Serializable):
             env (dict, optional): Environment variables for the pytest command
             pytest_report_file (str, optional): Path to write the pytest jsonl report
             logfile (str, optional): Path to write pytest output logs
+            timeout (int, optional): Hard timeout in seconds to kill the pytest process
 
         Returns:
             Result: A Result object with test cases as sub-Results
@@ -374,14 +547,15 @@ class Result(MetaClasses.Serializable):
             files.append(pytest_report_file)
         else:
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
-        if logfile:
-            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if pytest_logfile:
+                full_command += f" --log-file={pytest_logfile}"
+                files.append(pytest_logfile)
             if logfile:
-                full_command += f" --log-file={logfile}"
+                files.append(logfile)
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -392,7 +566,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            _res = Shell.check(full_command, verbose=True)
+            Shell.run(full_command, log_file=logfile, timeout=timeout)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
@@ -514,8 +688,10 @@ class Result(MetaClasses.Serializable):
                 has_pending = True
             if result_.status in (
                 self.Status.ERROR,
-                self.Status.FAILED,
-                self.StatusExtended.FAIL,
+                self.Status.DROPPED,
+                self.Status.FAIL,
+                self.Status.UNKNOWN,
+                self.Status.XPASS,
             ):
                 has_failed = True
         if has_running:
@@ -523,9 +699,9 @@ class Result(MetaClasses.Serializable):
         elif has_pending:
             self.status = self.Status.PENDING
         elif has_failed:
-            self.status = self.Status.FAILED
+            self.status = self.Status.FAIL
         else:
-            self.status = self.Status.SUCCESS
+            self.status = self.Status.OK
         if (was_pending or was_running) and self.status not in (
             self.Status.PENDING,
             self.Status.RUNNING,
@@ -552,7 +728,12 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_gtest_run(
-        cls, unit_tests_path, name="", with_log=False, command_launcher=""
+        cls,
+        unit_tests_path,
+        name="",
+        with_log=False,
+        command_launcher="",
+        gtest_filter="",
     ):
         """
         Runs gtest and generates praktika Result from results
@@ -561,10 +742,16 @@ class Result(MetaClasses.Serializable):
         If it's a job itself job.name will be taken as name by default
         :param with_log: whether to log gtest output into separate file
         :param command_prefix: prefix to add to gtest command
+        :param gtest_filter: gtest filter expression (passed as --gtest_filter)
         :return: Result
         """
 
+        if not name:
+            name = Info().job_name
+
         command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+        if gtest_filter:
+            command += f" --gtest_filter='{gtest_filter}'"
         if command_launcher:
             command = f"{command_launcher} {command}"
 
@@ -575,14 +762,38 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
+            with_log=True,
         )
-        is_error = not result.is_ok()
+        binary_failed = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error and result.is_ok():
-            # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
+        if binary_failed and result.is_ok():
+            # gtest cases all passed but binary run exited non-zero — e.g. sanitizer
+            # assertion triggered after the test body returned. This is a test failure,
+            # not an infrastructure error.
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.ERROR)
+            result.set_status(Result.Status.FAIL)
+        if result.is_error():
+            # gtest.json is missing — the binary was killed before it could write results
+            # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
+            # exits with a non-zero code, so we can't rely on binary_failed here.
+            # Extract the first meaningful error line from the log file if available.
+            # Covers sanitizer reports ("SUMMARY:") and ClickHouse logical errors.
+            _ERROR_PREFIXES = ("SUMMARY:", "Logical error:", "Code: ", "Signal description:")
+            crash_info = ""
+            if result.files:
+                log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
+                for line in log_content.splitlines():
+                    if any(line.startswith(p) for p in _ERROR_PREFIXES):
+                        crash_info = line
+                        break
+            result.info = crash_info or info
+            # Synthesize a failed sub-result so the job summary is not empty.
+            crashed_test = gtest_filter.rstrip(".*") or "unknown"
+            result.set_results(
+                [Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)]
+            )
+            result.set_status(Result.Status.FAIL)
         return result
 
     @classmethod
@@ -622,9 +833,11 @@ class Result(MetaClasses.Serializable):
         command_args = command_args or []
         command_kwargs = command_kwargs or {}
 
-        # Set log file path if logging is enabled
+        # Set log file path if logging is enabled. Fall back to JOB_NAME so the log file
+        # gets a real basename when `name=""` (otherwise it ends up as just ".log").
         if with_log or with_info or with_info_on_failure:
-            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(name)}.log"
+            log_name = name or _Environment.get().JOB_NAME
+            log_file = f"{Utils.absolute_path(Settings.TEMP_DIR)}/{Utils.normalize_string(log_name)}.log"
         else:
             log_file = None
 
@@ -695,10 +908,42 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            truncated_count = len(info_lines) - MAX_LINES_IN_INFO
-            info_lines = [
-                f"~~~~~ truncated {truncated_count} lines ~~~~~"
-            ] + info_lines[-MAX_LINES_IN_INFO:]
+            # For clang-tidy and similar builds, find the first error/warning
+            # and show context around it instead of just the last lines
+            first_error_idx = None
+            for idx, line in enumerate(info_lines):
+                # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
+                if ": error:" in line or ": warning:" in line:
+                    first_error_idx = idx
+                    break
+
+            if first_error_idx is not None:
+                # Show context around the first error (lines before and after)
+                CONTEXT_BEFORE = 50
+                CONTEXT_AFTER = MAX_LINES_IN_INFO - CONTEXT_BEFORE - 1
+                start_idx = max(0, first_error_idx - CONTEXT_BEFORE)
+                end_idx = min(len(info_lines), first_error_idx + CONTEXT_AFTER + 1)
+
+                truncated_before = start_idx
+                truncated_after = len(info_lines) - end_idx
+
+                new_info_lines = []
+                if truncated_before > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_before} lines at the beginning ~~~~~"
+                    )
+                new_info_lines.extend(info_lines[start_idx:end_idx])
+                if truncated_after > 0:
+                    new_info_lines.append(
+                        f"~~~~~ truncated {truncated_after} lines at the end ~~~~~"
+                    )
+                info_lines = new_info_lines
+            else:
+                # Default behavior: keep the last MAX_LINES_IN_INFO lines
+                truncated_count = len(info_lines) - MAX_LINES_IN_INFO
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_LINES_IN_INFO:]
             truncated = True
 
         # Create and return the result object with status and log file (if any)
@@ -800,11 +1045,38 @@ class Result(MetaClasses.Serializable):
         add_frame = not output
         sub_indent = indent + "  "
 
+        # Check if colors should be used: local run + TTY + terminal supports colors
+        use_colors = (
+            Info().is_local_run
+            and sys.stdout.isatty()
+            and os.environ.get("TERM", "").lower() != "dumb"
+        )
+
+        # Define color variables once to avoid repetition
+        status_color = ""
+        frame_color = ""
+        reset_color = ""
+
+        if use_colors:
+            reset_color = _Colors.RESET
+            if self.is_success():
+                status_color = _Colors.GREEN + _Colors.BOLD
+                frame_color = _Colors.GREEN
+            elif self.is_failure() or self.is_error():
+                status_color = _Colors.RED + _Colors.BOLD
+                frame_color = _Colors.RED
+            else:
+                status_color = _Colors.YELLOW + _Colors.BOLD
+                frame_color = _Colors.YELLOW
+
         if add_frame:
-            output = indent + "+" * 80 + "\n"
+            output = f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         if add_frame or not self.is_ok():
-            output += f"{indent}{self.status} [{self.name}]\n"
+            # Capitalize status and only show name if it's not empty
+            status_text = str(self.status).capitalize()
+            name_text = f" [{self.name}]" if self.name else ""
+            output += f"{indent}{status_color}{status_text}{reset_color}{name_text}\n"
             truncated_info = self.get_info_truncated(
                 max_info_lines_cnt=max_info_lines_cnt,
                 truncate_from_top=truncate_from_top,
@@ -825,7 +1097,7 @@ class Result(MetaClasses.Serializable):
                 )
 
         if add_frame:
-            output += indent + "+" * 80 + "\n"
+            output += f"{indent}{frame_color}{'+'*80}{reset_color}\n"
 
         return output
 
@@ -855,6 +1127,64 @@ class Result(MetaClasses.Serializable):
             raise RuntimeError("Not implemented")
         return self
 
+    def to_event(self, info: "Info"):
+        result_dict = Result.to_dict(self)
+
+        def _prune_result_for_feed(result):
+            """Strip result down to fields used by the Slack feed.
+
+            The feed only needs ``name`` and ``status`` from each sub-result,
+            plus ``report_url`` from the top-level ``ext``.  Everything else
+            (links, storage_usage, files, assets, nested results, …) is dead
+            weight that bloats the per-user JSON on S3.
+            """
+            if not isinstance(result, dict):
+                return
+
+            for key in ("info", "start_time", "duration", "files", "assets", "links"):
+                result.pop(key, None)
+
+            results = result.get("results")
+            if isinstance(results, list):
+                result["results"] = [
+                    {"name": r.get("name", ""), "status": r.get("status", "")}
+                    for r in results
+                    if isinstance(r, dict)
+                ]
+
+            # Keep only report_url from ext
+            ext = result.get("ext")
+            if isinstance(ext, dict):
+                report_url = ext.get("report_url", "")
+                result["ext"] = {"report_url": report_url} if report_url else {}
+
+        _prune_result_for_feed(result_dict)
+
+        return Event(
+            type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
+            timestamp=int(time.time()),
+            sha=info.sha,
+            ci_status=self.status,
+            result=result_dict,
+            ext={
+                "pr_number": info.pr_number,
+                "pr_title": info.pr_title,
+                "branch": info.git_branch,
+                "commit_message": info.commit_message,
+                "linked_pr_number": info.linked_pr_number or 0,
+                "parent_pr_number": info.get_kv_data("parent_pr_number") or 0,
+                "repo_name": info.repo_name,
+                "report_url": info.get_job_report_url(latest=False),
+                "change_url": info.change_url,
+                "workflow_name": info.workflow_name,
+                "base_branch": info.base_branch,
+                "run_id": info.run_id,
+                "run_url": info.run_url,
+                "commit_authors": info.commit_authors,
+                "is_cancelled": self.ext.get("is_cancelled", False),
+            },
+        )
+
 
 class ResultInfo:
     SETUP_ENV_JOB_FAILED = (
@@ -882,12 +1212,33 @@ class ResultInfo:
 
 class _ResultS3:
 
+    # Map the ``kind`` field used in ``_Environment.REPORT_MESSAGES`` to the
+    # ``ext`` bucket rendered by ``json.html``. Unknown kinds fall into notes.
+    _REPORT_MESSAGE_KIND_TO_EXT_KEY = {
+        "warning": "warnings",
+        "error": "errors",
+        "note": "notes",
+    }
+
+    @classmethod
+    def append_report_messages(cls, result, messages):
+        """
+        Append ``{"message", "kind", "from"}`` dicts from
+        ``_Environment.REPORT_MESSAGES`` into ``result.ext`` under the
+        matching ``warnings``/``errors``/``notes`` bucket.
+        """
+        for msg in messages:
+            key = cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.get(msg.get("kind"), "notes")
+            result.ext.setdefault(key, []).append(
+                {"message": msg["message"], "from": msg["from"]}
+            )
+
     @classmethod
     def copy_result_to_s3(cls, result, clean=False):
         result.dump()
         env = _Environment.get()
         result_file_path = result.file_name()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
@@ -912,65 +1263,43 @@ class _ResultS3:
     def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{file_name}"
         S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        local_dir = Path(local_path).parent
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
-        latest_result_file = Shell.get_output(
-            f"aws s3 ls {s3_path}/{file_name}_ | awk '{{print $4}}' | sort -r | head -n 1",
-            strict=True,
-            verbose=True,
-        )
-        version = int(latest_result_file.split("_")[-1])
-        S3.copy_file_from_s3(
-            s3_path=f"{s3_path}/{latest_result_file}", local_path=local_dir
-        )
-        Shell.check(
-            f"cp {local_dir}/{latest_result_file} {local_path}",
-            strict=True,
-            verbose=True,
-        )
-        return version
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
+        s3_file = f"{s3_path}/{file_name}"
+
+        return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
 
     @classmethod
     def copy_result_to_s3_with_version(cls, result, version, no_strict=False):
         result.dump()
         filename = Path(result.file_name()).name
-        file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
-        s3_path_versioned = f"{s3_path}{file_name_versioned}"
-        if version == 0:
-            S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
-        if not S3.put(
-            s3_path=s3_path_versioned,
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/"
+        s3_file = f"{s3_path}{filename}"
+
+        return S3.copy_file_to_s3_with_version(
+            s3_path=s3_file,
             local_path=result.file_name(),
-            if_none_matched=True,
-            no_strict=no_strict,
+            version=version,
             text=True,
-        ):
-            print("Failed to put versioned Result")
-            return False
-        if not S3.put(
-            s3_path=s3_path,
-            local_path=result.file_name(),
             no_strict=no_strict,
-            text=True,
-        ):
-            print("Failed to put non-versioned Result")
-        return True
+        )
 
     @classmethod
     def upload_result_files_to_s3(
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
-        s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-
+        parts = [
+            s3_subprefix.strip("/"),
+            Utils.normalize_string(result.name).strip("/"),
+        ]
+        s3_subprefix = "/".join([p for p in parts if p])
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
@@ -984,31 +1313,72 @@ class _ResultS3:
                 unique_files[file_str] = file  # Keep original file reference
 
         for file_str, file in unique_files.items():
-            if not Path(file).is_file():
-                print(f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload")
-                result.set_info(f"WARNING: File [{file}] was not found")
-                file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
-            elif file in _uploaded_file_link:
-                # in case different sub results have the same file for upload
-                file_link = _uploaded_file_link[file]
-            else:
-                is_text = False
-                for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
-                    if file.endswith(text_file_suffix):
-                        print(
-                            f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
-                        )
-                        is_text = True
-                        break
-                file_link = S3._upload_file_to_s3(
-                    file,
-                    upload_to_s3=True,
-                    text=is_text,
-                    s3_subprefix=s3_subprefix,
+            try:
+                if not Path(file).is_file():
+                    print(
+                        f"ERROR: Invalid file [{file}] in [{result.name}] - skip upload"
+                    )
+                    result.set_info(f"WARNING: File [{file}] was not found")
+                    file_link = S3._upload_file_to_s3(file, upload_to_s3=False)
+                elif file in _uploaded_file_link:
+                    # in case different sub results have the same file for upload
+                    file_link = _uploaded_file_link[file]
+                else:
+                    is_text = False
+                    for text_file_suffix in Settings.TEXT_CONTENT_EXTENSIONS:
+                        if file.endswith(text_file_suffix):
+                            print(
+                                f"File [{file}] matches Settings.TEXT_CONTENT_EXTENSIONS [{Settings.TEXT_CONTENT_EXTENSIONS}] - add text attribute for s3 object"
+                            )
+                            is_text = True
+                            break
+                    file_link = S3._upload_file_to_s3(
+                        file,
+                        upload_to_s3=True,
+                        text=is_text,
+                        s3_subprefix=s3_subprefix,
+                    )
+                    _uploaded_file_link[file] = file_link
+
+                result.links.append(file_link)
+            except Exception as e:
+                traceback.print_exc()
+                print(
+                    f"ERROR: Failed to upload file [{file}] for result [{result.name}]"
                 )
-                _uploaded_file_link[file] = file_link
-            result.links.append(file_link)
+                result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
+
+        # Upload assets in parallel (preserving relative paths for HTML interlinking)
+        if result.assets:
+            asset_paths = [
+                Path(a).resolve() for a in result.assets if Path(a).is_file()
+            ]
+            if asset_paths:
+                common_root = os.path.commonpath([p.parent for p in asset_paths])
+                env = _Environment.get()
+                base_s3_prefix = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                    "//", "/"
+                )
+
+                print(
+                    f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
+                )
+                with ThreadPoolExecutor(max_workers=50) as executor:
+                    futures = {
+                        executor.submit(
+                            S3.upload_asset_streaming,
+                            asset,
+                            f"{base_s3_prefix}/{asset.relative_to(common_root)}",
+                        ): asset
+                        for asset in asset_paths
+                    }
+                for future, asset in futures.items():
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"ERROR: Failed to upload asset [{asset}]: {e}")
+        result.assets = []
 
         if result.results:
             for result_ in result.results:
@@ -1023,12 +1393,13 @@ class _ResultS3:
     def update_workflow_results(
         cls,
         workflow_name,
-        new_info="",
         new_sub_results=None,
         storage_usage=None,
         compute_usage=None,
+        report_messages=None,
+        clear_report_sources=None,
     ):
-        assert new_info or new_sub_results
+        assert new_sub_results
 
         attempt = 1
         prev_status = ""
@@ -1041,8 +1412,6 @@ class _ResultS3:
             )
             workflow_result = Result.from_fs(workflow_name)
             prev_status = workflow_result.status
-            if new_info:
-                workflow_result.set_info(new_info)
             if new_sub_results:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
@@ -1062,6 +1431,17 @@ class _ResultS3:
                     workflow_result.ext.get("compute_usage", {})
                 ).merge_with(compute_usage)
                 workflow_result.ext["compute_usage"] = workflow_compute_usage
+
+            if clear_report_sources:
+                for key in cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.values():
+                    if key in workflow_result.ext:
+                        workflow_result.ext[key] = [
+                            e for e in workflow_result.ext[key]
+                            if e.get("from") not in clear_report_sources
+                        ]
+
+            if report_messages:
+                cls.append_report_messages(workflow_result, report_messages)
 
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(
@@ -1185,7 +1565,7 @@ class ResultTranslator:
                 if "failures" in test_case:
                     raw_logs = ""
                     for failure in test_case["failures"]:
-                        raw_logs += failure[Result.Status.FAILED]
+                        raw_logs += failure["failure"]
                     if (
                         "Segmentation fault" in raw_logs  # type: ignore
                         and SEGFAULT not in description
@@ -1197,11 +1577,11 @@ class ResultTranslator:
                     ):
                         description += SIGNAL
                 if test_case["status"] == "NOTRUN":
-                    test_status = "SKIPPED"
+                    test_status = Result.Status.SKIPPED
                 elif raw_logs is None:
-                    test_status = Result.Status.SUCCESS
+                    test_status = Result.Status.OK
                 else:
-                    test_status = Result.Status.FAILED
+                    test_status = Result.Status.FAIL
 
                 test_results.append(
                     Result(
@@ -1212,12 +1592,12 @@ class ResultTranslator:
                     )
                 )
 
-        check_status = Result.Status.SUCCESS
-        test_status = Result.Status.SUCCESS
+        check_status = Result.Status.OK
+        test_status = Result.Status.OK
         tests_time = float(report["time"][:-1])
         if failed_counter:
-            check_status = Result.Status.FAILED
-            test_status = Result.Status.FAILED
+            check_status = Result.Status.FAIL
+            test_status = Result.Status.FAIL
         if error_counter:
             check_status = Result.Status.ERROR
             test_status = Result.Status.ERROR
@@ -1248,12 +1628,14 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
+        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
+                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -1366,7 +1748,7 @@ class ResultTranslator:
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
                                     name=node_id or "<collection>",
-                                    status=Result.StatusExtended.ERROR,
+                                    status=Result.Status.ERROR,
                                     duration=None,
                                     info="\n".join([p for p in info_parts if p]),
                                 )
@@ -1518,20 +1900,33 @@ class ResultTranslator:
                                         # Be resilient to unexpected shapes
                                         pass
 
+                            # In pytest 8.x, xfail outcomes are not reported via the
+                            # "outcome" field directly. Instead they appear as:
+                            #   xfailed: outcome="skipped" + wasxfail field present
+                            #   xpassed: outcome="passed"  + wasxfail field present
+                            # Normalize those here so the mapping below handles both
+                            # pytest 7.x ("xfailed"/"xpassed") and pytest 8.x.
+                            if entry.get("wasxfail") is not None:
+                                if outcome == "skipped":
+                                    outcome = "xfailed"
+                                elif outcome == "passed":
+                                    outcome = "xpassed"
+
                             # Map pytest outcome to Result status
                             status = {
-                                "passed": Result.StatusExtended.OK,
-                                "failed": Result.StatusExtended.FAIL,
-                                "skipped": Result.StatusExtended.SKIPPED,
-                                # "xfailed": Result.StatusExtended.OK,  # expected failure
-                                # "xpassed": Result.StatusExtended.FAIL,   # unexpected pass
-                                "error": Result.StatusExtended.ERROR,
-                            }.get(outcome, Result.StatusExtended.ERROR)
+                                "passed": Result.Status.OK,
+                                "failed": Result.Status.FAIL,
+                                "skipped": Result.Status.SKIPPED,
+                                "xfailed": Result.Status.XFAIL,  # expected failure: OK
+                                "xpassed": Result.Status.XPASS,  # unexpected pass: fails job
+                                "error": Result.Status.ERROR,
+                            }.get(outcome, Result.Status.ERROR)
 
-                            # Track failures by phase
+                            # Track failures by phase (XFAIL is not a failure)
                             if status in (
-                                Result.StatusExtended.FAIL,
-                                Result.StatusExtended.ERROR,
+                                Result.Status.FAIL,
+                                Result.Status.ERROR,
+                                Result.Status.XPASS,
                             ):
                                 if node_id not in test_failures:
                                     test_failures[node_id] = {}
@@ -1571,14 +1966,19 @@ class ResultTranslator:
                                 )
                                 test_results[node_id] = test_result
                             else:
+                                # accumulate duration setup + call + teardown
+                                test_results[node_id].duration += duration
+
                                 # Always override with a failure, or keep existing failure
+                                _failure_statuses = (
+                                    Result.Status.FAIL,
+                                    Result.Status.XPASS,
+                                )
                                 if (
-                                    status == Result.StatusExtended.FAIL
-                                    or test_results[node_id].status
-                                    == Result.StatusExtended.FAIL
+                                    status in _failure_statuses
+                                    or test_results[node_id].status in _failure_statuses
                                 ):
                                     test_results[node_id].status = status
-                                    test_results[node_id].duration = duration
                                 # Update info if we now have traceback
                                 if traceback_str:
                                     if not test_results[node_id].info:
@@ -1591,13 +1991,13 @@ class ResultTranslator:
                                         )
                                 # Only update with non-failure if there's no existing failure
                                 elif test_results[node_id].status not in (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.ERROR,
+                                    Result.Status.FAIL,
+                                    Result.Status.ERROR,
+                                    Result.Status.XPASS,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
                                         test_results[node_id].status = status
-                                        test_results[node_id].duration = duration
 
                     except json.JSONDecodeError as e:
                         print(f"Error decoding line in jsonl file: {e}")
@@ -1615,33 +2015,38 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()))
+            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
 
-            if session_exitstatus not in (0, 1):
-                R.status = Result.Status.ERROR
-                if session_exitstatus not in (2,):
-                    R.info = f"Test execution was interrupted (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (3,):
-                    R.info = f"Internal error in pytest or a plugin (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (4,):
-                    R.info = f"pytest command line usage error (exit status: {session_exitstatus})"
-                elif session_exitstatus not in (5,):
-                    R.info = (
-                        f"No tests were collected (exit status: {session_exitstatus})"
-                    )
-                else:
-                    R.info = f"Unknown error (exit status: {session_exitstatus})"
+            if session_exitstatus == 0:
+                # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
+                # We additionally treat XPASS as a failure, so FAIL is also valid here.
+                assert R.status in (
+                    Result.Status.OK,
+                    Result.Status.FAIL,
+                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
+
             if session_exitstatus == 1:
-                if R.status == Result.Status.SUCCESS:
+                if R.status == Result.Status.OK:
                     print(
                         f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )
                     R.status = Result.Status.ERROR
-            elif session_exitstatus == 0:
-                assert (
-                    R.status == Result.Status.SUCCESS
-                ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
+                return R
 
+            R.status = Result.Status.ERROR
+            if session_exitstatus == 2:
+                R.info = "Test execution was interrupted"
+            elif session_exitstatus == 3:
+                R.info = "Internal error in pytest or a plugin"
+            elif session_exitstatus == 4:
+                R.info = "pytest command line usage error"
+            elif session_exitstatus == 5:
+                R.info = "No tests were collected"
+            else:
+                R.info = "Unknown error"
+
+            R.info += f" (exit status: {session_exitstatus})"
             return R
 
         except Exception as e:
@@ -1651,4 +2056,5 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
+                stopwatch=sw,
             )

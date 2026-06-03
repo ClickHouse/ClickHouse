@@ -21,6 +21,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -138,7 +139,7 @@ constexpr std::string_view monthsShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
 template <typename Name, SupportInteger support_integer, FormatSyntax format_syntax>
-class FunctionFormatDateTimeImpl : public IFunction
+class FunctionFormatDateTimeImpl final : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
@@ -196,7 +197,7 @@ private:
         static size_t writeNumber2(char * p, T v)
         {
             static_assert(std::is_integral_v<T>);
-            assert(v >= 0 && v <= 99);
+            chassert(v >= 0 && v <= 99);
 
             memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
             return 2;
@@ -271,7 +272,7 @@ private:
             }
             if (digits_written < digits)
             {
-                dest[pos] = '0' + n;
+                dest[pos] = static_cast<char>('0' + n);
                 ++pos;
             }
 
@@ -592,7 +593,7 @@ private:
                 ++writes;
             }
 
-            for (UInt32 i = writes; i < 6; ++i)
+            for (size_t i = writes; i < 6; ++i)
                 dest[i] = '0';
 
             return 6;
@@ -606,7 +607,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -620,7 +623,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -822,6 +827,11 @@ private:
                 return min_represent_digits;
             }
             auto str = toString(fractional_second);
+            /// Left-pad with zeros to `scale` digits, because `toString` does not preserve leading zeros
+            /// (e.g. fractional_second=5, scale=3 gives "5" but we need "005").
+            /// Without this, the buffer would be left partially uninitialized.
+            if (str.size() < scale)
+                str.insert(0, scale - str.size(), '0');
             if (min_represent_digits > scale)
             {
                 for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
@@ -854,7 +864,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
         static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
@@ -865,6 +875,12 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
+
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
@@ -886,13 +902,7 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+
                     i += 1;
                     continue;
                 default:
@@ -1078,7 +1088,7 @@ public:
             : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
-        std::vector<Instruction<T>> instructions;
+        VectorWithMemoryTracking<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
@@ -1169,7 +1179,7 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         static_assert(format_syntax == FormatSyntax::MySQL || format_syntax == FormatSyntax::Joda);
 
@@ -1180,7 +1190,7 @@ public:
     }
 
     template <typename T>
-    size_t parseMySQLFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseMySQLFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         auto add_extra_shift = [&](size_t amount)
         {
@@ -1714,7 +1724,7 @@ public:
     }
 
     template <typename T>
-    size_t parseJodaFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32, bool, String &) const
+    size_t parseJodaFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32, bool, String &) const
     {
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)

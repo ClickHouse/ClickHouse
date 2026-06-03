@@ -20,7 +20,9 @@ template <typename Key>
 class ThetaSketchData : private boost::noncopyable
 {
 private:
+    /// Used for insertions
     std::unique_ptr<datasketches::update_theta_sketch> sk_update;
+    /// Used for merging
     std::unique_ptr<datasketches::theta_union> sk_union;
 
     datasketches::update_theta_sketch * getSkUpdate()
@@ -47,12 +49,26 @@ public:
     void insertOriginal(std::string_view value)
     {
         getSkUpdate()->update(value.data(), value.size());
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     /// Note that `datasketches::update_theta_sketch.update` will do the hash again.
     void insert(Key value)
     {
         getSkUpdate()->update(value);
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     UInt64 size() const
@@ -82,6 +98,21 @@ public:
 
     void intersect(const ThetaSketchData & rhs)
     {
+        /// If `rhs` has no recorded values it represents an empty set, and the
+        /// intersection with an empty set is always empty. Without this guard
+        /// `theta_intersection` would only receive `this` as a single input and
+        /// `get_result` would return that input unchanged — yielding a wrong,
+        /// non-empty result. This matters for example after
+        /// `uniqThetaMergeStateIf(state, predicate)` when the predicate excludes
+        /// every row: the resulting state is freshly created and has neither
+        /// `sk_update` nor `sk_union` allocated.
+        if (!rhs.sk_update && !rhs.sk_union)
+        {
+            sk_update.reset(nullptr);
+            sk_union.reset(nullptr);
+            return;
+        }
+
         datasketches::theta_union * u = getSkUnion();
 
         if (sk_update)

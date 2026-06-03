@@ -6,6 +6,7 @@
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 
 #include <aws/core/Aws.h>
@@ -19,6 +20,7 @@
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
+#include <aws/core/utils/logging/LogLevel.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
@@ -124,18 +126,18 @@ bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Clien
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
 {
     chassert(attemptedRetries >= 0);
-    uint64_t backoffLimitedPow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
+    uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
-    uint64_t res;
+    uint64_t res = 0;
     if (config.jitter_factor > 0)
     {
         auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
         double jitter = dist(thread_local_rng);
         res = static_cast<std::uint64_t>(
-            std::min(jitter * config.initial_delay_ms * backoffLimitedPow, static_cast<double>(config.max_delay_ms)));
+            std::min(jitter * static_cast<double>(config.initial_delay_ms) * static_cast<double>(backoff_limited_pow), static_cast<double>(config.max_delay_ms)));
     }
     else
-        res = std::min<uint64_t>(config.initial_delay_ms * backoffLimitedPow, config.max_delay_ms);
+        res = std::min<uint64_t>(config.initial_delay_ms * backoff_limited_pow, config.max_delay_ms);
 
     LOG_TEST(log, "Next retry in {} ms", res);
     return res;
@@ -339,7 +341,6 @@ Client::~Client()
     catch (...)
     {
         tryLogCurrentException(log);
-        throw;
     }
 }
 
@@ -365,7 +366,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
         if (region.empty())
             region = getRegionForBucket(bucket, /*force_detect*/ true);
 
-        assert(!explicit_region.empty());
+        chassert(!explicit_region.empty());
         if (region == explicit_region)
             return false;
 
@@ -680,7 +681,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (found_new_endpoint)
         {
             auto uri_override = request.getURIOverride();
-            assert(uri_override.has_value());
+            chassert(uri_override.has_value());
             updateURIForBucket(bucket, std::move(*uri_override));
         }
     );
@@ -910,7 +911,7 @@ void Client::slowDownAfterRetryableError() const
         /// This prevents synchronized retries, reducing the risk of overwhelming the S3 server.
         std::uniform_real_distribution<double> dist(1.0, 1.1);
         double jitter = dist(thread_local_rng);
-        sleep_ms = static_cast<UInt64>(jitter * sleep_ms);
+        sleep_ms = static_cast<UInt64>(jitter * static_cast<double>(sleep_ms));
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
         sleepForMilliseconds(sleep_ms);
@@ -1152,6 +1153,9 @@ ClientFactory::ClientFactory()
     aws_options.httpOptions.httpClientFactory_create_fn = []() { return std::make_shared<PocoHTTPClientFactory>(); };
 
     aws_options.loggingOptions = Aws::LoggingOptions{};
+    /// Log level is set to Off by default, skipping calling logger_create_fn entirely.
+    /// https://github.com/ClickHouse/aws-sdk-cpp/blob/22f694afbdc7e9766894998c3745e23f004f8b86/src/aws-cpp-sdk-core/include/aws/core/Aws.h#L31
+    aws_options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
     aws_options.loggingOptions.logger_create_fn = []() { return std::make_shared<AWSLogger>(false); };
 
     aws_options.ioOptions = Aws::IoOptions{};
@@ -1163,7 +1167,6 @@ ClientFactory::ClientFactory()
 
 ClientFactory::~ClientFactory()
 {
-    Aws::Utils::Logging::ShutdownAWSLogging();
     Aws::ShutdownAPI(aws_options);
 }
 

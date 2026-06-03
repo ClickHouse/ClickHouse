@@ -85,14 +85,13 @@ private:
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
     bool use_xid_64 = false;
+    bool expect_opentelemetry_tracing_context = false;
 
     /// Streams for reading/writing from/to client connection socket.
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
-
-    size_t max_request_size = 0;
 
     std::atomic<bool> connected{false};
 

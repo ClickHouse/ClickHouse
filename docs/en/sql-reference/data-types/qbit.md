@@ -8,18 +8,8 @@ title: 'QBit Data Type'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-
-<ExperimentalBadge/>
-
 The `QBit` data type reorganizes vector storage for faster approximate searches. Instead of storing each vector's elements together, it groups the same binary digit positions across all vectors.
 This stores vectors at full precision while letting you choose the fine-grained quantization level at search time: read fewer bits for less I/O and faster calculations, or more bits for higher accuracy. You get the speed benefits of reduced data transfer and computation from quantization, but all the original data remains available when needed.
-
-:::note
-`QBit` data type and distance functions associated with it are currently experimental.
-To enable them, please first run `SET allow_experimental_qbit_type = 1`.
-If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
-:::
 
 To declare a column of `QBit` type, use the following syntax:
 
@@ -46,6 +36,29 @@ SELECT vec FROM test ORDER BY id;
 │ [9,10,11,12,13,14,15,16] │
 └──────────────────────────┘
 ```
+
+## Converting arrays to QBit {#converting-arrays-to-qbit}
+
+Arrays convert to `QBit` when the array length matches the `QBit` dimension. The array's element type does not need to match the `QBit` element type. Any numeric element type is converted to it automatically. This lets you move an existing column of embeddings straight into a `QBit` column:
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+The conversion also works explicitly with `CAST`, for example `CAST(embedding AS QBit(Float32, 8))`.
 
 ## QBit subcolumns {#qbit-subcolumns}
 
@@ -76,3 +89,4 @@ The number of accessible subcolumns depends on the element type:
 These are the distance functions for vector similarity search that use `QBit` data type:
 
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)

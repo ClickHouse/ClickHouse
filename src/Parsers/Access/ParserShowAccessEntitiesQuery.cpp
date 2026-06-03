@@ -41,7 +41,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!ParserKeyword{Keyword::SHOW}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type;
+    AccessEntityType type = {};
     bool all = false;
     bool current_quota = false;
     bool current_roles = false;
@@ -91,7 +91,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             all = true;
     }
 
-    auto query = std::make_shared<ASTShowAccessEntitiesQuery>();
+    auto query = make_intrusive<ASTShowAccessEntitiesQuery>();
     node = query;
 
     query->type = type;

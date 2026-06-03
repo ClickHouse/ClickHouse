@@ -5,25 +5,29 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Disks/IDisk.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#include <DistributedCache/DistributedCacheCommon.h>
+#endif
 
 
 namespace DB
 {
 namespace
 {
-class SystemFilesystemCacheSource : public ISource, private WithContext
+class SystemFilesystemCacheSource final : public ISource, private WithContext
 {
 public:
     SystemFilesystemCacheSource(
@@ -33,7 +37,7 @@ public:
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
-        , user_id(FileCache::getCommonUser().user_id)
+        , origin(FileCache::getCommonOrigin())
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
         for (const auto & [cache_name, cache_data] : caches_by_name)
@@ -66,6 +70,7 @@ protected:
         MutableColumnPtr col_unbound = ColumnUInt8::create();
         MutableColumnPtr col_user_id = ColumnString::create();
         MutableColumnPtr col_file_size = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+        MutableColumnPtr col_file_origin = ColumnString::create();
 
         auto get_total_size = [&] -> size_t
         {
@@ -83,7 +88,8 @@ protected:
                 col_downloaded_size->byteSize() +
                 col_kind->byteSize() +
                 col_unbound->byteSize() +
-                col_user_id->byteSize();
+                col_user_id->byteSize() +
+                col_file_origin->byteSize();
         };
 
         size_t num_rows = 0;
@@ -103,7 +109,7 @@ protected:
                 /// (because file_segments in getSnapshot do not have `cache` field set)
                 const auto path = cache->getFileSegmentPath(
                     file_segment.key, file_segment.offset, file_segment.kind,
-                    FileCache::UserInfo(file_segment.user_id, file_segment.user_weight));
+                    file_segment.origin);
 
                 col_path->insert(path);
                 col_key->insert(file_segment.key.toString());
@@ -117,7 +123,8 @@ protected:
                 col_downloaded_size->insert(file_segment.downloaded_size);
                 col_kind->insert(toString(file_segment.kind));
                 col_unbound->insert(file_segment.is_unbound);
-                col_user_id->insert(file_segment.user_id);
+                col_user_id->insert(file_segment.origin.user_id);
+                col_file_origin->insert(toString(file_segment.origin.segment_type));
 
                 std::error_code ec;
                 auto size = fs::file_size(path, ec);
@@ -147,7 +154,7 @@ protected:
             }
 
             if (!current_cache_iterator)
-                current_cache_iterator = cache->getCacheIterator(user_id);
+                current_cache_iterator = cache->getCacheIterator(origin.user_id);
 
             if (!current_cache_iterator->nextBatch(on_file_segment))
             {
@@ -165,14 +172,14 @@ protected:
             std::move(col_key), std::move(col_range_begin), std::move(col_range_end), std::move(col_size),
             std::move(col_state), std::move(col_finished_download_time), std::move(col_hits),
             std::move(col_references), std::move(col_downloaded_size), std::move(col_kind), std::move(col_unbound),
-            std::move(col_user_id), std::move(col_file_size)};
+            std::move(col_user_id), std::move(col_file_origin), std::move(col_file_size)};
 
         return Chunk(std::move(columns), num_rows);
     }
 
 private:
     const UInt64 max_block_size;
-    const FileCacheUserInfo::UserID user_id;
+    const FileCacheOriginInfo origin;
 
     using CachesSet = std::unordered_set<FileCacheFactory::FileCacheDataPtr>;
     CachesSet unique_caches;
@@ -223,13 +230,13 @@ private:
 }
 
 StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
     {
         {"cache_name", std::make_shared<DataTypeString>(), "Name of the cache object. Can be used in `SYSTEM DESCRIBE FILESYSTEM CACHE <name>`, `SYSTEM DROP FILESYSTEM CACHE <name>` commands"},
-        {"cache_base_path", std::make_shared<DataTypeString>(), "Path to the base directory where all caches files (of a cache identidied by `cache_name`) are stored."},
+        {"cache_base_path", std::make_shared<DataTypeString>(), "Path to the base directory where all cache files (of a cache identified by `cache_name`) are stored."},
         {"cache_path", std::make_shared<DataTypeString>(), "Path to a particular cache file, corresponding to a file segment in a source file"},
         {"key", std::make_shared<DataTypeString>(), "Cache key of the file segment"},
         {"file_segment_range_begin", std::make_shared<DataTypeUInt64>(), "Offset corresponding to the beginning of the file segment range"},
@@ -240,15 +247,25 @@ StorageSystemFilesystemCache::StorageSystemFilesystemCache(const StorageID & tab
         {"cache_hits", std::make_shared<DataTypeUInt64>(), "Number of cache hits of corresponding file segment"},
         {"references", std::make_shared<DataTypeUInt64>(), "Number of references to corresponding file segment. Value 1 means that nobody uses it at the moment (the only existing reference is in cache storage itself)"},
         {"downloaded_size", std::make_shared<DataTypeUInt64>(), "Downloaded size of the file segment"},
-        {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distringuish between file segments added as a part of 'Temporary data in cache')"},
+        {"kind", std::make_shared<DataTypeString>(), "File segment kind (used to distinguish between file segments added as a part of 'Temporary data in cache')"},
         {"unbound", std::make_shared<DataTypeNumber<UInt8>>(), "Internal implementation flag"},
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
+        {"segment_type", std::make_shared<DataTypeString>(), "Type of the segment. Used to separate data files(`.json`, `.txt` and etc) from data file(`.bin`, mark files)."},
         {"file_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "File size of the file to which current file segment belongs"},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemFilesystemCache::read(
+VirtualColumnsDescription StorageSystemFilesystemCache::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemFilesystemCache::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -259,7 +276,7 @@ void StorageSystemFilesystemCache::read(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     auto read_step = std::make_unique<ReadFromSystemFilesystemCache>(
         column_names,
         query_info,
