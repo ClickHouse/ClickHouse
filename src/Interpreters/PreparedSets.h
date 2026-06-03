@@ -103,16 +103,27 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
-    Columns getKeyColumns();
+    Columns getKeyColumns() const;
 private:
-    void fillSetElementsOnce();
+    void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
+    Hash computeContentHash() const;
 
     Hash hash;
+    mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
-    SetKeyColumns set_key_columns;
-    OnceFlag fill_set_elements_once;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
