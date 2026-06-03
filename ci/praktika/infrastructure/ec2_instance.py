@@ -331,24 +331,41 @@ class EC2Instance:
                 f"{len(to_update)} instance(s): {to_update}"
             )
 
-            running_ids = [
-                inst.get("InstanceId")
+            # ModifyInstanceAttribute requires the instance to be fully stopped,
+            # otherwise it returns IncorrectInstanceState. _find_existing_instances
+            # returns pending/running/stopping/stopped, so stop the ones that are
+            # still up and then wait for everything that is not already stopped
+            # (including instances that were already in the stopping state).
+            state_by_id = {
+                inst.get("InstanceId"): (inst.get("State") or {}).get("Name")
                 for inst in existing_instances
-                if inst.get("InstanceId") in to_update
-                and (inst.get("State") or {}).get("Name") in ["pending", "running"]
+            }
+            running_ids = [
+                instance_id
+                for instance_id in to_update
+                if state_by_id.get(instance_id) in ["pending", "running"]
             ]
             if running_ids:
                 print(
                     f"EC2Instance '{self.name}': stopping {len(running_ids)} instance(s) to update user_data"
                 )
                 ec2.stop_instances(InstanceIds=running_ids)
-                ec2.get_waiter("instance_stopped").wait(InstanceIds=running_ids)
 
-            encoded_value = base64.b64encode(self.user_data.encode("utf-8"))
+            pending_stop_ids = [
+                instance_id
+                for instance_id in to_update
+                if state_by_id.get(instance_id) != "stopped"
+            ]
+            if pending_stop_ids:
+                ec2.get_waiter("instance_stopped").wait(InstanceIds=pending_stop_ids)
+
             for instance_id in to_update:
+                # UserData.Value is a blob; boto3 base64-encodes it for the API
+                # call, so pass the raw script bytes here. Pre-encoding would
+                # double-encode and store base64 text as the boot script.
                 ec2.modify_instance_attribute(
                     InstanceId=instance_id,
-                    UserData={"Value": encoded_value},
+                    UserData={"Value": self.user_data.encode("utf-8")},
                 )
             print(
                 f"EC2Instance '{self.name}': updated user_data on {len(to_update)} instance(s)"
