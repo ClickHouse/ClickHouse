@@ -893,10 +893,22 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
         cloned_args.push_back(&cloneDAGWithInversionPushDown(*trailing_const, inverted_dag, inputs_mapping, context, false));
     const auto & const_cloned = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false);
 
-    auto op_func = FunctionFactory::instance().get(String{canonical_op}, context);
+    const String canonical_op_str{canonical_op};
+    auto op_func = FunctionFactory::instance().get(canonical_op_str, context);
     auto make_cmp = [&](const ActionsDAG::Node * lhs) -> const ActionsDAG::Node &
     {
-        return inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+        const auto & cmp_node = inverted_dag.addFunction(op_func, {lhs, &const_cloned}, "");
+        /// If `lhs` is itself a `coalesce` or `ifNull` (nested coalesce), expand it recursively here.
+        /// Otherwise the inner `coalesce` would remain unexpanded after the first
+        /// `cloneDAGWithInversionPushDown` pass and a subsequent pass (e.g. when each skip index builds its
+        /// own `KeyCondition` via `createIndexCondition`) would expand it then, producing a `KeyCondition`
+        /// whose RPN no longer matches the template's RPN. The disjunction-tracking machinery in
+        /// `MergeTreeDataSelectExecutor::filterMarksUsingIndex` assumes both RPNs share the same length and
+        /// position layout; the mismatch causes an out-of-bounds write into `partial_disjunction_result`
+        /// when the index RPN exceeds `MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT`.
+        if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, canonical_op_str, inverted_dag, inputs_mapping, context))
+            return *rewritten;
+        return cmp_node;
     };
 
     const size_t total = cloned_args.size();
