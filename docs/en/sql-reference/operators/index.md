@@ -397,7 +397,7 @@ The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `Dat
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)` |
 | `expr AT LOCAL` | `toTimeZone(expr, timeZone())` |
 
-`zone` can be any string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`).
+`zone` can be any constant string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`, or `concat('America', '/', 'Denver')`). Because `AT TIME ZONE` desugars to `toTimeZone`, the same timezone-argument rules apply: non-constant expressions such as a column reference require [`allow_nonconst_timezone_arguments = 1`](../../operations/settings/settings.md#allow_nonconst_timezone_arguments).
 
 `AT LOCAL` uses the current [session timezone](../../operations/settings/settings.md#session_timezone) (or the server default if no session timezone is set).
 
@@ -405,11 +405,11 @@ The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `Dat
 Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
 :::
 
-`AT TIME ZONE` and `AT LOCAL` have the same operator precedence as `||`, which is lower than arithmetic operators. This means arithmetic on the left-hand side is fully evaluated first:
+`AT TIME ZONE` has operator precedence 12 (same as `*`/`/`/`%`, above `+`/`-`), matching PostgreSQL. This means `ts + interval AT TIME ZONE 'tz'` binds as `ts + (interval AT TIME ZONE 'tz')`. To convert after arithmetic, use explicit parentheses:
 
 ```sql
--- '+' is applied before 'AT TIME ZONE'
-SELECT TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/Denver';
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
 -- Equivalent to:
 SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
 ```
