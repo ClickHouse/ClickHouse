@@ -29,3 +29,15 @@ SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT TIME ZONE 'America/
 -- Precedence: AT LOCAL also binds looser than arithmetic, so + is applied first
 SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR AT LOCAL)
      = toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, timeZone());
+
+-- precedence / associativity (formatQuery pins the grouping)
+SELECT formatQuery($$SELECT dt AT TIME ZONE 'UTC' = dt2$$);          -- toTimeZone(dt, 'UTC') = dt2 (binds tighter than '=')
+SELECT formatQuery($$SELECT dt AT TIME ZONE 'A' AT TIME ZONE 'B'$$); -- toTimeZone(toTimeZone(dt, 'A'), 'B') (chained, left-assoc)
+SELECT formatQuery($$SELECT t AT TIME ZONE tz FROM x$$);             -- toTimeZone(t, tz) (column operands)
+
+-- error paths
+SELECT 'x' AT TIME ZONE 'UTC';   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT 1 AT FOO;                  -- { clientError SYNTAX_ERROR }
+
+-- backward-compat of the new AT keyword: `at` / `local` as alias and column name
+SELECT 1 AS at, number AS local FROM numbers(1);
