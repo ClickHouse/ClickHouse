@@ -708,6 +708,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (node.name == "lambda")
         throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
 
+    if (node.name == "__aliasMarker")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __aliasMarker is internal and supported only with the analyzer");
+
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
     {

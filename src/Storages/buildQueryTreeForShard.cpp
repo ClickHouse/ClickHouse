@@ -1,5 +1,7 @@
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Common/logger_useful.h>
+
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -404,7 +406,10 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     ContextMutablePtr & mutable_context,
     size_t subquery_depth)
 {
-    const auto subquery_hash = subquery_node->getTreeHash();
+    auto subquery_node_to_execute = subquery_node->clone();
+    finalizeAliasMarkersForDistributedSerialization(subquery_node_to_execute, mutable_context);
+
+    const auto subquery_hash = subquery_node_to_execute->getTreeHash();
     const auto temporary_table_name = fmt::format("_data_{}", toString(subquery_hash));
 
     const auto & external_tables = mutable_context->getExternalTables();
@@ -422,7 +427,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
-    InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
+    InterpreterSelectQueryAnalyzer interpreter(subquery_node_to_execute, context_copy, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
     auto sample_block_with_unique_names = *query_plan.getCurrentHeader();
@@ -561,6 +566,96 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     return subquery_node;
 }
 
+/// Finalize __aliasMarker nodes right before distributed SQL boundaries.
+/// This pass preserves nested markers and materializes arg2 to String constant
+/// only when arg2 is ColumnNode.
+class FinalizeAliasMarkersForDistributedSerializationVisitor
+    : public InDepthQueryTreeVisitor<FinalizeAliasMarkersForDistributedSerializationVisitor>
+{
+public:
+    explicit FinalizeAliasMarkersForDistributedSerializationVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
+
+    bool shouldTraverseTopToBottom() const { return false; }
+
+    static bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &)
+    {
+        /// Do not descend into lambda bodies. A marker inside a lambda is a per-row
+        /// identity computation, not a distributed-serialization-boundary column;
+        /// its argument column resolves to a lambda parameter with no table source
+        /// to materialize. (Test: 04278_alias_marker_internal_function lambda case.)
+        if (parent && parent->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return false;
+
+        return true;
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * function_node = node->as<FunctionNode>();
+        if (!function_node || function_node->getFunctionName() != "__aliasMarker")
+            return;
+
+        auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() != 2 || !arguments[0] || !arguments[1])
+            return;
+
+        String alias_id;
+        if (const auto * marker_column_node = arguments[1]->as<ColumnNode>())
+        {
+            if (const auto & marker_source = marker_column_node->getColumnSourceOrNull();
+                marker_source && marker_source->hasAlias())
+            {
+                alias_id = marker_source->getAlias() + "." + marker_column_node->getColumnName();
+            }
+            else
+            {
+                /// arg2 is a ColumnNode but its source has no alias. Two known shapes
+                /// reach here:
+                ///   - User-written markers over ARRAY JOIN variables and similar
+                ///     non-table sources (createUniqueAliasesIfNecessary does not
+                ///     alias ArrayJoinNode sources).
+                ///   - The conservative pre-execute finalize inside executeSubqueryNode
+                ///     when the inner subquery still carries an outer-injected marker
+                ///     whose source has not yet been uniquified. The inner subquery's
+                ///     own analyzer pipeline re-runs alias resolution before execution.
+                /// In both cases leaving the marker un-materialized preserves the
+                /// identity contract; downstream consumers treat it as a no-op.
+                /// DEBUG severity to avoid per-query log noise on the conservative path.
+                static auto log = getLogger("AliasMarkerFinalize");
+                LOG_DEBUG(
+                    log,
+                    "__aliasMarker has a ColumnNode second argument whose source has no alias "
+                    "(column '{}'); leaving marker un-materialized.",
+                    marker_column_node->getColumnName());
+                return;
+            }
+        }
+        else if (const auto * marker_id_node = arguments[1]->as<ConstantNode>();
+                 marker_id_node && isString(marker_id_node->getResultType()))
+        {
+            /// Already materialized marker id from a previous hop. Keep as is.
+            return;
+        }
+
+        if (alias_id.empty())
+            return;
+
+        arguments[1] = std::make_shared<ConstantNode>(std::move(alias_id), std::make_shared<DataTypeString>());
+        resolveOrdinaryFunctionNodeByName(*function_node, "__aliasMarker", context);
+    }
+
+private:
+    ContextPtr context;
+};
+
+}
+
+void finalizeAliasMarkersForDistributedSerialization(QueryTreeNodePtr & node, const ContextPtr & context)
+{
+    FinalizeAliasMarkersForDistributedSerializationVisitor visitor(context);
+    visitor.visit(node);
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)

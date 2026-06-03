@@ -1557,11 +1557,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             auto expected_block = *expected_header;
             materializeBlockInplace(expected_block);
 
-            auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                expected_block.getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Position,
+            const auto & source_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
+            const auto & result_columns = expected_block.getColumnsWithTypeAndName();
+            auto rename_actions_dag = makeConvertingActionsPreferNameThenPosition(
+                source_columns,
+                result_columns,
                 planner_context->getQueryContext(),
+                "PlannerJoinTree",
                 true /*ignore_constant_values*/,
                 false /*add_cast_columns*/,
                 nullptr /*new_names*/);

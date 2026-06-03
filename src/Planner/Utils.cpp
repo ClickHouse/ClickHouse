@@ -1,5 +1,8 @@
 #include <Planner/Utils.h>
 
+#include <Common/logger_useful.h>
+#include <Core/Block.h>
+
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -726,6 +729,66 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
     step->setStepDescription("Project only used columns");
     return step;
+}
+
+static bool canMatchByNameWithoutAmbiguity(
+    const ColumnsWithTypeAndName & source,
+    const ColumnsWithTypeAndName & result)
+{
+    if (source.size() != result.size())
+        return false;
+
+    NameSet source_names;
+    NameSet result_names;
+
+    for (const auto & source_column : source)
+        if (!source_names.insert(source_column.name).second)
+            return false;
+
+    for (const auto & result_column : result)
+        if (!result_names.insert(result_column.name).second)
+            return false;
+
+    return source_names == result_names;
+}
+
+/// Route to Name-mode only when the rename is unambiguous by name (set equality, no
+/// duplicates); otherwise Position. The Position branch is structurally load-bearing:
+/// `ReadFromPreparedSource (Optimized trivial count)` emits its AggregateFunction state under
+/// the table's first column name while the result header wants `count()` - see PR description
+/// for the full plan trace.
+ActionsDAG makeConvertingActionsPreferNameThenPosition(
+    const ColumnsWithTypeAndName & source_columns,
+    const ColumnsWithTypeAndName & result_columns,
+    const ContextPtr & context,
+    std::string_view location,
+    bool ignore_constant_values,
+    bool add_cast_columns,
+    NameToNameMap * new_names)
+{
+    const auto mode = canMatchByNameWithoutAmbiguity(source_columns, result_columns)
+        ? ActionsDAG::MatchColumnsMode::Name
+        : ActionsDAG::MatchColumnsMode::Position;
+
+    if (mode == ActionsDAG::MatchColumnsMode::Position)
+    {
+        static auto log = getLogger("Planner");
+        LOG_TEST(
+            log,
+            "Position match at {} (names not matchable as a set): source=[{}] result=[{}]",
+            location,
+            Block(source_columns).dumpNames(),
+            Block(result_columns).dumpNames());
+    }
+
+    return ActionsDAG::makeConvertingActions(
+        source_columns,
+        result_columns,
+        mode,
+        context,
+        ignore_constant_values,
+        add_cast_columns,
+        new_names);
 }
 
 }

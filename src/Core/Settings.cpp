@@ -2455,6 +2455,25 @@ Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specif
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
     \
+    DECLARE(Bool, enable_alias_marker, false, R"(
+Enable __aliasMarker injection for ALIAS column expressions when reading a Distributed table with the analyzer.
+The marker preserves the identity of an inlined ALIAS expression across the initiator/shard boundary so columns are
+reconciled by name instead of by position. With it disabled, distributed queries over ALIAS columns (especially
+distributed-over-distributed) can return swapped columns or fail with `THERE_IS_NO_COLUMN` /
+`NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+
+This setting gates the `__aliasMarker` function emission only. The companion change at the planner boundary
+(`makeConvertingActionsPreferNameThenPosition` at `PlannerJoinTree` and `findParallelReplicasQuery`) prefers
+Name-mode reconciliation when the source and result column names form an unambiguous set, falling back to Position
+otherwise. That routing is unconditional - setting `enable_alias_marker = false` does NOT restore the pre-PR
+Position-only behaviour at those two call sites. The Name branch is at-least-as-correct as the Position branch
+when names match unambiguously.
+
+The marker is sent to shards as the `__aliasMarker` function in the distributed SQL. On a mixed-version cluster whose
+shards do not understand `__aliasMarker`, set this setting to `false` on the initiator to disable marker injection
+(no negotiation/version handshake is performed). With analyzer disabled (`enable_analyzer = 0`) the setting is a no-op.
+)", 0) \
+    \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
 )", 0) \
