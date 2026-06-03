@@ -94,11 +94,13 @@ praktika infrastructure --deploy --only ImageBuilder LaunchTemplate
 praktika infrastructure --deploy --only DedicatedHost
 ```
 
-Debug a single instance's `user_data` without touching the rest of the fleet
-(stops the instance, installs the configured `user_data`, and starts it again):
+Debug specific instances' `user_data` without touching the rest of the fleet
+(stops each named instance, installs the configured `user_data`, and starts it
+again):
 
 ```bash
 praktika infrastructure --deploy --instance i-0123456789abcdef0
+praktika infrastructure --deploy --instance i-0123456789abcdef0 i-0fedcba9876543210
 ```
 
 This command:

@@ -291,11 +291,13 @@ def create_parser():
     _infra_parser.add_argument(
         "--instance",
         help=(
-            "Debug helper for --deploy: update user_data on only this single EC2 "
-            "instance id (e.g. i-0123456789abcdef0) instead of all configured "
-            "instances. Stops the instance, installs the configured user_data, and "
-            "starts it again. Other instances are left untouched."
+            "Debug helper for --deploy: update user_data on only these EC2 instance "
+            "ids (e.g. i-0123456789abcdef0 i-0fedcba9876543210) instead of all "
+            "configured instances. Each named instance is stopped, has the "
+            "configured user_data installed, and is started again. Other instances "
+            "are left untouched."
         ),
+        nargs="+",
         type=str,
         default=None,
     )

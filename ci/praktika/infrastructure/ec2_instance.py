@@ -1,3 +1,5 @@
+import base64
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -286,7 +288,9 @@ class EC2Instance:
 
             return instances[0]
 
-        def _reconcile_user_data(self, ec2, existing_instances, force=False) -> List[str]:
+        def _reconcile_user_data(
+            self, ec2, existing_instances, only_instance_ids=None
+        ) -> List[str]:
             """If `update_user_data_on_change` is set, compare live UserData on each
             existing instance with `self.user_data`. For mismatches, stop the
             instance (waiting until it is fully stopped) and call
@@ -294,22 +298,19 @@ class EC2Instance:
             of instance IDs whose UserData was updated; the caller is responsible
             for starting them back up if needed.
 
-            `force` ignores the `update_user_data_on_change` opt-in (used by the
-            `--instance` debug path, where the explicit instance id is itself the
-            opt-in); the content comparison still applies, so an instance whose
-            live UserData already matches is left running.
+            `only_instance_ids` restricts the reconciliation to the given instance
+            ids (the `--instance` debug helper); other instances are left untouched.
             """
-            import base64
-
-            if not self.user_data:
-                return []
-            if not force and not self.update_user_data_on_change:
+            if not self.update_user_data_on_change or not self.user_data:
                 return []
 
+            only = set(only_instance_ids or [])
             to_update: List[str] = []
             for inst in existing_instances:
                 instance_id = inst.get("InstanceId")
                 if not instance_id:
+                    continue
+                if only and instance_id not in only:
                     continue
                 resp = ec2.describe_instance_attribute(
                     InstanceId=instance_id, Attribute="userData"
@@ -404,156 +405,73 @@ class EC2Instance:
                 self.ext["launch_time"] = inst.get("LaunchTime")
             return self
 
-        def deploy(self, only_instance_id: Optional[str] = None):
+        def deploy(self, only_instance_ids: Optional[List[str]] = None):
             import boto3
-            import os
 
             if not self.image_id or not self.instance_type:
                 raise ValueError(
                     f"image_id and instance_type must be set for EC2Instance '{self.name}'"
                 )
 
-            # Read user_data from file if user_data_file is specified
-            if self.user_data_file and not self.user_data:
-                if not os.path.isabs(self.user_data_file):
-                    # If path is relative, make it absolute from current working directory
-                    self.user_data_file = os.path.abspath(self.user_data_file)
+            self._load_user_data()
 
-                if not os.path.exists(self.user_data_file):
-                    raise FileNotFoundError(
-                        f"user_data_file '{self.user_data_file}' not found for EC2Instance '{self.name}'"
-                    )
-
-                with open(self.user_data_file, "r") as f:
-                    self.user_data = f.read()
-
-                print(
-                    f"EC2Instance '{self.name}': loaded user_data from file '{self.user_data_file}' ({len(self.user_data)} bytes)"
-                )
-
-            existing_instances = self._find_existing_instances()
             ec2 = boto3.client("ec2", region_name=self.region)
-
-            # Debug path: update user_data on a single, explicitly named instance.
-            # Skip create / quantity / tag / IAM reconciliation entirely so the
-            # rest of the fleet is left untouched.
-            if only_instance_id:
-                target = [
-                    inst
-                    for inst in existing_instances
-                    if inst.get("InstanceId") == only_instance_id
-                ]
-                if not target:
-                    print(
-                        f"EC2Instance '{self.name}': instance {only_instance_id} is "
-                        f"not one of its instances - skip"
-                    )
-                    return self
-
-                print(
-                    f"EC2Instance '{self.name}': --instance {only_instance_id} - "
-                    f"updating user_data on this instance only"
-                )
-                updated_ids = self._reconcile_user_data(ec2, target, force=True)
-                if not updated_ids:
-                    print(
-                        f"EC2Instance '{self.name}': user_data on {only_instance_id} "
-                        f"already up to date - nothing to do"
-                    )
-                elif self.start_on_deploy:
-                    # _reconcile_user_data left the instance stopped; start it again.
-                    print(
-                        f"EC2Instance '{self.name}': starting {only_instance_id} after "
-                        f"user_data update"
-                    )
-                    ec2.start_instances(InstanceIds=updated_ids)
-                return self
+            existing_instances = self._find_existing_instances()
 
             if existing_instances:
+                self._store_ext_instances(existing_instances)
                 instance_ids = [inst.get("InstanceId") for inst in existing_instances]
-                states = [
-                    (inst.get("State") or {}).get("Name") for inst in existing_instances
-                ]
-
-                # Store as list if multiple instances, otherwise single value for backwards compatibility
-                if len(existing_instances) > 1:
-                    self.ext["instance_ids"] = instance_ids
-                    self.ext["states"] = states
-                else:
-                    self.ext["instance_id"] = instance_ids[0] if instance_ids else None
-                    self.ext["state"] = states[0] if states else None
-
-                # Reconcile tags and IAM instance profile on existing instances.
                 self._sync_tags(ec2, instance_ids)
                 self._sync_iam_instance_profile(ec2, existing_instances)
 
-                missing = self.quantity - len(existing_instances)
-                if missing <= 0:
-                    print(
-                        f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s) - skip create"
-                    )
+            # --instance targets existing instances only, so it must not create.
+            if not only_instance_ids:
+                self._create_missing_instances(ec2, existing_instances)
 
-                    updated_ids = self._reconcile_user_data(ec2, existing_instances)
-                    # The reconciliation left these instances stopped; reflect that
-                    # in the local list so the start-stopped block below picks them
-                    # up (subject to start_on_deploy).
-                    for inst in existing_instances:
-                        if inst.get("InstanceId") in updated_ids:
-                            inst["State"] = {"Name": "stopped"}
+            # Reconcile user_data after any (slow) create, so one deploy does both.
+            self._reconcile_user_data_and_start(
+                ec2, existing_instances, only_instance_ids
+            )
+            return self
 
-                    # Start stopped instances if needed
-                    if self.start_on_deploy:
-                        stopped_ids = [
-                            inst.get("InstanceId")
-                            for inst in existing_instances
-                            if (inst.get("State") or {}).get("Name") == "stopped"
-                        ]
-                        if stopped_ids:
-                            print(
-                                f"EC2Instance '{self.name}': starting {len(stopped_ids)} stopped instance(s)"
-                            )
-                            from botocore.exceptions import ClientError
+        def _load_user_data(self):
+            """Read user_data from `user_data_file` into `self.user_data` if unset."""
+            if not self.user_data_file or self.user_data:
+                return
 
-                            try:
-                                ec2.start_instances(InstanceIds=stopped_ids)
-                            except ClientError as e:
-                                error_code = e.response.get("Error", {}).get("Code", "")
-                                if error_code == "InsufficientHostCapacity":
-                                    # No dedicated host available — external capacity
-                                    # constraint, nothing to fix programmatically.
-                                    print(
-                                        f"EC2Instance '{self.name}': WARNING no host capacity to start {stopped_ids}: {e}"
-                                    )
-                                else:
-                                    raise
-                            else:
-                                # Re-reconcile IAM profile on the newly-started instances:
-                                # _sync_iam_instance_profile skips stopped instances, so
-                                # any profile change is only applied after start.
-                                started = ec2.describe_instances(
-                                    InstanceIds=stopped_ids
-                                )
-                                started_instances = [
-                                    inst
-                                    for r in started.get("Reservations", [])
-                                    for inst in r.get("Instances", [])
-                                ]
-                                self._sync_iam_instance_profile(ec2, started_instances)
+            if not os.path.isabs(self.user_data_file):
+                self.user_data_file = os.path.abspath(self.user_data_file)
 
-                    return self
-
-                print(
-                    f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s),"
-                    f" need {self.quantity} - creating {missing} more"
+            if not os.path.exists(self.user_data_file):
+                raise FileNotFoundError(
+                    f"user_data_file '{self.user_data_file}' not found for EC2Instance '{self.name}'"
                 )
-            else:
-                missing = self.quantity
 
+            with open(self.user_data_file, "r") as f:
+                self.user_data = f.read()
+
+            print(
+                f"EC2Instance '{self.name}': loaded user_data from file '{self.user_data_file}' ({len(self.user_data)} bytes)"
+            )
+
+        def _store_ext_instances(self, instances):
+            """Record instance ids/states in `self.ext` (scalar for one, list for many)."""
+            ids = [inst.get("InstanceId") for inst in instances]
+            states = [(inst.get("State") or {}).get("Name") for inst in instances]
+            if len(instances) > 1:
+                self.ext["instance_ids"] = ids
+                self.ext["states"] = states
+            else:
+                self.ext["instance_id"] = ids[0] if ids else None
+                self.ext["state"] = states[0] if states else None
+
+        def _build_run_instances_request(self, count) -> Dict[str, Any]:
+            """Assemble the RunInstances request for `count` new instances."""
             req: Dict[str, Any] = {
                 "ImageId": self.image_id,
                 "InstanceType": self.instance_type,
-                "MinCount": missing,
-                "MaxCount": missing,
+                "MinCount": count,
+                "MaxCount": count,
             }
 
             if self.subnet_id:
@@ -608,38 +526,106 @@ class EC2Instance:
                     "Tags": [{"Key": k, "Value": v} for k, v in merged_tags.items()],
                 }
             ]
+            return req
 
-            resp = ec2.run_instances(**req)
-            instances = resp.get("Instances", []) or []
+        def _create_missing_instances(self, ec2, existing_instances):
+            """Launch new instances until the fleet reaches `quantity`."""
+            missing = self.quantity - len(existing_instances)
+            if missing <= 0:
+                print(
+                    f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s) - skip create"
+                )
+                return
 
-            if not instances:
+            print(
+                f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s),"
+                f" need {self.quantity} - creating {missing} more"
+            )
+
+            resp = ec2.run_instances(**self._build_run_instances_request(missing))
+            created = resp.get("Instances", []) or []
+            if not created:
                 raise Exception(
                     f"EC2Instance '{self.name}': failed to get instances from RunInstances response"
                 )
 
-            instance_ids = [
-                inst.get("InstanceId") for inst in instances if inst.get("InstanceId")
+            # Reflect both pre-existing and freshly created instances in ext.
+            self._store_ext_instances(existing_instances + created)
+
+            created_ids = [
+                inst.get("InstanceId") for inst in created if inst.get("InstanceId")
             ]
-            states = [(inst.get("State") or {}).get("Name") for inst in instances]
-
-            # Store as list if multiple instances, otherwise single value for backwards compatibility
-            if len(instances) > 1:
-                self.ext["instance_ids"] = instance_ids
-                self.ext["states"] = states
-            else:
-                self.ext["instance_id"] = instance_ids[0] if instance_ids else None
-                self.ext["state"] = states[0] if states else None
-
-            if not self.start_on_deploy and instance_ids:
+            if not self.start_on_deploy and created_ids:
                 print(
-                    f"EC2Instance '{self.name}': stopping {len(instance_ids)} instance(s) (start_on_deploy=False)"
+                    f"EC2Instance '{self.name}': stopping {len(created_ids)} instance(s) (start_on_deploy=False)"
                 )
-                ec2.stop_instances(InstanceIds=instance_ids)
+                ec2.stop_instances(InstanceIds=created_ids)
 
             print(
-                f"EC2Instance '{self.name}': launched {len(instance_ids)} instance(s): {instance_ids}"
+                f"EC2Instance '{self.name}': launched {len(created_ids)} instance(s): {created_ids}"
             )
-            return self
+
+        def _reconcile_user_data_and_start(
+            self, ec2, existing_instances, only_instance_ids
+        ):
+            """Reconcile user_data on existing instances (optionally restricted to
+            `only_instance_ids`) and start the ones that ended up stopped.
+            """
+            if not existing_instances:
+                return
+
+            only = set(only_instance_ids or [])
+            updated_ids = self._reconcile_user_data(
+                ec2, existing_instances, only_instance_ids=only_instance_ids
+            )
+            # Reconciliation left these stopped; reflect that locally so they are
+            # picked up by the start below.
+            for inst in existing_instances:
+                if inst.get("InstanceId") in updated_ids:
+                    inst["State"] = {"Name": "stopped"}
+
+            if not self.start_on_deploy:
+                return
+
+            stopped_ids = [
+                inst.get("InstanceId")
+                for inst in existing_instances
+                if (inst.get("State") or {}).get("Name") == "stopped"
+                and (not only or inst.get("InstanceId") in only)
+            ]
+            self._start_instances(ec2, stopped_ids)
+
+        def _start_instances(self, ec2, instance_ids):
+            """Start the given instances, tolerating the dedicated-host scrub
+            cooldown (EC2 Mac hosts raise `InsufficientHostCapacity` for a while
+            after a stop - we warn and leave them stopped for a later deploy), then
+            re-sync the IAM instance profile, which is skipped while stopped.
+            """
+            from botocore.exceptions import ClientError
+
+            if not instance_ids:
+                return
+
+            print(
+                f"EC2Instance '{self.name}': starting {len(instance_ids)} stopped instance(s)"
+            )
+            try:
+                ec2.start_instances(InstanceIds=instance_ids)
+            except ClientError as e:
+                if e.response.get("Error", {}).get("Code") == "InsufficientHostCapacity":
+                    print(
+                        f"EC2Instance '{self.name}': WARNING no host capacity to start {instance_ids}: {e}"
+                    )
+                    return
+                raise
+
+            started = ec2.describe_instances(InstanceIds=instance_ids)
+            started_instances = [
+                inst
+                for r in started.get("Reservations", [])
+                for inst in r.get("Instances", [])
+            ]
+            self._sync_iam_instance_profile(ec2, started_instances)
 
         def shutdown(self, force: bool = True):
             """
