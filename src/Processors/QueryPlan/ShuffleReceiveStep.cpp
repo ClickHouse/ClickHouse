@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
-
 namespace DB
 {
 

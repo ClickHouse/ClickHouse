@@ -33,7 +33,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         throw;
     }
 
-    return Chunk{};
+    return Chunk();
 }
 
 void ReadFromDistributedPlanSource::onCancel() noexcept

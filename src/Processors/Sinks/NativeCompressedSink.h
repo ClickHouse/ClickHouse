@@ -2,9 +2,9 @@
 
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
+#include <Common/Logger.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Formats/NativeWriter.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

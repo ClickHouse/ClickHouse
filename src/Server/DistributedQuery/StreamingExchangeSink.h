@@ -2,6 +2,7 @@
 
 #ifdef OS_LINUX
 
+#include <Common/Logger.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
 #include <Poco/Net/StreamSocket.h>

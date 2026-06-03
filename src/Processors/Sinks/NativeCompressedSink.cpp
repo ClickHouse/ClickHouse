@@ -2,6 +2,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -64,6 +65,8 @@ void NativeCompressedSink::onFinish()
         compressed_buf->finalize();
     }
     out.finalize();
+
+    LOG_TEST(log, "Finished writing to stream {}, total rows: {}, bytes: {}", stream_name, rows_written, out.count());
 }
 
 }

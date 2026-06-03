@@ -22,8 +22,7 @@ namespace ErrorCodes
 
 QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
-    /// Add calculation of hash of key columns and bucket id based on the hash
-    /// Add fork processor to send data to num_buckets outputs
+    /// Send copies of data to num_buckets outputs
     auto & pipeline = *pipelines.front();
     auto stream_header = pipeline.getSharedHeader();
     {
@@ -44,7 +43,7 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
     {
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
-        ++bucket;   /// TODO: this is a hack. Find a better way to assigning bucket id to each sink.
+        ++bucket;
         return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
     });
 
