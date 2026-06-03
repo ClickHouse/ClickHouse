@@ -1,5 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+
 #include <Common/logger_useful.h>
 
 #include <climits>
@@ -8,6 +8,7 @@
 
 #if USE_AVRO
 #include <optional>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -19,6 +20,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
+
 #include <base/types.h>
 
 namespace DB::ErrorCodes
