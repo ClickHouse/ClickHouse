@@ -266,7 +266,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
                     "output_format_parquet_column_field_ids key must be a String");
 
             const Field & value_field = tuple.at(1);
-            Int64 id_value;
+            Int64 id_value = 0;
             switch (value_field.getType())
             {
                 case Field::Types::Int64:

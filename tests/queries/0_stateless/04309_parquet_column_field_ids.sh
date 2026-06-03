@@ -59,7 +59,7 @@ run_insert () {
 # 1. Explicit per-column overrides. ClickHouse's settings parser only accepts string
 #    literals as Map values, so the `Int32` ids are written as strings here. The
 #    setting accepts both string-encoded ids and (programmatically) real integers.
-F="$WORKDIR/04080_field_ids_custom.parquet"
+F="$WORKDIR/04309_field_ids_custom.parquet"
 run_insert "explicit overrides" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
@@ -68,7 +68,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 "
 
 # 2. Auto-assign only.
-F="$WORKDIR/04080_field_ids_auto.parquet"
+F="$WORKDIR/04309_field_ids_auto.parquet"
 run_insert "auto-assign" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
@@ -78,7 +78,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 # 3. Auto-assign + partial override: override wins for 'b', auto-assign fills 'a' and 'c'
 #    skipping ids already claimed by the override.
-F="$WORKDIR/04080_field_ids_mixed.parquet"
+F="$WORKDIR/04309_field_ids_mixed.parquet"
 run_insert "mixed override + auto-assign" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
@@ -88,7 +88,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 "
 
 # 4. Default path: writing still works, no `field_id` emitted.
-F="$WORKDIR/04080_field_ids_none.parquet"
+F="$WORKDIR/04309_field_ids_none.parquet"
 run_insert "default (no settings)" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
@@ -97,7 +97,7 @@ SETTINGS engine_file_truncate_on_insert = 1;
 
 # 5. Nested types: auto-assign recursively walks Array.element, Tuple.<subfield>,
 #    Map.key/value so the resulting Parquet schema is fully `field_id`-annotated.
-F="$WORKDIR/04080_field_ids_nested_auto.parquet"
+F="$WORKDIR/04309_field_ids_nested_auto.parquet"
 run_insert "nested auto-assign" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT [1, 2, 3]::Array(UInt32) AS a, ('hi', 7)::Tuple(s String, i Int32) AS b, map('k', 1)::Map(String, UInt8) AS c
@@ -106,7 +106,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 "
 
 # 6. Nested overrides: dotted keys pin specific nested ids; auto-assign fills the gaps.
-F="$WORKDIR/04080_field_ids_nested_overrides.parquet"
+F="$WORKDIR/04309_field_ids_nested_overrides.parquet"
 run_insert "nested overrides" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT [1, 2, 3]::Array(UInt32) AS a, ('hi', 7)::Tuple(s String, i Int32) AS b
@@ -120,7 +120,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 #    field only. The nested `Tuple` / `Array` shape of `Point` must not be enumerated (it is never
 #    written), otherwise a top-level override is wrongly rejected as non-covering and auto-assign
 #    assigns ids to fields that don't exist in the file.
-F="$WORKDIR/04080_field_ids_geo_override.parquet"
+F="$WORKDIR/04309_field_ids_geo_override.parquet"
 echo "== geo explicit override (Point as WKB) =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$F', 'Parquet')
@@ -131,7 +131,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 echo "-- field_ids --"
 dump_field_ids "$F"
 
-F="$WORKDIR/04080_field_ids_geo_auto.parquet"
+F="$WORKDIR/04309_field_ids_geo_auto.parquet"
 echo "== geo auto-assign (Point as WKB) =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$F', 'Parquet')
@@ -144,7 +144,7 @@ dump_field_ids "$F"
 
 echo "== error: unknown column =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err1.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err1.parquet', 'Parquet')
 SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'missing': '1'};
@@ -152,7 +152,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: non-covering map without auto-assign =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err2.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err2.parquet', 'Parquet')
 SELECT 1 AS a, 2 AS b
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1'};
@@ -160,7 +160,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: non-covering map skips nested field =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err6.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err6.parquet', 'Parquet')
 SELECT [1, 2, 3] AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1'};
@@ -168,7 +168,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: duplicate id =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err3.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err3.parquet', 'Parquet')
 SELECT 1 AS a, 2 AS b
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1', 'b': '1'};
@@ -176,7 +176,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: non-integer string value =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err4.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err4.parquet', 'Parquet')
 SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': 'oops'};
@@ -184,7 +184,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: negative id =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err5.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err5.parquet', 'Parquet')
 SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '-1'};
@@ -194,7 +194,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 # path as a nested subfield of another column. Detected at field_id build time.
 echo "== error: dotted top-level name collides with nested path (auto-assign) =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err7.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err7.parquet', 'Parquet')
 SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_auto_assign_field_ids = 1;
@@ -202,7 +202,7 @@ SETTINGS engine_file_truncate_on_insert = 1,
 
 echo "== error: dotted top-level name collides with nested path (overrides) =="
 ${CLICKHOUSE_LOCAL} --query="
-INSERT INTO FUNCTION file('$WORKDIR/04080_err8.parquet', 'Parquet')
+INSERT INTO FUNCTION file('$WORKDIR/04309_err8.parquet', 'Parquet')
 SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1', 'a.b': '2'};
