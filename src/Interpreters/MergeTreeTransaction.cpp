@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SERIALIZATION_ERROR;
 }
 
 namespace FailPoints
@@ -133,6 +134,18 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
     }
     else
     {
+        /// Preflight before stamping any. A mid-loop throw in `setAndStoreRemovalTID`
+        /// would leave earlier parts with `removal_tid = NonTransactionalTID` persisted
+        /// and silently invisible -- not undone by transaction rollback.
+        for (const auto & covered : covered_parts)
+        {
+            auto info = covered->version->getInfo();
+            if (!info.creation_csn && !info.creation_tid.isNonTransactional())
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                    covered->version->getObjectName(), info.creation_tid);
+        }
+
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
