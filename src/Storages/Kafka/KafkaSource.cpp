@@ -253,7 +253,7 @@ Chunk KafkaSource::generateImpl()
             }
             if (is_dead_letter)
             {
-                assert(exception_message);
+                chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 

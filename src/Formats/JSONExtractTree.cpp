@@ -207,7 +207,7 @@ bool tryGetNumericValueFromJSONElement(
                     break;
 
                 /// Try to parse float and convert it to integer.
-                Float64 tmp_float;
+                Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
                 if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
@@ -282,7 +282,7 @@ public:
             return true;
         }
 
-        NumberType value;
+        NumberType value{};
         if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
@@ -704,7 +704,7 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -785,7 +785,7 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -2178,7 +2178,7 @@ private:
 
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
@@ -2265,7 +2265,7 @@ private:
 
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);
