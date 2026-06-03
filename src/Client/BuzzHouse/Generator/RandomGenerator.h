@@ -1,31 +1,19 @@
 #pragma once
 
-#include <cassert>
-#include <chrono>
 #include <cstdint>
-#include <map>
+#include <functional>
+#include <initializer_list>
 #include <random>
-#include <set>
-#include <string>
 #include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 
+#include <Core/Types.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
 namespace BuzzHouse
 {
-
-struct TestSetting
-{
-    const std::string tsetting;
-    const std::set<std::string> options;
-
-    TestSetting(const std::string & sett, const std::set<std::string> & noptions) : tsetting(sett), options(noptions) { }
-};
-
-const constexpr int seconds_per_day = 60 * 60 * 24;
-
-const constexpr char hex_digits[] = "0123456789abcdef";
 
 class RandomGenerator
 {
@@ -34,20 +22,36 @@ private:
 
     std::uniform_int_distribution<int8_t> ints8;
 
-    std::uniform_int_distribution<uint8_t> uints8, digits, hex_digits_dist;
+    std::uniform_int_distribution<uint8_t> uints8;
+    std::uniform_int_distribution<uint8_t> digits;
+    std::uniform_int_distribution<uint8_t> hex_digits_dist;
 
     std::uniform_int_distribution<int16_t> ints16;
 
     std::uniform_int_distribution<uint16_t> uints16;
 
     std::uniform_int_distribution<int32_t> ints32;
+    std::uniform_int_distribution<int32_t> time_hours;
+    std::uniform_int_distribution<int32_t> second_offsets;
 
-    std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
-        hours, minutes;
+    std::uniform_int_distribution<uint32_t> uints32;
+    std::uniform_int_distribution<uint32_t> dist1;
+    std::uniform_int_distribution<uint32_t> dist2;
+    std::uniform_int_distribution<uint32_t> dist3;
+    std::uniform_int_distribution<uint32_t> dist4;
+    std::uniform_int_distribution<uint32_t> date_years;
+    std::uniform_int_distribution<uint32_t> datetime_years;
+    std::uniform_int_distribution<uint32_t> datetime64_years;
+    std::uniform_int_distribution<uint32_t> months;
+    std::uniform_int_distribution<uint32_t> hours;
+    std::uniform_int_distribution<uint32_t> minutes;
+    std::uniform_int_distribution<uint32_t> subseconds;
+    std::uniform_int_distribution<uint32_t> strlens;
 
     std::uniform_int_distribution<int64_t> ints64;
 
     std::uniform_int_distribution<uint64_t> uints64;
+    std::uniform_int_distribution<uint64_t> full_range;
 
     std::uniform_real_distribution<double> zero_one;
 
@@ -65,7 +69,7 @@ private:
            std::uniform_int_distribution<uint32_t>(1, 30),
            std::uniform_int_distribution<uint32_t>(1, 31)};
 
-    const std::vector<std::string> common_english{
+    const DB::Strings common_english{
         "is",     "was",   "are",   "be",    "have",  "had",   "were",     "can",   "said",  "use",   "do",      "will",  "would",
         "make",   "like",  "has",   "look",  "write", "go",    "see",      "could", "been",  "call",  "am",      "find",  "did",
         "get",    "come",  "made",  "may",   "take",  "know",  "live",     "give",  "think", "say",   "help",    "tell",  "follow",
@@ -75,16 +79,12 @@ private:
         "stop",   "miss",  "eat",   "watch", "let",   "cut",   "talk",     "being", "leave", "water", "day",     "part",  "sound",
         "work",   "place", "year",  "back",  "thing", "name",  "sentence", "man",   "line",  "boy"};
 
-    const std::vector<std::string> common_chinese{
+    const DB::Strings common_chinese{
         "认识你很高兴", "美国", "叫", "名字", "你们", "日本", "哪国人", "爸爸", "兄弟姐妹", "漂亮", "照片", "😉"};
 
-    const std::vector<std::string> nasty_strings{"a\"a", "b\\tb", "c\\nc", "d\\'d", "e e",  "",     "😉",   "\"",   "\\'", "\\t",
-                                                 "\\n",  "--",    "0",     "1",     "-1",   "{",    "}",    "(",    ")",   "[",
-                                                 "]",    ",",     ".",     ";",     ":",    "\\\\", "/",    "_",    "%",   "*",
-                                                 "\\0",  "{}",    "[]",    "()",    "null", "NULL", "TRUE", "FALSE"};
-
-    /* use bad_utf8 on x' strings! */
-    const std::vector<std::string> bad_utf8{
+    /// Use bad_utf8 on x' strings!
+    const DB::Strings bad_utf8{
+        "00", /// Null byte
         "FF",
         "C328",
         "A0A1",
@@ -99,21 +99,41 @@ private:
         "C328FF",
         "AAC328"};
 
-    const std::vector<std::string> jcols{"c0", "c1", "c0.c1", "😆", "😉😉"};
+    const DB::Strings jcols{
+        "_",
+        ".",
+        "1",
+        "叫",
+        "c0",
+        "c1",
+        "c0.c1",
+        "😆",
+        "😉😉",
+        "123",
+        "0",
+        "a.b.c",
+        "a.b.c.d",
+        "select",
+        "from",
+        "where",
+        "key with space",
+        "key-with-dash"};
 
 public:
     pcg64_fast generator;
 
-    explicit RandomGenerator(const uint64_t in_seed)
+    RandomGenerator(const uint64_t in_seed, const uint32_t min_string_length, const uint32_t max_string_length, const bool limited)
         : seed(in_seed ? in_seed : randomSeed())
-        , ints8(std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max())
-        , uints8(std::numeric_limits<uint8_t>::min(), std::numeric_limits<uint8_t>::max())
+        , ints8(limited ? -50 : std::numeric_limits<int8_t>::min(), limited ? 50 : std::numeric_limits<int8_t>::max())
+        , uints8(limited ? 0 : std::numeric_limits<uint8_t>::min(), limited ? 100 : std::numeric_limits<uint8_t>::max())
         , digits(static_cast<uint8_t>('0'), static_cast<uint8_t>('9'))
         , hex_digits_dist(0, 15)
-        , ints16(std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
-        , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
-        , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
-        , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
+        , ints16(limited ? -50 : std::numeric_limits<int16_t>::min(), limited ? 50 : std::numeric_limits<int16_t>::max())
+        , uints16(limited ? 0 : std::numeric_limits<uint16_t>::min(), limited ? 100 : std::numeric_limits<uint16_t>::max())
+        , ints32(limited ? -50 : std::numeric_limits<int32_t>::min(), limited ? 50 : std::numeric_limits<int32_t>::max())
+        , time_hours(-999, 999)
+        , second_offsets(-10, 80)
+        , uints32(limited ? 0 : std::numeric_limits<uint32_t>::min(), limited ? 100 : std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
         , dist3(UINT32_C(1), UINT32_C(1000))
@@ -124,166 +144,198 @@ public:
         , months(1, 12)
         , hours(0, 23)
         , minutes(0, 59)
-        , ints64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max())
-        , uints64(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
+        , subseconds(0, UINT32_C(999999999))
+        , strlens(min_string_length, max_string_length)
+        , ints64(limited ? -50 : std::numeric_limits<int64_t>::min(), limited ? 50 : std::numeric_limits<int64_t>::max())
+        , uints64(limited ? 0 : std::numeric_limits<uint64_t>::min(), limited ? 100 : std::numeric_limits<uint64_t>::max())
+        , full_range(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max())
         , zero_one(0, 1)
         , generator(seed)
     {
     }
 
-    uint32_t getSeed() const { return seed; }
+    const DB::Strings nasty_strings{
+        "a\"a",
+        "b\\tb",
+        "c\\nc",
+        "e e",
+        "",
+        "😉",
+        "\"",
+        "\\t",
+        "\\n",
+        "--",
+        "0",
+        "1",
+        "-1",
+        "{",
+        "}",
+        "(",
+        ")",
+        "[",
+        "]",
+        ",",
+        ".",
+        ";",
+        ":",
+        "\\\\",
+        "/",
+        "_",
+        "%",
+        "*",
+        "\\0",
+        "{}",
+        "[]",
+        "()",
+        "null",
+        "NULL",
+        "TRUE",
+        "叫",
+        "FALSE",
+        /// Format string probes
+        "%s",
+        "%d",
+        "%n",
+        "{0}",
+        "{{}}",
+        /// Numeric-looking strings (test implicit casts)
+        "NaN",
+        "Inf",
+        "-Inf",
+        "1e5",
+        "1.0",
+        "0.0",
+        /// Date/time-looking strings (test type coercions)
+        "2024-01-01",
+        "00:00:00",
+        "1970-01-01 00:00:00",
+        /// Windows line ending, other special whitespace
+        "\\r\\n",
+        "\\r",
+        /// Extra punctuation useful for parser probing
+        "?",
+        "@",
+        "#",
+        "$"};
 
-    uint32_t nextSmallNumber() { return dist1(generator); }
+    /// Parts for building nasty SQL identifiers (backtick-quoted).
+    /// Backtick inside a backtick-quoted identifier must be doubled (`` ` `` → ` `` `).
+    /// Counter appended for uniqueness.
+    const DB::Strings nasty_identifiers{
+        "0", /// 0 digit
+        "1", /// 1 digit
+        " ", /// simple space
+        " - ", /// space-hyphen-space
+        "#", /// hash
+        "@", /// at-sign
+        "$", /// dollar sign
+        "\"", /// double quote
+        "\\", /// backslash
+        "`", /// backtick (will be doubled when backtick-quoted)
+        /// Emoji and multi-codepoint sequences
+        "😉", /// emoji (U+1F609, 4-byte UTF-8)
+        "🔥💧", /// two emoji
+        "👨‍👩‍👧", /// ZWJ family sequence (multiple codepoints joined by U+200D)
+        "🇺🇸", /// flag emoji (regional indicator pair)
+        /// CJK and other scripts
+        "叫", /// Chinese character
+        "认识你很高兴", /// Chinese phrase
+        "日本語", /// Japanese
+        "한국어", /// Korean
+        "العربية", /// Arabic (RTL)
+        "עברית", /// Hebrew (RTL)
+        "हिन्दी", /// Hindi (Devanagari with combining marks)
+        /// Latin variants and diacritics
+        "é", /// accented Latin (precomposed)
+        "e\xCC\x81", /// accented Latin (decomposed: e + combining acute, U+0301)
+        "ñ", /// tilde
+        "ü", /// umlaut
+        "ß", /// German sharp-s
+        "ŀ", /// Latin with middle dot
+        /// Greek, Cyrillic
+        "α", /// Greek letter
+        "Ω", /// Greek capital omega
+        "Привет", /// Cyrillic
+        /// Special Unicode spaces and invisible characters
+        "\xE2\x80\x8B", /// zero-width space (U+200B)
+        "\xE2\x80\x8C", /// zero-width non-joiner (U+200C)
+        "\xE2\x80\x8F", /// right-to-left mark (U+200F)
+        "\xEF\xBB\xBF", /// BOM / zero-width no-break space (U+FEFF)
+        "\xC2\xA0", /// non-breaking space (U+00A0)
+        "\xE2\x80\x83", /// em space (U+2003)
+        /// Lookalike / homoglyph characters
+        "\xCF\x83", /// Greek small sigma σ (looks like o)
+        "\xD0\xBE", /// Cyrillic small o (looks like Latin o)
+        "\xE2\x84\x93", /// script small l ℓ (U+2113)
+        /// Invalid UTF-8 sequences
+        "\xFF", /// invalid UTF-8: lone 0xFF byte
+        "\xC3\x28", /// invalid UTF-8: bad 2-byte sequence
+        "\xA0\xA1", /// invalid UTF-8: continuation bytes without lead
+        "\xE2\x28\xA1", /// invalid UTF-8: bad 3-byte sequence
+        "\xF0\x28\x8C\xBC", /// invalid UTF-8: bad 4-byte sequence
+    };
+    const DB::Strings nasty_identifier_keywords{
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "ORDER",
+        "GROUP",
+        "INDEX",
+        "TABLE",
+        "CREATE",
+        "DROP",
+        "PROJECTION",
+    };
 
-    uint32_t nextMediumNumber() { return dist2(generator); }
+    uint64_t getSeed() const;
 
-    uint32_t nextLargeNumber() { return dist3(generator); }
+    uint32_t nextSmallNumber();
 
-    uint8_t nextRandomUInt8() { return uints8(generator); }
+    uint32_t nextMediumNumber();
 
-    int8_t nextRandomInt8() { return ints8(generator); }
+    uint32_t nextLargeNumber();
 
-    uint16_t nextRandomUInt16() { return uints16(generator); }
+    uint8_t nextRandomUInt8();
 
-    int16_t nextRandomInt16() { return ints16(generator); }
+    int8_t nextRandomInt8();
 
-    uint32_t nextRandomUInt32() { return uints32(generator); }
+    uint16_t nextRandomUInt16();
 
-    int32_t nextRandomInt32() { return ints32(generator); }
+    int16_t nextRandomInt16();
 
-    uint64_t nextRandomUInt64() { return uints64(generator); }
+    uint32_t nextRandomUInt32();
 
-    int64_t nextRandomInt64() { return ints64(generator); }
+    int32_t nextRandomInt32();
 
-    char nextDigit() { return static_cast<char>(digits(generator)); }
+    uint64_t nextRandomUInt64();
 
-    bool nextBool() { return dist4(generator) == 2; }
+    int64_t nextRandomInt64();
 
-    //range [1970-01-01, 2149-06-06]
-    void nextDate(std::string & ret)
-    {
-        const uint32_t month = months(generator);
-        const uint32_t day = days[month - 1](generator);
+    uint64_t nextInFullRange();
 
-        ret += std::to_string(1970 + date_years(generator));
-        ret += "-";
-        if (month < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(month);
-        ret += "-";
-        if (day < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(day);
-    }
+    uint32_t nextStrlen();
 
-    //range [1900-01-01, 2299-12-31]
-    void nextDate32(std::string & ret)
-    {
-        const uint32_t month = months(generator);
-        const uint32_t day = days[month - 1](generator);
+    char nextDigit();
 
-        ret += std::to_string(1900 + datetime64_years(generator));
-        ret += "-";
-        if (month < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(month);
-        ret += "-";
-        if (day < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(day);
-    }
+    bool nextBool();
 
-    //range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    void nextDateTime(std::string & ret)
-    {
-        const uint32_t month = months(generator);
-        const uint32_t day = days[month - 1](generator);
-        const uint32_t hour = hours(generator);
-        const uint32_t minute = minutes(generator);
-        const uint32_t second = minutes(generator);
+    /// Range [1970-01-01, 2149-06-06]
+    String nextDate(const String & separator, bool allow_func);
 
-        ret += std::to_string(1970 + datetime_years(generator));
-        ret += "-";
-        if (month < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(month);
-        ret += "-";
-        if (day < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(day);
-        ret += " ";
-        if (hour < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(hour);
-        ret += ":";
-        if (minute < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(minute);
-        ret += ":";
-        if (second < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(second);
-    }
+    /// Range [1900-01-01, 2299-12-31]
+    String nextDate32(const String & separator, bool allow_func);
 
-    //range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    void nextDateTime64(std::string & ret)
-    {
-        const uint32_t month = months(generator);
-        const uint32_t day = days[month - 1](generator);
-        const uint32_t hour = hours(generator);
-        const uint32_t minute = minutes(generator);
-        const uint32_t second = minutes(generator);
+    /// Range [-999:59:59, 999:59:59]
+    String nextTime(const String & separator, bool allow_func);
 
-        ret += std::to_string(1900 + datetime64_years(generator));
-        ret += "-";
-        if (month < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(month);
-        ret += "-";
-        if (day < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(day);
-        ret += " ";
-        if (hour < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(hour);
-        ret += ":";
-        if (minute < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(minute);
-        ret += ":";
-        if (second < 10)
-        {
-            ret += "0";
-        }
-        ret += std::to_string(second);
-    }
+    /// Range [-999:59:59.999999999, 999:59:59.999999999]
+    String nextTime64(const String & separator, bool allow_func, bool has_subseconds);
+
+    /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
+    String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
+
+    /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
+    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -298,62 +350,70 @@ public:
         {
             return max_val;
         }
-        if constexpr (std::is_same_v<T, uint32_t>)
+        if (tmp <= always_on_prob + always_off_prob + 0.001)
         {
-            std::uniform_int_distribution<uint32_t> d{min_val, max_val};
+            if constexpr (std::is_unsigned_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.0003) ? 0 : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_signed_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.0005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                if (tmp <= always_on_prob + always_off_prob + 0.0003)
+                {
+                    return std::numeric_limits<T>::min();
+                }
+                if (max_val >= 0.9 && max_val <= 1.1)
+                {
+                    return max_val;
+                }
+                return std::numeric_limits<T>::max();
+            }
+            UNREACHABLE();
+        }
+        if constexpr (std::is_integral_v<T>)
+        {
+            std::uniform_int_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        if constexpr (std::is_same_v<T, double>)
+        if constexpr (std::is_floating_point_v<T>)
         {
-            std::uniform_real_distribution<double> d{min_val, max_val};
+            std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        assert(0);
+        UNREACHABLE();
         return 0;
     }
 
-    double RandomGauss(const double mean, const double stddev)
-    {
-        std::normal_distribution d{mean, stddev};
-        return d(generator);
-    }
+    double randomGauss(double mean, double stddev);
 
-    double RandomZeroOne() { return zero_one(generator); }
+    double randomZeroOne();
 
     template <typename T>
-    T RandomInt(const T min, const T max)
+    T randomInt(const T min, const T max)
     {
         std::uniform_int_distribution<T> d(min, max);
         return d(generator);
     }
 
-    template <typename T>
-    const T & pickRandomlyFromVector(const std::vector<T> & vals)
+    template <typename Container>
+    const auto & pickRandomly(const Container & container)
     {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        return vals[d(generator)];
-    }
-
-    template <typename T>
-    const T & pickRandomlyFromSet(const std::set<T> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
+        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
+        auto it = container.begin();
         std::advance(it, d(generator));
-        return *it;
+
+        if constexpr (requires { it->first; })
+            return it->first;
+        else
+            return *it;
     }
 
     template <typename K, typename V>
-    const K & pickKeyRandomlyFromMap(const std::map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return it->first;
-    }
-
-    template <typename K, typename V>
-    const V & pickValueRandomlyFromMap(const std::map<K, V> & vals)
+    const V & pickValueRandomlyFromMap(const std::unordered_map<K, V> & vals)
     {
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         auto it = vals.begin();
@@ -361,123 +421,43 @@ public:
         return it->second;
     }
 
-    template <typename K, typename V>
-    std::tuple<K, V> pickPairRandomlyFromMap(const std::map<K, V> & vals)
+    String nextJSONCol();
+
+    String nextTokenString();
+
+    String nextIdentifier(const String & prefix, uint32_t counter, bool allow_nasty);
+
+    String nextHexBytes(uint32_t nbytes);
+
+    String nextString(const String & delimiter, bool allow_nasty, uint32_t limit);
+
+    String nextUUID();
+
+    String nextIPv4();
+
+    String nextIPv6();
+
+    /// Weighted random dispatch: picks one option proportional to its weight and calls its action.
+    /// Options with weight 0 are skipped. At least one weight must be non-zero.
+    void pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options);
+};
+
+class FuzzConfig;
+
+using RandomSettingParameter = std::function<String(RandomGenerator &, FuzzConfig &)>;
+
+struct CHSetting
+{
+public:
+    const RandomSettingParameter random_func;
+    const std::unordered_set<String> oracle_values;
+    const bool changes_behavior;
+
+    CHSetting(const RandomSettingParameter & rf, const std::unordered_set<String> & ov, const bool cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
     {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return std::make_tuple(it->first, it->second);
-    }
-
-    void nextJSONCol(std::string & ret)
-    {
-        const std::string & pick = pickRandomlyFromVector(jcols);
-
-        ret += pick;
-    }
-
-    void nextString(std::string & ret, const std::string & delimiter, const bool allow_nasty, const uint32_t limit)
-    {
-        bool use_bad_utf8 = false;
-
-        if (delimiter == "'" && this->nextMediumNumber() < 4)
-        {
-            ret += "x";
-            use_bad_utf8 = true;
-        }
-        ret += delimiter;
-        const std::string & pick = pickRandomlyFromVector(
-            use_bad_utf8
-                ? bad_utf8
-                : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese)));
-
-        if ((pick.length() >> (use_bad_utf8 ? 1 : 0)) < limit)
-        {
-            ret += pick;
-            /* A few times, generate a large string */
-            if (this->nextLargeNumber() < 4)
-            {
-                uint32_t i = 0;
-                uint32_t len = static_cast<uint32_t>(pick.size());
-                const uint32_t max_iterations = this->nextBool() ? 10000 : this->nextMediumNumber();
-
-                while (i < max_iterations)
-                {
-                    const std::string & npick = pickRandomlyFromVector(
-                        use_bad_utf8 ? bad_utf8
-                                     : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
-                                                                                   : (this->nextBool() ? common_english : common_chinese)));
-
-                    len += (npick.length() >> (use_bad_utf8 ? 1 : 0));
-                    if (len < limit)
-                    {
-                        ret += npick;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                    i++;
-                }
-            }
-        }
-        else
-        {
-            ret += "a";
-        }
-        ret += delimiter;
-    }
-
-    void nextUUID(std::string & ret)
-    {
-        for (uint32_t i = 0; i < 8; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-        }
-        ret += "-";
-        for (uint32_t i = 0; i < 4; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-        }
-        ret += "-";
-        for (uint32_t i = 0; i < 4; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-        }
-        ret += "-";
-        for (uint32_t i = 0; i < 4; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-        }
-        ret += "-";
-        for (uint32_t i = 0; i < 12; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-        }
-    }
-
-    void nextIPv4(std::string & ret)
-    {
-        ret += std::to_string(this->nextRandomUInt8());
-        ret += ".";
-        ret += std::to_string(this->nextRandomUInt8());
-        ret += ".";
-        ret += std::to_string(this->nextRandomUInt8());
-        ret += ".";
-        ret += std::to_string(this->nextRandomUInt8());
-    }
-
-    void nextIPv6(std::string & ret)
-    {
-        for (uint32_t i = 0; i < 8; i++)
-        {
-            ret += hex_digits[hex_digits_dist(generator)];
-            if (i < 7)
-            {
-                ret += ":";
-            }
-        }
     }
 };
 

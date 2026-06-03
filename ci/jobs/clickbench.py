@@ -1,104 +1,46 @@
-import subprocess
-import time
-
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 
-# TODO: generic functionality - move to separate file
-class ClickHouseBinary:
-    def __init__(self):
-        self.path = temp_dir
-        self.config_path = f"{temp_dir}/config"
-        self.start_cmd = (
-            f"{self.path}/clickhouse-server --config-file={self.config_path}/config.xml"
-        )
-        self.log_file = f"{temp_dir}/server.log"
-        self.port = 9000
-
-    def install(self):
-        Utils.add_to_PATH(self.path)
-        commands = [
-            f"mkdir -p {self.config_path}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {self.config_path}",
-            f"cp -r --dereference ./programs/server/config.d {self.config_path}",
-            f"chmod +x {self.path}/clickhouse",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-server",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-client",
-        ]
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def clickbench_config_tweaks(self):
-        content = """
-profiles:
-    default:
-        allow_introspection_functions: 1
-"""
-        file_path = f"{self.config_path}/users.d/allow_introspection_functions.yaml"
-        with open(file_path, "w") as file:
-            file.write(content)
-        return True
-
-    def start(self):
-        print(f"Starting ClickHouse server")
-        print("Command: ", self.start_cmd)
-        self.log_fd = open(self.log_file, "w")
-        self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print(f"ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print(f"ClickHouse server ready")
-        else:
-            print(f"ClickHouse server NOT ready")
-        return res
-
-    def wait_ready(self):
-        res, out, err = 0, "", ""
-        attempts = 30
-        delay = 2
-        for attempt in range(attempts):
-            res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
-            )
-            if out.strip() == "1":
-                print("Server ready")
-                break
-            else:
-                print(f"Server not ready, wait")
-            Utils.sleep(delay)
-        else:
-            Utils.print_formatted_error(
-                f"Server not ready after [{attempts*delay}s]", out, err
-            )
-            return False
-        return True
-
-
 def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseBinary()
+    ch = ClickHouseProc()
+    info = Info()
 
     if res:
         print("Install ClickHouse")
 
         def install():
-            return ch.install() and ch.clickbench_config_tweaks()
+            res = ch.install_clickbench_config()
+            # The ClickBench `create.sql` attaches `hits` on a cached disk
+            # rooted at `/dev/shm/clickhouse/`; ship the matching server-side
+            # allowed-directory override alongside it.
+            res = res and Shell.check(
+                f"cp ./ci/jobs/scripts/clickbench/filesystem_caches_path.xml {temp_dir}/config.d/",
+                verbose=True,
+            )
+            # `programs/server/config.d/storage_conf_local.xml` is a symlink to
+            # the test-only config that defines pre-configured `local_cache*`
+            # disks with `max_size = 22548578304` (~21 GiB) under relative path
+            # `local_cache/`. With our `filesystem_caches_path` override the
+            # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
+            # the ClickBench container runs with `--shm-size=16g`, so the
+            # capacity check in `FileCache::initialize` rejects the disk and
+            # the server fails to start. ClickBench doesn't use these test
+            # disks, so drop the config.
+            res = res and Shell.check(
+                f"rm -f {temp_dir}/config.d/storage_conf_local.xml",
+                verbose=True,
+            )
+            if info.is_local_run:
+                return res
+            return res and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -109,16 +51,16 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start()
-
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
+            res = ch.start_light()
+            if not info.is_local_run:
+                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
+                    print("WARNING: Failed to start log export")
+            return res
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
-                with_log=True,
+                command=start,
             )
         )
         res = results[-1].is_ok()
@@ -155,7 +97,7 @@ def main():
                     query_results.append(
                         Result(
                             name=f"{QUERY_NUM}_{i}",
-                            status=Result.Status.SUCCESS,
+                            status=Result.Status.OK,
                             duration=float(time_err),
                         )
                     )
@@ -175,7 +117,11 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results,
+        stopwatch=stop_watch,
+        files=ch.prepare_logs(all=False, info=info),
+    ).complete_job()
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true
 SpaceBeforeCpp11BracedList: false
 SortIncludes: true
-IndentPPDirectives: AfterHash
+IndentPPDirectives: None
 IncludeCategories:
   - Regex: '^<[a-z_]+>'
     Priority: 1
@@ -83,6 +83,7 @@ NamespaceIndentation: None
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true
 ObjCSpaceBeforeProtocolList: true
+PackConstructorInitializers: Never
 PenaltyBreakBeforeFirstCallParameter: 19
 PenaltyBreakComment: 300
 PenaltyBreakFirstLessLess: 120

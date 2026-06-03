@@ -1,60 +1,47 @@
 #pragma once
 
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "config.h"
 
 #if USE_NURAFT
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
 #include <functional>
+#include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Poco/JSON/Object.h>
+#include <Coordination/KeeperRequestDispatcherOld.h>
+#include <Coordination/KeeperRequestDispatcher.h>
 
 namespace DB
 {
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
-/// Highlevel wrapper for ClickHouse Keeper.
-/// Process user requests via consensus and return responses.
+/// KeeperRequestDispatcherOld dispatches regular request processing, this class manages everything else:
+/// snapshots, new session id assignment, expired session cleanup etc.
 class KeeperDispatcher
 {
 private:
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorageBase::RequestForSession>;
-    using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
-    /// Size depends on coordination settings
-    std::unique_ptr<RequestsQueue> requests_queue;
-    ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
 
-    mutable std::mutex session_to_response_callback_mutex;
-    /// These two maps looks similar, but serves different purposes.
-    /// The first map is subscription map for normal responses like
-    /// (get, set, list, etc.). Dispatcher determines callback for each response
-    /// using session id from this map.
-    SessionToResponseCallback session_to_response_callback;
+    /// When client connects to the server for the first time it doesn't have session_id.
+    /// It request it from server. We give temporary internal id for such requests just to match
+    /// client with its response. This is a map of in-progress SessionID requests.
+    /// After a proper session id is assigned, session lives in KeeperRequestDispatcherOld's session map.
+    mutable std::mutex new_session_id_mutex;
+    std::unordered_map<int64_t, std::promise<int64_t>> new_session_id_requests;
 
-    /// But when client connects to the server for the first time it doesn't
-    /// have session_id. It request it from server. We give temporary
-    /// internal id for such requests just to much client with its response.
-    SessionToResponseCallback new_session_id_response_callback;
-
-    /// Reading and batching new requests from client handlers
-    ThreadFromGlobalPool request_thread;
-    /// Pushing responses to clients client handlers
-    /// using session_id.
-    ThreadFromGlobalPool responses_thread;
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
@@ -65,9 +52,14 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
+    /// Exactly one of these is non-null.
+    /// Hopefully KeeperRequestDispatcher will work well and we'll delete KeeperRequestDispatcherOld soon.
+    std::unique_ptr<KeeperRequestDispatcherOld> dispatcher_old;
+    std::unique_ptr<KeeperRequestDispatcher> dispatcher;
+
     KeeperConnectionStats keeper_stats;
 
-    KeeperConfigurationAndSettingsPtr configuration_and_settings;
+    KeeperConfigurationPtr server_config;
 
     LoggerPtr log;
 
@@ -78,10 +70,10 @@ private:
 
     KeeperContextPtr keeper_context;
 
-    /// Thread put requests to raft
-    void requestThread();
-    /// Thread put responses for subscribed sessions
-    void responseThread();
+    /// Flag to signal TCP handlers that they should close connections.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
+    std::atomic<bool> shutting_down{false};
+
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
     /// Thread create snapshots in the background
@@ -91,24 +83,16 @@ private:
     void clusterUpdateWithReconfigDisabledThread();
     void clusterUpdateThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
+    using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
 
-    /// Add error responses for requests to responses queue.
-    /// Clears requests.
-    void addErrorResponses(const KeeperStorageBase::RequestsForSessions & requests_for_sessions, Coordination::Error error);
+    /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
+    void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
+    void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
-    /// Forcefully wait for result and sets errors if something when wrong.
-    /// Clears both arguments
-    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
-        RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+    void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 
 public:
-    std::mutex read_request_queue_mutex;
-
-    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorageBase::RequestsForSessions>> read_request_queue;
-
-    /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
     /// Call shutdown
@@ -118,8 +102,6 @@ public:
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
     /// 'macros' are used to substitute macros in endpoint of disks
     void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros);
-
-    void startServer();
 
     bool checkInit() const
     {
@@ -134,8 +116,18 @@ public:
     void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
 
+    /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
+    Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
+
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+
+    /// Returns true if signalShutdown() was called.
+    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
-    void shutdown();
+    /// `closed_all_connections` should be false if there may be any remaining KeeperTCPHandler instances.
+    void shutdown(bool closed_all_connections);
 
     void forceRecovery();
 
@@ -145,14 +137,15 @@ public:
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback
+    /// Register session and subscribe for responses with callback.
+    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const
@@ -163,6 +156,17 @@ public:
     bool isFollower() const
     {
         return server->isFollower();
+    }
+
+    const char * getRoleString() const
+    {
+        if (isLeader())
+            return "leader";
+        if (isFollower())
+            return "follower";
+        if (isObserver())
+            return "observer";
+        return "unknown";
     }
 
     bool hasLeader() const
@@ -197,9 +201,9 @@ public:
         return *server->getKeeperStateMachine();
     }
 
-    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
+    const KeeperConfigurationPtr & getKeeperConfiguration() const
     {
-        return configuration_and_settings;
+        return server_config;
     }
 
     const KeeperContextPtr & getKeeperContext() const
@@ -252,6 +256,10 @@ public:
     }
 
     static void cleanResources();
+
+    std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
+
+    void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 };
 
 }

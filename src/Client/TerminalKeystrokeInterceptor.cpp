@@ -3,6 +3,7 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 
 #include <mutex>
 #include <ostream>
@@ -10,6 +11,9 @@
 #include <unistd.h>
 #include <base/defines.h>
 #include <sys/ioctl.h>
+#ifdef __sun
+#include <sys/filio.h>  // illumos defines FIONREAD in sys/filio.h, not sys/ioctl.h
+#endif
 
 namespace DB::ErrorCodes
 {
@@ -105,14 +109,22 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
     std::unique_lock lock(stop_requested_mutex);
     while (!stop_requested)
     {
-        runImpl(map);
+        try
+        {
+            runImpl(map);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         stop_requested_cv.wait_for(lock, intercept_interval_ms, [map, this] { return stop_requested; });
     }
 }
 
 void TerminalKeystrokeInterceptor::runImpl(const DB::TerminalKeystrokeInterceptor::CallbackMap & map) const
 {
-    char ch;
+    char ch = 0;
 
     int available = 0;
     if (ioctl(fd, FIONREAD, &available) < 0)

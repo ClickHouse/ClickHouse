@@ -2,13 +2,13 @@
 
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
+#include <Common/MemoryWorker.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <mutex>
 #include <string>
 #include <vector>
 #include <optional>
@@ -71,7 +71,8 @@ public:
         unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
-        bool update_rss_);
+        bool update_rss_,
+        const ContextPtr & context_);
 
     virtual ~AsynchronousMetrics();
 
@@ -91,7 +92,16 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) {}
+    virtual void logImpl(AsynchronousMetricValues &) { }
+    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
+
+    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
+    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
+
+    using Clock = std::chrono::steady_clock;
+    mutable std::optional<Clock::time_point> mem_overload_started;
+    mutable std::optional<Clock::time_point> cpu_overload_started;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -120,6 +130,7 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
+    ContextPtr context;
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -129,9 +140,17 @@ private:
     std::optional<ReadBufferFromFilePRead> file_nr TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> uptime TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> net_dev TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> net_tcp6 TSA_GUARDED_BY(data_mutex);
+
+    std::optional<ReadBufferFromFilePRead> cpu_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> memory_pressure TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> io_pressure TSA_GUARDED_BY(data_mutex);
+
+    std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
+    std::shared_ptr<ICgroupsReader> cgroupmem_reader;
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
@@ -140,6 +159,7 @@ private:
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
+    std::optional<ReadBufferFromFilePRead> process_status TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 
@@ -181,6 +201,7 @@ private:
         ProcStatValuesOther operator-(const ProcStatValuesOther & other) const;
     };
 
+    ProcStatValuesCPU cgroup_values_all_cpus TSA_GUARDED_BY(data_mutex){};
     ProcStatValuesCPU proc_stat_values_all_cpus TSA_GUARDED_BY(data_mutex) {};
     ProcStatValuesOther proc_stat_values_other TSA_GUARDED_BY(data_mutex) {};
     std::vector<ProcStatValuesCPU> proc_stat_values_per_cpu TSA_GUARDED_BY(data_mutex);
@@ -233,6 +254,18 @@ private:
     void openSensorsChips();
     void openEDAC();
 
+    std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::string & filename);
+    void openFileIfExists(const char * filename, std::optional<ReadBufferFromFilePRead> & out);
+    void openCgroupv2MetricFile(const std::string & filename, std::optional<ReadBufferFromFilePRead> & out);
+
+    void applyCgroupCPUMetricsUpdate(AsynchronousMetricValues & new_values, const ProcStatValuesCPU & delta_values, double multiplier);
+
+    void applyCgroupNormalizedCPUMetricsUpdate(
+        AsynchronousMetricValues & new_values,
+        double num_cpus_to_normalize,
+        const ProcStatValuesCPU & delta_values_all_cpus,
+        double multiplier);
+
     void applyCPUMetricsUpdate(
         AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
 
@@ -241,7 +274,6 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
-
 #endif
 
     void run();

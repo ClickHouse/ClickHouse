@@ -2,6 +2,7 @@
 drop table if exists test_02245_s3_nested_parquet1;
 drop table if exists test_02245_s3_nested_parquet2;
 set input_format_parquet_import_nested = 1;
+set s3_truncate_on_insert = 1;
 create table test_02245_s3_nested_parquet1(a Int64, b Tuple(a Int64, b String)) engine=S3(s3_conn, filename='test_02245_s3_nested_parquet1_{_partition_id}', format='Parquet') partition by a;
 insert into test_02245_s3_nested_parquet1 values (1, (2, 'a'));
 select a, b.a, b.b from s3(s3_conn, filename='test_02245_s3_nested_parquet1_*', format='Parquet');

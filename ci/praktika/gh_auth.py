@@ -1,73 +1,158 @@
-import sys
+import json
 import time
-from typing import List
 
 import requests
-from jwt import JWT, jwk_from_pem
 
-from . import Workflow
-from .mangle import _get_workflows
-from .settings import Settings
-from .utils import Shell
+try:
+    import jwt  # From pyjwt
+
+    assert hasattr(jwt, "encode"), "Invalid jwt module, 'encode' not found"
+    USING_PYJWT = True
+except (ImportError, AssertionError):
+    USING_PYJWT = False
+    print(
+        "Warning: pyjwt not available. Falling back to 'jwt' module (not recommended)"
+    )
+    from jwt import jwk_from_pem, JWT
+
+from praktika.utils import Shell
 
 
-# XXX: dead code with a bug in return installations[0]["id"] and using legacy jwt module
 class GHAuth:
-    @staticmethod
-    def _generate_jwt(client_id, pem):
-        pem = str.encode(pem)
-        signing_key = jwk_from_pem(pem)
-        payload = {
-            "iat": int(time.time()),
-            "exp": int(time.time()) + 600,
-            "iss": client_id,
-        }
-        # Create JWT
-        jwt_instance = JWT()
-        encoded_jwt = jwt_instance.encode(payload, signing_key, alg="RS256")
-        return encoded_jwt
-
-    @staticmethod
-    def _get_installation_id(jwt_token):
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        response = requests.get(
-            "https://api.github.com/app/installations", headers=headers, timeout=10
-        )
-        response.raise_for_status()
-        installations = response.json()
-        assert installations, "No installations found for the GitHub App"
-        return installations[0]["id"]
-
-    @staticmethod
-    def _get_access_token(jwt_token, installation_id):
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        url = (
-            f"https://api.github.com/app/installations/{installation_id}/access_tokens"
-        )
-        response = requests.post(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.json()["token"]
 
     @classmethod
-    def auth(cls, workflow_name) -> None:
-        wf = _get_workflows(workflow_name)  # type: List[Workflow.Config]
-        pem = wf[0].get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        assert pem
-        app_id = wf[0].get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        # Generate JWT
-        jwt_token = cls._generate_jwt(app_id, pem)
-        # Get Installation ID
-        installation_id = cls._get_installation_id(jwt_token)
-        # Get Installation Access Token
-        access_token = cls._get_access_token(jwt_token, installation_id)
-        Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
+    def _get_access_token_from_lambda(cls, lambda_name: str, region: str) -> str:
+        import boto3  # type: ignore
+
+        client = boto3.session.Session().client(
+            service_name="lambda", region_name=region or None
+        )
+        response = client.invoke(
+            FunctionName=lambda_name,
+            InvocationType="RequestResponse",
+            Payload=b"{}",
+        )
+        if response.get("FunctionError"):
+            raise RuntimeError(
+                f"Lambda {lambda_name} returned FunctionError (payload redacted)"
+            )
+        result = json.loads(response["Payload"].read())
+        status_code = result.get("statusCode")
+        if status_code != 200:
+            raise RuntimeError(
+                f"Lambda {lambda_name} returned statusCode={status_code} (body redacted)"
+            )
+        body = json.loads(result["body"])
+        return body["token"]
+
+    @classmethod
+    def _get_access_token_by_jwt(cls, jwt_token: str, installation_id: int) -> str:
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        response = requests.post(
+            f"https://api.github.com/app/installations/{installation_id}/access_tokens",
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+        token = response.json()["token"]  # type: str
+        return token
+
+    @classmethod
+    def _get_access_token(cls, private_key: str, app_id: str, installation_id: int) -> str:
+        payload = {
+            "iat": int(time.time()) - 60,
+            "exp": int(time.time()) + (10 * 60),
+            "iss": app_id,
+        }
+
+        jwt_instance = jwt.PyJWT()
+        encoded_jwt = jwt_instance.encode(payload, private_key, algorithm="RS256")
+        return cls._get_access_token_by_jwt(encoded_jwt, installation_id)
+
+    @classmethod
+    def _get_access_token_deprecated(cls, app_key, app_id, installation_id: int):
+        def _generate_jwt(client_id, pem):
+            pem = str.encode(pem)
+            signing_key = jwk_from_pem(pem)
+            payload = {
+                "iat": int(time.time()),
+                "exp": int(time.time()) + 600,
+                "iss": client_id,
+            }
+            # Create JWT
+            jwt_instance = JWT()
+            encoded_jwt = jwt_instance.encode(payload, signing_key, alg="RS256")
+            return encoded_jwt
+
+        jwt_token = _generate_jwt(app_id, app_key)
+        return cls._get_access_token_by_jwt(jwt_token, installation_id)
+
+    @classmethod
+    def auth(cls, app_id, app_key, installation_id: int) -> None:
+        if USING_PYJWT:
+            access_token = cls._get_access_token(app_key, app_id, installation_id)
+        else:
+            access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
+        Shell.check(
+            "gh auth login --with-token",
+            stdin_str=f"{access_token}\n",
+            strict=True,
+        )
+
+    @classmethod
+    def auth_from_settings(cls) -> None:
+        from praktika.secret import Secret
+        from praktika.settings import Settings
+
+        if Settings.GH_AUTH_LAMBDA_NAME:
+            access_token = cls._get_access_token_from_lambda(
+                Settings.GH_AUTH_LAMBDA_NAME, Settings.GH_AUTH_LAMBDA_REGION
+            )
+            Shell.check(
+                "gh auth login --with-token",
+                stdin_str=f"{access_token}\n",
+                strict=True,
+            )
+            return
+
+        app_id, pem, installation_id = (
+            Secret.Config(
+                name=Settings.SECRET_GH_APP_ID,
+                type=Secret.Type.AWS_SSM_SECRET,
+                region=Settings.SECRET_GH_APP_REGION,
+            )
+            .join_with(
+                Secret.Config(
+                    name=Settings.SECRET_GH_APP_PEM_KEY,
+                    type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
+                )
+            )
+            .join_with(
+                Secret.Config(
+                    name=Settings.SECRET_GH_APP_INSTALLATION_ID,
+                    type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
+                )
+            )
+            .get_value()
+        )
+        cls.auth(app_id=app_id, app_key=pem, installation_id=int(installation_id))
 
 
-if __name__ == "__main__":
-    GHAuth.auth(sys.argv[1])
+# if __name__ == "__main__":
+#     from ci.praktika.secret import Secret
+#
+#     pem = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-key",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
+#     app_id = Secret.Config(
+#         name="woolenwolf_gh_app.clickhouse-app-id",
+#         type=Secret.Type.AWS_SSM_SECRET,
+#     ).get_value()
+#     print(app_id, pem)
+#     GHAuth.auth(app_id, pem)

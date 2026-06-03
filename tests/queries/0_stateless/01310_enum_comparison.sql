@@ -5,5 +5,5 @@ SELECT count() FROM enum WHERE x = 'hello';
 SELECT count() FROM enum WHERE x = 'world';
 SELECT count() FROM enum WHERE x = 'xyz';
 
-SET validate_enum_literals_in_opearators = 1;
+SET validate_enum_literals_in_operators = 1;
 SELECT count() FROM enum WHERE x = 'xyz'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }

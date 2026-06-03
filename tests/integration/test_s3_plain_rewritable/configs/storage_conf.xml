@@ -8,7 +8,7 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_plain_rewritable>
             <disk_cache_s3_plain_rewritable>
                 <type>cache</type>
@@ -25,7 +25,7 @@
                 <endpoint_subpath from_env="ENDPOINT_SUBPATH"></endpoint_subpath>
                 <object_metadata_cache_size>1000</object_metadata_cache_size>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_plain_rewritable_with_metadata_cache>
         </disks>
         <policies>

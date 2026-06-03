@@ -28,13 +28,13 @@ GROUP BY number;
 SELECT sum(id) FROM test FORMAT Null;
 SELECT argMaxMerge(amax) FROM test FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT 'UInt64',
        read_rows,
        read_bytes
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() AND
     query = 'SELECT sum(id) FROM test FORMAT Null;' AND
     type = 2 AND event_date >= yesterday()
@@ -54,7 +54,7 @@ SELECT 'AggregateFunction(argMax, String, DateTime)',
        read_rows,
        read_bytes
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() AND
     query = 'SELECT argMaxMerge(amax) FROM test FORMAT Null;' AND
     type = 2 AND event_date >= yesterday()

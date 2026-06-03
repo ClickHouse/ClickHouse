@@ -1,31 +1,25 @@
 #pragma once
 
+#include "config.h"
 
 #include <Client/Autocomplete.h>
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBuffer.h>
 #include <Common/DNSResolver.h>
 #include <Common/InterruptListener.h>
 #include <Common/ProgressIndication.h>
 #include <Common/QueryFuzzer.h>
-#include <Common/QueryFuzzer.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
-#include <Core/Settings.h>
-#include <IO/CompressionMethod.h>
-#include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Poco/ConsoleChannel.h>
-#include <Poco/SimpleFileChannel.h>
-#include <Poco/SplitterChannel.h>
-#include <Poco/Util/Application.h>
-
-
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFile.h>
+
+#if USE_CLIENT_AI
+#include <Client/AI/AISQLGenerator.h>
+#endif
 
 #include <boost/program_options.hpp>
 
@@ -33,6 +27,11 @@
 #include <optional>
 #include <string_view>
 #include <string>
+
+#include <Poco/Util/LayeredConfiguration.h>
+
+namespace po = boost::program_options;
+
 
 namespace DB
 {
@@ -60,6 +59,12 @@ enum MultiQueryProcessingStage
     PARSING_FAILED,
 };
 
+// On illumos, <curses.h> defines ERR as a macro (error return value).
+// Undef it to allow use of ERR as an enum value below.
+#ifdef ERR
+#  undef ERR
+#endif
+
 enum ProgressOption
 {
     DEFAULT,
@@ -73,6 +78,8 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress);
 class InternalTextLogs;
 class TerminalKeystrokeInterceptor;
 class WriteBufferFromFileDescriptor;
+struct Settings;
+struct MergeTreeSettings;
 
 /**
  * The base class which encapsulates the core functionality of a client.
@@ -102,37 +109,47 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-    void processTextAsSingleQuery(const String & full_query);
+    /// Returns true if query succeeded
+    bool processTextAsSingleQuery(const String & full_query);
 
+    virtual bool tryToReconnect(const uint32_t, const uint32_t)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconnection is not implemented");
+    }
 protected:
     void runInteractive();
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
     virtual Poco::Util::LayeredConfiguration & getClientConfiguration() = 0;
 
-    virtual bool processWithFuzzing(const String &)
+    virtual bool processWithASTFuzzer(std::string_view)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query processing with fuzzing is not implemented");
     }
 
     virtual bool buzzHouse()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
     }
 
     virtual void connect() = 0;
-    virtual void processError(const String & query) const = 0;
+    virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
 
-    void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
-    void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
+    void processOrdinaryQuery(String query, ASTPtr parsed_query);
+    void processInsertQuery(String query, ASTPtr parsed_query);
 
-    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
-        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+    void processParsedSingleQuery(
+        std::string_view query_,
+        ASTPtr parsed_query,
+        bool & is_async_insert_with_inlined_data,
+        // to handle INSERT w/o async_insert
+        size_t insert_query_without_data_length = 0);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
@@ -142,11 +159,19 @@ protected:
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
-        String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
+        ASTPtr & parsed_query,
         std::unique_ptr<Exception> & current_exception);
 
     void clearTerminal();
     void showClientVersion();
+
+#if USE_CLIENT_AI
+    void initAIProvider();
+
+    /// Check if AI provider usage needs acknowledgment from user
+    /// Returns false if user declined, true otherwise
+    bool checkAIProviderAcknowledgment();
+#endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -189,13 +214,18 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
+    /// Used to check certain things that are considered unsafe for the embedded client
+    virtual bool isEmbeeddedClient() const = 0;
+
+    static fs::path getHistoryFilePath();
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
-    bool receiveEndOfQuery();
+    bool receiveEndOfQueryForInsert();
     void cancelQuery();
+    bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
@@ -227,8 +257,15 @@ private:
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
+    void applySettingsFromServerIfNeeded();
+
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
+
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns empty string on exception
+    std::string executeQueryForSingleString(const std::string & query);
+    virtual bool supportsLocalMetaCommands() const { return false; }
 
 protected:
     class QueryInterruptHandler : private boost::noncopyable
@@ -258,13 +295,13 @@ protected:
     static bool isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context);
     bool processMultiQueryFromFile(const String & file_name);
 
-    static bool isRegularFile(int fd);
+    static bool isFileDescriptorSuitableForInput(int fd);
 
     /// Adjust some settings after command line options and config had been processed.
-    void adjustSettings();
+    void adjustSettings(ContextMutablePtr context);
 
     /// Initializes the client context.
-    void initClientContext();
+    void initClientContext(ContextMutablePtr context);
 
     void setDefaultFormatsAndCompressionFromConfiguration();
 
@@ -278,15 +315,14 @@ protected:
     /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
-
-    /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
 
     String default_database;
     String query_id;
-    Int32 suggestion_limit;
+    Int32 suggestion_limit{};
     bool enable_highlight = true;
     bool multiline = false;
+    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
@@ -295,6 +331,7 @@ protected:
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -313,7 +350,7 @@ protected:
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
-    uint64_t terminal_width = 0;
+    uint16_t terminal_width = 0;
 
     String pager;
 
@@ -325,8 +362,10 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    size_t format_max_block_size = 0; /// Max block size for console output.
-    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in bytes when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Min block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Min block size in bytes when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -335,12 +374,8 @@ protected:
     std::vector<std::pair<String, String>> query_id_formats;
 
     /// Settings specified via command line args
-    Settings cmd_settings;
-    MergeTreeSettings cmd_merge_tree_settings;
-
-    /// thread status should be destructed before shared context because it relies on process list.
-    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
-    std::optional<ThreadStatus> thread_status;
+    std::unique_ptr<Settings> cmd_settings;
+    std::unique_ptr<MergeTreeSettings> cmd_merge_tree_settings;
 
     ServerConnectionPtr connection;
     ConnectionParameters connection_parameters;
@@ -350,6 +385,9 @@ protected:
     /// Console output.
     std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
+
+    /// Wrapper for hooking into the flush event.
+    std::unique_ptr<WriteBuffer> std_out_wrapper;
 
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
@@ -366,18 +404,22 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    String home_path;
-    String history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
-
-    String current_profile;
+    fs::path home_path;
+    fs::path history_file; /// Path to a file containing command history.
+    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;
     String prompt;
     String server_display_name;
 
+    /// Settings received from the server, if any. Populated by connect().
+    SettingsChanges settings_from_server;
+
     ProgressIndication progress_indication;
+    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
+    /// Replayed into output_format once it's available.
+    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
@@ -385,7 +427,10 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    size_t processed_rows = 0; /// How many rows have been read or written.
+    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
+    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
+    size_t processed_rows_from_blocks = 0;
+    size_t processed_rows_from_progress = 0;
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -406,9 +451,24 @@ protected:
     int query_fuzzer_runs = 0;
     int create_query_fuzzer_runs = 0;
 
-    //Options for BuzzHouse
+    /// Options for BuzzHouse
     String buzz_house_options_path;
+
+    /// Text to prepopulate in the next query prompt
+    String next_query_to_prepopulate;
     bool buzz_house = false;
+    int error_code = 0;
+
+#if USE_CLIENT_AI
+    /// Cached AI SQL generator
+    std::unique_ptr<AISQLGenerator> ai_generator;
+    /// Whether the user has acknowledged AI provider usage
+    bool ai_provider_acknowledged = false;
+    /// Whether the AI API key was inferred from environment
+    bool ai_inferred_from_env = false;
+    /// The AI provider name (e.g., "openai", "anthropic")
+    std::string ai_provider_name;
+#endif
 
     struct
     {
@@ -420,8 +480,8 @@ protected:
         Block last_block;
     } profile_events;
 
-    QueryProcessingStage::Enum query_processing_stage;
-    ClientInfo::QueryKind query_kind;
+    QueryProcessingStage::Enum query_processing_stage{};
+    ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
     {

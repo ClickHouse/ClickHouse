@@ -1,12 +1,13 @@
 #include <ctime>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Interpreters/Context.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -19,13 +20,14 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int CANNOT_CLOCK_GETTIME;
 }
 
 namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow : public IExecutableFunction
+class ExecutableFunctionNow final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
@@ -43,7 +45,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow : public IFunctionBase
+class FunctionBaseNow final : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -82,7 +84,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver : public IFunctionOverloadResolver
+class NowOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";
@@ -93,6 +95,8 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
@@ -101,15 +105,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() > 1)
-        {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
-        }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
-        }
+        FunctionArgumentDescriptors mandatory_arguments{};
+        FunctionArgumentDescriptors optional_arguments{
+            {"timezone", &isStringOrFixedString, nullptr, "String"}
+        };
+
+        validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
         if (arguments.size() == 1)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments));
@@ -128,12 +129,16 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
         }
+        timespec spec{};
+        if (clock_gettime(CLOCK_REALTIME, &spec))
+            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
+
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
-                time(nullptr), DataTypes{arguments.front().type},
+                spec.tv_sec, DataTypes{arguments.front().type},
                 std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments)));
 
-        return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
+        return std::make_unique<FunctionBaseNow>(spec.tv_sec, DataTypes(), std::make_shared<DataTypeDateTime>());
     }
 private:
     const bool allow_nonconst_timezone_arguments;
@@ -143,7 +148,47 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the current date and time at the moment of query analysis. The function is a constant expression.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+now([timezone])
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time.", {"DateTime"}};
+    FunctionDocumentation::Examples examples = {
+        {"Query without timezone", R"(
+SELECT now()
+        )",
+        R"(
+┌───────────────now()─┐
+│ 2020-10-17 07:42:09 │
+└─────────────────────┘
+        )"},
+        {"Query with specified timezone", R"(
+SELECT now('Asia/Istanbul')
+        )",
+        R"(
+┌─now('Asia/Istanbul')─┐
+│  2020-10-17 10:42:23 │
+└──────────────────────┘
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT NOW, CURRENT_TIMESTAMP
+        )",
+        R"(
+┌─────────────────NOW─┬───CURRENT_TIMESTAMP─┐
+│ 2020-10-17 07:42:19 │ 2020-10-17 07:42:19 │
+└─────────────────────┴─────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

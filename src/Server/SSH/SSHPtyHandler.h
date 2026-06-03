@@ -15,16 +15,24 @@ namespace DB
 class SSHPtyHandler : public Poco::Net::TCPServerConnection
 {
 public:
+    struct Options
+    {
+        size_t max_auth_attempts;
+        size_t auth_timeout_seconds;
+        size_t finish_timeout_seconds;
+        size_t event_poll_interval_milliseconds;
+        bool enable_client_options_passing;
+    };
+
     explicit SSHPtyHandler
     (
         IServer & server_,
         ::ssh::SSHSession session_,
-        const Poco::Net::StreamSocket & socket,
-        unsigned int max_auth_attempts_,
-        unsigned int auth_timeout_seconds_,
-        unsigned int finish_timeout_seconds_,
-        unsigned int event_poll_interval_milliseconds_
+        const Poco::Net::StreamSocket & socket_,
+        const Options & options
     );
+
+    ~SSHPtyHandler() override;
 
     void run() override;
 
@@ -32,10 +40,7 @@ private:
     IServer & server;
     Poco::Logger * log;
     ::ssh::SSHSession session;
-    unsigned int max_auth_attempts;
-    unsigned int auth_timeout_seconds;
-    unsigned int finish_timeout_seconds;
-    unsigned int event_poll_interval_milliseconds;
+    Options options;
 };
 
 }

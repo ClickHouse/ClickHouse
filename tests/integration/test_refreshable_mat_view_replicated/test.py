@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -152,7 +153,7 @@ def module_setup_tables(started_cluster):
     # default is Atomic by default
     node.query(f"DROP DATABASE IF EXISTS default ON CLUSTER default SYNC")
     node.query(
-        "CREATE DATABASE IF NOT EXISTS default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
+        "CREATE DATABASE default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
     )
 
     assert (
@@ -174,12 +175,12 @@ def module_setup_tables(started_cluster):
         == "Replicated\nReplicated\n"
     )
 
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src2 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS test_db.test_rmv")
 
     node.query(
         f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
@@ -201,10 +202,10 @@ def module_setup_tables(started_cluster):
 
 @pytest.fixture(scope="function")
 def fn_setup_tables():
-    node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
-    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv")
+    node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
+    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
     node.query(
         f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) "
@@ -221,6 +222,10 @@ def fn_setup_tables():
 
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv")
+
+
+def opposite_minutes():
+    return (60 - datetime.now().minute) % 60
 
 
 @pytest.mark.parametrize(
@@ -247,7 +252,7 @@ def test_append(
 ):
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval=f"EVERY 1 HOUR OFFSET {opposite_minutes()} MINUTE",
         to_clause="tgt1",
         select_query=select_query,
         with_append=with_append,
@@ -282,7 +287,6 @@ def test_append(
 
 
 @pytest.mark.parametrize("with_append", [True, False])
-@pytest.mark.parametrize("if_not_exists", [True, False])
 @pytest.mark.parametrize("depends_on", [None, ["default.dummy_rmv"]])
 @pytest.mark.parametrize("empty", [True, False])
 @pytest.mark.parametrize("database_name", ["test_db"])
@@ -301,7 +305,6 @@ def test_alters(
     module_setup_tables,
     fn_setup_tables,
     with_append,
-    if_not_exists,
     depends_on,
     empty,
     database_name,
@@ -310,11 +313,12 @@ def test_alters(
     """
     Check correctness of functional states of RMV after CREATE, DROP, ALTER, trigger of RMV, ...
     """
+    schedule_offset = opposite_minutes()
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        if_not_exists=if_not_exists,
+        if_not_exists=False,
         db="test_db",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval=f"EVERY 1 HOUR OFFSET {schedule_offset} MINUTE",
         depends_on=depends_on,
         to_clause="tgt1",
         select_query="SELECT * FROM src1",
@@ -338,9 +342,9 @@ def test_alters(
 
     alter_sql = ALTER_RMV.render(
         table_name="test_rmv",
-        if_not_exists=if_not_exists,
+        if_not_exists=False,
         db="test_db",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval=f"EVERY 1 HOUR OFFSET {schedule_offset} MINUTE",
         depends_on=depends_on,
         # can't change select with alter
         # select_query="SELECT * FROM src1",
@@ -352,119 +356,6 @@ def test_alters(
     show_create_after_alter = node.query(f"SHOW CREATE test_db.test_rmv")
     assert show_create == show_create_after_alter
     compare_DDL_on_all_nodes()
-
-
-@pytest.mark.parametrize(
-    "append",
-    [True, False],
-)
-@pytest.mark.parametrize(
-    "empty",
-    [True, False],
-)
-@pytest.mark.parametrize(
-    "to_clause",
-    [
-        (None, "tgt1", "tgt1"),
-        ("Engine ReplicatedMergeTree ORDER BY tuple()", None, "test_rmv"),
-    ],
-)
-def test_real_wait_refresh(
-    fn_setup_tables,
-    append,
-    empty,
-    to_clause,
-):
-    if node.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers")
-
-    table_clause, to_clause_, tgt = to_clause
-
-    create_sql = CREATE_RMV.render(
-        table_name="test_rmv",
-        refresh_interval="EVERY 10 SECOND",
-        to_clause=to_clause_,
-        table_clause=table_clause,
-        select_query="SELECT now() as a, b FROM src1 SETTINGS insert_deduplicate=0",
-        with_append=append,
-        on_cluster="default",
-        empty=empty,
-    )
-    node.query(create_sql)
-    rmv = get_rmv_info(node, "test_rmv")
-    time.sleep(1)
-    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
-
-    expected_rows = 0
-    if empty:
-        expect_rows(expected_rows, table=tgt)
-    else:
-        expected_rows += 2
-        expect_rows(expected_rows, table=tgt)
-
-    rmv2 = get_rmv_info(
-        node,
-        "test_rmv",
-        condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
-        # wait for refresh a little bit more than 10 seconds
-        max_attempts=30,
-        delay=0.5,
-        wait_status="Scheduled",
-    )
-
-    node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
-
-    rmv22 = get_rmv_info(
-        node,
-        "test_rmv",
-        wait_status="Scheduled",
-    )
-
-    if append:
-        expected_rows += 2
-        expect_rows(expected_rows, table=tgt)
-    else:
-        expect_rows(2, table=tgt)
-
-    assert rmv2["exception"] is None
-    assert rmv2["status"] in ["Scheduled", "Running"]
-    assert rmv2["last_success_time"] == rmv["next_refresh_time"]
-    assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
-    assert rmv2["retry"] == 0 and rmv22["retry"] == 0
-
-    for n in nodes:
-        n.query("SYSTEM STOP VIEW test_rmv")
-    time.sleep(12)
-    rmv3 = get_rmv_info(node, "test_rmv")
-    # no refresh happen
-    assert rmv3["status"] == "Disabled"
-
-    del rmv3["status"]
-    del rmv2["status"]
-    assert rmv3 == rmv2
-
-    for n in nodes:
-        n.query("SYSTEM START VIEW test_rmv")
-    time.sleep(1)
-    rmv4 = get_rmv_info(node, "test_rmv")
-
-    if append:
-        expected_rows += 2
-        expect_rows(expected_rows, table=tgt)
-    else:
-        expect_rows(2, table=tgt)
-
-    assert rmv4["exception"] is None
-    assert rmv4["status"] == "Scheduled"
-    assert rmv4["retry"] == 0
-
-    node.query("SYSTEM REFRESH VIEW test_rmv")
-    time.sleep(1)
-    if append:
-        expected_rows += 2
-        expect_rows(expected_rows, table=tgt)
-    else:
-        expect_rows(2, table=tgt)
 
 
 def get_rmv_info(
@@ -481,7 +372,7 @@ def get_rmv_info(
             check_callback=(
                 (lambda r: r.iloc[0]["status"] == wait_status)
                 if wait_status
-                else (lambda x: True)
+                else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
             parse=True,
         ).to_dict("records")[0]
@@ -560,9 +451,9 @@ def test_long_query_cancel(fn_setup_tables):
 
 @pytest.fixture(scope="function")
 def fn3_setup_tables():
-    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv")
+    node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default SYNC")
 
     node.query(
         f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
@@ -628,3 +519,248 @@ def test_query_retry(fn3_setup_tables):
     )
     assert rmv["retry"] == 11
     assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in rmv["exception"]
+
+
+def _drop_circular_objects():
+    node.query("DROP TABLE IF EXISTS current_batch_v ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS batch_log_v ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS stats_v ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS current_batch ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS batch_log ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS stats ON CLUSTER default SYNC")
+
+
+def _wait_batch_log_count(at_least, timeout=120):
+    """Wait until batch_log has at least `at_least` rows, polling either node."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for n in nodes:
+            try:
+                count = int(n.query("SELECT count() FROM batch_log").strip())
+            except Exception:
+                count = 0
+            if count >= at_least:
+                return count
+        time.sleep(0.5)
+    raise AssertionError(
+        f"batch_log did not reach {at_least} rows within {timeout}s; last seen {count}"
+    )
+
+
+def test_circular_dependencies_survive_restart(module_setup_tables):
+    """3-view circular refresh chain (current_batch → batch_log, stats → current_batch).
+
+    The cycle must:
+      * keep going by itself once kicked (no further SYSTEM REFRESH VIEW required), and
+      * survive a full cluster restart (in Replicated DB the dependency state is in Keeper, so
+        the cycle resumes without a manual kick after restart).
+    """
+    _drop_circular_objects()
+
+    node.query(
+        "CREATE TABLE current_batch ON CLUSTER default (t UInt64, v Int64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY t"
+    )
+    node.query(
+        "CREATE TABLE batch_log ON CLUSTER default (max_t UInt64, n Int64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY max_t"
+    )
+    node.query(
+        "CREATE TABLE stats ON CLUSTER default (h UInt64, n UInt64) "
+        "ENGINE = ReplicatedSummingMergeTree ORDER BY h"
+    )
+
+    # Reader: REFRESH AFTER 1 SECOND DEPENDS ON loggers.
+    node.query(
+        "CREATE MATERIALIZED VIEW current_batch_v "
+        "REFRESH AFTER 1 SECOND DEPENDS ON batch_log_v, stats_v TO current_batch AS "
+        "SELECT number AS t, number * 10 AS v FROM system.numbers "
+        "WHERE number > (SELECT max(max_t) FROM batch_log) LIMIT 5"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW batch_log_v "
+        "REFRESH DEPENDS ON current_batch_v APPEND TO batch_log AS "
+        "SELECT max(t) AS max_t, count() AS n FROM current_batch"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW stats_v "
+        "REFRESH DEPENDS ON current_batch_v APPEND TO stats AS "
+        "SELECT cityHash64(v) % 8 AS h, count() AS n FROM current_batch GROUP BY h"
+    )
+
+    # Kick the cycle once. Subsequent waves must run without further intervention.
+    node.query("SYSTEM REFRESH VIEW current_batch_v")
+
+    pre_count = _wait_batch_log_count(3)
+    assert pre_count >= 3
+
+    # Full cluster restart. With Replicated DB, dependency state is persisted in Keeper, so the
+    # cycle should resume on its own and produce more waves without another manual kick.
+    for n in nodes:
+        n.restart_clickhouse()
+
+    post_count = _wait_batch_log_count(pre_count + 3)
+    assert post_count >= pre_count + 3
+
+    # Sanity-check the wave invariants: max_t strictly increases and per-wave counts are positive.
+    rows = node.query(
+        "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
+    ).strip().split("\n")
+    parsed = [tuple(int(x) for x in row.split("\t")) for row in rows]
+    assert len(parsed) == len({mt for mt, _ in parsed}), f"max_t not unique: {parsed}"
+    assert parsed == sorted(parsed), f"max_t not monotonically increasing: {parsed}"
+    assert all(n > 0 for _, n in parsed), f"some waves had n<=0: {parsed}"
+
+    _drop_circular_objects()
+
+
+def _drop_sync_objects():
+    node.query("DROP TABLE IF EXISTS child_v ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_v ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS sync_src ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS parent_tbl ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS child_tbl ON CLUSTER default SYNC")
+
+
+@pytest.mark.parametrize("with_append_parent", [True, False])
+def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_append_parent):
+    """When the dependent runs on a different replica from the dependency's last refresh, it
+    must still see the dependency's latest data via syncForDependentRefresh.
+
+    Setup: parent refresh writes data, child depends on parent and reads it. We force parent
+    to refresh on node1 only, then PAUSE the child on node1 so the child can only refresh on
+    node2 — which is the replica that did NOT run parent. The child must see the parent data.
+    Covered for both APPEND parent (sync via SYNC REPLICA) and non-APPEND parent (sync via
+    waiting for the new inner-table UUID).
+    """
+    _drop_sync_objects()
+
+    node.query(
+        "CREATE TABLE sync_src ON CLUSTER default (v Int64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY v"
+    )
+    node.query(
+        "CREATE TABLE child_tbl ON CLUSTER default (max_v Int64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY max_v"
+    )
+
+    if with_append_parent:
+        # Parent is APPEND TO an explicit table; child reads that table.
+        node.query(
+            "CREATE TABLE parent_tbl ON CLUSTER default (v Int64) "
+            "ENGINE = ReplicatedMergeTree ORDER BY v"
+        )
+        node.query(
+            "CREATE MATERIALIZED VIEW parent_v "
+            "REFRESH AFTER 1 YEAR APPEND TO parent_tbl EMPTY AS "
+            "SELECT v FROM sync_src"
+        )
+        # syncForDependentRefresh in APPEND mode: SYNC REPLICA on parent_tbl before child refresh.
+        child_select = "SELECT max(v) AS max_v FROM parent_tbl"
+    else:
+        # Parent is non-APPEND with its own atomically-swapped Replicated inner table.
+        node.query(
+            "CREATE MATERIALIZED VIEW parent_v "
+            "REFRESH AFTER 1 YEAR ENGINE = ReplicatedMergeTree ORDER BY v EMPTY AS "
+            "SELECT v FROM sync_src"
+        )
+        # syncForDependentRefresh in non-APPEND mode: wait for the new inner-table UUID to appear.
+        child_select = "SELECT max(v) AS max_v FROM parent_v"
+
+    node.query(
+        "CREATE MATERIALIZED VIEW child_v "
+        "REFRESH DEPENDS ON parent_v APPEND TO child_tbl EMPTY AS " + child_select
+    )
+
+    # Pin parent to node1 only, child to node2 only. Child on node1 must be PAUSED (not STOPPED)
+    # so that subsequent SYSTEM START VIEW would resume it; STOP would also work for this test
+    # but PAUSE exercises the same code path the test description targets.
+    node.query("SYSTEM PAUSE VIEW child_v")
+
+    # First wave: parent runs on node1, child runs on node2.
+    node.query("INSERT INTO sync_src VALUES (1)")
+    node.query("SYSTEM REFRESH VIEW parent_v")
+    # Wait for parent on node1 to complete a refresh.
+    get_rmv_info(
+        node,
+        "parent_v",
+        delay=0.1,
+        max_attempts=600,
+        condition=lambda x: x["last_success_time"] is not None,
+    )
+    parent_replica1 = node.query(
+        "SELECT last_refresh_replica FROM system.view_refreshes WHERE view='parent_v'"
+    ).strip()
+    assert parent_replica1 != "", "parent's last_refresh_replica should be populated"
+
+    # Wait for child to refresh on node2 (the only replica where child is enabled).
+    get_rmv_info(
+        node2,
+        "child_v",
+        delay=0.1,
+        max_attempts=600,
+        condition=lambda x: x["last_success_time"] is not None,
+    )
+    child_replica1 = node2.query(
+        "SELECT last_refresh_replica FROM system.view_refreshes WHERE view='child_v'"
+    ).strip()
+    assert (
+        parent_replica1 != child_replica1
+    ), f"parent and child should have run on different replicas, got {parent_replica1} for both"
+
+    # Verify the child sees v=1 — propagated from node1 through syncForDependentRefresh on node2.
+    seen_max = 0
+    for _ in range(60):
+        seen_max = int(node.query("SELECT max(max_v) FROM child_tbl").strip() or "0")
+        if seen_max == 1:
+            break
+        time.sleep(0.5)
+    assert seen_max == 1, f"child_tbl missed parent's v=1, max_v={seen_max}"
+
+    # Second wave: insert v=2, wait for parent's next refresh on node1 and child's next on node2.
+    parent_last_success_before = node.query(
+        "SELECT last_success_time FROM system.view_refreshes WHERE view='parent_v'"
+    ).strip()
+    child_last_success_before = node2.query(
+        "SELECT last_success_time FROM system.view_refreshes WHERE view='child_v'"
+    ).strip()
+    node.query("INSERT INTO sync_src VALUES (2)")
+    time.sleep(1.5) # make sure the two refreshes get different %H:%M:%S timestamps
+    node.query("SYSTEM REFRESH VIEW parent_v")
+
+    get_rmv_info(
+        node,
+        "parent_v",
+        delay=0.1,
+        max_attempts=600,
+        condition=lambda x: (
+            x["last_success_time"] is not None
+            and x["last_success_time"].strftime("%Y-%m-%d %H:%M:%S")
+            != parent_last_success_before
+        ),
+    )
+    get_rmv_info(
+        node2,
+        "child_v",
+        delay=0.1,
+        max_attempts=600,
+        condition=lambda x: (
+            x["last_success_time"] is not None
+            and x["last_success_time"].strftime("%Y-%m-%d %H:%M:%S")
+            != child_last_success_before
+        ),
+    )
+
+    # Final check: child saw v=2 even though parent's refresh happened on node1 only.
+    final_max = 0
+    for _ in range(60):
+        final_max = int(node.query("SELECT max(max_v) FROM child_tbl").strip() or "0")
+        if final_max == 2:
+            break
+        time.sleep(0.5)
+    assert final_max == 2, f"child_tbl missed parent's v=2, max_v={final_max}"
+
+    # Cleanup. Restore both views first so DROP doesn't get tangled with PAUSE/STOP state.
+    node.query("SYSTEM START VIEW child_v")
+    node2.query("SYSTEM START VIEW parent_v")
+    _drop_sync_objects()

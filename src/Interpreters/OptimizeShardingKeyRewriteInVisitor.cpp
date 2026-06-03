@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST_erase.h>
 
 namespace
 {
@@ -168,7 +169,13 @@ public:
         {
             if (isTuple(constant->getResultType()))
             {
-                const auto & tuple = constant->getValue().safeGet<Tuple &>();
+                const auto tuple = constant->getValue().safeGet<Tuple>();
+                /// `IN ()` with an empty constant tuple is a degenerate query that the
+                /// AST-side rewriter (above) also skips via `tuple.size() > 1`. Bail out
+                /// before `tuple.back()` below to avoid UB on an empty `Tuple`.
+                if (tuple.empty())
+                    return;
+
                 Tuple new_tuple;
                 new_tuple.reserve(tuple.size());
 

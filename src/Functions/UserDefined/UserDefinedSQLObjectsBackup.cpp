@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
 
@@ -34,13 +33,13 @@ void backupUserDefinedSQLObjects(
     BackupEntriesCollector & backup_entries_collector,
     const String & data_path_in_backup,
     UserDefinedSQLObjectType object_type,
-    const std::vector<std::pair<String, ASTPtr>> & objects)
+    const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & objects)
 {
-    std::vector<std::pair<String, BackupEntryPtr>> backup_entries;
+    VectorWithMemoryTracking<std::pair<String, BackupEntryPtr>> backup_entries;
     backup_entries.reserve(objects.size());
     for (const auto & [object_name, create_object_query] : objects)
         backup_entries.emplace_back(
-            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(queryToString(create_object_query)));
+            escapeForFileName(object_name) + ".sql", std::make_shared<BackupEntryFromMemory>(create_object_query->formatWithSecretsOneLine()));
 
     auto context = backup_entries_collector.getContext();
     const auto & storage = context->getUserDefinedSQLObjectsStorage();
@@ -82,7 +81,7 @@ void backupUserDefinedSQLObjects(
 }
 
 
-std::vector<std::pair<String, ASTPtr>>
+VectorWithMemoryTracking<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type)
 {
     auto context = restorer.getContext();
@@ -109,7 +108,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         }
     }
 
-    std::vector<std::pair<String, ASTPtr>> res;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> res;
 
     for (const auto & filename : filenames)
     {

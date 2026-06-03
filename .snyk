@@ -1,4 +1,0 @@
-# Snyk (https://snyk.io) policy file
-exclude:
-  global:
-    - tests/**

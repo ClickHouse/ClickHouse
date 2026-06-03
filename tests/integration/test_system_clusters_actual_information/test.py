@@ -30,8 +30,9 @@ def started_cluster():
 
 def test(started_cluster):
     node.query("SYSTEM RELOAD CONFIG")
+    # serialize_query_plan=0 because local table does not exist and distributed query fails with a different error
     error = node.query_and_get_error(
-        "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1"
+        "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1, serialize_query_plan=0"
     )
 
     result = node.query(

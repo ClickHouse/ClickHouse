@@ -12,14 +12,8 @@
     <query tag='RIGHT'>SELECT MAX(test1.a) FROM test RIGHT JOIN test1 on test.b = test1.b</query>
     <query tag='FULL'>SELECT MAX(test1.a) FROM test FULL JOIN test1 on test.b = test1.b</query>
 
-    <!-- test for grace hash join -->
-    <settings>
-        <allow_experimental_join_right_table_sorting>true</allow_experimental_join_right_table_sorting>
-        <join_to_sort_maximum_table_rows>100000</join_to_sort_maximum_table_rows>
-    </settings>
-
-    <query tag='INNER'>SELECT MAX(test1.a) FROM test INNER JOIN test1 on test.b = test1.b settings join_algorithm='grace_hash'</query>
-    <query tag='LEFT'>SELECT MAX(test1.a) FROM test LEFT JOIN test1 on test.b = test1.b settings join_algorithm='grace_hash'</query>
+    <query tag='INNER'>SELECT MAX(test1.a) FROM test INNER JOIN test1 on test.b = test1.b settings join_algorithm='grace_hash', allow_experimental_join_right_table_sorting=true, join_to_sort_maximum_table_rows=100000</query>
+    <query tag='LEFT'>SELECT MAX(test1.a) FROM test LEFT JOIN test1 on test.b = test1.b settings join_algorithm='grace_hash', allow_experimental_join_right_table_sorting=true, join_to_sort_maximum_table_rows=100000</query>
 
     <drop_query>DROP TABLE IF EXISTS test</drop_query>
     <drop_query>DROP TABLE IF EXISTS test1</drop_query>

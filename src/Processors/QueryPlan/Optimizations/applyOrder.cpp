@@ -5,12 +5,15 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 #include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -36,9 +39,9 @@ struct SortingProperty
     SortScope sort_scope = SortScope::Stream;
 };
 
-SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
+static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree*>(parent->step.get()))
+    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
@@ -132,6 +135,18 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
         return {sorting_step->getSortDescription(), scope};
     }
 
+    if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
+    {
+        if (properties->sort_scope == SortingProperty::SortScope::Global)
+            limit_by_step->applyOrder(properties->sort_description);
+    }
+
+    if (auto * negative_limit_by_step = typeid_cast<NegativeLimitByStep *>(parent->step.get()))
+    {
+        if (properties->sort_scope == SortingProperty::SortScope::Global)
+            negative_limit_by_step->applyOrder(properties->sort_description);
+    }
+
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))
     {
         if (transforming->getDataStreamTraits().preserves_sorting)
@@ -141,16 +156,17 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
     if (auto * /*union_step*/ _ = typeid_cast<UnionStep *>(parent->step.get()))
     {
         SortDescription common_sort_description = std::move(properties->sort_description);
-        auto sort_scope = properties->sort_scope;
 
         for (size_t i = 1; i < parent->children.size(); ++i)
-        {
             common_sort_description = commonPrefix(common_sort_description, properties[i].sort_description);
-            sort_scope = std::min(sort_scope, properties[i].sort_scope);
-        }
 
         if (!common_sort_description.empty())
+        {
+            /// `UnionStep` concatenates child pipelines without a sorted merge, so with multiple
+            /// children each stream stays sorted by the common prefix.
+            auto sort_scope = parent->children.size() == 1 ? properties->sort_scope : SortingProperty::SortScope::Stream;
             return {std::move(common_sort_description), sort_scope};
+        }
     }
 
     return {};

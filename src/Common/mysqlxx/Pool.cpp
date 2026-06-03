@@ -132,6 +132,9 @@ Pool::Pool(
      const std::string & user_,
      const std::string & password_,
      unsigned port_,
+     const std::string & ssl_ca_,
+     const std::string & ssl_cert_,
+     const std::string & ssl_key_,
      const std::string & socket_,
      unsigned connect_timeout_,
      unsigned rw_timeout_,
@@ -149,6 +152,9 @@ Pool::Pool(
     , socket(socket_)
     , connect_timeout(connect_timeout_)
     , rw_timeout(rw_timeout_)
+    , ssl_ca(ssl_ca_)
+    , ssl_cert(ssl_cert_)
+    , ssl_key(ssl_key_)
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
 {
@@ -361,7 +367,7 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    std::unique_ptr conn_ptr = std::make_unique<Connection>();
+    auto conn_ptr = std::make_unique<Connection>();
 
     try
     {

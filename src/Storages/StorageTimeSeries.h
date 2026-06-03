@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <array>
 
 
 namespace DB
@@ -16,41 +17,48 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() DATA [db].table1 TAGS [db].table2 METRICS [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() DATA ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
 /// -OR-
-/// CREATE TABLE ts (
-///    id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
-///    instance LowCardinality(String),
-///    job String
-///    ) ENGINE = TimeSeries()
+/// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
-///    DATA ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
+///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica')
+///    TAGS INNER COLUMNS (
+///        id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
+///        instance LowCardinality(String),
+///        job String)
+///    ENGINE = ReplacingMergeTree, ...
 ///
-class StorageTimeSeries final : public IStorage, WithContext
+class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
 {
 public:
-    /// Adds missing columns and reorder columns, and also adds inner table engines if they aren't specified.
-    static void normalizeTableDefinition(ASTCreateQuery & create_query, const ContextPtr & local_context);
-
-    StorageTimeSeries(const StorageID & table_id, const ContextPtr & local_context, LoadingStrictnessLevel mode,
+    StorageTimeSeries(const StorageID & table_id, const ContextPtr & local_context,
+                      LoadingStrictnessLevel mode, bool is_restore_from_backup,
                       const ASTCreateQuery & query, const ColumnsDescription & columns, const String & comment);
 
     ~StorageTimeSeries() override;
 
     std::string getName() const override { return "TimeSeries"; }
 
-    const TimeSeriesSettings & getStorageSettings() const;
+    std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
 
-    StorageID getTargetTableId(ViewTarget::Kind target_kind) const;
+    /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StorageID getTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
+    StorageID tryGetTargetTableID(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
-    void startup() override;
-    void shutdown(bool is_drop) override;
+    bool isInnerTable(ViewTarget::Kind target_kind) const;
+    bool hasInnerTables() const { return has_inner_tables; }
 
-    void read(
+    /// Returns the three target kinds: Samples, Tags, Metrics.
+    static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
+    {
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
+    }
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -59,6 +67,8 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
+
+    static VirtualColumnsDescription createVirtuals();
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
@@ -85,23 +95,41 @@ public:
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     Strings getDataPaths() const override;
+#if CLICKHOUSE_CLOUD
+    std::vector<StorageID> getInnerStorageIDs() const override;
+#endif
 
 private:
-    TimeSeriesSettingsPtr storage_settings;
-
+    /// Represents one of the three target tables (Samples, Tags, Metrics).
+    /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
-        ViewTarget::Kind kind;
+        ViewTarget::Kind kind{};
         StorageID table_id = StorageID::createEmpty();
-        bool is_inner_table;
+        bool is_inner_table = false;
     };
 
-    std::vector<Target> targets;
-    bool has_inner_tables;
+    /// Initializes information about three target tables (Samples, Tags, Metrics).
+    /// The function also creates inner tables (unless this is an ATTACH query).
+    static std::vector<Target> buildTargets(
+        const ASTCreateQuery & create_query,
+        const StorageID & table_id,
+        const ContextPtr & local_context, LoadingStrictnessLevel mode);
+
+    /// Implementation for getTargetTable() and tryGetTargetTable().
+    StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
+
+    /// The CREATE query with normalization applied.
+    const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
+
+    MultiVersion<TimeSeriesSettings> storage_settings;
+
+    const std::vector<Target> targets;
+    const bool has_inner_tables;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

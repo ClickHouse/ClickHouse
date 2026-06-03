@@ -1,17 +1,17 @@
 #pragma once
 
-#include "Connection.h"
-#include <Interpreters/Context.h>
+#include <Client/Connection.h>
+#include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/BlockIO.h>
-#include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/ColumnsDescription.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB
 {
+class ColumnsDescription;
 class PullingAsyncPipelineExecutor;
 class PushingAsyncPipelineExecutor;
 class PushingPipelineExecutor;
@@ -38,12 +38,13 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
 
     InternalProfileEventsQueuePtr profile_queue;
+    InternalTextLogsQueuePtr logs_queue;
 
     std::unique_ptr<Exception> exception;
 
     /// Current block to be sent next.
     std::optional<Block> block;
-    std::optional<ColumnsDescription> columns_description;
+    std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
@@ -62,7 +63,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
+    QueryScope query_scope_holder;
 };
 
 
@@ -78,6 +79,7 @@ public:
 
     explicit LocalConnection(
         std::unique_ptr<Session> && session_,
+        ReadBuffer * in_,
         bool send_progress_ = false,
         bool send_profile_events_ = false,
         const String & server_display_name_ = "");
@@ -97,11 +99,14 @@ public:
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         std::unique_ptr<Session> && session,
+        ReadBuffer * in_,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");
 
     void setDefaultDatabase(const String & database) override;
+
+    void setCancelCallback(std::function<bool()> callback) override { is_cancelled_callback = std::move(callback); }
 
     void getServerVersion(const ConnectionTimeouts & timeouts,
                           String & name,
@@ -130,6 +135,8 @@ public:
         const std::vector<String> & external_roles,
         std::function<void(const Progress &)> process_progress_callback) override;
 
+    void sendQueryPlan(const QueryPlan &) override;
+
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
@@ -147,6 +154,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 
@@ -171,6 +179,7 @@ private:
     bool pollImpl();
 
     bool needSendProgressOrMetrics();
+    bool needSendLogs();
 
     ContextMutablePtr query_context;
     std::unique_ptr<Session> session;
@@ -178,6 +187,9 @@ private:
     bool send_progress;
     bool send_profile_events;
     String server_display_name;
+    /// Optional callback to check if the query was cancelled (e.g. via Ctrl+C).
+    /// Set by the client application; used as `interactive_cancel_callback` on the query context.
+    std::function<bool()> is_cancelled_callback;
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;

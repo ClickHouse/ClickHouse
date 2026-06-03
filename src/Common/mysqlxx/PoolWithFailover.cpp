@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
 
 using namespace mysqlxx;
 
-auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
+static auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
 {
     return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
     {
@@ -40,7 +40,7 @@ auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
             }
-            catch (...)
+            catch (const std::exception &)
             {
                 if (interval_milliseconds >= 1000)
                     Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");
@@ -121,6 +121,9 @@ PoolWithFailover::PoolWithFailover(
         const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
+        const std::string & ssl_ca,
+        const std::string & ssl_cert,
+        const std::string & ssl_key,
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
@@ -137,7 +140,7 @@ PoolWithFailover::PoolWithFailover(
     for (const auto & [host, port] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
-            host, user, password, port,
+            host, user, password, port, ssl_ca, ssl_cert, ssl_key,
             /* socket_ = */ "",
             connect_timeout_,
             rw_timeout_,

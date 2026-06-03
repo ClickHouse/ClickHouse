@@ -1,13 +1,16 @@
-#include "ArrowBlockOutputFormat.h"
+#include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
+#include <Processors/Port.h>
+
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
 #include <arrow/result.h>
-#include "ArrowBufferedStreams.h"
-#include "CHColumnToArrowColumn.h"
 
 
 namespace DB
@@ -35,7 +38,7 @@ arrow::Compression::type getArrowCompression(FormatSettings::ArrowCompression me
 
 }
 
-ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)
     , stream{stream_}
     , format_settings{format_settings_}
@@ -55,11 +58,13 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Arrow",
             CHColumnToArrowColumn::Settings
             {
-                format_settings.arrow.output_string_as_string,
-                format_settings.arrow.output_fixed_string_as_fixed_byte_array,
-                format_settings.arrow.low_cardinality_as_dictionary,
-                format_settings.arrow.use_signed_indexes_for_dictionary,
-                format_settings.arrow.use_64_bit_indexes_for_dictionary
+                .output_string_as_string = format_settings.arrow.output_string_as_string,
+                .output_fixed_string_as_fixed_byte_array = format_settings.arrow.output_fixed_string_as_fixed_byte_array,
+                .low_cardinality_as_dictionary = format_settings.arrow.low_cardinality_as_dictionary,
+                .use_signed_indexes_for_dictionary = format_settings.arrow.use_signed_indexes_for_dictionary,
+                .use_64_bit_indexes_for_dictionary = format_settings.arrow.use_64_bit_indexes_for_dictionary,
+                .output_date_as_uint16 = format_settings.arrow.output_date_as_uint16,
+                .output_unsupported_types_as_binary = format_settings.arrow.output_unsupported_types_as_binary,
             });
     }
 
@@ -120,30 +125,35 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
+void registerOutputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings,
+           FormatFilterInfoPtr /*format_filter_info*/)
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatHasNoAppendSupport("Arrow");
     factory.markOutputFormatNotTTYFriendly("Arrow");
+    factory.setContentType("Arrow", "application/octet-stream");
 
     factory.registerOutputFormat(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings,
+          FormatFilterInfoPtr /*format_filter_info*/)
         {
-            return std::make_shared<ArrowBlockOutputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockOutputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
     factory.markFormatHasNoAppendSupport("ArrowStream");
     factory.markOutputFormatPrefersLargeBlocks("ArrowStream");
     factory.markOutputFormatNotTTYFriendly("ArrowStream");
+    factory.setContentType("ArrowStream", "application/octet-stream");
 }
 
 }
@@ -153,6 +163,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatArrow(FormatFactory &);
 void registerOutputFormatArrow(FormatFactory &)
 {
 }

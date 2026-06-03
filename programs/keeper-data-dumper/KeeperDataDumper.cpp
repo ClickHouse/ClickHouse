@@ -4,6 +4,7 @@
 #include <Poco/Logger.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
@@ -20,6 +21,9 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_logs;
 }
+
+namespace
+{
 
 void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
 {
@@ -38,7 +42,7 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
             ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
             ", czxid: " << value.stats.czxid <<
             ", mzxid: " << value.stats.mzxid <<
-            ", numChildren: " << value.stats.numChildren() <<
+            ", numChildren: " << value.numChildren() <<
             ", dataLength: " << value.stats.data_size <<
             "}" << std::endl;
         std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
@@ -46,14 +50,17 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> ma
         for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + child.toString());
+                keys.push(key + std::string{child});
             else
-                keys.push(key + "/" + child.toString());
+                keys.push(key + "/" + std::string{child});
         }
     }
     std::cout << std::flush;
 }
 
+}
+
+int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
 {
     if (argc != 3)
@@ -67,14 +74,13 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     Poco::Logger::root().setLevel("trace");
 
     auto logger = getLogger("keeper-dumper");
-    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
     KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(queue, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 

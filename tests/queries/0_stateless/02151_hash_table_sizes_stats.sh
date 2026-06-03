@@ -40,6 +40,10 @@ run_query() {
     SET merge_tree_min_rows_for_concurrent_read = 1;
     SET max_untracked_memory = 0;
     SET max_size_to_preallocate_for_aggregation = 1e12;
+    -- This test measures hash table preallocation for the full aggregation;
+    -- the trivial GROUP BY LIMIT optimization would cap aggregation at LIMIT
+    -- distinct keys and break the preallocation size we want to observe.
+    SET optimize_trivial_group_by_limit_query = 0;
     $query"
 }
 
@@ -48,7 +52,7 @@ check_preallocated_elements() {
   $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT COUNT(*)
       FROM system.query_log
-     WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase()
            AND ProfileEvents['AggregationPreallocatedElementsInHashTables'] BETWEEN $2 AND $3"
 }
 
@@ -57,7 +61,7 @@ check_convertion_to_two_level() {
   $CLICKHOUSE_CLIENT --param_query_id="$1" -q "
     SELECT SUM(ProfileEvents['AggregationHashTablesInitializedAsTwoLevel']) BETWEEN 1 AND $max_threads
       FROM system.query_log
-     WHERE event_date >= yesterday() AND query_id = {query_id:String} AND current_database = currentDatabase()"
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = {query_id:String} AND current_database = currentDatabase()"
 }
 
 print_border() {
@@ -68,7 +72,7 @@ print_border() {
 expected_results=()
 
 check_expectations() {
-  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+  $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
   for i in "${!expected_results[@]}"; do
     read -a args <<< "${expected_results[$i]}"

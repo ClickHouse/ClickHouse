@@ -13,8 +13,10 @@ ${CLICKHOUSE_CLIENT} --input_format_parallel_parsing=0 -q "INSERT INTO data SELE
 # well for TSV it is ok, but for RowBinary:
 #   Code: 33. DB::Exception: Cannot read all data. Bytes read: 1. Bytes expected: 4.
 # so check that the exception message contain the data source.
-${CLICKHOUSE_CLIENT} --input_format_parallel_parsing=0 -q "INSERT INTO data FORMAT TSV
+${CLICKHOUSE_CLIENT} --async_insert=0 --input_format_parallel_parsing=0 -q "INSERT INTO data FORMAT TSV
  " <<<2 |& grep -F -c 'data for INSERT was parsed from query'
+${CLICKHOUSE_CLIENT} --async_insert=1 --input_format_parallel_parsing=0 -q "INSERT INTO data FORMAT TSV
+ " <<<2 |& grep -F -c 'Processing async inserts with both inlined and external data (from stdin or infile) is not supported'
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM data"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE data"

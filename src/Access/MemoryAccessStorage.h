@@ -30,10 +30,13 @@ public:
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);
     void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
+    void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify);
 
     bool exists(const UUID & id) const override;
 
     bool isBackupAllowed() const override { return backup_allowed; }
+
+    bool isEphemeral() const override { return true; }
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
@@ -43,9 +46,9 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
-    bool removeNoLock(const UUID & id, bool throw_if_not_exists);
-    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify = true);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool notify = true);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool notify = true);
 
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
     void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);

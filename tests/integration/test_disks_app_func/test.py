@@ -12,6 +12,8 @@ def started_cluster():
             "disks_app_test",
             main_configs=["config.xml"],
             with_minio=True,
+            with_zookeeper=True,
+            with_remote_database_disk=False,  # The tests work on the local disk and check local files
         )
         cluster.start()
 
@@ -48,6 +50,27 @@ def write(source, disk, path):
                     f"{disk}",
                     "--query",
                     f"'write {path}'",
+                ]
+            ),
+        ]
+    )
+
+
+def touch(source, disk, path):
+    source.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'tester' |"
+            + " ".join(
+                [
+                    "/usr/bin/clickhouse",
+                    "disks",
+                    "--save-logs",
+                    "--disk",
+                    f"{disk}",
+                    "--query",
+                    f"'touch {path}'",
                 ]
             ),
         ]
@@ -92,6 +115,20 @@ def remove(source, disk, path):
             f"{disk}",
             "--query",
             f"remove {path}",
+        ]
+    )
+
+
+def remove_recurive(source, disk, path):
+    return source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--disk",
+            f"{disk}",
+            "--query",
+            f"remove -r {path}",
         ]
     )
 
@@ -152,18 +189,50 @@ def test_disks_app_func_ld(started_cluster):
     )
 
     disks = list(
-        sorted(
-            map(
-                lambda x: x.split(":")[0], filter(lambda x: len(x) > 1, out.split("\n"))
-            )
-        )
+        map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
     )
 
-    assert disks[:4] == ["default", "local", "test1", "test2"]
+    assert disks == [
+        "Initialized disks:",
+        "default:/",
+        "Uninitialized disks:",
+        "local",
+        "test1",
+        "test2",
+        "test3",
+        "test4",
+    ]
+
+    out = source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--query",
+            "switch-disk local; list-disks",
+        ]
+    )
+
+    disks = list(
+        map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
+    )
+
+    assert disks == [
+        "Initialized disks:",
+        "default:/",
+        "local:/",
+        "Uninitialized disks:",
+        "test1",
+        "test2",
+        "test3",
+        "test4",
+    ]
 
 
 def test_disks_app_func_ls(started_cluster):
     source = cluster.instances["disks_app_test"]
+
+    remove_recurive(source, "test1", ".")
 
     init_data(source)
 
@@ -182,7 +251,11 @@ def test_disks_app_func_ls(started_cluster):
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    write(source, "test1", "path1")
+    touch(source, "test1", "path1")
+
+    out = ls(source, "test1", ".")
+
+    assert "path1" in out
 
     source.exec_in_container(
         [

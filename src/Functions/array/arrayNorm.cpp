@@ -1,6 +1,5 @@
 #include <cmath>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -136,7 +135,7 @@ struct LinfNorm
 
 
 template <class Kernel>
-class FunctionArrayNorm : public IFunction
+class FunctionArrayNorm final : public IFunction
 {
 public:
     String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
@@ -154,24 +153,26 @@ public:
 
         switch (array_type->getNestedType()->getTypeId())
         {
+            case TypeIndex::BFloat16:
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
             case TypeIndex::UInt32:
+            case TypeIndex::UInt64:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
-            case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
-                    getName(), array_type->getNestedType()->getName());
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    getName(),
+                    array_type->getNestedType()->getName());
         }
     }
 
@@ -205,6 +206,7 @@ private:
     action(Int16)   \
     action(Int32)   \
     action(Int64)   \
+    action(BFloat16) \
     action(Float32) \
     action(Float64)
 
@@ -225,8 +227,8 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
-                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    "Arguments of function {} have nested type {}. "
+                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(), nested_type->getName());
         }
     }
@@ -294,7 +296,7 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
                     "Argument p of function {} must be numeric constant",
                     getName());
 
-    if (!isColumnConst(*arguments[1].column) && arguments[1].column->size() != 1)
+    if (!isColumnConst(*arguments[1].column))
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Second argument for function {} must be either constant Float64 or constant UInt",
@@ -312,6 +314,11 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
 
 
 /// These functions are used by TupleOrArrayFunction
+FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
+FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
+FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
+FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
+FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_) { return FunctionArrayNorm<L2SquaredNorm>::create(context_); }

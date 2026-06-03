@@ -3,7 +3,8 @@
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
-#include <Common/Exception.h>
+
+#include <fmt/format.h>
 
 namespace Poco
 {
@@ -15,11 +16,6 @@ class AbstractConfiguration; // NOLINT(cppcoreguidelines-virtual-class-destructo
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_TABLE;
-}
 
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
@@ -73,14 +69,7 @@ struct StorageID
 
     bool operator==(const StorageID & rhs) const;
 
-    void assertNotEmpty() const
-    {
-        // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
-        if (empty())
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
-        if (table_name.empty() && !database_name.empty())
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty, but database name is not");
-    }
+    void assertNotEmpty() const;
 
     /// Avoid implicit construction of empty StorageID. However, it's needed for deferred initialization.
     static StorageID createEmpty() { return {}; }
@@ -102,12 +91,25 @@ struct StorageID
         size_t operator()(const StorageID & storage_id) const;
     };
 
+    struct DatabaseAndTableNameAndUUIDHash
+    {
+        size_t operator()(const StorageID & storage_id) const;
+    };
+
     /// Checks if the database and table name of two StorageIDs are equal.
     struct DatabaseAndTableNameEqual
     {
         bool operator()(const StorageID & left, const StorageID & right) const
         {
-            return (left.database_name == right.database_name) && (left.table_name == right.table_name);
+            return std::tie(left.database_name, left.table_name) == std::tie(right.database_name, right.table_name);
+        }
+    };
+
+    struct DatabaseAndTableNameAndUUIDEqual
+    {
+        bool operator()(const StorageID & left, const StorageID & right) const
+        {
+            return std::tie(left.database_name, left.table_name, left.uuid) == std::tie(right.database_name, right.table_name, right.uuid);
         }
     };
 

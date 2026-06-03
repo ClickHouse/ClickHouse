@@ -1,11 +1,18 @@
 #pragma once
 
+#include <unordered_map>
+
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 
 namespace DB
 {
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /// Implementation for LIMIT N OFFSET M
 /// This processor support multiple inputs and outputs (the same number).
@@ -49,7 +56,11 @@ private:
     };
 
     std::vector<PortsData> ports_data;
+    std::unordered_map<const InputPort *, PortsData *> input_port_to_data;
+    std::unordered_map<const OutputPort *, PortsData *> output_port_to_data;
     size_t num_finished_port_pairs = 0;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     Chunk makeChunkWithPreviousRow(const Chunk & current_chunk, UInt64 row_num) const;
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
@@ -57,13 +68,18 @@ private:
 
 public:
     LimitTransform(
-        const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams = 1,
-        bool always_read_till_end_ = false, bool with_ties_ = false,
-        SortDescription description_ = {});
+        SharedHeader header_,
+        UInt64 limit_,
+        UInt64 offset_,
+        size_t num_streams = 1,
+        bool always_read_till_end_ = false,
+        bool with_ties_ = false,
+        SortDescription description_ = {},
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "Limit"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
+    Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data);

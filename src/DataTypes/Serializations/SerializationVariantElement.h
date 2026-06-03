@@ -2,7 +2,6 @@
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 
 namespace DB
@@ -20,13 +19,17 @@ private:
     String variant_element_name;
     ColumnVariant::Discriminator variant_discriminator;
 
-public:
     SerializationVariantElement(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
         : SerializationWrapper(nested_)
         , variant_element_name(variant_element_name_)
         , variant_discriminator(variant_discriminator_)
     {
     }
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+    static SerializationPtr create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_);
+    size_t allocatedBytes() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -56,6 +59,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -82,7 +86,7 @@ public:
 
         DataTypePtr create(const DataTypePtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 private:
     friend SerializationVariant;
@@ -90,9 +94,10 @@ private:
 
     struct DeserializeBinaryBulkStateVariantElement;
 
-    static size_t deserializeCompactDiscriminators(
+    static std::pair<size_t, size_t> deserializeCompactDiscriminators(
         ColumnPtr & discriminators_column,
         ColumnVariant::Discriminator variant_discriminator,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

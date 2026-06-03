@@ -43,7 +43,7 @@ SELECT * FROM t1 RIGHT JOIN t2 ON NULL ORDER BY t1.id NULLS FIRST, t2.id SETTING
 SELECT '- full -';
 SELECT * FROM t1 FULL JOIN t2 ON NULL ORDER BY t1.id NULLS FIRST, t2.id SETTINGS join_use_nulls = 1;
 
--- in this cases in old analuyzer we have AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION
+-- in this cases in old analyzer we have AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION
 -- because there's some function in ON expression is not constant itself (result is constant)
 SELECT * FROM t1 JOIN t2 ON 1 = 1 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError AMBIGUOUS_COLUMN_NAME,NOT_IMPLEMENTED }
 SELECT * FROM t1 JOIN t2 ON 1 = 1 SETTINGS join_algorithm = 'partial_merge'; -- { serverError AMBIGUOUS_COLUMN_NAME,NOT_IMPLEMENTED }
@@ -113,6 +113,34 @@ FULL JOIN ( SELECT sum(number) as a from numbers(3) GROUP BY NULL) AS t2
 ON TRUE
 SETTINGS enable_analyzer=1, join_use_nulls=1;
 
+-- Join on constant with empty table fixed only with new logical join step
+SET enable_parallel_replicas = 0;
+SET join_use_nulls = 1;
+SET enable_analyzer = 1;
+
+CREATE TABLE empty_table (id Int) ENGINE = Memory;
+
+SELECT * FROM t1 LEFT JOIN empty_table ON 1 = 1 ORDER BY ALL;
+SELECT * FROM t1 FULL JOIN empty_table ON 1 = 1 ORDER BY ALL;
+SELECT * FROM t1 LEFT JOIN empty_table ON 1 = 2 ORDER BY ALL;
+SELECT * FROM t1 FULL JOIN empty_table ON 1 = 2 ORDER BY ALL;
+SELECT * FROM empty_table RIGHT JOIN t1 ON 1 = 1 ORDER BY ALL;
+SELECT * FROM empty_table FULL JOIN t1 ON 1 = 1 ORDER BY ALL;
+SELECT * FROM empty_table RIGHT JOIN t1 ON 1 = 2 ORDER BY ALL;
+SELECT * FROM empty_table FULL JOIN t1 ON 1 = 2 ORDER BY ALL;
+
+SELECT '- empty -';
+SELECT * FROM t1 JOIN empty_table ON 1 = 1;
+SELECT * FROM t1 RIGHT JOIN empty_table ON 1 = 1;
+SELECT * FROM t1 JOIN empty_table ON 1 = 2;
+SELECT * FROM t1 RIGHT JOIN empty_table ON 1 = 2;
+SELECT * FROM empty_table JOIN t1 ON 1 = 1;
+SELECT * FROM empty_table LEFT JOIN t1 ON 1 = 1;
+SELECT * FROM empty_table JOIN t1 ON 1 = 2;
+SELECT * FROM empty_table LEFT JOIN t1 ON 1 = 2;
+SELECT '- empty -';
+
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS empty_table;

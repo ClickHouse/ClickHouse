@@ -1,5 +1,6 @@
 import difflib
 import logging
+import re
 import time
 from io import IOBase
 
@@ -153,7 +154,7 @@ def exec_query_with_retry(
             res = instance.query(query, timeout=timeout, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
-            break
+            return res
         except Exception as ex:
             exception = ex
             if not silent:
@@ -163,6 +164,32 @@ def exec_query_with_retry(
             time.sleep(sleep_time)
     else:
         raise exception
+
+
+# Returns whether the specified TSV is close to the expectation.
+# The function finds numbers (both integers and floating-point) and compares them with the specified epsilon.
+# Integers and floating-point are treated in the same way ("1.0" is the same as "1"),
+# and numeric parts of timestamps/dates are also compared as numbers.
+def tsv_close_to(result, expected, eps=0):
+    tsv_result = TSV(result)
+    tsv_expected = TSV(expected)
+    if tsv_result == tsv_expected:
+        return True
+    if eps == 0:
+        return False
+    number_pattern = r"([+-]?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)"
+    splitted1 = re.split(number_pattern, str(tsv_result))
+    splitted2 = re.split(number_pattern, str(tsv_expected))
+    if len(splitted1) != len(splitted2):
+        return False
+    for i, element1 in enumerate(splitted1):
+        element2 = splitted2[i]
+        if element1 != element2:
+            if (not re.fullmatch(number_pattern, element1)) or (not re.fullmatch(number_pattern, element2)):
+                return False
+            if abs(float(element1) - float(element2)) > eps:
+                return False
+    return True
 
 
 def csv_compare(result, expected):
@@ -198,3 +225,12 @@ def wait_condition(func, condition, max_attempts=10, delay=0.1):
     raise Exception(
         f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
     )
+
+
+def get_retry_number(request, fallback=1):
+    retry_number = getattr(request.node, "callspec", None)
+    if retry_number is not None:
+        retry_number = retry_number.params.get("__pytest_repeat_step_number", fallback)
+    else:
+        retry_number = fallback
+    return retry_number

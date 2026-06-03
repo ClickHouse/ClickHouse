@@ -23,6 +23,11 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
+    /// This flag is set periodically in a background thread.
+    /// If it is true, then mutation is done. If it is false,
+    /// then mutation may be already done but not processed by this thread.
+    bool is_done = false;
+
     UInt64 block_number = 0;
 
     String latest_failed_part;
@@ -32,9 +37,9 @@ struct MergeTreeMutationEntry
     String latest_fail_error_code_name;
 
     /// ID of transaction which has created mutation.
-    TransactionID tid = Tx::PrehistoricTID;
+    TransactionID tid = Tx::NonTransactionalTID;
     /// CSN of transaction which has created mutation
-    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or PrehistoricCSN if there is no transaction.
+    /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or NonTransactionalCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
     /// Create a new entry and write it to a temporary file.

@@ -1,15 +1,16 @@
-#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <optional>
 
-#include <Common/escapeForFileName.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
 #include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -20,13 +21,15 @@
 #include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/Context.h>
 
-#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageStripeLog.h>
-#include "StorageLogSettings.h"
+#include <Storages/StorageLogSettings.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/ISource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -39,12 +42,11 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <base/insertAtEnd.h>
-
-#include <cassert>
-
 
 namespace DB
 {
@@ -59,6 +61,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
@@ -74,41 +77,30 @@ namespace FailPoints
 /// because we read ranges of data that do not change.
 class StripeLogSource final : public ISource
 {
-public:
-    static Block getHeader(
-        const StorageSnapshotPtr & storage_snapshot,
-        const Names & column_names,
-        IndexForNativeFormat::Blocks::const_iterator index_begin,
-        IndexForNativeFormat::Blocks::const_iterator index_end)
+    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals)
     {
-        if (index_begin == index_end)
-            return storage_snapshot->getSampleBlockForColumns(column_names);
-
-        /// TODO: check if possible to always return storage.getSampleBlock()
-
-        Block header;
-
-        for (const auto & column : index_begin->columns)
-        {
-            auto type = DataTypeFactory::instance().get(column.type);
-            header.insert(ColumnWithTypeAndName{ type, column.name });
-        }
-
-        return header;
+        Block res;
+        for (const auto & name_type : physical)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        for (const auto & name_type : virtuals)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        return res;
     }
 
+public:
     StripeLogSource(
-        const StorageStripeLog & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const Names & column_names,
+        NamesAndTypesList physical_columns_,
+        NamesAndTypesList virtual_columns_,
+        std::shared_ptr<const StorageStripeLog> storage_,
         ReadSettings read_settings_,
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_,
         size_t file_size_)
-        : ISource(getHeader(storage_snapshot_, column_names, index_begin_, index_end_))
-        , storage(storage_)
-        , storage_snapshot(storage_snapshot_)
+        : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
+        , physical_columns(std::move(physical_columns_))
+        , virtual_columns(std::move(virtual_columns_))
+        , storage(std::move(storage_))
         , read_settings(std::move(read_settings_))
         , indices(indices_)
         , index_begin(index_begin_)
@@ -122,36 +114,27 @@ public:
 protected:
     Chunk generate() override
     {
-        Block res;
-        start();
+        Columns result_columns;
+        result_columns.reserve(getPort().getHeader().columns());
+        fillPhysicalColumns(result_columns);
 
-        if (block_in)
-        {
-            res = block_in->read();
+        UInt64 num_rows = result_columns.empty() ? 0 : result_columns.front()->size();
+        if (!result_columns.empty())
+            fillVirtualColumns(result_columns, num_rows);
 
-            /// Freeing memory before destroying the object.
-            if (!res)
-            {
-                block_in.reset();
-                data_in.reset();
-                indices.reset();
-            }
-        }
-
-        return Chunk(res.getColumns(), res.rows());
+        return Chunk(std::move(result_columns), num_rows);
     }
 
 private:
-    const StorageStripeLog & storage;
-    StorageSnapshotPtr storage_snapshot;
+    const NamesAndTypesList physical_columns;
+    const NamesAndTypesList virtual_columns;
+    const std::shared_ptr<const StorageStripeLog> storage;
     ReadSettings read_settings;
 
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
     size_t file_size;
-
-    Block header;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -167,10 +150,44 @@ private:
         {
             started = true;
 
-            String data_file_path = storage.table_path + "data.bin";
-            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
+            String data_file_path = storage->table_path + "data.bin";
+            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
+
+            /// Limit reads to the file size that was snapshotted under the read lock.
+            /// The file may have grown since (due to concurrent inserts after lock release),
+            /// but we must not read beyond the snapshotted range that the index covers.
+            data_in->setReadUntilPosition(file_size);
+
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
+    }
+
+    void fillPhysicalColumns(Columns & result_columns)
+    {
+        start();
+
+        if (!block_in)
+            return;
+
+        Block res = block_in->read();
+
+        /// Freeing memory before destroying the object.
+        if (res.empty())
+        {
+            block_in.reset();
+            data_in.reset();
+            indices.reset();
+            return;
+        }
+
+        for (const auto & col : physical_columns)
+            result_columns.emplace_back(res.getByName(col.name).column);
+    }
+
+    void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
+    {
+        if (!virtual_columns.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
     }
 };
 
@@ -182,7 +199,7 @@ public:
     using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
     explicit StripeLogSink(StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -200,7 +217,7 @@ public:
         storage.saveFileSizes(lock);
 
         size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
-        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &storage.indices, initial_data_size);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }
@@ -289,7 +306,7 @@ StorageStripeLog::StorageStripeLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
@@ -303,6 +320,7 @@ StorageStripeLog::StorageStripeLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -341,7 +359,7 @@ StorageStripeLog::~StorageStripeLog() = default;
 
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
+    chassert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -364,6 +382,13 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     return std::chrono::seconds{lock_timeout};
 }
 
+VirtualColumnsDescription StorageStripeLog::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
 Pipe StorageStripeLog::read(
     const Names & column_names,
@@ -385,10 +410,13 @@ Pipe StorageStripeLog::read(
 
     size_t data_file_size = file_checker.getFileSize(data_file_path);
     if (!data_file_size)
-        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
-    auto indices_for_selected_columns
-        = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
+    /// Filter out virtual columns - they are not stored on disk and not in the index.
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
+    auto indices_for_selected_columns = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{physical_column_names.begin(), physical_column_names.end()}));
+    auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     size_t size = indices_for_selected_columns->blocks.size();
     num_streams = std::min(num_streams, size);
@@ -405,7 +433,10 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, storage_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
+            physical_columns, virtual_columns,
+            std::static_pointer_cast<const StorageStripeLog>(shared_from_this()),
+            read_settings,
+            indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -440,9 +471,18 @@ std::optional<CheckResult> StorageStripeLog::checkDataNext(DataValidationTasksPt
     return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
 }
 
-void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    disk->clearDirectory(table_path);
+    WriteLock lock{rwlock, getLockTimeout(local_context)};
+    if (!lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
+    auto clear_tx = disk->createTransaction();
+    clear_tx->removeFileIfExists(data_file_path);
+    clear_tx->removeFileIfExists(index_file_path);
+    clear_tx->removeFileIfExists(file_checker.getPath());
+    clear_tx->commit();
 
     indices.clear();
     file_checker.setEmpty(data_file_path);
@@ -537,7 +577,7 @@ void StorageStripeLog::updateTotalRows(const WriteLock &)
     total_rows = new_total_rows;
 }
 
-std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
 {
     if (indices_loaded)
         return total_rows;
@@ -548,7 +588,7 @@ std::optional<UInt64> StorageStripeLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageStripeLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }
@@ -573,7 +613,9 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     /// data.bin
     {
@@ -582,7 +624,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -594,7 +636,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
         String hardlink_file_path = temp_dir / index_file_name;
         disk->createHardLink(index_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(index_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / index_file_name, std::move(backup_entry));
     }
@@ -607,7 +649,7 @@ void StorageStripeLog::backupData(BackupEntriesCollector & backup_entries_collec
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     size_t num_rows = 0;
@@ -694,6 +736,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

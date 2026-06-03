@@ -3,9 +3,8 @@
 #include <Common/SettingsChanges.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -59,6 +58,9 @@ namespace DB
   */
 class QueryNode;
 using QueryNodePtr = std::shared_ptr<QueryNode>;
+
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
 class QueryNode final : public IQueryTreeNode
 {
@@ -140,6 +142,18 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    /// Returns true if query node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set query node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
+    }
+
     /// Returns true if query node has RECURSIVE WITH, false otherwise
     bool isRecursiveWith() const
     {
@@ -162,6 +176,16 @@ public:
     void setIsDistinct(bool is_distinct_value)
     {
         is_distinct = is_distinct_value;
+    }
+
+    bool isLimitByAll() const
+    {
+        return is_limit_by_all;
+    }
+
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        is_limit_by_all = is_limit_by_all_value;
     }
 
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
@@ -618,10 +642,35 @@ public:
     }
 
     /// Remove unused projection columns
-    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
-
-    /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
+
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -636,9 +685,9 @@ public:
     }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -647,6 +696,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
@@ -656,6 +706,7 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
+    bool is_limit_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;
@@ -679,7 +730,8 @@ private:
     static constexpr size_t limit_by_child_index = 13;
     static constexpr size_t limit_child_index = 14;
     static constexpr size_t offset_child_index = 15;
-    static constexpr size_t children_size = offset_child_index + 1;
+    static constexpr size_t correlated_columns_list_index = 16;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }

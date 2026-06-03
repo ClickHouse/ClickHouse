@@ -1,7 +1,8 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <set>
-#include <map>
+#include <Processors/Port.h>
+
+#include <Common/MapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -32,16 +33,16 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         size_t count;
     };
 
-    using Edge = std::vector<EdgeData>;
+    using Edge = VectorWithMemoryTracking<EdgeData>;
 
     struct Node
     {
         size_t id = 0;
-        std::map<Node *, Edge> edges = {};
-        std::vector<const IProcessor *> agents = {};
+        MapWithMemoryTracking<Node *, Edge> edges = {};
+        VectorWithMemoryTracking<const IProcessor *> agents = {};
     };
 
-    std::map<Key, Node> graph;
+    MapWithMemoryTracking<Key, Node> graph;
 
     auto get_key = [](const IProcessor & processor)
     {
@@ -96,7 +97,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     }
 
     /// Group processors by it's QueryPlanStep.
-    std::map<IQueryPlanStep *, std::vector<const Node *>> steps_map;
+    MapWithMemoryTracking<IQueryPlanStep *, VectorWithMemoryTracking<const Node *>> steps_map;
 
     for (const auto & item : graph)
         steps_map[item.first.step].emplace_back(&item.second);

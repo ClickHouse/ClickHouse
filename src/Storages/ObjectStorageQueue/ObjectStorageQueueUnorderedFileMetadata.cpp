@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
-#include <Common/getRandomASCIIString.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -8,14 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
+    extern const int UNEXPECTED_ZOOKEEPER_ERROR;
 }
 
 ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata(
@@ -23,98 +17,201 @@ ObjectStorageQueueUnorderedFileMetadata::ObjectStorageQueueUnorderedFileMetadata
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<size_t> & metadata_ref_count_,
+    bool use_persistent_processing_nodes_,
+    const std::string & zookeeper_name_,
     LoggerPtr log_)
     : ObjectStorageQueueIFileMetadata(
         path_,
+        zookeeper_name_,
         /* processing_node_path */zk_path / "processing" / getNodeName(path_),
         /* processed_node_path */zk_path / "processed" / getNodeName(path_),
         /* failed_node_path */zk_path / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
+        metadata_ref_count_,
+        use_persistent_processing_nodes_,
         log_)
 {
+    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
+             "processed_path: {}, processing_path: {}, failed_path: {}",
+             path, node_name, max_loading_retries,
+             processed_node_path, processing_node_path, failed_node_path);
+}
+
+ObjectStorageQueueUnorderedFileMetadata::SetProcessingResponseIndexes
+ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
+    Coordination::Requests & requests,
+    const std::string & processing_id)
+{
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+    processor_info = getProcessorInfo(processing_id);
+
+    SetProcessingResponseIndexes result;
+
+    /// 1. Check processed node does not exist
+    result.processed_path_doesnt_exist_idx = requests.size();
+    zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
+
+    /// 2. Check failed node does not exist
+    result.failed_path_doesnt_exist_idx = requests.size();
+    zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
+
+    /// 3. Create processing node
+    result.create_processing_node_idx = requests.size();
+    requests.push_back(
+        zkutil::makeCreateRequest(
+            processing_node_path,
+            processor_info,
+            zkutil::CreateMode::Persistent));
+
+    return result;
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
 {
-    const auto zk_client = getZooKeeper();
-    processing_id = node_metadata.processing_id = getRandomASCIIString(10);
-    auto processor_info = getProcessorInfo(processing_id.value());
+    Coordination::Requests requests;
+    auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
 
-    while (true)
+    Coordination::Responses responses;
+    Coordination::Error code = {};
+
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
     {
-        Coordination::Requests requests;
-        const size_t processed_path_doesnt_exist_idx = 0;
-        zkutil::addCheckNotExistsRequest(requests, *zk_client, processed_node_path);
-        const size_t failed_path_doesnt_exist_idx = requests.size();
-        zkutil::addCheckNotExistsRequest(requests, *zk_client, failed_node_path);
-
-
-        const auto created_processing_path_idx = requests.size();
-        requests.push_back(zkutil::makeCreateRequest(processing_node_path, node_metadata.toString(), zkutil::CreateMode::Ephemeral));
-
-        bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
-        if (create_if_not_exists_enabled)
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        std::string data;
+        /// If it is a retry, we could have failed after actually successfully executing the requests.
+        /// So here we check if we succeeded by checking `processor_info` of the processing node.
+        if (zk_retry.isRetry() && zk_client->tryGet(processing_node_path, data))
         {
-            requests.push_back(
-                zkutil::makeCreateRequest(processing_node_id_path, "", zkutil::CreateMode::Persistent, /* ignore_if_exists */ true));
+            chassert(!data.empty());
+            if (data == processor_info)
+            {
+                LOG_TRACE(log, "Considering operation as succeeded");
+                code = Coordination::Error::ZOK;
+                return;
+            }
         }
-        else if (!zk_client->exists(processing_node_id_path))
-        {
-            requests.push_back(zkutil::makeCreateRequest(processing_node_id_path, processor_info, zkutil::CreateMode::Persistent));
-        }
+        code = zk_client->tryMulti(requests, responses);
+    });
 
-        requests.push_back(zkutil::makeSetRequest(processing_node_id_path, processor_info, -1));
-
-        const auto set_processing_id_idx = requests.size() - 1;
-
-        Coordination::Responses responses;
-        const auto code = zk_client->tryMulti(requests, responses);
-        auto has_request_failed = [&](size_t request_index) { return responses[request_index]->error != Coordination::Error::ZOK; };
-
-        if (code == Coordination::Error::ZOK)
-        {
-            const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(*responses[set_processing_id_idx].get());
-            processing_id_version = set_response.stat.version;
-            return std::pair{true, FileStatus::State::None};
-        }
-
-        if (has_request_failed(processed_path_doesnt_exist_idx))
-            return {false, FileStatus::State::Processed};
-
-        if (has_request_failed(failed_path_doesnt_exist_idx))
-            return {false, FileStatus::State::Failed};
-
-        if (has_request_failed(created_processing_path_idx))
-            return {false, FileStatus::State::Processing};
-
-        if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of zookeeper transaction: {}", code);
-
-        /// most likely the node was removed so let's try again
-        LOG_TRACE(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
+    if (code == Coordination::Error::ZOK)
+    {
+        return std::pair{true, FileStatus::State::None};
     }
+
+    auto has_request_failed = [&](size_t request_index)
+    {
+        return responses[request_index]->error != Coordination::Error::ZOK;
+    };
+
+    if (has_request_failed(result.processed_path_doesnt_exist_idx))
+        return {false, FileStatus::State::Processed};
+
+    if (has_request_failed(result.failed_path_doesnt_exist_idx))
+        return {false, FileStatus::State::Failed};
+
+    if (has_request_failed(result.create_processing_node_idx))
+        return {false, FileStatus::State::Processing};
+
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "Failed to set file processing, last error: {}", code);
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedAtStartRequests(
+void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
     Coordination::Requests & requests,
-    const zkutil::ZooKeeperPtr &)
+    LastProcessedFileInfoMapPtr /* created_nodes */)
 {
+    requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
     requests.push_back(
         zkutil::makeCreateRequest(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
 }
 
-void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(Coordination::Requests & requests)
+void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
+    std::vector<std::string> & paths,
+    const std::filesystem::path & zk_path_,
+    const std::string & zookeeper_name_,
+    LoggerPtr log_)
 {
-    if (processing_id_version.has_value())
+    std::vector<std::string> check_paths;
+    for (const auto & path : paths)
     {
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        const auto node_name = getNodeName(path);
+        check_paths.push_back(zk_path_ / "processed" / node_name);
+        check_paths.push_back(zk_path_ / "failed" / node_name);
     }
-    requests.push_back(
-        zkutil::makeCreateRequest(
-            processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log_).retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(check_paths);
+    });
+
+    auto check_code = [&](auto code, const std::string & path)
+    {
+        if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
+            throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    std::vector<std::string> result;
+    for (size_t i = 0; i < responses.size();)
+    {
+        check_code(responses[i].error, check_paths[i]);
+        check_code(responses[i + 1].error, check_paths[i]);
+
+        if (responses[i].error == Coordination::Error::ZNONODE
+            && responses[i + 1].error == Coordination::Error::ZNONODE)
+        {
+            result.push_back(std::move(paths[i / 2]));
+        }
+        else
+        {
+            LOG_TEST(log_, "Skipping file {}: {}",
+                     paths[i / 2],
+                     responses[i].error == Coordination::Error::ZOK ? "Processed" : "Failed");
+        }
+        i += 2;
+    }
+    paths = std::move(result);
+}
+
+ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetadata::getPathState(
+    std::string & failure_message) const
+{
+    const std::vector<std::string> paths = {processed_node_path, failed_node_path};
+
+    zkutil::ZooKeeper::MultiTryGetResponse responses;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        responses = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(paths);
+    });
+
+    if (responses.size() != paths.size())
+        throw Exception(ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR,
+            "Unexpected size of Keeper response: expected {}, got {}",
+            paths.size(), responses.size());
+
+    for (size_t i = 0; i < responses.size(); ++i)
+    {
+        const auto err = responses[i].error;
+        if (err != Coordination::Error::ZOK && err != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(err, paths[i]);
+    }
+
+    if (responses[0].error == Coordination::Error::ZOK)
+        return PathState::Processed;
+
+    if (responses[1].error == Coordination::Error::ZOK)
+    {
+        if (!responses[1].data.empty())
+            failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        return PathState::Failed;
+    }
+
+    return PathState::Unknown;
 }
 
 }

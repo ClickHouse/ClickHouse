@@ -18,7 +18,7 @@ std::vector<std::string> preprocessStringQuery(const std::string & query, Autoco
 }
 
 
-int main()
+int mainEntryExamplePreprocessForAutocomplete(int, char **)
 {
     std::string folder_1;
     std::string folder_2;

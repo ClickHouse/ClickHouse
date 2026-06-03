@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <base/defines.h>
 #include <base/extended_types.h>
 
 
@@ -151,7 +152,7 @@ struct DecomposedFloat
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
-                assert(isNegative());
+                chassert(isNegative());
 
                 if (normalizedExponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return 1;
@@ -169,7 +170,7 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         using UInt = std::conditional_t<(sizeof(Int) > sizeof(typename Traits::UInt)), make_unsigned_t<Int>, typename Traits::UInt>;
-        UInt uint_rhs = rhs < 0 ? -rhs : rhs;
+        UInt uint_rhs = static_cast<UInt>(rhs < 0 ? -rhs : rhs);
 
         /// Smaller octave: abs(rhs) < abs(float)
         /// FYI, TIL: octave is also called "binade", https://en.wikipedia.org/wiki/Binade
@@ -186,11 +187,11 @@ struct DecomposedFloat
 
         bool large_and_always_integer = normalizedExponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        UInt a = large_and_always_integer
-            ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
-            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent());
+        UInt a = static_cast<UInt>(
+            large_and_always_integer ? static_cast<UInt>(mantissa()) << (normalizedExponent() - Traits::mantissa_bits)
+                                     : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalizedExponent()));
 
-        UInt b = uint_rhs - (static_cast<UInt>(1) << normalizedExponent());
+        UInt b = static_cast<UInt>(uint_rhs - (static_cast<UInt>(1) << normalizedExponent()));
 
         if (a < b)
             return isNegative() ? 1 : -1;
@@ -198,8 +199,15 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         /// Float has no fractional part means that the numbers are equal.
-        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0)
+        if (large_and_always_integer)
             return 0;
+
+        /// Make clang-tidy happy
+        /// We know normalizedExponent() is positive from a check at the start at the function
+        /// We know normalizedExponent() < Traits::mantissa_bits from large_and_always_integer
+        if ((mantissa() & ((1ULL << (static_cast<uint64_t>(Traits::mantissa_bits) - static_cast<uint64_t>(normalizedExponent()))) - 1)) == 0)
+            return 0;
+
         /// Float has fractional part means its abs value is larger.
         return isNegative() ? -1 : 1;
     }

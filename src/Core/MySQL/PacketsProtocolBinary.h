@@ -1,12 +1,11 @@
 #pragma once
 
 #include <vector>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <Core/MySQL/IMySQLWritePacket.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

@@ -8,7 +8,7 @@
 
 #include <Core/Types.h>
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 
@@ -42,11 +42,13 @@ public:
 
     struct Node
     {
-        CompileType type;
+        CompileType type{};
         DataTypePtr result_type;
 
         /// For CONSTANT
         ColumnPtr column;
+        bool skip_compile
+            = false; // Some constant node should be skipped during compilation. e.g. in CAST(input, type), the second argument should be skipped during compilation.
 
         /// For FUNCTION
         FunctionBasePtr function;

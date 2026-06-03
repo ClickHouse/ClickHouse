@@ -40,7 +40,7 @@ INSERT INTO trace_log values ('2020-10-06','2020-10-06 13:43:39','2020-10-06 13:
 set allow_introspection_functions = 1;
 
 -- make sure query_log exists
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 WITH concat(addressToLine(arrayJoin(trace) AS addr), '#') AS symbol
 SELECT count() > 7
@@ -51,10 +51,10 @@ WHERE (query_id =
         [NULL, NULL, NULL, NULL, 0.00009999999747378752, NULL, NULL, NULL, NULL, NULL],
         query_id
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%'); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
+)) AND (symbol LIKE '%Source%');
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
@@ -66,20 +66,39 @@ WHERE greaterOrEquals(event_date, ignore(ignore(ignore(NULL, '')), 256), yesterd
         ignore(ignore(ignore(ignore(65536)), ignore(65537), ignore(2)), ''),
         query_id
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND (event_date >= yesterday()) AND (query LIKE '%test memory profiler%')
+    WHERE current_database = currentDatabase() AND (event_date >= yesterday() AND event_time >= now() - 600) AND (query LIKE '%test memory profiler%')
     ORDER BY event_time DESC
     LIMIT 1
 )); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY, 42 }
 
 DROP TABLE IF EXISTS trace_log;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
+
+WITH
+    (
+        SELECT query_start_time_microseconds
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+        ORDER BY query_start_time DESC
+        LIMIT 1
+    ) AS time_with_microseconds,
+    (
+        SELECT
+            inf,
+            query_start_time
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+        ORDER BY query_start_time DESC
+        LIMIT 1
+    ) AS t
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS time_with_microseconds,
@@ -92,24 +111,25 @@ WITH (
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
-SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', ''); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
+SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (
         SELECT query_start_time_microseconds
         FROM system.query_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS time_with_microseconds,
     (
         SELECT query_start_time
         FROM system.query_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY query_start_time DESC
         LIMIT 1
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '');
 
-set joined_subquery_requires_alias=0, enable_analyzer=0; -- the query is invalid with a new analyzer
+set joined_subquery_requires_alias=0, enable_analyzer=0; -- the query is invalid with the analyzer
 SELECT number, number / 2 AS n, j1, j2 FROM remote('127.0.0.{2,3}', system.numbers) GLOBAL ANY LEFT JOIN (SELECT number / 3 AS n, number AS j1, 'Hello' AS j2 FROM system.numbers LIMIT 1048577) USING (n) LIMIT 10 format Null;

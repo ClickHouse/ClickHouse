@@ -1,6 +1,11 @@
-#include <cstdlib>
 #include <base/defines.h>
+
+#include <cstdlib>
+#include <unordered_map>
+
 #include <benchmark/benchmark.h>
+
+#include <unordered_map>
 
 class OldSortedStringDictionary
 {

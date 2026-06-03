@@ -8,6 +8,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table_id="$(random_str 10)"
 
+# Does additional index analysis round and affects profile events
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0 --enable_parallel_replicas 0"
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_use_projections 1 --optimize_use_implicit_projections 1"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS table_$table_id;"
 
@@ -34,13 +38,14 @@ query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id FORMAT Null;"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -51,13 +56,14 @@ query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE col2 >= 50000 FORMAT Null;"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -68,13 +74,14 @@ query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE pk >= 50000 FORMAT Null;"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;
@@ -85,13 +92,14 @@ query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
     SELECT count(*) FROM table_$table_id WHERE col1 >= 50000 FORMAT Null;"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         ProfileEvents['SelectQueriesWithPrimaryKeyUsage'] AS selects_with_pk_usage
     FROM
         system.query_log
     WHERE
-        current_database = currentDatabase()
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND current_database = currentDatabase()
         AND type = 'QueryFinish'
         AND query_id = '$query_id'
     FORMAT TSVWithNames;

@@ -1,21 +1,23 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
+#include <Common/ColumnsHashing/HashMethod.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
 #include <base/unaligned.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
 #include <memory>
-#include <cassert>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -26,176 +28,6 @@ namespace ErrorCodes
 
 namespace ColumnsHashing
 {
-
-/// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
-    size_t i,
-    size_t keys_size,
-    const ColumnRawPtrs & key_columns)
-{
-    SipHash hash;
-    for (size_t j = 0; j < keys_size; ++j)
-        key_columns[j]->updateHashWithValue(i, hash);
-
-    return hash.get128();
-}
-
-/// For the case when there is one numeric key.
-/// UInt8/16/32/64 for any type with corresponding bit width.
-template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
-struct HashMethodOneNumber
-    : public columns_hashing_impl::HashMethodBase<HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
-{
-    using Self = HashMethodOneNumber<Value, Mapped, FieldType, use_cache, need_offset, nullable>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-
-    static constexpr bool has_cheap_key_calculation = true;
-
-    const char * vec;
-
-    /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
-    HashMethodOneNumber(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
-    {
-        if constexpr (nullable)
-        {
-            const auto & null_column = checkAndGetColumn<ColumnNullable>(*key_columns[0]);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
-        }
-        else
-        {
-            vec = key_columns[0]->getRawData().data();
-        }
-    }
-
-    explicit HashMethodOneNumber(const IColumn * column) : Base(column)
-    {
-        if constexpr (nullable)
-        {
-            const auto & null_column = checkAndGetColumn<ColumnNullable>(*column);
-            vec = null_column.getNestedColumnPtr()->getRawData().data();
-        }
-        else
-        {
-            vec = column->getRawData().data();
-        }
-    }
-
-    /// Creates context. Method is called once and result context is used in all threads.
-    using Base::createContext; /// (const HashMethodContext::Settings &) -> HashMethodContextPtr
-
-    /// Emplace key into HashTable or HashMap. If Data is HashMap, returns ptr to value, otherwise nullptr.
-    /// Data is a HashTable where to insert key from column's row.
-    /// For Serialized method, key may be placed in pool.
-    using Base::emplaceKey; /// (Data & data, size_t row, Arena & pool) -> EmplaceResult
-
-    /// Find key into HashTable or HashMap. If Data is HashMap and key was found, returns ptr to value, otherwise nullptr.
-    using Base::findKey;  /// (Data & data, size_t row, Arena & pool) -> FindResult
-
-    /// Get hash value of row.
-    using Base::getHash; /// (const Data & data, size_t row, Arena & pool) -> size_t
-
-    /// Is used for default implementation in HashMethodBase.
-    FieldType getKeyHolder(size_t row, Arena &) const { return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)); }
-
-    const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
-};
-
-
-/// For the case when there is one string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false, bool nullable = false>
-struct HashMethodString
-    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
-{
-    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
-    {
-        const IColumn * column;
-        if constexpr (nullable)
-        {
-            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
-        }
-        else
-        {
-            column = key_columns[0];
-        }
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*column);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
-    {
-        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
-
-        if constexpr (place_string_to_arena)
-        {
-            return ArenaKeyHolder{key, pool};
-        }
-        else
-        {
-            return key;
-        }
-    }
-
-protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-};
-
-
-/// For the case when there is one fixed-length string key.
-template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true, bool need_offset = false, bool nullable = false>
-struct HashMethodFixedString
-    : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>, Value, Mapped, use_cache, need_offset, nullable>
-{
-    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache, need_offset, nullable>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    size_t n;
-    const ColumnFixedString::Chars * chars;
-
-    HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
-    {
-        const IColumn * column;
-        if constexpr (nullable)
-        {
-            column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
-        }
-        else
-        {
-            column = key_columns[0];
-        }
-        const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(*column);
-        n = column_string.getN();
-        chars = &column_string.getChars();
-    }
-
-    auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
-    {
-        StringRef key(&(*chars)[row * n], n);
-
-        if constexpr (place_string_to_arena)
-        {
-            return ArenaKeyHolder{key, pool};
-        }
-        else
-        {
-            return key;
-        }
-    }
-
-protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-};
-
 
 /// Cache stores dictionaries and saved_hash per dictionary key.
 class LowCardinalityDictionaryCache : public HashMethodContext
@@ -232,7 +64,9 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    explicit LowCardinalityDictionaryCache(const HashMethodContext::Settings & settings) : cache(settings.max_threads) {}
+    explicit LowCardinalityDictionaryCache(const HashMethodContextSettings & settings)
+        : cache(CurrentMetrics::end(), CurrentMetrics::end(), settings.max_threads)
+    {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -241,7 +75,6 @@ private:
     using Cache = CacheBase<DictionaryKey, CachedValues, DictionaryKeyHash>;
     Cache cache;
 };
-
 
 /// Single low cardinality column.
 template <typename SingleColumnMethod, typename Mapped, bool use_cache>
@@ -261,8 +94,9 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using FindResult = columns_hashing_impl::FindResultImpl<Mapped>;
 
     static constexpr bool has_cheap_key_calculation = Base::has_cheap_key_calculation;
+    static constexpr bool has_pre_computed_hashes = Base::has_pre_computed_hashes;
 
-    static HashMethodContextPtr createContext(const HashMethodContext::Settings & settings)
+    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
         return std::make_shared<LowCardinalityDictionaryCache>(settings);
     }
@@ -301,7 +135,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (!context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache wasn't created for HashMethodSingleLowCardinalityColumn");
 
-        LowCardinalityDictionaryCache * lcd_cache;
+        LowCardinalityDictionaryCache * lcd_cache = nullptr;
         if constexpr (use_cache)
         {
             lcd_cache = typeid_cast<LowCardinalityDictionaryCache *>(context.get());
@@ -316,9 +150,9 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
         is_nullable = column->getDictionary().nestedColumnIsNullable();
         key_columns = {dict};
-        bool is_shared_dict = column->isSharedDictionary();
+        const bool is_shared_dict = column->isSharedDictionary();
 
-        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
+        typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key{};
         typename LowCardinalityDictionaryCache::CachedValuesPtr cached_values;
 
         if (is_shared_dict)
@@ -497,201 +331,14 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     }
 };
 
-
-// Optional mask for low cardinality columns.
-template <bool has_low_cardinality>
-struct LowCardinalityKeys
+class HashMethodSerializedContext : public HashMethodContext
 {
-    ColumnRawPtrs nested_columns;
-    ColumnRawPtrs positions;
-    Sizes position_sizes;
-};
+public:
+    explicit HashMethodSerializedContext(const HashMethodContextSettings & settings_)
+        : settings(settings_)
+    {}
 
-template <>
-struct LowCardinalityKeys<false> {};
-
-/// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <
-    typename Value,
-    typename Key,
-    typename Mapped,
-    bool has_nullable_keys_ = false,
-    bool has_low_cardinality_ = false,
-    bool use_cache = true,
-    bool need_offset = false>
-struct HashMethodKeysFixed
-    : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
-{
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset>;
-    using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
-    using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
-
-    static constexpr bool has_nullable_keys = has_nullable_keys_;
-    static constexpr bool has_low_cardinality = has_low_cardinality_;
-
-    static constexpr bool has_cheap_key_calculation = true;
-
-    LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
-    Sizes key_sizes;
-    size_t keys_size;
-
-    /// SSSE3 shuffle method can be used. Shuffle masks will be calculated and stored here.
-#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-    std::unique_ptr<uint8_t[]> masks;
-    std::unique_ptr<const char*[]> columns_data;
-#endif
-
-    PaddedPODArray<Key> prepared_keys;
-
-    static bool usePreparedKeys(const Sizes & key_sizes)
-    {
-        if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
-            return false;
-
-        for (auto size : key_sizes)
-            if (size != 1 && size != 2 && size != 4 && size != 8 && size != 16)
-                return false;
-
-        return true;
-    }
-
-    HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
-        : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
-    {
-        if constexpr (has_low_cardinality)
-        {
-            low_cardinality_keys.nested_columns.resize(key_columns.size());
-            low_cardinality_keys.positions.assign(key_columns.size(), nullptr);
-            low_cardinality_keys.position_sizes.resize(key_columns.size());
-            for (size_t i = 0; i < key_columns.size(); ++i)
-            {
-                if (const auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
-                {
-                    low_cardinality_keys.nested_columns[i] = low_cardinality_col->getDictionary().getNestedColumn().get();
-                    low_cardinality_keys.positions[i] = &low_cardinality_col->getIndexes();
-                    low_cardinality_keys.position_sizes[i] = low_cardinality_col->getSizeOfIndexType();
-                }
-                else
-                    low_cardinality_keys.nested_columns[i] = key_columns[i];
-            }
-        }
-
-        if (usePreparedKeys(key_sizes))
-        {
-            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
-        }
-
-#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-        else if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
-        {
-            /** The task is to "pack" multiple fixed-size fields into single larger Key.
-              * Example: pack UInt8, UInt32, UInt16, UInt64 into UInt128 key:
-              * [- ---- -- -------- -] - the resulting uint128 key
-              *  ^  ^   ^   ^       ^
-              *  u8 u32 u16 u64    zero
-              *
-              * We can do it with the help of SSSE3 shuffle instruction.
-              *
-              * There will be a mask for every GROUP BY element (keys_size masks in total).
-              * Every mask has 16 bytes but only sizeof(Key) bytes are used (other we don't care).
-              *
-              * Every byte in the mask has the following meaning:
-              * - if it is 0..15, take the element at this index from source register and place here in the result;
-              * - if it is 0xFF - set the elemend in the result to zero.
-              *
-              * Example:
-              * We want to copy UInt32 to offset 1 in the destination and set other bytes in the destination as zero.
-              * The corresponding mask will be: FF, 0, 1, 2, 3, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF, FF
-              *
-              * The max size of destination is 16 bytes, because we cannot process more with SSSE3.
-              *
-              * The method is disabled under MSan, because it's allowed
-              * to load into SSE register and process up to 15 bytes of uninitialized memory in columns padding.
-              * We don't use this uninitialized memory but MSan cannot look "into" the shuffle instruction.
-              *
-              * 16-bytes masks can be placed overlapping, only first sizeof(Key) bytes are relevant in each mask.
-              * We initialize them to 0xFF and then set the needed elements.
-              */
-            size_t total_masks_size = sizeof(Key) * keys_size + (16 - sizeof(Key));
-            masks.reset(new uint8_t[total_masks_size]);
-            memset(masks.get(), 0xFF, total_masks_size);
-
-            size_t offset = 0;
-            for (size_t i = 0; i < keys_size; ++i)
-            {
-                for (size_t j = 0; j < key_sizes[i]; ++j)
-                {
-                    masks[i * sizeof(Key) + offset] = j;
-                    ++offset;
-                }
-            }
-
-            columns_data.reset(new const char*[keys_size]);
-
-            for (size_t i = 0; i < keys_size; ++i)
-                columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
-        }
-#endif
-    }
-
-    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
-    {
-        if constexpr (has_nullable_keys)
-        {
-            auto bitmap = Base::createBitmap(row);
-            return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, bitmap);
-        }
-        else
-        {
-            if constexpr (has_low_cardinality)
-                return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
-                                            &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
-
-            if (!prepared_keys.empty())
-                return prepared_keys[row];
-
-#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-            if constexpr (sizeof(Key) <= 16)
-            {
-                assert(!has_low_cardinality && !has_nullable_keys);
-                return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
-            }
-#endif
-            return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
-        }
-    }
-
-    static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
-    {
-        if (!usePreparedKeys(key_sizes))
-            return {};
-
-        std::vector<IColumn *> new_columns;
-        new_columns.reserve(key_columns.size());
-
-        Sizes new_sizes;
-        auto fill_size = [&](size_t size)
-        {
-            for (size_t i = 0; i < key_sizes.size(); ++i)
-            {
-                if (key_sizes[i] == size)
-                {
-                    new_columns.push_back(key_columns[i]);
-                    new_sizes.push_back(size);
-                }
-            }
-        };
-
-        fill_size(16);
-        fill_size(8);
-        fill_size(4);
-        fill_size(2);
-        fill_size(1);
-
-        key_columns.swap(new_columns);
-        return new_sizes;
-    }
+    HashMethodContextSettings settings;
 };
 
 /** Hash by concatenating serialized key values.
@@ -706,22 +353,68 @@ struct HashMethodSerialized
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
+    static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
+    {
+        return std::make_shared<HashMethodSerializedContext>(settings);
+    }
+
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = prealloc;
 
     ColumnRawPtrs key_columns;
     size_t keys_size;
     std::vector<const UInt8 *> null_maps;
-    PaddedPODArray<UInt64> row_sizes;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+    /// Only used if prealloc is true.
+    PaddedPODArray<UInt64> row_sizes;
+    size_t total_size = 0;
+    bool use_batch_serialize = false;
+    IColumn::SerializationSettings serialization_settings;
+    PaddedPODArray<char> serialized_buffer;
+    std::vector<std::string_view> serialized_keys;
+
+    /// Per-row canonical hashes computed from `serialized_keys` using the hash table's hash function.
+    /// Filled lazily on the first emplace/find call (because we need access to `Data::hash`).
+    /// Only used when `can_precompute_hashes` is true.
+    PaddedPODArray<size_t> precomputed_hashes;
+    /// `precomputed_hashes_initialized` starts `true` by default so the hot path skips the lazy-init
+    /// gate when precomputation is statically disabled. It is set to `false` in the constructor only
+    /// when we actually plan to precompute hashes (and is flipped back to `true` after the first call).
+    bool precomputed_hashes_initialized = true;
+    bool can_precompute_hashes = false;
+
+    /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
+    /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
+    /// Checked lazily on the first emplace/find call.
+    size_t min_bytes_for_prefetch = 0;
+
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+    /// Absolute row index at which `calcPrefetchLookAhead` should fire. Computed lazily as
+    /// `first_row + PrefetchingHelper::iterationsToMeasure()` so that calibration is
+    /// interval-relative — matches the pattern used in `Aggregator::executeImplBatch` and
+    /// remains correct when `emplaceKey`/`findKey` are called over sliced ranges
+    /// (e.g. `executeOnBlockSmall` with non-zero `row_begin`).
+    size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
+
+    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
+        const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
+        if (!hash_serialized_context)
+        {
+            const auto & cached_val = *context;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type for HashMethodSerialized context: {}",
+                            demangle(typeid(cached_val).name()));
+        }
+
+        serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
         if constexpr (nullable)
         {
-            null_maps.resize(keys_size);
+            null_maps.resize(keys_size, nullptr);
             for (size_t i = 0; i < keys_size; ++i)
             {
-                if (const auto * nullable_column = dynamic_cast<const ColumnNullable *>(key_columns[i]))
+                if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(key_columns[i]))
                 {
                     null_maps[i] = nullable_column->getNullMapData().data();
                     key_columns[i] = nullable_column->getNestedColumnPtr().get();
@@ -731,70 +424,152 @@ struct HashMethodSerialized
 
         if constexpr (prealloc)
         {
-            null_maps.resize(keys_size);
+            null_maps.resize(keys_size, nullptr);
+
+            /// Calculate serialized value size for each key column in each row.
             for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i]);
+                key_columns[i]->collectSerializedValueSizes(row_sizes, null_maps[i], &serialization_settings);
+
+            for (auto row_size : row_sizes)
+                total_size += row_size;
+
+            use_batch_serialize = shouldUseBatchSerialize();
+            if (use_batch_serialize)
+            {
+                serialized_buffer.resize(total_size);
+
+                const size_t rows = row_sizes.size();
+                char * memory = serialized_buffer.data();
+                VectorWithMemoryTracking<char *> memories(rows);
+                serialized_keys.resize(rows);
+                for (size_t i = 0; i < row_sizes.size(); ++i)
+                {
+                    memories[i] = memory;
+                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
+
+                    memory += row_sizes[i];
+                }
+
+                for (size_t i = 0; i < keys_size; ++i)
+                {
+                    if constexpr (nullable)
+                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
+                    else
+                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
+                }
+            }
         }
+
+        /// We can only precompute canonical per-row hashes when:
+        ///   1. We have the serialized keys upfront (batch serialization is in use), and
+        ///   2. We use the hash table's actual hash function (deferred to first emplace/find), and
+        ///   3. Software prefetch is enabled by the caller (mirrors `enable_software_prefetch_in_aggregation`).
+        /// Without batch serialization, fall back to the regular `data.prefetch(key_holder)` path.
+        /// The hash-table size threshold (`min_bytes_for_prefetch`) is enforced lazily on the first
+        /// emplace/find call, once `Data` is known.
+        if constexpr (has_pre_computed_hashes)
+        {
+            if (use_batch_serialize && hash_serialized_context->settings.enable_prefetch)
+            {
+                can_precompute_hashes = true;
+                precomputed_hashes_initialized = false;
+                min_bytes_for_prefetch = hash_serialized_context->settings.min_bytes_for_prefetch;
+                prefetching = std::make_unique<PrefetchingHelper>();
+            }
+        }
+    }
+
+    /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
+    /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
+    /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
+    /// + prefetch path when the hash table is small enough to fit in caches. Matches
+    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    template <typename Data>
+    NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
+        requires(prealloc)
+    {
+        precomputed_hashes_initialized = true;
+        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        {
+            can_precompute_hashes = false;
+            return;
+        }
+
+        const size_t rows = serialized_keys.size();
+        precomputed_hashes.resize(rows);
+        for (size_t i = 0; i < rows; ++i)
+            precomputed_hashes[i] = data.hash(serialized_keys[i]);
+    }
+
+    bool shouldUseBatchSerialize() const
+    {
+#if defined(__aarch64__)
+        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
+        return true;
+#endif
+
+        size_t l2_size = 256 * 1024;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        // Calculate the average row size.
+        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
+        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
-    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(prealloc)
     {
-        if constexpr (prealloc)
+        if (use_batch_serialize)
+            return ArenaKeyHolder{serialized_keys[row], pool};
+        else
         {
-            const char * begin = nullptr;
-
-            char * memory = pool.allocContinue(row_sizes[row], begin);
-            StringRef key(memory, row_sizes[row]);
+            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
+            char * memory = holder.get();
+            std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
-                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j], &serialization_settings);
                 else
-                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+                    memory = key_columns[j]->serializeValueIntoMemory(row, memory, &serialization_settings);
             }
 
-            return SerializedKeyHolder{key, pool};
+            return ArenaKeyHolder{key, pool, std::move(holder)};
         }
-        else if constexpr (nullable)
+    }
+
+    ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
+    requires(!prealloc)
+    {
+        if constexpr (nullable)
         {
             const char * begin = nullptr;
 
             size_t sum_size = 0;
             for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j]).size;
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size();
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }
 
         return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
+            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
             pool};
     }
 };
 
-/// For the case when there is one string key.
-template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
-struct HashMethodHashed
-    : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
-{
-    using Key = UInt128;
-    using Self = HashMethodHashed<Value, Mapped, use_cache, need_offset>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    ColumnRawPtrs key_columns;
-
-    HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
-
-    ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
-    {
-        return hash128(row, key_columns.size(), key_columns);
-    }
-};
-
 }
+
+/// Explicit instantiation of LowCardinalityDictionaryCache::cache which is a really heavy template
+extern template class CacheBase<
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey,
+    ColumnsHashing::LowCardinalityDictionaryCache::CachedValues,
+    ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash>;
 }

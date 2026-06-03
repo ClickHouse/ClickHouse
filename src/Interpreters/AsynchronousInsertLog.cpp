@@ -1,6 +1,7 @@
 #include <Interpreters/AsynchronousInsertLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -8,8 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -46,7 +45,7 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
         {"bytes", std::make_shared<DataTypeUInt64>(), "Number of inserted bytes."},
         {"rows", std::make_shared<DataTypeUInt64>(), "Number of inserted rows."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
-        {"status", type_status, "Status of the view. Values: 'Ok' = 1 — Successful insert, 'ParsingError' = 2 — Exception when parsing the data, 'FlushError' = 3 — Exception when flushing the data"},
+        {"status", type_status, "Status of the insert. Values: 'Ok' = 0 — Successful insert, 'ParsingError' = 1 — Exception when parsing the data, 'FlushError' = 2 — Exception when flushing the data."},
         {"data_kind", type_data_kind, "The status of the data. Value: 'Parsed' and 'Preprocessed'."},
 
         {"flush_time", std::make_shared<DataTypeDateTime>(), "The date and time when the flush happened."},
