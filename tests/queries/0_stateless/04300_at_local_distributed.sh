@@ -2,9 +2,11 @@
 # Tags: distributed
 # Regression test: SELECT ts AT LOCAL FROM <distributed table> must work under
 # the default allow_nonconst_timezone_arguments = 0.
-# Previously, toTimeZone(expr, timeZone()) raised ILLEGAL_COLUMN in distributed
-# mode because timeZone() is a FunctionServerConstantBase that is not
-# constant-folded on remote shards when is_distributed = true.
+#
+# timeZone() returns the session timezone, which is propagated to remote shards
+# with the query settings and is therefore query-wide constant. It is always
+# suitable for constant folding (unlike serverTimezone() / hostName() which
+# legitimately differ per shard and must still be rejected).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,6 +28,9 @@ $CLICKHOUSE_CLIENT -q "
 
     -- AT TIME ZONE with a constant string also works
     SELECT dt AT TIME ZONE 'America/Denver' FROM t_at_local_dist ORDER BY dt;
+
+    -- serverTimezone() is shard-specific and must still be rejected under the default setting
+    SELECT dt AT TIME ZONE serverTimezone() FROM t_at_local_dist; -- { serverError ILLEGAL_COLUMN }
 
     DROP TABLE t_at_local_dist;
     DROP TABLE t_at_local_dist_local;

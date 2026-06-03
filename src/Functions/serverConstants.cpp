@@ -72,12 +72,14 @@ namespace
 
 
     /// Returns timezone for current session.
+    /// The session timezone is propagated to remote shards with the query settings, so it
+    /// is query-wide constant — always pass is_distributed=false to allow constant folding.
     class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
+        explicit FunctionTimezone([[maybe_unused]] ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), false) {}
     };
 
     /// Returns the server time zone (timezone in which server runs).
