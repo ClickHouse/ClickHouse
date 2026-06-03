@@ -45,7 +45,7 @@ public:
     UInt64 getHash() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
