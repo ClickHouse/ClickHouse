@@ -110,7 +110,7 @@ std::vector<pid_t> walkSubtree(pid_t root_pid, bool & truncated)
 }
 
 
-bool clearRefs(pid_t pid) noexcept
+bool clearRefs(pid_t pid)
 {
     if (pid <= 0)
         return false;
@@ -131,7 +131,7 @@ bool clearRefs(pid_t pid) noexcept
 }
 
 
-bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
+bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us)
 {
     utime_us = 0;
     stime_us = 0;
@@ -198,7 +198,7 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
 }
 
 
-bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept
+bool readPeakRss(pid_t pid, UInt64 & bytes)
 {
     bytes = 0;
     if (pid <= 0)
@@ -248,7 +248,6 @@ void UDFProcessSubtreeSampler::recordPoolWaitDone()
 void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
 {
     root_pid = root_pid_;
-    borrow_acquired = true;
     pre_snapshot.clear();
     pre_walk_pids.clear();
 
@@ -276,6 +275,13 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
         else
             read_stat_failed_any = true;
     }
+
+    /// Mark the borrow acquired only after the pre-snapshot is fully built.
+    /// `walkSubtree` and `readStat` allocate and may throw a memory-limit
+    /// `exception`; the caller catches it, but if `borrow_acquired` were set
+    /// up front, `recordReleased` would then run against an empty or partial
+    /// baseline and charge the worker's whole lifetime CPU to this borrow.
+    borrow_acquired = true;
 }
 
 

@@ -117,6 +117,14 @@ private:
 
 /// Free helpers for /proc parsing. On non-Linux platforms they are no-ops
 /// that return empty / false.
+///
+/// They return false for *expected* procfs failures (the pid vanished, a
+/// seccomp profile denies `open`, malformed contents), but they are NOT
+/// `noexcept`: a memory-limit `exception` thrown while allocating a
+/// `/proc/<pid>` path string is allowed to propagate. Every caller
+/// (`recordPidAcquired`, `recordReleased`) runs them inside a try/catch, so
+/// such an `exception` is logged and sampling is skipped, instead of hitting
+/// `std::terminate` at a `noexcept` boundary.
 namespace UDFProcfs
 {
     /// Recursively enumerate the root pid plus every descendant by walking
@@ -129,7 +137,7 @@ namespace UDFProcfs
     /// Write "5\n" to /proc/<pid>/clear_refs to reset VmHWM. Returns
     /// false on open/write failure (e.g. seccomp denies `open` on
     /// `/proc`, or the pid disappeared between walkSubtree and here).
-    bool clearRefs(pid_t pid) noexcept;
+    bool clearRefs(pid_t pid);
 
     /// Parse user and system CPU time from /proc/<pid>/stat, converting clock
     /// ticks to microseconds. `utime_us` sums fields 14 (`utime`, this pid's
@@ -138,10 +146,10 @@ namespace UDFProcfs
     /// cutime/cstime is necessary because a short-lived helper (e.g. python
     /// `subprocess.run`) finishes and is `waitpid`-ed before the post-walk
     /// even sees it; without those two fields the helper's CPU is invisible.
-    bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept;
+    bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us);
 
     /// Parse VmHWM from /proc/<pid>/status, converted to bytes.
-    bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept;
+    bool readPeakRss(pid_t pid, UInt64 & bytes);
 }
 
 }
