@@ -1,3 +1,5 @@
+#include <type_traits>
+#include <variant>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 #include <Common/logger_useful.h>
@@ -181,6 +183,21 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     if (format_version >= 3)
     {
+        Int64 added_records = 0;
+
+        /// TODO: should be easier
+        std::visit(
+            [&]<typename T>(const T & update)
+            {
+                using namespace Iceberg;
+                if constexpr ((std::is_same_v<SnapshotSummaryUpdateDelete, T>) || (std::is_same_v<std::monostate, T>))
+                    return;
+                else
+                    added_records = update.added_records;
+            },
+            snapshot_summary_update
+        );
+
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
