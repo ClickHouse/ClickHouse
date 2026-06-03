@@ -46,12 +46,13 @@ struct UniqueKeyIndexCacheEntry
         /// Per the `rocksdb::Cache` contract, the deleter must be invoked with
         /// the same `MemoryAllocator *` that allocated `obj`, which is whatever
         /// `cache->memory_allocator()` returned at Insert time. This adapter
-        /// does not override `memory_allocator()`, so the base-class default
-        /// is `nullptr` for the cache's lifetime — every caller allocates with
-        /// default `new`, and the deleter must be given `nullptr` to match.
-        /// If a custom allocator is ever needed, override
-        /// `UniqueKeyIndexCache::memory_allocator()` and thread the pointer
-        /// onto the entry at Insert time.
+        /// passes nothing to the base `rocksdb::Cache` constructor, so
+        /// `memory_allocator_` defaults to nullptr for the cache's lifetime —
+        /// every caller allocates with default `new`, and the deleter must be
+        /// given `nullptr` to match. (`Cache::memory_allocator()` is
+        /// non-virtual; you can't override it. To add a custom allocator,
+        /// pass `std::shared_ptr<MemoryAllocator>` to the base constructor
+        /// and thread the pointer onto the entry at Insert time.)
         ///
         /// `helper->del_cb` may be nullptr for `kNoopCacheItemHelper`-style
         /// entries; guard accordingly.
