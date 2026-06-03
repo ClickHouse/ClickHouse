@@ -11,6 +11,9 @@
 #   22. readColumnWithJSONData    – BinaryArray offsets buffer (same path as 19)
 #   23. readColumnWithViewData    – view struct length field exceeds variadic data buffer
 #   24. readColumnWithJSONData    – data buffer over-read (value_offset+length > data size)
+#   25. readColumnWithBigNumberFromBinaryData – offsets buffer read before size check
+#   26. readColumnWithGeoData     – offsets buffer read before per-row data-buffer check
+#   27. readIPv6ColumnFromBinaryData – offsets buffer read before size check
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -112,6 +115,20 @@ open(f'{out}/view_dlen.arrow', 'wb').write(d)
 d = write_arrow(pa.array([b'A'*96], type=pa.binary()))
 d = patch_last_i32(d, struct.pack('<ii', 0, 96), 0x20000000)
 open(f'{out}/json_dlen.arrow', 'wb').write(d)
+
+# 25. readColumnWithBigNumberFromBinaryData: value_length(i) reads the offsets buffer
+#     before any offsets-buffer check; checkBinaryOffsetsBuffer must fire first.
+d = write_arrow(pa.array([b'\xcc'*16], type=pa.binary()))
+open(f'{out}/bignum.arrow', 'wb').write(inflate_row_count(d, 1))
+
+# 26. readColumnWithGeoData: value_offset(i) and value_length(i) read the offsets
+#     buffer before the per-row data check; checkBinaryOffsetsBuffer must fire first.
+d = write_arrow(pa.array([b'\x01\x01\x00\x00\x00' + b'\x00'*16], type=pa.binary()))
+open(f'{out}/geo.arrow', 'wb').write(inflate_row_count(d, 1))
+
+# 27. readIPv6ColumnFromBinaryData: same offsets-buffer gap as case 25 but for IPv6.
+d = write_arrow(pa.array([b'\x00'*16], type=pa.binary()))
+open(f'{out}/ipv6_binary.arrow', 'wb').write(inflate_row_count(d, 1))
 PYEOF
 
 check() {
@@ -142,3 +159,10 @@ check json     $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/json.ar
 check view_dlen  $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/view_dlen.arrow', Arrow)"
 # JSON data-buffer: data offset+length inflated beyond value_data() buffer
 check json_dlen  $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/json_dlen.arrow', Arrow, 'x JSON') FORMAT Null"
+# BigNum: offsets buffer read via value_length() before checkBinaryOffsetsBuffer
+check bignum     $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/bignum.arrow', Arrow, 'x Int128')"
+# Geo: offsets buffer read via value_offset()/value_length() before checkBinaryOffsetsBuffer
+check geo        $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/geo.arrow', Arrow, 'x Point')" \
+                   --input_format_parquet_allow_geoparquet_parser=1
+# IPv6: offsets buffer read via value_length() before checkBinaryOffsetsBuffer
+check ipv6_binary $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/ipv6_binary.arrow', Arrow, 'x IPv6')"

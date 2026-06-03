@@ -651,6 +651,7 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
 
         for (size_t i = 0; i != chunk_length; ++i)
@@ -965,6 +966,7 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
         const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
@@ -1249,6 +1251,7 @@ static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(const std::shared_ptr<
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         const auto & chunk = dynamic_cast<const arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        checkBinaryOffsetsBuffer(chunk, column_name);
         const size_t chunk_length = chunk.length();
 
         for (size_t i = 0; i != chunk_length; ++i)
