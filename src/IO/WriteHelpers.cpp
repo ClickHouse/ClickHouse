@@ -402,10 +402,8 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 
     /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
     /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
-    int default_decimals;
-    if (memchr(default_buf, 'e', default_len) || memchr(default_buf, 'E', default_len))
-        default_decimals = -1;
-    else
+    int default_decimals = -1;
+    if (!memchr(default_buf, 'e', default_len) && !memchr(default_buf, 'E', default_len))
     {
         const char * dot = static_cast<const char *>(memchr(default_buf, '.', default_len));
         default_decimals = dot ? static_cast<int>(default_buf + default_len - dot - 1) : 0;
