@@ -21,6 +21,20 @@ def wait_nodes_gone(zks, paths, timeout=30.0):
                 time.sleep(0.05)
 
 
+def wait_nodes_exist(zks, paths, timeout=30.0):
+    # A follower applies a committed write to its state machine slightly after
+    # the leader has acknowledged it to the client, so a node created on the
+    # leader may not be visible on a follower for a brief moment. Poll instead
+    # of asserting immediately to avoid a race.
+    deadline = time.monotonic() + timeout
+    for zk in zks:
+        for path in paths:
+            while zk.exists(path) is None:
+                if time.monotonic() >= deadline:
+                    raise AssertionError(f"{path} did not appear on Keeper within {timeout}s")
+                time.sleep(0.05)
+
+
 def test_simple():
     run_uuid = uuid.uuid4()
     cluster = ClickHouseCluster(__file__, str(run_uuid))
@@ -39,8 +53,7 @@ def test_simple():
     node1_zk = get_fake_zk(cluster, "node1")
     node2_zk = get_fake_zk(cluster, "node2")
     node1_zk.create("/test_alive", b"aaaa", ttl=1000)
-    assert node1_zk.exists("/test_alive")
-    assert node2_zk.exists("/test_alive")
+    wait_nodes_exist([node1_zk, node2_zk], ["/test_alive"])
     wait_nodes_gone([node1_zk, node2_zk], ["/test_alive"])
 
     node1_zk.create("/test_alive", b"aaaa", ttl=1)
@@ -233,8 +246,7 @@ def test_recreate_node_after_ttl_expiration():
         wait_nodes_gone([node1_zk, node2_zk], ["/recreate"])
 
         node1_zk.create("/recreate", b"new")
-        assert node1_zk.exists("/recreate")
-        assert node2_zk.exists("/recreate")
+        wait_nodes_exist([node1_zk, node2_zk], ["/recreate"])
 
         time.sleep(1.2)
         assert node1_zk.exists("/recreate")
