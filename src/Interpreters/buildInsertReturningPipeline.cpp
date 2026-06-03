@@ -111,7 +111,10 @@ ContextMutablePtr makeReturningSelectContext(const ASTPtr & returning_select, Co
     return returning_context;
 }
 
-QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, ContextPtr context)
+QueryPipeline buildReturningSelectPipeline(
+    const ASTPtr & returning_select,
+    ContextPtr context,
+    QueryMetadataCachePtr & out_metadata_cache)
 {
     rejectUnsupportedReturningSettings(returning_select);
     auto returning_context = makeReturningSelectContext(returning_select, context);
@@ -151,15 +154,15 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
 
     /// The RETURNING subquery must read each table as of *after* the INSERT, not the pre-INSERT snapshot the INSERT
     /// phase may have pinned. With `enable_shared_storage_snapshot_in_query`, storage snapshots are cached per table
-    /// for the query's lifetime in the query context's `QueryMetadataCache`, which is a weak pointer owned by whoever
-    /// drives the query (see `executeQueryImpl`). Install a fresh cache on the query context and keep it alive while
-    /// the subquery is planned (snapshots are taken during planning, in `buildQueryPipeline`), so the subquery sees a
-    /// new, post-INSERT snapshot. The INSERT phase has finished, so the previous cache is no longer needed.
-    QueryMetadataCachePtr returning_metadata_cache;
+    /// for the query's lifetime in the query context's `QueryMetadataCache`. That member is a weak pointer, so the
+    /// cache must be owned for the whole pipeline lifetime by whoever drives the query (see `executeQueryImpl`, which
+    /// stores it in `BlockIO::query_metadata_cache`). Install a fresh cache on the query context and hand ownership to
+    /// the caller via `out_metadata_cache`, so it survives both planning and execution of the subquery and the
+    /// subquery sees a new, post-INSERT snapshot. The INSERT phase has finished, so the previous cache is not needed.
     if (returning_settings[Setting::enable_shared_storage_snapshot_in_query] && returning_context->hasQueryContext())
     {
-        returning_metadata_cache = std::make_shared<QueryMetadataCache>();
-        returning_context->getQueryContext()->setQueryMetadataCache(returning_metadata_cache);
+        out_metadata_cache = std::make_shared<QueryMetadataCache>();
+        returning_context->getQueryContext()->setQueryMetadataCache(out_metadata_cache);
     }
 
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
@@ -206,7 +209,7 @@ bool replacePipelineWithInsertReturningAfterPush(
         return false;
 
     io.pipeline.reset();
-    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context);
+    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache);
     setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select);
     if (io.finish_callback_state)
         io.finish_callback_state->insert_returning_result_as_select = true;
@@ -216,7 +219,8 @@ bool replacePipelineWithInsertReturningAfterPush(
 QueryPipeline buildInsertReturningPipeline(
     QueryPipeline insert_pipeline,
     const ASTPtr & returning_select,
-    ContextPtr context)
+    ContextPtr context,
+    QueryMetadataCachePtr & out_metadata_cache)
 {
     if (insert_pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "INSERT pipeline must be completed before wrapping with RETURNING");
@@ -236,7 +240,7 @@ QueryPipeline buildInsertReturningPipeline(
             std::move(callback), context->getSettingsRef()[Setting::interactive_delay] / 1000);
     insert_executor.execute();
 
-    return buildReturningSelectPipeline(returning_select, context);
+    return buildReturningSelectPipeline(returning_select, context, out_metadata_cache);
 }
 
 }

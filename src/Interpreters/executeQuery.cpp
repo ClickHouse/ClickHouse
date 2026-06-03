@@ -2077,7 +2077,8 @@ static BlockIO executeQueryImpl(
         {
             auto wrap_returning = [&]()
             {
-                res.pipeline = buildInsertReturningPipeline(std::move(res.pipeline), insert_query->returning_select, context);
+                res.pipeline = buildInsertReturningPipeline(
+                    std::move(res.pipeline), insert_query->returning_select, context, res.query_metadata_cache);
                 if (res.finish_callback_state)
                     res.finish_callback_state->insert_returning_result_as_select = true;
                 if (insert_table)
