@@ -313,9 +313,13 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     NameSet overwritten_by_chain;
     for (const auto & command : mutation_commands)
     {
-        if (command.type == MutationCommand::UPDATE || command.type == MutationCommand::DELETE)
-            for (const auto & [column, _] : command.column_to_update_expression)
-                overwritten_by_chain.insert(column);
+        if (command.type != MutationCommand::UPDATE && command.type != MutationCommand::DELETE)
+            continue;
+        auto ast = command.ast();
+        if (!ast)
+            continue;
+        for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
+            overwritten_by_chain.insert(column);
     }
 
     PrewhereExprSteps steps;
