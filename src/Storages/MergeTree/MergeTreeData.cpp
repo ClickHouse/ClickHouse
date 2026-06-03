@@ -10773,7 +10773,11 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
         return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
     }();
 
+#ifndef NDEBUG
     return std::make_shared<StorageInMemoryMetadata>(*base);
+#else
+    return base;
+#endif
 }
 
 StorageSnapshotPtr
