@@ -12,7 +12,6 @@
 #include <base/UUID.h>
 
 #include <chrono>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -175,6 +174,7 @@ public:
     using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
 
     QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    ~QueryResultCache();
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
@@ -196,8 +196,11 @@ public:
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
-    bool startAsyncInsert(const HerdCoalescingKey & key, std::optional<std::chrono::milliseconds> timeout)
-        TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// Thundering-herd coalescing for the streaming insert path. The first query for a key becomes the "executor" and
+    /// startAsyncInsert returns true; concurrent identical queries wait (bounded by `timeout`, or unbounded if `std::nullopt`)
+    /// for the executor's finishAsyncInsert and return false. Waiters that time out drop the stale token so the degraded state
+    /// does not persist for the key (the next query becomes a fresh executor).
+    bool startAsyncInsert(const HerdCoalescingKey & key, std::optional<std::chrono::milliseconds> timeout);
     void finishAsyncInsert(const HerdCoalescingKey & key);
 
     /// For debugging and system tables
@@ -216,18 +219,10 @@ private:
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
-    struct HerdAsyncInsertToken
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        bool done = false;
-    };
-
-    using HerdAsyncInsertTokenPtr = std::shared_ptr<HerdAsyncInsertToken>;
-    std::mutex herd_async_mutex;
-    std::unordered_map<HerdCoalescingKey, HerdAsyncInsertTokenPtr, HerdCoalescingKeyHash> herd_async_tokens;
-
-    void wakeHerdAsyncWaiters(std::vector<HerdAsyncInsertTokenPtr> tokens);
+    /// Thundering-herd coalescing state (token map, mutex, condition variables). Kept behind a pointer so that the heavy
+    /// synchronization headers (e.g. <condition_variable>) stay in the .cpp and do not leak into this widely-included header.
+    class HerdCoalescing;
+    const std::unique_ptr<HerdCoalescing> herd_coalescing;
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;
