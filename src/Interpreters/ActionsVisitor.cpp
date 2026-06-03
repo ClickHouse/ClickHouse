@@ -32,6 +32,9 @@
 #include <Columns/ColumnSet.h>
 
 #include <Storages/StorageSet.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedSetJoin.h>
+#endif
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -197,7 +200,7 @@ ColumnsWithTypeAndName createBlockForSet(
         .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
     };
 
-    /// Reuse the new analyzer logic
+    /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
 
@@ -217,7 +220,7 @@ ColumnsWithTypeAndName createBlockForSet(
 
     auto [right_arg_value, right_arg_type] = buildCollectionFieldAndTypeFromASTFunction(right_arg, context);
 
-    /// Reuse the new analyzer logic
+    /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
 }
@@ -555,7 +558,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
     const auto * as_literal = ast->as<ASTLiteral>();
     if (as_literal)
     {
-        assert(!as_literal->unique_column_name.empty());
+        chassert(!as_literal->unique_column_name.empty());
         child_column_name = as_literal->unique_column_name;
     }
 
@@ -678,7 +681,7 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
         }
 
         /// Special check for WITH statement alias. Add alias action to be able to use this alias.
-        if (identifier.prefer_alias_to_column_name && !identifier.alias.empty())
+        if (identifier.preferAliasToColumnName() && !identifier.alias.empty())
             data.addAlias(identifier.name(), identifier.alias);
     }
 }
@@ -687,12 +690,12 @@ namespace
 {
 void checkFunctionHasEmptyNullsAction(const ASTFunction & node)
 {
-    if (node.nulls_action != NullsAction::EMPTY)
+    if (node.getNullsAction() != NullsAction::EMPTY)
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,
             "Function {} cannot use {} NULLS",
             node.name,
-            node.nulls_action == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
+            node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
 }
 
@@ -858,7 +861,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 
     // Now we need to correctly process window functions and any expression which depend on them.
-    if (node.is_window_function)
+    if (node.isWindowFunction())
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
         if (node.window_definition)
@@ -883,7 +886,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         // aggregate functions.
         return;
     }
-    if (node.compute_after_window_functions)
+    if (node.computeAfterWindowFunctions())
     {
         if (!data.build_expression_with_window_functions)
         {
@@ -1020,12 +1023,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (!data.hasColumn(column.name))
                 {
                     auto column_set = ColumnSet::create(1, prepared_set);
-                    /// If prepared_set is not empty, we have a set made with literals.
-                    /// Create a const ColumnSet to make constant folding work
-                    if (is_constant_set)
-                        column.column = ColumnConst::create(std::move(column_set), 1);
-                    else
-                        column.column = std::move(column_set);
+                    column.column = ColumnConst::create(std::move(column_set), 1);
                     data.addColumn(column);
                 }
 
@@ -1158,9 +1156,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
     DataTypePtr type;
-    if (literal.custom_type)
-        type = literal.custom_type;
-    else if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1242,10 +1238,10 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             /// * first, query 'SELECT count() FROM table WHERE ...' is executed to get the set of affected parts (using analyzer)
             /// * second, every part is mutated separately, where plan is build "manually", using this code as well
             /// To share the Set in between first and second stage, we should use the same hash.
-            /// New analyzer is uses a hash from query tree, so here we also build a query tree.
+            /// The analyzer uses a hash from query tree, so here we also build a query tree.
             ///
             /// Note : this code can be safely removed, but the test 02581_share_big_sets will be too slow (and fail by timeout).
-            /// Note : we should use new analyzer for mutations and remove this hack.
+            /// Note : we should use the analyzer for mutations and remove this hack.
             InterpreterSelectQueryAnalyzer interpreter(right_in_operand, data.getContext(), SelectQueryOptions().analyze(true).subquery());
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
@@ -1271,6 +1267,10 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
+#if CLICKHOUSE_CLOUD
+                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+#endif
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);

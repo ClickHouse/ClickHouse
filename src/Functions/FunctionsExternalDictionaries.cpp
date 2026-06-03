@@ -5,30 +5,30 @@ namespace DB
 {
 
 /// Helper to get the description for dictGet<type> functions
-String getDictGetDescription(const String & type_name)
+static String getDictGetDescription(const String & type_name)
 {
     return fmt::format("Converts a dictionary attribute value to `{}` data type regardless of the dictionary configuration.", type_name);
 }
 
-String getDictGetOrDefaultDescription(const String & type_name)
+static String getDictGetOrDefaultDescription(const String & type_name)
 {
     return fmt::format("Converts a dictionary attribute value to `{}` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.", type_name);
 }
 
 /// Helper to get the syntax for dictGet<type> functions
-String getDictGetSyntax(const String & type_name)
+static String getDictGetSyntax(const String & type_name)
 {
     return fmt::format("dictGet{}(dict_name, attr_name, id_expr)", type_name);
 }
 
 /// Helper to get the syntax for dictGet<type>OrDefault functions
-String getDictGetOrDefaultSyntax(const String & type_name)
+static String getDictGetOrDefaultSyntax(const String & type_name)
 {
     return fmt::format("dictGet{}OrDefault(dict_name, attr_name, id_expr, default_value_expr)", type_name);
 }
 
 /// Helper to get the arguments for dictGet<type> functions
-FunctionDocumentation::Arguments getDictGetArguments()
+static FunctionDocumentation::Arguments getDictGetArguments()
 {
     FunctionDocumentation::Arguments args;
     args.emplace_back(FunctionDocumentation::Argument{"dict_name", "Name of the dictionary.", {"String"}});
@@ -38,7 +38,7 @@ FunctionDocumentation::Arguments getDictGetArguments()
 }
 
 /// Helper to get the arguments for dictGet<type>OrDefault functions
-FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
+static FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
 {
     FunctionDocumentation::Arguments args;
     args.emplace_back(FunctionDocumentation::Argument{"dict_name", "Name of the dictionary.", {"String"}});
@@ -49,7 +49,7 @@ FunctionDocumentation::Arguments getDictGetOrDefaultArguments()
 }
 
 /// Helper to get the returned value documentation for dictGet<type> functions
-FunctionDocumentation::ReturnedValue getDictGetReturnedValue()
+static FunctionDocumentation::ReturnedValue getDictGetReturnedValue()
 {
     return {R"(
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
@@ -62,7 +62,7 @@ ClickHouse throws an exception if it cannot parse the value of the attribute or 
 }
 
 /// Helper to get the returned value documentation for dictGet<type>OrDefault functions
-FunctionDocumentation::ReturnedValue getDictGetOrDefaultReturnedValue()
+static FunctionDocumentation::ReturnedValue getDictGetOrDefaultReturnedValue()
 {
     return {R"(
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
@@ -1080,7 +1080,7 @@ R"(
     {
         FunctionDocumentation::Description description =
 R"(
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 )";
         FunctionDocumentation::Syntax syntax = "dictGetHierarchy(dict_name, key)";
         FunctionDocumentation::Arguments arguments = {

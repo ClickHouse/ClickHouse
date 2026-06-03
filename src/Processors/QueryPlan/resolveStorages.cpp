@@ -54,6 +54,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
 }
 
+Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
+
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
@@ -69,6 +71,8 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
+
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
@@ -219,6 +223,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         options.ignore_rename_columns = true;
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
+        reading_plan.addInterpreterContext(context);
     }
     else
     {
@@ -228,16 +233,27 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
 
+        bool use_parallel_replicas = false;
+        if (reading_from_table)
+            use_parallel_replicas = reading_from_table->useParallelReplicas();
+
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
+
         storage->read(
             reading_plan,
             column_names,
             snapshot,
             select_query_info,
-            context,
+            mutable_context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
             context->getSettingsRef()[Setting::max_threads]
         );
+
+        /// Preserve the mutable_context for the lifetime of query execution
+        /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
+        reading_plan.addInterpreterContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
@@ -259,7 +275,6 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
 
-    reading_plan.addInterpreterContext(context);
     reading_plan.addStorageHolder(std::move(storage));
     reading_plan.addTableLock(std::move(table_lock));
 

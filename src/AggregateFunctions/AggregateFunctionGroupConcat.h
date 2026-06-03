@@ -9,10 +9,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ArenaAllocator.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -45,7 +42,7 @@ struct GroupConcatData : public GroupConcatDataBase
 };
 
 template <bool has_limit>
-class GroupConcatImpl : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
+class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
 {
     static constexpr auto name = "groupConcat";
 
@@ -61,7 +58,7 @@ public:
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
-        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat"};
+        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
         return aliases;
     }
 

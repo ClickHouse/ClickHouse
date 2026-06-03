@@ -101,7 +101,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
-    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
+    int getClientExitCode() { return client_runner.has_value() ? client_runner->getExitCode() : 0; }
 
 
     DescriptorSet client_input_output;
@@ -345,7 +345,8 @@ public:
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
         server_cb.auth_password_function = authPasswordAdapter<ssh_session, const char *, const char *>;
-        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY);
+        server_cb.auth_none_function = authNoneAdapter<ssh_session, const char *>;
+        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY | SSH_AUTH_METHOD_NONE);
         server_cb.channel_open_request_session_function = channelOpenAdapter<ssh_session>;
 
         ssh_callbacks_init(&server_cb)
@@ -452,6 +453,30 @@ public:
 
     GENERATE_ADAPTER_FUNCTION(SessionCallback, authPassword, int)
 
+    int authNone(ssh_session, const char * user) noexcept
+    {
+        try
+        {
+            LOG_TRACE(log, "Authenticating user '{}' with none", user);
+            auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
+            /// Accept the "none" method whenever an empty password authenticates the user.
+            /// This covers both `NO_PASSWORD` and any password-type method whose stored
+            /// credential happens to be the empty string (e.g. `IDENTIFIED WITH plaintext_password BY ''`).
+            db_session_created->authenticate(BasicCredentials{String(user), ""}, peer_address);
+            authenticated = true;
+            db_session = std::move(db_session_created);
+            return SSH_AUTH_SUCCESS;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            ++auth_attempts;
+            return SSH_AUTH_DENIED;
+        }
+    }
+
+    GENERATE_ADAPTER_FUNCTION(SessionCallback, authNone, int)
+
     ssh_server_callbacks_struct server_cb = {};
 };
 
@@ -532,6 +557,34 @@ void SSHPtyHandler::run()
 
     event.removeFd(sdata.channel_callback->client_input_output.out);
     event.removeFd(sdata.channel_callback->client_input_output.err);
+
+    /// Drain any remaining data from stdout/stderr pipes before closing the channel.
+    /// The client may have finished writing to the pipes before the event loop had a chance
+    /// to forward all the data through the SSH channel. For example, if the command fails
+    /// quickly (e.g. \i produces SUPPORT_IS_DISABLED), the error message in the pipe buffer
+    /// would be lost without this drain.
+    auto drain = [&](int fd, bool is_stderr)
+    {
+        if (fd == -1)
+            return;
+
+        struct pollfd pfd = {};
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        while (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN))
+        {
+            char buf[1024];
+            int bytes_read = static_cast<int>(read(fd, buf, sizeof(buf)));
+            if (bytes_read <= 0)
+                break;
+            if (is_stderr)
+                ssh_channel_write_stderr(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+            else
+                ssh_channel_write(sdata.channel_callback->channel.getCChannelPtr(), buf, bytes_read);
+        }
+    };
+    drain(sdata.channel_callback->client_input_output.out, false);
+    drain(sdata.channel_callback->client_input_output.err, true);
 
 
     sdata.channel_callback->channel.sendEof();

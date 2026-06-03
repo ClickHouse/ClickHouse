@@ -12,6 +12,8 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
@@ -23,6 +25,14 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserThrottlerBytes;
+    extern const Event UserThrottlerSleepMicroseconds;
+    extern const Event AllUsersThrottlerBytes;
+    extern const Event AllUsersThrottlerSleepMicroseconds;
 }
 
 namespace DB
@@ -38,14 +48,8 @@ namespace Setting
     extern const SettingsUInt64 max_network_bandwidth_for_user;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_user;
     extern const SettingsUInt64 memory_usage_overcommit_max_wait_microseconds;
-    extern const SettingsUInt64 memory_overcommit_ratio_denominator;
     extern const SettingsUInt64 memory_overcommit_ratio_denominator_for_user;
-    extern const SettingsUInt64 memory_profiler_step;
-    extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
-    extern const SettingsUInt64 memory_profiler_sample_max_allocation_size;
-    extern const SettingsFloat memory_profiler_sample_probability;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_query;
-    extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsUInt64 priority;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool replace_running_query;
@@ -286,44 +290,31 @@ ProcessList::EntryPtr ProcessList::insert(
                 if (temporary_data_on_disk_settings.buffer_size > 1_GiB)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
 
-                query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
-                    user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
+                if (user_process_list.user_temp_data_on_disk)
+                    query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
+                        user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
             }
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
-            thread_group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
+            configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
-            if (query_context->hasTraceCollector())
+            if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
             {
-                /// Set up memory profiling
-                thread_group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
-
-                thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
-                thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
-                thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
-
-                /// Set up tracing of profile events
-                if (settings[Setting::trace_profile_events])
+                const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                if (!list_of_events_to_trace.empty())
                 {
-                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                    if (!list_of_events_to_trace.empty())
-                    {
-                        /// Trace specific profile events
-                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                    }
-                    else
-                    {
-                        /// Trace all profile events
-                        thread_group->performance_counters.setTraceAllProfileEvents();
-                    }
+                    /// Trace specific profile events
+                    thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                }
+                else
+                {
+                    /// Trace all profile events
+                    thread_group->performance_counters.setTraceAllProfileEvents();
                 }
             }
 
             thread_group->memory_tracker.setDescription("Query");
-            if (settings[Setting::memory_tracker_fault_probability] > 0.0)
-                thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
-
             thread_group->memory_tracker.setOvercommitWaitingTime(settings[Setting::memory_usage_overcommit_max_wait_microseconds]);
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
@@ -356,9 +347,9 @@ ProcessList::EntryPtr ProcessList::insert(
             increaseQueryKindAmount(query_kind);
         }
 
-        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
-        res = std::make_shared<Entry>(*this, process_it);
+        res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
 
         (*process_it)->setUserProcessList(&user_process_list);
         (*process_it)->setProcessListEntry(res);
@@ -377,14 +368,20 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
+            total_network_throttler = std::make_shared<Throttler>(
+                settings[Setting::max_network_bandwidth_for_all_users],
+                ProfileEvents::AllUsersThrottlerBytes,
+                ProfileEvents::AllUsersThrottlerSleepMicroseconds);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-                user_process_list.user_throttler
-                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
+                user_process_list.user_throttler = std::make_shared<Throttler>(
+                    settings[Setting::max_network_bandwidth_for_user],
+                    total_network_throttler,
+                    ProfileEvents::UserThrottlerBytes,
+                    ProfileEvents::UserThrottlerSleepMicroseconds);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -396,7 +393,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
 ProcessListEntry::~ProcessListEntry()
 {
-    CancellationChecker::getInstance().appendDoneTasks(*it);
+    if (registered_in_cancellation_checker)
+    {
+        /// We need to block the overcommit tracker here to avoid lock inversion because OvercommitTracker takes a lock on the ProcessList::mutex.
+        /// When task is added, we lock the ProcessList::mutex, and then the CancellationChecker mutex.
+        OvercommitTrackerBlockerInThread blocker;
+        CancellationChecker::getInstance().appendDoneTasks(*it);
+    }
+
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
     const String user = (*it)->getClientInfo().current_user;
@@ -499,7 +503,7 @@ QueryStatus::~QueryStatus()
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & [_, e] : executors)
-        assert(!e->executor);
+        chassert(!e->executor);
 #endif
 
     if (auto * memory_tracker = getMemoryTracker())
@@ -591,7 +595,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     throwProperExceptionIfNeeded(max_exec_time, 0);
 
     std::lock_guard lock(executors_mutex);
-    assert(!executors.contains(e));
+    chassert(!executors.contains(e));
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
@@ -601,7 +605,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        assert(executors.contains(e));
+        chassert(executors.contains(e));
         executor_holder = executors[e];
         executors.erase(e);
     }
@@ -625,6 +629,19 @@ void QueryStatus::throwQueryWasCancelled() const
         std::rethrow_exception(cancellation_exception);
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+}
+
+void QueryStatus::throwIfKilled()
+{
+    if (!is_killed.load())
+        return;
+    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
+}
+
+CancelReason QueryStatus::getCancelReason() const
+{
+    std::lock_guard<std::mutex> lock(cancel_mutex);
+    return cancel_reason;
 }
 
 bool QueryStatus::checkTimeLimitSoft()
@@ -664,6 +681,12 @@ ThrottlerPtr QueryStatus::getUserNetworkThrottler()
     return user_process_list->user_throttler;
 }
 
+MemoryTracker * QueryStatus::getMemoryTracker() const
+{
+    if (!thread_group)
+        return nullptr;
+    return &thread_group->memory_tracker;
+}
 
 QueryStatusPtr ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
@@ -763,6 +786,25 @@ void ProcessList::killAllQueries()
     for (auto & cancelled_process : cancelled_processes)
         cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
 
+}
+
+bool QueryStatus::updateProgressIn(const Progress & value)
+{
+    CurrentThread::updateProgressIn(value);
+    progress_in.incrementPiecewiseAtomically(value);
+
+    if (priority_handle)
+        priority_handle->waitIfNeed();
+
+    return !is_killed.load(std::memory_order_relaxed);
+}
+
+bool QueryStatus::updateProgressOut(const Progress & value)
+{
+    CurrentThread::updateProgressOut(value);
+    progress_out.incrementPiecewiseAtomically(value);
+
+    return !is_killed.load(std::memory_order_relaxed);
 }
 
 
@@ -872,8 +914,9 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             .metrics = {}, /// Metrics are set by child scopes
         };
 
-        user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),
-            std::move(temporary_data_on_disk_settings));
+        if (auto shared_temp_data = global_context->getSharedTempDataOnDisk())
+            user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
+                std::move(temporary_data_on_disk_settings));
     }
 }
 

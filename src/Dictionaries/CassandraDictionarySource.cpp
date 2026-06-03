@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+void registerDictionarySourceCassandra(DictionarySourceFactory & factory);
 void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const String & name,
@@ -157,7 +158,7 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
@@ -168,13 +169,13 @@ BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
 
     /// TODO is there a better way to load data by complex keys?
-    std::unordered_map<UInt64, std::vector<size_t>> partitions;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
     for (const auto & row : requested_rows)
     {
         SipHash partition_key;

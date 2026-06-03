@@ -13,10 +13,10 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitorSum.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
-
-#include <map>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
 
 
 namespace DB
@@ -584,6 +584,19 @@ private:
     bool compareImpl(FieldType & x) const
     {
         auto val = rhs.safeGet<FieldType>();
+        if constexpr (is_floating_point<FieldType>)
+        {
+            /// Match `max` semantics: NaN is treated as last (i.e. smaller than
+            /// any non-NaN value), so it is only kept when every observed value
+            /// is NaN. See #100448.
+            if (isNaN(val))
+                return false;
+            if (isNaN(x))
+            {
+                x = val;
+                return true;
+            }
+        }
         if (val > x)
         {
             x = val;
@@ -624,6 +637,19 @@ private:
     bool compareImpl(FieldType & x) const
     {
         auto val = rhs.safeGet<FieldType>();
+        if constexpr (is_floating_point<FieldType>)
+        {
+            /// Match `min` semantics: NaN is treated as last (i.e. larger than
+            /// any non-NaN value), so it is only kept when every observed value
+            /// is NaN. See #100448.
+            if (isNaN(val))
+                return false;
+            if (isNaN(x))
+            {
+                x = val;
+                return true;
+            }
+        }
         if (val < x)
         {
             x = val;
@@ -755,6 +781,7 @@ auto parseArguments(const std::string & name, const DataTypes & arguments)
 
 }
 
+void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
     // these functions used to be called *Map, with now these names occupied by
@@ -855,7 +882,7 @@ FROM multi_metrics;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<false, false>>(keys_type, values_types, arguments, params);
-    }, {}, sumMappedArrays_documentation});
+    }, sumMappedArrays_documentation});
 
     FunctionDocumentation::Description minMappedArrays_description = R"(
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
@@ -898,7 +925,7 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMinMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMinMap<false>>(keys_type, values_types, arguments, params);
-    }, {}, minMappedArrays_documentation});
+    }, minMappedArrays_documentation, {}});
 
     FunctionDocumentation::Description maxMappedArrays_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
@@ -925,9 +952,9 @@ SELECT maxMappedArrays(a, b)
 FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], [3, 1]));
         )",
         R"(
-┌─maxMappedArrays(a, b)────────────────┐
-│ [['x', 'y', 'z'], [2, 3, 1]].        │
-└──────────────────────────────────────┘
+┌─maxMappedArrays(a, b)───┐
+│ (['x','y','z'],[2,3,1]) │
+└─────────────────────────┘
         )"
     }
     };
@@ -941,7 +968,7 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
         if (tuple_argument)
             return std::make_shared<AggregateFunctionMaxMap<true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionMaxMap<false>>(keys_type, values_types, arguments, params);
-    }, {}, maxMappedArrays_documentation});
+    }, maxMappedArrays_documentation});
 
     // these functions could be renamed to *MappedArrays too, but it would
     // break backward compatibility
@@ -1025,23 +1052,23 @@ GROUP BY timeslot;
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMap<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMap<true, false>>(keys_type, values_types, arguments, params);
-    }, {}, sumMapWithOverflow_documentation});
+    }, sumMapWithOverflow_documentation});
 
-    factory.registerFunction("sumMapFiltered", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    factory.registerFunction("sumMapFiltered", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<false, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<false, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}});
 
-    factory.registerFunction("sumMapFilteredWithOverflow", [](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
+    factory.registerFunction("sumMapFilteredWithOverflow", {[](const std::string & name, const DataTypes & arguments, const Array & params, const Settings *) -> AggregateFunctionPtr
     {
         auto [keys_type, values_types, tuple_argument] = parseArguments(name, arguments);
         if (tuple_argument)
             return std::make_shared<AggregateFunctionSumMapFiltered<true, true>>(keys_type, values_types, arguments, params);
         return std::make_shared<AggregateFunctionSumMapFiltered<true, false>>(keys_type, values_types, arguments, params);
-    });
+    }, {}});
 }
 
 }

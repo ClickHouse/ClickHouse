@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -71,8 +72,13 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
+/// Ordered map to ensure deterministic iteration order.
+/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
+/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
+/// `std::unordered_map` does not guarantee the same iteration order after copy,
+/// which leads to mismatched prewhere readers and actions.
+using IndexReadTasks = std::map<String, IndexReadTask>;
+using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -95,9 +101,9 @@ struct MergeTreeReadTaskInfo
     /// Parent part of the projection part
     DataPartPtr parent_part;
     /// For `part_index` virtual column
-    size_t part_index_in_query;
+    size_t part_index_in_query{};
     /// For `part_starting_offset` virtual column
-    size_t part_starting_offset_in_query;
+    size_t part_starting_offset_in_query{};
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
     /// `_part_offset` mapping used to merge projections with `_part_offset`.
@@ -164,6 +170,11 @@ public:
     {
         Block block;
         MarkRanges read_mark_ranges;
+        /// Per-granule unmatched marks: marks where all rows were filtered out by PREWHERE.
+        /// Populated only when use_query_condition_cache is enabled.
+        /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
+        /// because it captures individual filtered-out granules even in partially-passing batches.
+        MarkRanges unmatched_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
@@ -176,7 +187,7 @@ public:
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
@@ -196,6 +207,13 @@ public:
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
+    /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
+    /// secondary indexes (skip-index or projection-index). When true, marks that appear in
+    /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
+    /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
+    /// See Issue #104781.
+    bool readersChainCanSkipMarksBeforePrewhere() const;
+
     Readers releaseReaders() { return std::move(readers); }
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }
@@ -212,6 +230,9 @@ public:
         const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
+    using DataflowCacheUpdateCallback
+        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+
     UInt64 estimateNumRows() const;
 
     /// Shared information required for reading.
@@ -239,6 +260,7 @@ private:
     MergeTreeBlockSizePredictorPtr size_predictor;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    DataflowCacheUpdateCallback dataflow_cache_update_cb;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

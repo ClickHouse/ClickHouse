@@ -1,4 +1,5 @@
 #include <Backups/BackupFactory.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -55,6 +56,8 @@ void registerBackupEngineMemory(BackupFactory &);
 void registerBackupEngineNull(BackupFactory &);
 void registerBackupEngineS3(BackupFactory &);
 void registerBackupEngineAzureBlobStorage(BackupFactory &);
+
+void registerBackupEngines(BackupFactory & factory);
 
 void registerBackupEngines(BackupFactory & factory)
 {

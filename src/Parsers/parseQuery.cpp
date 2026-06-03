@@ -32,7 +32,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl;
+    const char * nl = nullptr;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
@@ -79,8 +79,8 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        assert(current_position_to_hilite <= end);
-        assert(current_position_to_hilite >= begin);
+        chassert(current_position_to_hilite <= end);
+        chassert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
 
@@ -305,6 +305,8 @@ ASTPtr tryParseQuery(
             if (lookahead->isError())
             {
                 out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
+                // Advance the position for further processing of possible test hint.
+                _out_query_end = token_iterator.max().end;
                 return nullptr;
             }
 

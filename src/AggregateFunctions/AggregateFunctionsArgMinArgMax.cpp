@@ -49,7 +49,10 @@ template <class ValueType>
 struct AggregateFunctionArgMinMaxDataGeneric
 {
 private:
-    SingleValueDataBaseMemoryBlock result_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock result_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     ValueType value_data;
 
 public:
@@ -58,12 +61,13 @@ public:
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
 
-    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric()
+    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) : value_data()
+    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        : value_data()
     {
         generateSingleValueFromType(result_type, result_data);
     }
@@ -433,6 +437,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 
 }
 
+void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
@@ -506,7 +511,7 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
         "argMin",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<true>(name, argument_types, params, settings, false); },
-         properties, documentation_argMin});
+         documentation_argMin, properties});
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
@@ -577,7 +582,7 @@ SELECT argMax(a, (b,a)) FROM test;
         "argMax",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
-         properties, documentation_argMax});
+         documentation_argMax, properties});
 
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
@@ -654,7 +659,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
         "argAndMin",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<true>(name, argument_types, params, settings, true); },
-         properties, documentation_argAndMin});
+         documentation_argAndMin, properties});
 
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
@@ -731,7 +736,7 @@ SELECT argAndMax(a, (b,a)) FROM test;
         "argAndMax",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, true); },
-         properties, documentation_argAndMax});
+         documentation_argAndMax, properties});
 }
 
 }

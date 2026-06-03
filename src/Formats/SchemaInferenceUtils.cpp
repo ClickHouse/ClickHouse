@@ -470,15 +470,16 @@ namespace
         updateTypeIndexes(data_types, type_indexes);
     }
 
-    /// If we have both Nullable and non Nullable types, make all types Nullable
-    void transformNullableTypes(DataTypes & data_types, TypeIndexesSet & type_indexes)
+    /// If we have both Nullable and non Nullable types, make all types Nullable.
+    /// Nullable(Tuple(...)) is controlled by schema_inference_allow_nullable_tuple_type.
+    void transformNullableTypes(DataTypes & data_types, TypeIndexesSet & type_indexes, const FormatSettings & settings)
     {
         if (!type_indexes.contains(TypeIndex::Nullable))
             return;
 
         for (auto & type : data_types)
         {
-            if (type->canBeInsideNullable())
+            if (canBeInsideNullableBySchemaSettings(type, settings))
                 type = makeNullable(type);
         }
 
@@ -737,7 +738,7 @@ namespace
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
         {
             /// Make types Nullable if needed.
-            transformNullableTypes(data_types, type_indexes);
+            transformNullableTypes(data_types, type_indexes, settings);
 
             /// If we have type Nothing, it means that we had empty Array/Map while inference.
             /// If there is at least one non Nothing type, change all Nothing types to it.
@@ -770,7 +771,7 @@ namespace
                 transformVariant(data_types, type_indexes);
         };
 
-        transformTypesRecursively(types, transform_simple_types, transform_complex_types);
+        transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings);
     }
 
     template <bool is_json>
@@ -812,7 +813,7 @@ namespace
             return true;
 
         ReadBufferFromString buf(field);
-        Float64 tmp_float;
+        Float64 tmp_float = 0;
         /// Check if it's a float value, and if so, don't try to infer DateTime from it,
         /// because it will lead to inferring DateTime instead of simple Float64 in some cases.
         if (tryReadFloatText(tmp_float, buf) && buf.eof())
@@ -862,7 +863,7 @@ namespace
 
         if (!settings.try_infer_datetimes_only_datetime64)
         {
-            time_t tmp;
+            time_t tmp = 0;
             if (tryInferDateTime(field, tmp, settings))
                 return std::make_shared<DataTypeDateTime>();
         }
@@ -1021,8 +1022,8 @@ namespace
         if (buf.eof())
             return nullptr;
 
-        Float64 tmp_float;
-        bool has_fractional;
+        Float64 tmp_float = 0;
+        bool has_fractional = false;
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
@@ -1037,7 +1038,7 @@ namespace
                 if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional) && has_fractional)
                     return std::make_shared<DataTypeFloat64>();
 
-                Int64 tmp_int;
+                Int64 tmp_int = 0;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_int, buf))
                 {
@@ -1048,7 +1049,7 @@ namespace
                 }
 
                 /// In case of Int64 overflow we can try to infer UInt64.
-                UInt64 tmp_uint;
+                UInt64 tmp_uint = 0;
                 buf.position() = number_start;
                 if (tryReadIntText(tmp_uint, buf))
                     return std::make_shared<DataTypeUInt64>();
@@ -1066,7 +1067,7 @@ namespace
                 return std::make_shared<DataTypeFloat64>();
             peekable_buf.rollbackToCheckpoint(/* drop= */ false);
 
-            Int64 tmp_int;
+            Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, peekable_buf))
             {
                 auto type = std::make_shared<DataTypeInt64>();
@@ -1077,7 +1078,7 @@ namespace
             peekable_buf.rollbackToCheckpoint(/* drop= */ true);
 
             /// In case of Int64 overflow we can try to infer UInt64.
-            UInt64 tmp_uint;
+            UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, peekable_buf))
                 return std::make_shared<DataTypeUInt64>();
         }
@@ -1097,7 +1098,7 @@ namespace
 
         if (settings.try_infer_integers)
         {
-            Int64 tmp_int;
+            Int64 tmp_int = 0;
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
@@ -1110,7 +1111,7 @@ namespace
             buf.position() = buf.buffer().begin();
 
             /// In case of Int64 overflow, try to infer UInt64
-            UInt64 tmp_uint;
+            UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, buf) && buf.eof())
                 return std::make_shared<DataTypeUInt64>();
         }
@@ -1118,8 +1119,8 @@ namespace
         /// We can safely get back to the start of buffer, because we read from a string and we didn't reach eof.
         buf.position() = buf.buffer().begin();
 
-        Float64 tmp;
-        bool has_fractional;
+        Float64 tmp = 0;
+        bool has_fractional = false;
         if (tryReadFloat<is_json>(tmp, buf, settings, has_fractional) && buf.eof())
             return std::make_shared<DataTypeFloat64>();
 
@@ -1397,6 +1398,14 @@ namespace
     }
 }
 
+bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings)
+{
+    if (isTuple(type) && !settings.schema_inference_allow_nullable_tuple_type)
+        return false;
+
+    return type->canBeInsideNullable();
+}
+
 bool checkIfTypesAreEqual(const DataTypes & types)
 {
     if (types.empty())
@@ -1439,7 +1448,7 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
     transformInferredJSONTypesIfNeeded(first, second, settings, &json_info);
 }
 
-void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
+static void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info, bool remain_nothing_types = false)
 {
     if (!data_type)
         return;
@@ -1703,10 +1712,13 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
             nested_types.push_back(nested_type);
         }
 
+        DataTypePtr tuple_res;
         if (tuple_type->hasExplicitNames())
-            return std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types), tuple_type->getElementNames());
+        else
+            tuple_res = std::make_shared<DataTypeTuple>(std::move(nested_types));
 
-        return std::make_shared<DataTypeTuple>(std::move(nested_types));
+        return (make_nullable && settings.schema_inference_allow_nullable_tuple_type) ? makeNullableSafe(tuple_res) : tuple_res;
     }
 
     if (which.isMap())

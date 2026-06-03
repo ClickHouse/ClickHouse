@@ -30,7 +30,7 @@ ProtobufListInputFormat::ProtobufListInputFormat(
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,
-          false,    // oneof_presence
+          /* oneof_presence = */ false,
           *reader))
 {
 }
@@ -41,17 +41,40 @@ void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
     IRowInputFormat::setReadBuffer(in_);
 }
 
+void ProtobufListInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    /// ProtobufSerializerEnvelope carries across-rows state (the
+    /// "have we opened the envelope yet" flag), and the reader keeps the
+    /// envelope's message-bounds stack — rewind both so the next readRow
+    /// opens a fresh envelope. This also recovers from a partially-read
+    /// envelope after an exception.
+    reader->resetState();
+    serializer->resetState();
+}
+
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
+    size_t row_num = columns.empty() ? 0 : columns[0]->size();
+    if (!row_num)
+    {
+        serializer->setColumns(columns.data(), columns.size());
+
+        /// Check for EOF before starting to read the envelope message.
+        /// An empty input (0 bytes) is valid and means 0 rows.
+        if (reader->eof())
+            return false;
+
+        /// Start the outer message before checking eof below.
+        /// This is needed because the eof check relies on knowing the message bounds.
+        serializer->startReading();
+    }
+
     if (reader->eof())
     {
         reader->endMessage(/*ignore_errors =*/ false);
         return false;
     }
-
-    size_t row_num = columns.empty() ? 0 : columns[0]->size();
-    if (!row_num)
-        serializer->setColumns(columns.data(), columns.size());
 
     serializer->readRow(row_num);
 
@@ -65,7 +88,13 @@ bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension
 size_t ProtobufListInputFormat::countRows(size_t max_block_size)
 {
     if (getRowNum() == 0)
+    {
+        /// Check for EOF before starting to read the envelope message.
+        /// An empty input (0 bytes) is valid and means 0 rows.
+        if (reader->eof())
+            return 0;
         reader->startMessage(true);
+    }
 
     if (reader->eof())
     {
@@ -76,7 +105,7 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
     size_t num_rows = 0;
     while (!reader->eof() && num_rows < max_block_size)
     {
-        int tag;
+        int tag = 0;
         reader->readFieldNumber(tag);
         reader->startNestedMessage();
         reader->endNestedMessage();
@@ -108,6 +137,7 @@ NamesAndTypesList ProtobufListSchemaReader::readSchema()
     return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields, oneof_presence);
 }
 
+void registerInputFormatProtobufList(FormatFactory & factory);
 void registerInputFormatProtobufList(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -134,6 +164,7 @@ void registerInputFormatProtobufList(FormatFactory & factory)
         });
 }
 
+void registerProtobufListSchemaReader(FormatFactory & factory);
 void registerProtobufListSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("ProtobufList", [](const FormatSettings & settings)
@@ -149,6 +180,8 @@ void registerProtobufListSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatProtobufList(FormatFactory &);
+void registerProtobufListSchemaReader(FormatFactory &);
 void registerInputFormatProtobufList(FormatFactory &) {}
 void registerProtobufListSchemaReader(FormatFactory &) {}
 }

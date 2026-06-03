@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
+
+#include <memory>
 
 class SipHash;
 
@@ -120,6 +122,6 @@ private:
 };
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CompressionCodecPtr>;
+using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
 
 }

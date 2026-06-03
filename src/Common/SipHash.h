@@ -198,6 +198,7 @@ public:
         hi = v2 ^ v3;
     }
 
+    /// ATTENTION: This is not constant method, if you call it several times, it will return different results, because of the finalization step.
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;
@@ -213,7 +214,7 @@ public:
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
-    std::array<char, 16> arr;
+    std::array<char, 16> arr{};
     *reinterpret_cast<UInt128*>(arr.data()) = sip_hash.get128();
     return arr;
 }

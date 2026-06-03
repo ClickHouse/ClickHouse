@@ -2,6 +2,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -48,7 +49,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -64,8 +65,8 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
 
-            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+            bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
                 database_engine == "Replicated";
 
             /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
@@ -79,8 +80,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
-            /// Make sure that {uuid} macro is allowed, if present.
-            args.getContext()->getMacros()->expand(path, info);
+            {
+                /// Some fields (e.g.: level) in MacroExpansionInfo are modified during macro expansion.
+                /// Let's make a copy, so the next call won't interfere with this one.
+                auto info_copy = info;
+                /// Make sure that {uuid} macro is allowed, if present.
+                args.getContext()->getMacros()->expand(path, info_copy);
+            }
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;
@@ -130,6 +136,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 }
 
 #if USE_AWS_S3
+void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -148,6 +155,7 @@ void registerStorageS3Queue(StorageFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     factory.registerStorage(

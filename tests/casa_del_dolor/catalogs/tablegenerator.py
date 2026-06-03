@@ -34,11 +34,11 @@ class LakeTableGenerator:
 
     @staticmethod
     def get_next_generator(lake: LakeFormat):
-        return (
-            IcebergTableGenerator()
-            if lake == LakeFormat.Iceberg
-            else DeltaLakePropertiesGenerator()
-        )
+        if lake == LakeFormat.Iceberg:
+            return IcebergTableGenerator()
+        if lake == LakeFormat.Paimon:
+            return PaimonTableGenerator()
+        return DeltaLakePropertiesGenerator()
 
     @abstractmethod
     def generate_table_properties_impl(
@@ -110,17 +110,45 @@ class LakeTableGenerator:
         Args:
             table_name: Name of the table
         """
-        self.write_format = FileFormat.file_from_str(file_format)
+        self.write_format = (
+            FileFormat.file_from_str(random.choice(["parquet", "orc", "avro"]))
+            if not deterministic and random.randint(1, 11) == 1
+            else FileFormat.file_from_str(file_format)
+        )
+        first = True
 
         ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
         columns_def = []
         columns_spark = {}
         self.type_mapper.reset()
+
+        # Add a random column with a complex type to increase variety, but only for non-deterministic tables to avoid issues with schema inference in tests
+        if not deterministic and random.randint(1, 11) == 1:
+            for i in range(0, random.randint(1, 3)):
+                columns.append(
+                    {
+                        "name": f"c4{i}",
+                        "type": self.type_mapper.generate_random_clickhouse_type(
+                            True, True, random.randint(1, 4), 0
+                        ),
+                    }
+                )
+
         for val in columns:
+            # Sometimes skip columns to create more variety in partitioning and properties
+            if not first and not deterministic and random.randint(1, 11) == 1:
+                continue
             # Convert columns
+            next_ch_type = val["type"]
+            # Sometimes use something random
+            if not deterministic and random.randint(1, 5) == 1:
+                next_ch_type = self.type_mapper.generate_random_clickhouse_type(
+                    True, True, random.randint(1, 4), 0
+                )
+
             self.type_mapper.increment()
             str_type, nullable, spark_type = self.type_mapper.clickhouse_to_spark(
-                val["type"], False, ClickHouseMapping.Spark
+                next_ch_type, False, ClickHouseMapping.Spark
             )
             generated = self.add_generated_col(columns_spark, spark_type)
             columns_def.append(
@@ -129,6 +157,7 @@ class LakeTableGenerator:
             columns_spark[val["name"]] = SparkColumn(
                 val["name"], spark_type, nullable, len(generated) > 0
             )
+            first = False
         ddl += ",".join(columns_def)
         ddl += ")"
 
@@ -293,13 +322,35 @@ class IcebergTableGenerator(LakeTableGenerator):
     ) -> str:
         nproperties = self.set_basic_properties()
         fields = []
+        first = True
+
+        # Add a random column with a complex type to increase variety, but only for non-deterministic tables to avoid issues with schema inference in tests
+        if not table.deterministic and random.randint(1, 11) == 1:
+            for i in range(0, random.randint(1, 3)):
+                columns.append(
+                    {
+                        "name": f"c4{i}",
+                        "type": self.type_mapper.generate_random_clickhouse_type(
+                            True, True, random.randint(1, 4), 0
+                        ),
+                    }
+                )
 
         self.type_mapper.reset()
         for val in columns:
+            # Sometimes skip columns to create more variety in partitioning and properties
+            if not first and not table.deterministic and random.randint(1, 11) == 1:
+                continue
             # Convert columns
             next_field_id = self.type_mapper.field_id
+            next_ch_type = val["type"]
+            if not table.deterministic and random.randint(1, 5) == 1:
+                next_ch_type = self.type_mapper.generate_random_clickhouse_type(
+                    True, True, random.randint(1, 4), 0
+                )
+
             _, nullable, iceberg_type = self.type_mapper.clickhouse_to_spark(
-                val["type"], False, ClickHouseMapping.Iceberg
+                next_ch_type, False, ClickHouseMapping.Iceberg
             )
             fields.append(
                 it.NestedField(
@@ -310,6 +361,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 )
             )
             self.type_mapper.increment()
+            first = False
         nschema = Schema(*fields)
 
         if random.randint(1, 2) == 1:
@@ -473,15 +525,13 @@ class IcebergTableGenerator(LakeTableGenerator):
             "write.metadata.metrics.default": lambda: random.choice(
                 ["none", "counts", "truncate(16)", "full"]
             ),
-            # Column statistics
-            f"write.metadata.metrics.column.{random.choice(list(table.columns.keys()))}": lambda: random.choice(
-                ["none", "counts", "truncate(8)", "truncate(16)", "full"]
-            ),
             # Distribution mode
             "write.distribution-mode": lambda: random.choice(["none", "hash", "range"]),
             "write.delete.distribution-mode": lambda: random.choice(
                 ["none", "hash", "range"]
             ),
+            "write.object-storage.enabled": true_false_lambda,
+            "write.object-storage.partitioned-paths": true_false_lambda,
             # Write parallelism
             "write.tasks.max": lambda: str(
                 random.choice([1, 2, 8, 100, 500, 1000, 2000])
@@ -491,15 +541,31 @@ class IcebergTableGenerator(LakeTableGenerator):
             "write.sort.enabled": true_false_lambda,
             "write.sort.order": lambda: self.random_ordered_columns(table, True),
             # Write modes
+            "write.update.isolation-level": lambda: random.choice(
+                ["serializable", "snapshot"]
+            ),
             "write.update.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
+            ),
+            "write.delete.granularity": lambda: random.choice(["partition", "file"]),
+            "write.delete.isolation-level": lambda: random.choice(
+                ["serializable", "snapshot"]
             ),
             "write.delete.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
             ),
+            "write.merge.isolation-level": lambda: random.choice(
+                ["serializable", "snapshot"]
+            ),
             "write.merge.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
             ),
+            "write.metadata.compression-codec": lambda: random.choice(
+                ["gzip", "zstd", "none"]
+            ),
+            "write.spark.fanout.enabled": true_false_lambda,
+            "write.wap.enabled": true_false_lambda,
+            "read.manifest.cache.enabled": true_false_lambda,
             # Split size
             "read.split.target-size": lambda: str(
                 random.choice(
@@ -536,12 +602,32 @@ class IcebergTableGenerator(LakeTableGenerator):
             # Data locality
             "write.data.locality.enabled": true_false_lambda,
         }
+        # Column statistics
+        next_properties.update(
+            {
+                f"write.metadata.metrics.column.{val}": lambda: random.choice(
+                    ["none", "counts", "truncate(8)", "truncate(16)", "full"]
+                )
+                for val in list(table.columns.keys())
+            }
+        )
         # Parquet specific properties
         if self.write_format == FileFormat.Parquet:
             next_properties.update(
                 {
+                    f"write.parquet.bloom-filter-enabled.column.{val}": true_false_lambda
+                    for val in list(table.columns.keys())
+                }
+            )
+            next_properties.update(
+                {
+                    "write.parquet.bloom-filter-max-bytes": lambda: str(
+                        random.choice(
+                            [1048576, 2097152, 4194304, 8388608]
+                        )  # 1MB, 2MB, 4MB, 8MB
+                    ),
                     "write.parquet.compression-codec": lambda: random.choice(
-                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+                        ["zstd", "brotli", "lz4", "gzip", "snappy", "uncompressed"]
                     ),
                     "write.parquet.compression-level": lambda: str(
                         random.randint(1, 9)
@@ -568,7 +654,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.orc.compression-codec": lambda: random.choice(
-                        ["snappy", "zlib", "lzo", "zstd", "none"]
+                        ["zstd", "lz4", "lzo", "zlib", "snappy", "none"]
                     ),
                     "write.orc.compression-strategy": lambda: random.choice(
                         ["speed", "compression"]
@@ -590,7 +676,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             next_properties.update(
                 {
                     "write.avro.compression-codec": lambda: random.choice(
-                        ["snappy", "uncompressed"]
+                        ["gzip", "zstd", "snappy", "uncompressed"]
                     )
                 }
             )
@@ -872,26 +958,9 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                     "interval 1 hour",
                 ]
             ),
-            # Sample ratio for stats collection
-            "delta.dataSkippingNumIndexedCols": lambda: str(
-                random.choice([1, 8, 16, 32, 64, 128, 256])
-            ),
             # Auto optimize
             "delta.autoOptimize.optimizeWrite": true_false_lambda,
             "delta.autoOptimize.autoCompact": true_false_lambda,
-            # Optimize write
-            "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
-            # Adaptive shuffle
-            "spark.databricks.delta.optimizeWrite.enabled": true_false_lambda,
-            # Delta cache
-            "spark.databricks.io.cache.enabled": true_false_lambda,
-            "spark.databricks.io.cache.maxDiskUsage": lambda: random.choice(
-                ["10g", "20g", "50g", "100g"]
-            ),
-            "spark.databricks.io.cache.maxMetaDataCache": lambda: random.choice(
-                ["1g", "2g", "5g", "10g"]
-            ),
-            "spark.databricks.io.cache.compression.enabled": true_false_lambda,
             # Column mapping mode
             "delta.columnMapping.mode": lambda: random.choice(["none", "name", "id"]),
             # Set minimum versions for readers and writers
@@ -901,19 +970,10 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "delta.minWriterVersion": lambda: random.choice(
                 [f"{i}" for i in range(1, 8)]
             ),
-            # Target file size
-            "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
-                ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
-            ),
+            "delta.checkpointPolicy": lambda: random.choice(["classic", "v2"]),
             # Parquet compression
             "spark.sql.parquet.compression.codec": lambda: random.choice(
                 ["snappy", "gzip", "lzo", "lz4", "zstd", "uncompressed"]
-            ),
-            # Parquet file size
-            "spark.databricks.delta.parquet.blockSize": lambda: str(
-                random.choice(
-                    [134217728, 268435456, 536870912]
-                )  # 128MB  # 256MB  # 512MB
             ),
             # Statistics columns
             "delta.dataSkippingNumIndexedCols": lambda: str(
@@ -922,9 +982,8 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             # Statistics collection
             "delta.checkpoint.writeStatsAsJson": true_false_lambda,
             "delta.checkpoint.writeStatsAsStruct": true_false_lambda,
-            # Sampling for stats
-            "spark.databricks.delta.stats.skipping": true_false_lambda,
             "delta.enableChangeDataFeed": true_false_lambda,  # FIXME later requires specific writer version
+            "delta.enableExpiredLogCleanup": true_false_lambda,
             # Append-only table
             "delta.appendOnly": true_false_lambda,
             # Isolation level
@@ -945,6 +1004,13 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
                     "interval 1 day",
                 ]
             ),
+            "delta.setTransactionRetentionDuration": lambda: random.choice(
+                [
+                    "interval 1 second",
+                    "interval 1 minute",
+                    "interval 1 day",
+                ]
+            ),
             # Compatibility
             "delta.compatibility.symlinkFormatManifest.enabled": true_false_lambda,
             # Enable deletion vectors (Delta 3.0+)
@@ -957,6 +1023,36 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "delta.feature.timestampNtz": lambda: random.choice(
                 ["supported", "enabled"]
             ),
+            # Variant type support
+            "delta.feature.variantType-preview": lambda: random.choice(
+                ["supported", "enabled"]
+            ),
+            # Not available on OSS Spark
+            # Optimize write
+            "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
+            # Adaptive shuffle
+            "spark.databricks.delta.optimizeWrite.enabled": true_false_lambda,
+            # Delta cache
+            "spark.databricks.io.cache.enabled": true_false_lambda,
+            "spark.databricks.io.cache.maxDiskUsage": lambda: random.choice(
+                ["10g", "20g", "50g", "100g"]
+            ),
+            "spark.databricks.io.cache.maxMetaDataCache": lambda: random.choice(
+                ["1g", "2g", "5g", "10g"]
+            ),
+            "spark.databricks.io.cache.compression.enabled": true_false_lambda,
+            # Target file size
+            "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
+                ["1mb", "2mb", "8mb", "64mb", "128mb", "256mb", "512mb", "1gb"]
+            ),
+            # Parquet file size
+            "spark.databricks.delta.parquet.blockSize": lambda: str(
+                random.choice(
+                    [134217728, 268435456, 536870912]
+                )  # 128MB  # 256MB  # 512MB
+            ),
+            # Sampling for stats
+            "spark.databricks.delta.stats.skipping": true_false_lambda,
         }
 
     def generate_extra_statement(
@@ -987,4 +1083,149 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if len(timestamps) > 0:
                 return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
             return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
+        return ""
+
+
+class PaimonTableGenerator(LakeTableGenerator):
+
+    def __init__(self):
+        super().__init__()
+
+    def get_format(self) -> str:
+        return "paimon"
+
+    def set_basic_properties(self) -> dict[str, str]:
+        properties = {}
+        out_format = FileFormat.file_to_str(self.write_format)
+        if out_format.lower() not in ("parquet", "orc"):
+            out_format = random.choice(["parquet", "orc"])
+            self.write_format = FileFormat.file_from_str(out_format)
+        properties["file.format"] = out_format
+        return properties
+
+    def add_partition_clauses(self, table: SparkTable) -> list[str]:
+        res = []
+        for k in table.columns.keys():
+            res.append(k)
+        return res
+
+    def add_generated_col(
+        self, columns: dict[str, SparkColumn], col: sp.DataType
+    ) -> str:
+        return ""
+
+    def create_catalog_table(
+        self,
+        catalog_impl,
+        columns: list[dict[str, str]],
+        table: SparkTable,
+    ) -> str:
+        return ""
+
+    def generate_table_properties(
+        self,
+        table: SparkTable,
+    ) -> dict[str, str]:
+        properties = super().generate_table_properties(table)
+        flat_cols = list(table.flat_columns().keys())
+        has_pk = "primary-key" in properties
+        if not has_pk:
+            for key in (
+                "merge-engine",
+                "changelog-producer",
+                "sequence.field",
+                "deletion-vectors.enabled",
+                "deletion-vectors.bitmap64",
+            ):
+                properties.pop(key, None)
+        if "deletion-vectors.bitmap64" in properties and properties.get("deletion-vectors.enabled") != "true":
+            del properties["deletion-vectors.bitmap64"]
+        if "bucket-key" in properties and "bucket" not in properties:
+            del properties["bucket-key"]
+        elif "bucket" in properties and "bucket-key" not in properties:
+            properties["bucket-key"] = random.choice(flat_cols)
+        for min_key, max_key in (
+            ("snapshot.num-retained.min", "snapshot.num-retained.max"),
+            ("compaction.min.file-num", "compaction.max.file-num"),
+            ("num-sorted-run.compaction-trigger", "num-sorted-run.stop-trigger"),
+        ):
+            if min_key in properties and max_key in properties:
+                lo, hi = int(properties[min_key]), int(properties[max_key])
+                if lo > hi:
+                    properties[max_key] = str(lo)
+        return properties
+
+    def generate_table_properties_impl(
+        self,
+        table: SparkTable,
+    ) -> dict[str, Parameter]:
+        flat_cols = list(table.flat_columns().keys())
+        next_properties = {
+            "primary-key": lambda: ",".join(
+                random.sample(flat_cols, k=random.randint(1, min(3, len(flat_cols))))
+            ),
+            "bucket": lambda: str(random.choice([1, 2, 4, 8, 16])),
+            "bucket-key": lambda: random.choice(flat_cols),
+            "changelog-producer": lambda: random.choice(
+                ["none", "input", "full-compaction", "lookup"]
+            ),
+            "merge-engine": lambda: random.choice(
+                ["deduplicate", "partial-update", "first-row", "aggregation"]
+            ),
+            "sequence.field": lambda: random.choice(flat_cols),
+            "metadata.iceberg.storage": lambda: "hadoop-catalog",
+            "metadata.iceberg.format-version": lambda: random.choice(["1", "2", "3"]),
+            "deletion-vectors.enabled": true_false_lambda,
+            "deletion-vectors.bitmap64": true_false_lambda,
+            "compaction.optimization-interval": lambda: random.choice(
+                ["1ms", "1s", "1min", "1h"]
+            ),
+            "snapshot.time-retained": lambda: random.choice(["1s", "1min", "1h", "1d"]),
+            "snapshot.num-retained.min": lambda: str(random.choice([1, 2, 5, 10])),
+            "snapshot.num-retained.max": lambda: str(random.choice([5, 10, 50, 100])),
+            "write-buffer-size": lambda: random.choice(
+                ["64kb", "256kb", "1mb", "64mb", "256mb"]
+            ),
+            "page-size": lambda: random.choice(["4kb", "64kb", "1mb"]),
+            "target-file-size": lambda: random.choice(
+                ["1mb", "32mb", "128mb", "256mb"]
+            ),
+            "compaction.min.file-num": lambda: str(random.choice([3, 5, 10])),
+            "compaction.max.file-num": lambda: str(random.choice([5, 10, 50])),
+            "compaction.early-max.file-num": lambda: str(random.choice([4, 8, 16])),
+            "num-sorted-run.compaction-trigger": lambda: str(random.choice([3, 5, 10])),
+            "num-sorted-run.stop-trigger": lambda: str(random.choice([10, 20, 50])),
+            "write-only": true_false_lambda,
+        }
+        if self.write_format == FileFormat.ORC:
+            next_properties.update(
+                {
+                    "orc.compress": lambda: random.choice(
+                        ["zlib", "snappy", "zstd", "lz4", "none"]
+                    ),
+                }
+            )
+        elif self.write_format == FileFormat.Parquet:
+            next_properties.update(
+                {
+                    "parquet.compression": lambda: random.choice(
+                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
+                    ),
+                }
+            )
+        return next_properties
+
+    def generate_extra_statement(
+        self,
+        spark: SparkSession,
+        table: SparkTable,
+    ) -> str:
+        next_option = random.randint(1, 3)
+
+        if next_option == 1:
+            return f"CALL `{table.catalog_name}`.sys.compact(table => '{table.get_namespace_path()}');"
+        if next_option == 2:
+            return f"CALL `{table.catalog_name}`.sys.expire_snapshots(table => '{table.get_namespace_path()}', retain_max => {random.choice([1, 2, 5, 10])});"
+        if next_option == 3:
+            return f"CALL `{table.catalog_name}`.sys.create_tag(table => '{table.get_namespace_path()}', tag => 'tag_{random.randint(1, 1000)}');"
         return ""

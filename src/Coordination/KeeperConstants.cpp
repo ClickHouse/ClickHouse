@@ -212,12 +212,6 @@
     M(ThreadpoolReaderSubmitLookupInCacheMicroseconds) \
     M(AsynchronousReaderIgnoredBytes) \
 \
-    M(FileSegmentWaitReadBufferMicroseconds) \
-    M(FileSegmentReadMicroseconds) \
-    M(FileSegmentCacheWriteMicroseconds) \
-    M(FileSegmentPredownloadMicroseconds) \
-    M(FileSegmentUsedBytes) \
-\
     M(ReadBufferSeekCancelConnection) \
 \
     M(SleepFunctionCalls) \
@@ -243,14 +237,27 @@
     M(KeeperPacketsSent) \
     M(KeeperPacketsReceived) \
     M(KeeperRequestTotal) \
+    M(KeeperRequestTotalWithSubrequests) \
     M(KeeperLatency) \
     M(KeeperTotalElapsedMicroseconds) \
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperStorageSharedLockWaitMicroseconds) \
+    M(KeeperChangelogLockWaitMicroseconds) \
+    M(KeeperServerWriteLockWaitMicroseconds) \
+    M(KeeperSessionCallbackLockWaitMicroseconds) \
+    M(KeeperReadRequestQueueLockWaitMicroseconds) \
+    M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
+    M(KeeperReadBatchCount) \
+    M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -258,6 +265,11 @@
     M(KeeperSnapshotApplys) \
     M(KeeperSnapshotApplysFailed) \
     M(KeeperReadSnapshot) \
+    M(KeeperReadSnapshotObject) \
+    M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
+    M(KeeperSaveSnapshotObject) \
+    M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
     M(KeeperCreateRequest) \
     M(KeeperRemoveRequest) \
@@ -277,6 +289,7 @@
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
+    M(KeeperSnapshotRemoteLoaderErrors) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -315,6 +328,8 @@
     M(JemallocFailedDeallocationSampleTracking) \
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
+    M(KeeperStaleRequestsSkipped) \
+    M(KeeperLiveSessionsLockWaitMicroseconds) \
 
 namespace ProfileEvents
 {
@@ -406,10 +421,16 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
-    M(KeeperServerPreprocessRequestDurationMetricFamily) \
-    M(KeeperServerProcessRequestDuration) \
-    M(KeeperServerQueueDurationMetricFamily) \
-    M(KeeperServerSendDurationMetricFamily) \
+    M(KeeperResponseTime) \
+    M(KeeperReceiveRequestTimeMetricFamily) \
+    M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
+    M(KeeperWritePreCommitTimeMetricFamily) \
+    M(KeeperWriteCommitTimeMetricFamily) \
+    M(KeeperDispatcherResponsesQueueTimeMetricFamily) \
+    M(KeeperSendResponseTimeMetricFamily) \
+    M(KeeperReadWaitForWriteTimeMetricFamily) \
+    M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeElementsMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 
 

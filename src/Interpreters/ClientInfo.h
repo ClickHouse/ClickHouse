@@ -53,12 +53,14 @@ public:
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,
-        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
+        SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed query execution.
     };
 
     ClientInfo();
 
     QueryKind query_kind = QueryKind::NO_QUERY;
+
+    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;

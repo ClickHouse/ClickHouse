@@ -68,9 +68,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 {
-    UInt8 kind;
+    UInt8 kind = 0;
     readIntBinary(kind, ctx.in);
 
     if (kind != UInt8(TableFunctionSerializationKind::AST))
@@ -99,6 +99,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromTableFunctionStep::deserialize(Deseriali
     return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
 }
 
+void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromTableFunction", &ReadFromTableFunctionStep::deserialize);

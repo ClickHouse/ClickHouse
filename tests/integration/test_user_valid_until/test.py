@@ -30,6 +30,7 @@ def test_basic(started_cluster):
         == "CREATE USER user_basic IDENTIFIED WITH no_password\n"
     )
     assert node.query("SELECT 1", user="user_basic") == "1\n"
+    assert node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'") == "['1970-01-01 00:00:00']\n"
 
     # 2. With valid VALID UNTIL
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2040 08:03:20 Z+3'")
@@ -39,7 +40,7 @@ def test_basic(started_cluster):
         == "CREATE USER user_basic IDENTIFIED WITH no_password VALID UNTIL \\'2040-11-06 05:03:20\\'\n"
     )
     assert node.query("SELECT 1", user="user_basic") == "1\n"
-
+    assert node.query("SELECT valid_until FROM system.users WHERE name = 'user_basic'") == "['2040-11-06 05:03:20']\n"
     # 3. With expired VALID UNTIL
     node.query("ALTER USER user_basic VALID UNTIL '06/11/2010 08:03:20 Z+3'")
 

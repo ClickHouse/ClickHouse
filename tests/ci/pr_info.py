@@ -29,6 +29,7 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_FORCE = "pr-must-backport-force"
     MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
@@ -43,6 +44,7 @@ class Labels:
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
     RELEASE_LTS = "release-lts"
+    ROLLING_OUT = "rolling-out"
     SUBMODULE_CHANGED = "submodule changed"
 
     # automatic backport for critical bug fixes
@@ -67,7 +69,7 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
-DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+DOCS_ONLY_FILES = ["docker/docs"]
 
 DOCS_FILES = DOCS_ONLY_FILES + [
     "Settings.cpp",

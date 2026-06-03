@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -27,6 +28,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupFactory.h>
@@ -55,6 +57,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -121,6 +125,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->setNoEmptyArgs(true);
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
@@ -327,8 +332,14 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            }
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -355,22 +366,26 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
 
-    const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
-
-    for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
-        std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
-            {
-                for (const auto & file : batch)
-                    process_metadata_file(file);
-            },
-            Priority{},
-            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        /// Note that we pass batch by value (always fine) and process_metadata_file by reference
+        /// process_metadata_file is ok since a) it outlives runner and b) it captures by reference only things that outlive runner
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
+        const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
+
+        for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
+        {
+            std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
+            runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
+                {
+                    for (const auto & file : batch)
+                        process_metadata_file(file);
+                },
+                Priority{},
+                getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -451,6 +466,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -466,7 +482,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true});
 }
 
 }

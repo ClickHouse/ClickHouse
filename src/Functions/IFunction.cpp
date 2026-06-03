@@ -18,8 +18,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -210,10 +212,61 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        if (input_rows_count == 0)
+        const bool result_is_nullable = result_type->isNullable();
+
+        if (!result_is_nullable)
         {
-            /// We are not sure if it is const column or not if has_nullable is true.
-            return result_type->createColumn();
+            /// The result type cannot be Nullable (e.g. `Array`, `Tuple`, `Map`).
+            /// The framework convention here is `f(default(input))` for null rows: the function
+            /// runs over inputs where null rows have been normalized to the default value of
+            /// the (nested) input type. This is necessary because `createBlockWithNestedColumns`
+            /// alone does not overwrite null rows -- e.g. `nullIf(materialize('x'), materialize('x'))`
+            /// produces a Nullable column whose nested data still contains `'x'`, so running the
+            /// function on it would return `f('x')` instead of the desired `f('')`.
+            ColumnsWithTypeAndName patched_columns = createBlockWithNestedColumns(args);
+            auto temporary_result_type = removeNullable(result_type);
+
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                if (!args[i].type->isNullable())
+                    continue;
+                const auto & nested_type = patched_columns[i].type;
+
+                if (isColumnConst(*args[i].column))
+                {
+                    if (args[i].column->onlyNull())
+                        patched_columns[i].column = nested_type->createColumnConstWithDefaultValue(input_rows_count);
+                    continue;
+                }
+
+                const auto & nullable = assert_cast<const ColumnNullable &>(*args[i].column);
+                const auto & null_map = nullable.getNullMapData();
+
+                bool has_any_null = false;
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                    {
+                        has_any_null = true;
+                        break;
+                    }
+                }
+                if (!has_any_null)
+                    continue;
+
+                auto patched = nested_type->createColumn();
+                patched->reserve(input_rows_count);
+                for (size_t r = 0; r < input_rows_count; ++r)
+                {
+                    if (null_map[r])
+                        patched->insertDefault();
+                    else
+                        patched->insertFrom(*patched_columns[i].column, r);
+                }
+                patched_columns[i].column = std::move(patched);
+            }
+
+            return executeWithoutLowCardinalityColumns(patched_columns, temporary_result_type, input_rows_count, dry_run);
         }
 
         bool all_columns_constant = true;
@@ -232,6 +285,16 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             WhichDataType which(removeNullable(arg.type));
             if (!which.isNumber() && !which.isEnum() && !which.isDateOrDate32OrDateTimeOrDateTime64() && !which.isInterval())
                 all_numeric_types = false;
+        }
+
+        if (input_rows_count == 0 && !all_columns_constant)
+        {
+            /// With 0 rows and non-constant columns, we cannot determine the result's constness,
+            /// so return a non-constant empty column. When all columns ARE constant, we fall through
+            /// to the normal paths (all_columns_constant or all_numeric_types) which correctly
+            /// produce a constant result, preserving constness consistency between
+            /// ExpressionActions::execute and ActionsDAG::updateHeader.
+            return result_type->createColumn();
         }
 
         if (all_columns_constant || all_numeric_types)
@@ -386,7 +449,7 @@ IExecutableFunction::IExecutableFunction()
 {
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::short_circuit_function_evaluation_for_nulls])
         {
             short_circuit_function_evaluation_for_nulls = true;
@@ -454,18 +517,18 @@ ColumnPtr IExecutableFunction::execute(
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
+        DataTypesWithConstInfo argument_types;
         ColumnPtr common_replicated_indexes;
+        Columns nested_columns;
         bool has_full_columns = false;
-        size_t nested_column_size = 0;
         for (const auto & argument : arguments)
         {
+            argument_types.push_back({argument.type, isColumnConst(*argument.column)});
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
             {
+                nested_columns.push_back(column_replicated->getNestedColumn());
                 if (!common_replicated_indexes)
-                {
                     common_replicated_indexes = column_replicated->getIndexesColumn();
-                    nested_column_size = column_replicated->getNestedColumn()->size();
-                }
                 else if (common_replicated_indexes != column_replicated->getIndexesColumn())
                 {
                     common_replicated_indexes.reset();
@@ -486,11 +549,23 @@ ColumnPtr IExecutableFunction::execute(
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
         }
 
+        /// In case the function might throw an exception replicated columns must be compacted
+        // to avoid throwing on unused rows in the nested data.
+        if (canThrow(argument_types))
+        {
+            ColumnIndex column_index(common_replicated_indexes);
+            auto res = column_index.buildCompactIndexedColumns(nested_columns);
+            common_replicated_indexes = std::move(res.compact_indexes);
+            nested_columns = std::move(res.compact_indexed_columns);
+        }
+
+        size_t nested_column_size = nested_columns.empty() ? 0 : nested_columns[0]->size();
+        size_t col_idx = 0;
         for (auto & argument : arguments_without_replicated)
         {
-            /// Replace replicated columns to their nested columns.
-            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
-                argument.column = column_replicated->getNestedColumn();
+            /// Replace replicated columns to their filtered nested columns.
+            if (typeid_cast<const ColumnReplicated *>(argument.column.get()))
+                argument.column = nested_columns[col_idx++];
             /// Change size for constants.
             else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
                 argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
@@ -637,7 +712,7 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
         {
             bool is_const = arg.column && isColumnConst(*arg.column);
             if (is_const)
-                arg.column = assert_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+                arg.column = arg.column->convertToFullColumnIfLowCardinality();
 
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg.type.get()))
             {
@@ -691,10 +766,8 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         {
             if (isVariant(arg.type))
             {
-                DataTypes data_types(arguments.size());
-                for (size_t i = 0; i < arguments.size(); ++i)
-                    data_types[i] = arguments[i].type;
-                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+                ColumnsWithTypeAndName args_copy = arguments;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
             }
         }
     }
@@ -734,7 +807,11 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeWithoutLowCardinality(const 
         {
             Block nested_columns = createBlockWithNestedColumns(arguments);
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            return makeNullable(return_type);
+            /// If the return type cannot be Nullable (e.g. Array, Tuple, Map),
+            /// return it as-is. For null input rows, the function will be evaluated
+            /// over the default values of the nested column and produce the corresponding default result
+            /// (e.g. an empty array), instead of failing the type check.
+            return makeNullableSafe(return_type);
         }
     }
 
@@ -835,7 +912,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         ValuesWithType unwrapped_arguments;
         unwrapped_arguments.reserve(arguments.size());
 
-        std::vector<llvm::Value *> is_null_values;
+        VectorWithMemoryTracking<llvm::Value *> is_null_values;
 
         auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)

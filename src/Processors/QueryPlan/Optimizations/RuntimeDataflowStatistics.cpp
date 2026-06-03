@@ -110,33 +110,54 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
+bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
+{
+    // Empty blocks produced during planning, when we calculate output headers. Skip them.
+    if (!block_rows)
+        return false;
+    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    return counter % 5 == 0 && counter < 25;
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols)
 {
     Stopwatch watch;
 
+    size_t block_bytes = 0;
+    for (const auto & col : cols)
+        block_bytes += col.column->byteSize();
+
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (chunk.hasRows() && counter % 50 == 0 && counter < 150)
+    if (shouldSampleBlock(statistics, num_rows))
     {
-        chassert(chunk.getNumColumns() == header.columns());
-        for (size_t i = 0; i < chunk.getNumColumns(); ++i)
+        for (const auto & col : cols)
         {
-            auto [sample, compressed] = estimateCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            auto [sample, compressed] = estimateCompressedColumnSize(col);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
     }
 
     std::lock_guard lock(statistics.mutex);
-    statistics.bytes += chunk.bytes();
+    statistics.bytes += block_bytes;
     if (compressed_bytes)
     {
         statistics.sample_bytes += sample_bytes;
         statistics.compressed_bytes += compressed_bytes;
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
+{
+    chassert(chunk.getNumColumns() == header.columns());
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
+    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -163,78 +184,102 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types)
 {
-    Stopwatch watch;
+    const auto & columns = chunk.getColumns();
+    ColumnsWithTypeAndName cols;
+    cols.reserve(keys_positions.size());
+    for (size_t i = 0; i < keys_positions.size(); ++i)
+        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+}
 
-    auto get_key_column_sizes = [&](bool compress)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
+    const Chunk & chunk, const ColumnNumbers & keys_positions, const Block & header)
+{
+    const auto & columns = chunk.getColumns();
+
+    /// Mark key columns so we can skip them — only non-key columns are aggregate states.
+    std::vector<bool> is_key(columns.size(), false);
+    for (auto pos : keys_positions)
+        is_key[pos] = true;
+
+    ColumnsWithTypeAndName cols;
+    cols.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
     {
-        size_t sample_bytes = 0;
-        size_t compressed_bytes = 0;
-        for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
-        {
-            const auto & key_column_name = aggregator.getParams().keys[i];
-            const auto & column = block.getByName(key_column_name);
-            if (compress)
-            {
-                auto [sample, compressed] = estimateCompressedColumnSize(column);
-                sample_bytes += sample;
-                compressed_bytes += compressed;
-            }
-            else
-            {
-                sample_bytes += column.column->byteSize();
-                compressed_bytes += column.column->byteSize();
-            }
-        }
-        return std::make_pair(sample_bytes, compressed_bytes);
-    };
-
-    const auto block_bytes = get_key_column_sizes(/*compressed=*/false).first;
-    size_t sample_bytes = 0;
-    size_t compressed_bytes = 0;
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    if (block.rows() && counter % 50 == 0 && counter < 150)
-        std::tie(sample_bytes, compressed_bytes) = get_key_column_sizes(/*compressed=*/true);
-
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += block_bytes;
-    if (compressed_bytes)
-    {
-        statistics.sample_bytes += sample_bytes;
-        statistics.compressed_bytes += compressed_bytes;
+        if (is_key[i])
+            continue;
+        cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes)
+    const ColumnsWithTypeAndName & input_columns,
+    const NamesAndTypesList & part_columns,
+    const ColumnSizeByName & column_sizes,
+    size_t read_bytes,
+    std::optional<bool> & should_continue_sampling)
 {
     Stopwatch watch;
 
     const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
     if (type == InputStatisticsType::WithoutByteHint)
     {
-        for (const auto & column : columns)
+        for (const auto & column : input_columns)
             read_bytes += column.column->byteSize();
     }
 
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
     auto & statistics = input_bytes_statistics[type];
+    if (read_bytes && !input_columns.empty())
+    {
+        if (!column_sizes.empty())
+        {
+            for (const auto & column : input_columns)
+            {
+                if (column_sizes.contains(column.name))
+                {
+                    const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
+                        ? (static_cast<double>(column_sizes.at(column.name).data_compressed)
+                           / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
+                        : 1.0;
+                    sample_bytes += column.column->byteSize();
+                    compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
+                }
+            }
+        }
+        else
+        {
+            if (!should_continue_sampling.has_value())
+                should_continue_sampling = shouldSampleBlock(statistics, input_columns[0].column->size());
+
+            // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
+            if (*should_continue_sampling)
+            {
+                for (const auto & column : input_columns)
+                {
+                    // Paranoid check in case some, e.g., prewhere filter columns are present among the input columns
+                    if (part_columns.contains(column.name))
+                    {
+                        const auto [sample, compressed] = estimateCompressedColumnSize(column);
+                        sample_bytes += sample;
+                        compressed_bytes += compressed;
+                    }
+                }
+            }
+        }
+    }
+
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += read_bytes;
-    if (read_bytes)
+    if (compressed_bytes)
     {
-        for (const auto & column : columns)
-        {
-            if (!column_sizes.contains(column.name))
-                continue;
-            const auto compressed_ratio = column_sizes.at(column.name).data_uncompressed
-                ? (static_cast<double>(column_sizes.at(column.name).data_compressed) / static_cast<double>(column_sizes.at(column.name).data_uncompressed))
-                : 1.0;
-            statistics.sample_bytes += column.column->byteSize();
-            statistics.compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
-        }
+        statistics.sample_bytes += sample_bytes;
+        statistics.compressed_bytes += compressed_bytes;
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
