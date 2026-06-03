@@ -205,6 +205,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
     /// subquery --> (SELECT aggregate_function(*) FROM subquery)
     auto aggregate_function = makeASTFunction(aggregate_function_name, make_intrusive<ASTAsterisk>());
     auto subquery_node = function->children[0]->children[1];
+    auto subquery_node_clone = subquery_node->clone(); /// clone before it gets moved, needed for COUNT subquery
 
     auto table_expression = make_intrusive<ASTTableExpression>();
     table_expression->subquery = std::move(subquery_node);
@@ -231,6 +232,49 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
 
     auto new_subquery = make_intrusive<ASTSubquery>(std::move(select_with_union_query));
     ast->children[0]->children.back() = std::move(new_subquery);
+
+    if (aggregate_function_name == "singleValueOrNull")
+    {
+        /// Vacuous truth: x op ALL (empty set) must return TRUE.
+        /// The singleValueOrNull rewrite returns NULL for an empty set, making x IN (NULL) = FALSE.
+        /// Fix by wrapping: (SELECT count() FROM subquery) = 0 OR (x in/notIn singleValueOrNull subquery)
+
+        auto count_table_expression = make_intrusive<ASTTableExpression>();
+        count_table_expression->subquery = std::move(subquery_node_clone);
+        count_table_expression->children.push_back(count_table_expression->subquery);
+
+        auto count_tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+        count_tables_element->table_expression = std::move(count_table_expression);
+        count_tables_element->children.push_back(count_tables_element->table_expression);
+
+        auto count_tables = make_intrusive<ASTTablesInSelectQuery>();
+        count_tables->children.push_back(std::move(count_tables_element));
+
+        auto count_select_exp_list = make_intrusive<ASTExpressionList>();
+        count_select_exp_list->children.push_back(makeASTFunction("count", make_intrusive<ASTAsterisk>()));
+
+        auto count_select_query = make_intrusive<ASTSelectQuery>();
+        count_select_query->setExpression(ASTSelectQuery::Expression::SELECT, count_select_exp_list);
+        count_select_query->setExpression(ASTSelectQuery::Expression::TABLES, count_tables);
+
+        auto count_union = make_intrusive<ASTSelectWithUnionQuery>();
+        count_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        count_union->list_of_selects->children.push_back(std::move(count_select_query));
+        count_union->children.push_back(count_union->list_of_selects);
+
+        auto count_subquery = make_intrusive<ASTSubquery>(std::move(count_union));
+        auto count_eq_zero = makeASTFunction("equals",
+            std::move(count_subquery),
+            make_intrusive<ASTLiteral>(UInt64{0}));
+
+        /// Mutate ast in place to become: or(count=0, in/notIn(...))
+        auto in_clone = ast->clone();
+        auto * or_node = assert_cast<ASTFunction *>(ast.get());
+        or_node->name = "or";
+        or_node->arguments = make_intrusive<ASTExpressionList>();
+        or_node->arguments->children = {std::move(count_eq_zero), std::move(in_clone)};
+        or_node->children = {or_node->arguments};
+    }
 
     return true;
 }
