@@ -45,7 +45,7 @@ extern const int BAD_ARGUMENTS;
 namespace DB::WebAssembly
 {
 
-WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
+static WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
 {
 #define M(T) \
     if (WasmEdge_ValTypeIs##T(val_type)) \
@@ -56,7 +56,7 @@ WasmValKind fromWasmEdgeValueType(WasmEdge_ValType val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmEdgeValue(WasmEdge_Value val)
+static WasmVal fromWasmEdgeValue(WasmEdge_Value val)
 {
     #define M(T) \
         if (WasmEdge_ValTypeIs##T(val.Type)) \
@@ -72,7 +72,7 @@ WasmVal fromWasmEdgeValue(WasmEdge_Value val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
+static WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
 {
     #define M(T) \
         if (k == WasmValKind::T) \
@@ -83,7 +83,7 @@ WasmEdge_ValType toWasmEdgeValueType(WasmValKind k)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmEdge_Value toWasmEdgeValue(WasmVal val)
+static WasmEdge_Value toWasmEdgeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -145,7 +145,7 @@ auto WasmEdgeResourcePtrCreate(Args &&... args)
     return WasmEdgeResourcePtr<ResourceT>(resource);
 }
 
-WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
+static WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
 {
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
@@ -153,7 +153,7 @@ WasmEdge_Bytes wasmedgeBytesWrap(std::string_view data)
     return WasmEdge_BytesWrap(reinterpret_cast<const uint8_t *>(data.data()), static_cast<uint32_t>(data.size()));
 }
 
-WasmEdge_String wasmedgeStringWrap(std::string_view data)
+static WasmEdge_String wasmedgeStringWrap(std::string_view data)
 {
     if (data.size() > std::numeric_limits<WasmSizeT>::max())
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Data is too large for wasm, size: {}", data.size());
@@ -162,7 +162,7 @@ WasmEdge_String wasmedgeStringWrap(std::string_view data)
 }
 
 
-void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
+static void wasmedgeCheckResult(WasmEdge_Result result, const std::string_view & msg)
 {
     if (!WasmEdge_ResultOK(result))
         throw Exception(ErrorCodes::WASM_ERROR, "{}: {}", msg, WasmEdge_ResultGetMessage(result));
@@ -212,7 +212,7 @@ struct WasmEdgeFunctionProps
 };
 
 
-auto getWasmEdgeVmConfig(WasmModule::Config cfg)
+static auto getWasmEdgeVmConfig(WasmModule::Config cfg)
 {
     auto config = WasmEdgeResourcePtrCreate<WasmEdge_ConfigureCreate>();
     if (!config)
@@ -225,6 +225,12 @@ auto getWasmEdgeVmConfig(WasmModule::Config cfg)
         WasmEdge_ConfigureSetMaxMemoryPage(config.get(), static_cast<uint32_t>(cfg.memory_limit / WASMEDGE_PAGE_SIZE));
     }
 
+    /// WasmEdge cost measuring must stay enabled because cancellation is delivered by
+    /// `WasmEdge_StatisticsSetCostLimit`, and the executor only honours that limit when
+    /// cost measuring is on. The default cost limit is UINT64_MAX (no budget), and a
+    /// finite budget is applied below only when `cfg.hasFiniteFuelLimit` is true.
+    /// Cancellation paths lower the limit to 0/1 to force `CostLimitExceeded`,
+    /// which works regardless of whether the initial budget was finite.
     WasmEdge_ConfigureStatisticsSetCostMeasuring(config.get(), true);
     WasmEdge_ConfigureStatisticsSetTimeMeasuring(config.get(), true);
 
@@ -287,7 +293,7 @@ public:
         , vm_cxt(WasmEdgeResourcePtrCreate<WasmEdge_VMCreate>(getWasmEdgeVmConfig(cfg).get(), nullptr))
     {
         auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
-        if (cfg.fuel_limit)
+        if (cfg.hasFiniteFuelLimit())
         {
             WasmEdge_StatisticsSetCostLimit(stat_ctx, cfg.fuel_limit);
         }
@@ -301,7 +307,7 @@ public:
 
     std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override;
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override;
+    VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override;
 
     void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token);
 
@@ -344,7 +350,7 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     try
     {
         const auto & argument_types = func_decl.getArgumentTypes();
-        std::vector<WasmVal> args(argument_types.size());
+        VectorWithMemoryTracking<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             args[i] = fromWasmEdgeValue(in[i]);
@@ -426,7 +432,7 @@ std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     return {data, static_cast<size_t>(size)};
 }
 
-std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token)
+VectorWithMemoryTracking<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token)
 {
     auto func_it = imported_functions.find(function_name);
     if (func_it == imported_functions.end())
@@ -473,7 +479,7 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
         wasmedgeCheckResult(result, fmt::format("error while executing function '{}'", function_name));
     }
 
-    return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmEdgeValue));
+    return std::ranges::to<VectorWithMemoryTracking<WasmVal>>(returns_values | std::views::transform(fromWasmEdgeValue));
 }
 
 
@@ -510,13 +516,13 @@ public:
         return compartment;
     }
 
-    std::vector<WasmFunctionDeclaration> getImports() const override
+    VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const override
     {
         auto imports_length = WasmEdge_ASTModuleListImportsLength(ast_module.get());
         std::vector<const WasmEdge_ImportTypeContext *> imports(imports_length);
         WasmEdge_ASTModuleListImports(ast_module.get(), imports.data(), imports_length);
 
-        std::vector<WasmFunctionDeclaration> result;
+        VectorWithMemoryTracking<WasmFunctionDeclaration> result;
 
         for (const auto * import_ctx : imports)
         {
@@ -565,7 +571,10 @@ WasmEdgeRuntime::WasmEdgeRuntime()
     setLogLevel(LogsLevel::warning);
 }
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(
+    std::string_view module_name,
+    std::string_view wasm_code,
+    FuelMode /*fuel_mode*/) const
 {
     auto loader_ctx = WasmEdgeResourcePtrCreate<WasmEdge_LoaderCreate>(nullptr);
     WasmEdge_ASTModuleContext * ast_module_ptr = nullptr;
@@ -577,7 +586,7 @@ std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view modu
 }
 
 
-void wasmEdgeLogCallback(const WasmEdge_LogMessage * msg)
+static void wasmEdgeLogCallback(const WasmEdge_LogMessage * msg)
 {
     std::string logger_name(msg->LoggerName.Buf, msg->LoggerName.Length);
     auto log = getLogger(logger_name);
@@ -648,7 +657,10 @@ namespace DB::WebAssembly
 
 WasmEdgeRuntime::WasmEdgeRuntime() = default;
 
-std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmEdgeRuntime::compileModule(
+    std::string_view /* module_name */,
+    std::string_view /* wasm_code */,
+    FuelMode /*fuel_mode*/) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WasmEdge support is disabled");
 }
