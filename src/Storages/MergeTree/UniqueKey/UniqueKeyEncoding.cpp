@@ -137,104 +137,6 @@ void appendEscapedString(const char * data, size_t size, String & out)
     out.append("\0\x00", 2);
 }
 
-/// Per-row dispatch on a non-Nullable column. Single jump-table on
-/// `IColumn::getDataType()` — alias rows (Date↔UInt16, Date32↔Int32,
-/// DateTime↔UInt32, UUID↔UInt128) share branches via `static_cast` to
-/// the underlying column type. Enum8/Enum16 columns report as Int8/Int16
-/// (no dedicated ColumnEnum), so they hit the signed-int branches.
-/// Throws NOT_IMPLEMENTED for any TypeIndex outside this set.
-void encodeOneNonNullable(const IColumn & column, size_t row, String & out)
-{
-    switch (column.getDataType())
-    {
-        case TypeIndex::UInt8:
-            appendBigEndian(static_cast<const ColumnUInt8 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::UInt16:
-        case TypeIndex::Date:
-            appendBigEndian(static_cast<const ColumnUInt16 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::UInt32:
-        case TypeIndex::DateTime:
-            appendBigEndian(static_cast<const ColumnUInt32 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::UInt64:
-            appendBigEndian(static_cast<const ColumnUInt64 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int8:
-            appendSignedBigEndian(static_cast<const ColumnInt8 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int16:
-            appendSignedBigEndian(static_cast<const ColumnInt16 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int32:
-        case TypeIndex::Date32:
-            appendSignedBigEndian(static_cast<const ColumnInt32 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int64:
-            appendSignedBigEndian(static_cast<const ColumnInt64 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Float32:
-            appendFloat32(static_cast<const ColumnFloat32 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Float64:
-            appendFloat64(static_cast<const ColumnFloat64 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::String:
-        {
-            const std::string_view view = static_cast<const ColumnString &>(column).getDataAt(row);
-            appendEscapedString(view.data(), view.size(), out);
-            return;
-        }
-        case TypeIndex::FixedString:
-        {
-            /// FixedString is naturally prefix-free; raw bytes preserve order.
-            const std::string_view view = static_cast<const ColumnFixedString &>(column).getDataAt(row);
-            out.append(view.data(), view.size());
-            return;
-        }
-        case TypeIndex::UUID:
-            appendBigEndian(static_cast<const ColumnUUID &>(column).getData()[row].toUnderType(), out);
-            return;
-        case TypeIndex::UInt128:
-            appendBigEndian(static_cast<const ColumnUInt128 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int128:
-            appendWideSignedBigEndian(static_cast<const ColumnInt128 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::UInt256:
-            appendBigEndian(static_cast<const ColumnUInt256 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Int256:
-            appendWideSignedBigEndian(static_cast<const ColumnInt256 &>(column).getData()[row], out);
-            return;
-        case TypeIndex::Decimal32:
-            appendSignedBigEndian(static_cast<const ColumnDecimal<Decimal32> &>(column).getData()[row].value, out);
-            return;
-        case TypeIndex::Decimal64:
-            appendSignedBigEndian(static_cast<const ColumnDecimal<Decimal64> &>(column).getData()[row].value, out);
-            return;
-        case TypeIndex::Decimal128:
-            appendWideSignedBigEndian(static_cast<const ColumnDecimal<Decimal128> &>(column).getData()[row].value, out);
-            return;
-        case TypeIndex::Decimal256:
-            appendWideSignedBigEndian(static_cast<const ColumnDecimal<Decimal256> &>(column).getData()[row].value, out);
-            return;
-        case TypeIndex::DateTime64:
-            appendSignedBigEndian(static_cast<const ColumnDecimal<DateTime64> &>(column).getData()[row].value, out);
-            return;
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "UNIQUE KEY encoding: column type {} is not supported",
-                            column.getName());
-    }
-}
-
-}
-
-namespace
-{
-
 /// Column-wise free functions: one `typeid_cast` per column, tight row
 /// loop per type. `null_map` is non-null when called from a Nullable
 /// wrapper and skips null rows. `permutation`, if non-null, indexes the
@@ -319,10 +221,13 @@ void appendFixedStringColumn(
     }
 }
 
-/// Returns false if the TypeIndex is not handled; caller falls back to
-/// row-wise dispatch for that column. Single jump-table on
-/// `IColumn::getDataType()` mirroring the `encodeOneNonNullable` shape.
-bool dispatchNonNullableColumnWise(
+/// Single jump-table on `IColumn::getDataType()`. Alias rows share branches
+/// via `static_cast` (Date↔UInt16, Date32↔Int32, DateTime↔UInt32,
+/// UUID↔UInt128; Enum8/Enum16 land on Int8/Int16 — no dedicated ColumnEnum).
+/// Throws NOT_IMPLEMENTED at entry for any TypeIndex outside the supported
+/// set so an all-NULL block of an unsupported nested type can't slip
+/// through silently.
+void dispatchNonNullableColumnWise(
     const IColumn & column,
     const UInt8 * null_map,
     const IColumn::Permutation * permutation,
@@ -341,94 +246,96 @@ bool dispatchNonNullableColumnWise(
         case TypeIndex::UInt8:
             appendVectorColumn(static_cast<const ColumnUInt8 &>(column), null_map, permutation, num_rows, out,
                 [](UInt8 v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::UInt16:
         case TypeIndex::Date:
             appendVectorColumn(static_cast<const ColumnUInt16 &>(column), null_map, permutation, num_rows, out,
                 [](UInt16 v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
             appendVectorColumn(static_cast<const ColumnUInt32 &>(column), null_map, permutation, num_rows, out,
                 [](UInt32 v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::UInt64:
             appendVectorColumn(static_cast<const ColumnUInt64 &>(column), null_map, permutation, num_rows, out,
                 [](UInt64 v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int8:
             appendVectorColumn(static_cast<const ColumnInt8 &>(column), null_map, permutation, num_rows, out,
                 [](Int8 v, String & dst) { appendSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int16:
             appendVectorColumn(static_cast<const ColumnInt16 &>(column), null_map, permutation, num_rows, out,
                 [](Int16 v, String & dst) { appendSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int32:
         case TypeIndex::Date32:
             appendVectorColumn(static_cast<const ColumnInt32 &>(column), null_map, permutation, num_rows, out,
                 [](Int32 v, String & dst) { appendSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int64:
             appendVectorColumn(static_cast<const ColumnInt64 &>(column), null_map, permutation, num_rows, out,
                 [](Int64 v, String & dst) { appendSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Float32:
             appendVectorColumn(static_cast<const ColumnFloat32 &>(column), null_map, permutation, num_rows, out,
                 [](Float32 v, String & dst) { appendFloat32(v, dst); });
-            return true;
+            return;
         case TypeIndex::Float64:
             appendVectorColumn(static_cast<const ColumnFloat64 &>(column), null_map, permutation, num_rows, out,
                 [](Float64 v, String & dst) { appendFloat64(v, dst); });
-            return true;
+            return;
         case TypeIndex::String:
             appendStringColumn(static_cast<const ColumnString &>(column), null_map, permutation, num_rows, out);
-            return true;
+            return;
         case TypeIndex::FixedString:
             appendFixedStringColumn(static_cast<const ColumnFixedString &>(column), null_map, permutation, num_rows, out);
-            return true;
+            return;
         case TypeIndex::UUID:
             appendVectorColumn(static_cast<const ColumnUUID &>(column), null_map, permutation, num_rows, out,
                 [](const UUID & v, String & dst) { appendBigEndian(v.toUnderType(), dst); });
-            return true;
+            return;
         case TypeIndex::UInt128:
             appendVectorColumn(static_cast<const ColumnUInt128 &>(column), null_map, permutation, num_rows, out,
                 [](const UInt128 & v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int128:
             appendVectorColumn(static_cast<const ColumnInt128 &>(column), null_map, permutation, num_rows, out,
                 [](const Int128 & v, String & dst) { appendWideSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::UInt256:
             appendVectorColumn(static_cast<const ColumnUInt256 &>(column), null_map, permutation, num_rows, out,
                 [](const UInt256 & v, String & dst) { appendBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Int256:
             appendVectorColumn(static_cast<const ColumnInt256 &>(column), null_map, permutation, num_rows, out,
                 [](const Int256 & v, String & dst) { appendWideSignedBigEndian(v, dst); });
-            return true;
+            return;
         case TypeIndex::Decimal32:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal32> &>(column), null_map, permutation, num_rows, out,
                 [](const Decimal32 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
-            return true;
+            return;
         case TypeIndex::Decimal64:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal64> &>(column), null_map, permutation, num_rows, out,
                 [](const Decimal64 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
-            return true;
+            return;
         case TypeIndex::Decimal128:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal128> &>(column), null_map, permutation, num_rows, out,
                 [](const Decimal128 & v, String & dst) { appendWideSignedBigEndian(v.value, dst); });
-            return true;
+            return;
         case TypeIndex::Decimal256:
             appendVectorColumn(static_cast<const ColumnDecimal<Decimal256> &>(column), null_map, permutation, num_rows, out,
                 [](const Decimal256 & v, String & dst) { appendWideSignedBigEndian(v.value, dst); });
-            return true;
+            return;
         case TypeIndex::DateTime64:
             appendVectorColumn(static_cast<const ColumnDecimal<DateTime64> &>(column), null_map, permutation, num_rows, out,
                 [](const DateTime64 & v, String & dst) { appendSignedBigEndian(v.value, dst); });
-            return true;
+            return;
         default:
-            return false;
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "UNIQUE KEY encoding: column type {} is not supported",
+                            column.getName());
     }
 }
 
@@ -491,16 +398,7 @@ void encodeBlock(
             }
         }
 
-        if (!dispatchNonNullableColumnWise(*inner, null_map, permutation, num_rows, out))
-        {
-            for (size_t r = 0; r < num_rows; ++r)
-            {
-                const size_t src = permutation ? (*permutation)[r] : r;
-                if (null_map && null_map[src])
-                    continue;
-                encodeOneNonNullable(*inner, src, out[r]);
-            }
-        }
+        dispatchNonNullableColumnWise(*inner, null_map, permutation, num_rows, out);
 
         for (size_t r = 0; r < num_rows; ++r)
         {
