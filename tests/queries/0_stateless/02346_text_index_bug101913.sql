@@ -3,7 +3,6 @@
 -- (e.g. hasAllTokens AND LIKE) were used on a Merge table with query_plan_direct_read_from_text_index=1.
 
 DROP TABLE IF EXISTS tab;
-DROP TABLE IF EXISTS tab_dist;
 DROP TABLE IF EXISTS tab_merged;
 
 CREATE TABLE tab
@@ -15,9 +14,7 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY id;
 
-CREATE TABLE tab_dist AS tab ENGINE = Distributed('test_shard_localhost', currentDatabase(), 'tab');
-
-CREATE TABLE tab_merged AS tab ENGINE = Merge(currentDatabase(), 'tab_dist');
+CREATE TABLE tab_merged AS tab ENGINE = Merge(currentDatabase(), 'tab');
 
 INSERT INTO tab (id, str) VALUES (1, 'error'), (2, 'something (par)'), (3, 'nothing');
 
@@ -32,5 +29,4 @@ SELECT str FROM tab_merged PREWHERE
 SETTINGS query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE tab_merged;
-DROP TABLE tab_dist;
 DROP TABLE tab;
