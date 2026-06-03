@@ -16,6 +16,8 @@ namespace
     private:
         static String getReturnTypeName(const DataTypePtr & argument)
         {
+            if (argument->lowCardinality())
+                return argument->isLowCardinalityNullable() ? "LowCardinality(Nullable(Bool))" : "LowCardinality(Bool)";
             return argument->isNullable() ? "Nullable(Bool)" : "Bool";
         }
 
@@ -35,6 +37,11 @@ namespace
         size_t getNumberOfArguments() const override { return 1; }
         bool useDefaultImplementationForConstants() const override { return true; }
         bool useDefaultImplementationForNulls() const override { return false; }
+        /// Do not let the LowCardinality wrapper strip the argument: the wrapper would cast the
+        /// dictionary (including its unused default entry) and throw on that entry even for valid
+        /// data. Operating on the full column instead casts row by row and keeps the throwing
+        /// behavior for invalid non-`NULL` values.
+        bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -54,10 +61,7 @@ namespace
                 }
             };
 
-            const bool needs_accurate_or_null
-                = arguments[0].type->isNullable() || arguments[0].type->lowCardinality() || arguments[0].type->isLowCardinalityNullable();
-            auto cast_type = needs_accurate_or_null ? CastType::accurateOrNull : CastType::nonAccurate;
-            auto func_cast = createInternalCast(arguments[0], result_type, cast_type, {}, nullptr);
+            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {}, nullptr);
             return func_cast->execute(cast_args, result_type, arguments[0].column->size(), /* dry_run = */ false);
         }
     };
