@@ -96,7 +96,8 @@ void GroupConcatImpl<has_limit>::add(
         if (cur_data.num_rows >= limit)
             return;
 
-    if (cur_data.data_size != 0)
+    /// empty strings keep data_size at 0 but still need a delimiter
+    if (cur_data.num_rows != 0)
         cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
     if (isFixedString(type))
@@ -115,7 +116,8 @@ void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstA
     auto & cur_data = this->data(place);
     auto & rhs_data = this->data(rhs);
 
-    if (rhs_data.data_size == 0)
+    /// A state holding only empty strings has data_size == 0 but num_rows > 0
+    if (rhs_data.data_size == 0 && rhs_data.num_rows == 0)
         return;
 
     if constexpr (has_limit)
@@ -123,7 +125,7 @@ void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstA
         UInt64 new_elems_count = std::min(rhs_data.num_rows, limit - cur_data.num_rows);
         for (UInt64 i = 0; i < new_elems_count; ++i)
         {
-            if (cur_data.data_size != 0)
+            if (cur_data.num_rows != 0)
                 cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
             cur_data.offsets.push_back(cur_data.data_size, arena);
@@ -134,10 +136,12 @@ void GroupConcatImpl<has_limit>::merge(AggregateDataPtr __restrict place, ConstA
     }
     else
     {
-        if (cur_data.data_size != 0)
+        /// rely on data_size for deserialized states and on num_rows for in-memory states (contain only empty strings data_size == 0)
+        if (cur_data.data_size != 0 || cur_data.num_rows != 0)
             cur_data.insertChar(delimiter.c_str(), delimiter.size(), arena);
 
         cur_data.insertChar(rhs_data.data, rhs_data.data_size, arena);
+        cur_data.num_rows += rhs_data.num_rows;
     }
 }
 
