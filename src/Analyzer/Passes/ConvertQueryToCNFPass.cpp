@@ -158,6 +158,12 @@ bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const 
 
 void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
+    /// The atom itself can be a correlated scalar subquery, e.g. `WHERE (SELECT a = 5)`.
+    /// Skip it for the same reason we skip QUERY/UNION children below.
+    const auto term_type = term->getNodeType();
+    if (term_type == QueryTreeNodeType::QUERY || term_type == QueryTreeNodeType::UNION)
+        return;
+
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
     {
@@ -169,12 +175,7 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     {
         if (!child)
             continue;
-        /// Do not descend into subqueries — constraint graph is scoped to the outer query's
-        /// table expressions. Walking into QUERY/UNION nodes would replace ColumnNodes inside
-        /// `correlated_columns_list` with ConstantNodes, corrupting the list and causing a
-        /// `Bad cast from DB::ConstantNode to DB::ColumnNode` exception in
-        /// `CollectTopLevelColumnIdentifiersVisitor`. Mirrors the `needChildVisit` guards added
-        /// to `ComponentCollectorVisitor` and `SubstituteColumnVisitor` in this same pass.
+        /// The constraint graph is scoped to the outer query, so do not descend into subqueries.
         const auto child_type = child->getNodeType();
         if (child_type == QueryTreeNodeType::QUERY || child_type == QueryTreeNodeType::UNION)
             continue;

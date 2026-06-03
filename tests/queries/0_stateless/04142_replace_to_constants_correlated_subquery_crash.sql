@@ -46,4 +46,11 @@ SELECT count() FROM t_replace_const_corr
 WHERE NOT exists((SELECT 1 PREWHERE a > 100))
 SETTINGS enable_analyzer = 1, convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_substitute_columns = 0;
 
+-- Case 4: direct correlated scalar subquery. Here the atom passed to `replaceToConstants`
+-- is the `QUERY` node itself, not a child, so the recursion-time child guard is not enough;
+-- the early return at the top of `replaceToConstants` is what prevents the bad cast.
+SELECT count() FROM t_replace_const_corr
+WHERE (SELECT a = 5)
+SETTINGS enable_analyzer = 1, allow_experimental_correlated_subqueries = 1, convert_query_to_cnf = 1, optimize_using_constraints = 1, optimize_substitute_columns = 0;
+
 DROP TABLE t_replace_const_corr;
