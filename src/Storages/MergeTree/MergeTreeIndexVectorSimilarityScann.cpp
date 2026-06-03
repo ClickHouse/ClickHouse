@@ -738,6 +738,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
     search_params[0].set_pre_reordering_epsilon(std::numeric_limits<float>::infinity());
     search_params[0].set_post_reordering_epsilon(std::numeric_limits<float>::infinity());
 
+    if (scann_num_leaves_to_search > MAX_INT32)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "scann_num_leaves_to_search {} exceeds int32_t limit", scann_num_leaves_to_search);
+
     if (scann_num_leaves_to_search > 0)
     {
         auto tree_params = std::make_shared<research_scann::TreeXOptionalParameters>();
