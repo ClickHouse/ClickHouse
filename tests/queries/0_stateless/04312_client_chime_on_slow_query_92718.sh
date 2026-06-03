@@ -21,17 +21,18 @@ bel_count() {
     fi
 }
 
-err1="${CLICKHOUSE_TMP}/04303_err1_${CLICKHOUSE_DATABASE}.txt"
-err2="${CLICKHOUSE_TMP}/04303_err2_${CLICKHOUSE_DATABASE}.txt"
-err3="${CLICKHOUSE_TMP}/04303_err3_${CLICKHOUSE_DATABASE}.txt"
-err4="${CLICKHOUSE_TMP}/04303_err4_${CLICKHOUSE_DATABASE}.txt"
-err5="${CLICKHOUSE_TMP}/04303_err5_${CLICKHOUSE_DATABASE}.txt"
-err6="${CLICKHOUSE_TMP}/04303_err6_${CLICKHOUSE_DATABASE}.txt"
-tty7="${CLICKHOUSE_TMP}/04303_tty7_${CLICKHOUSE_DATABASE}.txt"
-tty8="${CLICKHOUSE_TMP}/04303_tty8_${CLICKHOUSE_DATABASE}.txt"
-tty9="${CLICKHOUSE_TMP}/04303_tty9_${CLICKHOUSE_DATABASE}.txt"
-tty10="${CLICKHOUSE_TMP}/04303_tty10_${CLICKHOUSE_DATABASE}.txt"
-tty11="${CLICKHOUSE_TMP}/04303_tty11_${CLICKHOUSE_DATABASE}.txt"
+err1="${CLICKHOUSE_TMP}/04312_err1_${CLICKHOUSE_DATABASE}.txt"
+err2="${CLICKHOUSE_TMP}/04312_err2_${CLICKHOUSE_DATABASE}.txt"
+err3="${CLICKHOUSE_TMP}/04312_err3_${CLICKHOUSE_DATABASE}.txt"
+err4="${CLICKHOUSE_TMP}/04312_err4_${CLICKHOUSE_DATABASE}.txt"
+err5="${CLICKHOUSE_TMP}/04312_err5_${CLICKHOUSE_DATABASE}.txt"
+err6="${CLICKHOUSE_TMP}/04312_err6_${CLICKHOUSE_DATABASE}.txt"
+tty7="${CLICKHOUSE_TMP}/04312_tty7_${CLICKHOUSE_DATABASE}.txt"
+tty8="${CLICKHOUSE_TMP}/04312_tty8_${CLICKHOUSE_DATABASE}.txt"
+tty9="${CLICKHOUSE_TMP}/04312_tty9_${CLICKHOUSE_DATABASE}.txt"
+tty10="${CLICKHOUSE_TMP}/04312_tty10_${CLICKHOUSE_DATABASE}.txt"
+tty11="${CLICKHOUSE_TMP}/04312_tty11_${CLICKHOUSE_DATABASE}.txt"
+tty12="${CLICKHOUSE_TMP}/04312_tty12_${CLICKHOUSE_DATABASE}.txt"
 
 # -----------------------------------------------------------------------------
 # Non-TTY cases (stderr redirected to a regular file). With the TTY guard, the
@@ -88,10 +89,14 @@ echo "6. clickhouse-client --chime 0, slow query: $(bel_count "$err6")"
 /usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 1 -q 'SELECT sleep(1.5) FORMAT Null'" /dev/null > "$tty7" 2>&1
 echo "7. clickhouse-client --chime 1, slow query, pty stderr: $(bel_count "$tty7")"
 
-# Case 8: `--chime 0` over a pty, slow query — expect no `BEL` (explicit disable wins
-# over the default-on behaviour even on a TTY).
-/usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 0 -q 'SELECT sleep(1.5) FORMAT Null'" /dev/null > "$tty8" 2>&1
-echo "8. clickhouse-client --chime 0, slow query, pty stderr: $(bel_count "$tty8")"
+# Case 8: `--chime 0` over a pty, slow query (~6s > default 5s threshold) — expect
+# no `BEL` (explicit disable wins over the default-on behaviour even on a TTY).
+# The query deliberately runs longer than the default 5s threshold so this case
+# distinguishes explicit disable from default-on: if `--chime 0` were ignored and
+# the 5s default used instead, this case would emit `BEL`. A shorter (<5s) query
+# could not tell the two behaviours apart.
+/usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 0 -q 'SELECT sleepEachRow(2) FROM numbers(3) FORMAT Null SETTINGS function_sleep_max_microseconds_per_block = 0'" /dev/null > "$tty8" 2>&1
+echo "8. clickhouse-client --chime 0, slow query (~6s > default 5s threshold), pty stderr: $(bel_count "$tty8")"
 
 # Case 9: `--chime 10`, fast query, stderr attached to a pty — expect no `BEL`.
 # This is the only path where `BEL` is emitted, so it is the one place where a
@@ -127,4 +132,14 @@ else
 fi
 echo "11. clickhouse-client --chime 1, slow query then error, pty stderr: $case11_status"
 
-rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9" "$tty10" "$tty11"
+# Case 12: `--chime` passed *without* a value (the `implicit_value(5)` path, which
+# is distinct from omitting the flag entirely as in case 10), slow query
+# (~6s > default 5s threshold), stderr attached to a pty — expect `BEL`. This is
+# the only case that exercises the implicit-value wiring: `--chime` alone must
+# adopt the default 5-second threshold and therefore chime on this query. The
+# flag is placed after the query so the `-q` token is never mistaken for the
+# option's value.
+/usr/bin/script -qc "${CLICKHOUSE_CLIENT} -q 'SELECT sleepEachRow(2) FROM numbers(3) FORMAT Null SETTINGS function_sleep_max_microseconds_per_block = 0' --chime" /dev/null > "$tty12" 2>&1
+echo "12. clickhouse-client --chime (implicit value), slow query (~6s > default 5s threshold), pty stderr: $(bel_count "$tty12")"
+
+rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9" "$tty10" "$tty11" "$tty12"
