@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -50,12 +51,10 @@ std::vector<String> listFiles(
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
-    auto norm_base = std::filesystem::path(table_path).lexically_normal();
-    auto combined = (norm_base / relative_path).lexically_normal();
+    auto base = std::filesystem::path(table_path);
+    auto combined = (base / relative_path).lexically_normal();
 
-    auto rel = combined.lexically_relative(norm_base);
-
-    if (rel.empty() || rel.begin()->string() == "..")
+    if (!pathStartsWith(combined, base))
         throw Exception(
             ErrorCodes::PATH_ACCESS_DENIED,
             "Data lake path `{}` should be inside the table directory `{}`",
