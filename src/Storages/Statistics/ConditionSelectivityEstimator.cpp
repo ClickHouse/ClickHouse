@@ -705,13 +705,13 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     if (function == ALWAYS_FALSE)
     {
-        selectivity = 0.0;
+        selectivity = Selectivity();
         return;
     }
 
     if (function == ALWAYS_TRUE)
     {
-        selectivity = 1.0;
+        selectivity = Selectivity(1.0, 0.0);
         return;
     }
 
