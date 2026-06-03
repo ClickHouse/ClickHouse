@@ -1330,12 +1330,7 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-    /// `disconnect()` resets `in`, so reaching here from an outer loop after
-    /// the receive side has been torn down (e.g. when the server died
-    /// mid-query and a catch handler ran `disconnect()`) would dereference
-    /// a null `shared_ptr`. Surface a clean network error instead.
-    if (!in)
-        throw NetException(ErrorCodes::NETWORK_ERROR, "Connection has been disconnected");
+    ensureConnected();
     return in->poll(timeout_microseconds);
 }
 
@@ -1372,20 +1367,26 @@ UInt64 Connection::receivePacketType()
     if (last_input_packet_type)
         return *last_input_packet_type;
 
+    ensureConnected();
+
     UInt64 type = 0;
     readVarUInt(type, *in);
     return last_input_packet_type.emplace(type);
 }
 
+void Connection::ensureConnected() const
+{
+    /// We are trying to send something to already disconnected connection,
+    /// this means that we continue using Connection after exception.
+    if (!in)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+}
 
 Packet Connection::receivePacket()
 {
     try
     {
-        /// We are trying to send something to already disconnected connection,
-        /// this means that we continue using Connection after exception.
-        if (!in)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+        ensureConnected();
 
         Packet res;
 
