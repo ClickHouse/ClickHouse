@@ -1,14 +1,23 @@
 -- Regression test from `clickhouse-gh[bot]` review on PR #105847
--- (https://github.com/ClickHouse/ClickHouse/pull/105847#discussion_r3350248306).
+-- (https://github.com/ClickHouse/ClickHouse/pull/105847#discussion_r3350248306
+-- and https://github.com/ClickHouse/ClickHouse/pull/105847#discussion_r3350564104).
 --
--- `filterMutationCommands` drops the later `UPDATE a` because the read does
--- not need `a` directly, but the surviving earlier `UPDATE b = isNotNull(materialize(a))`
--- still reads `a` as a source. If `columns_overwritten_by_chain` is built from
--- the original `mutation_commands` list (not the filtered one), `a` is excluded
--- from `performRequiredConversions`, the block ends up advertising `a` as
+-- Two related scenarios for the on-fly chain when an `UPDATE b = f(a)` is
+-- followed by an `UPDATE a = ...` and a pending `MODIFY COLUMN a`.
+--
+-- Variant 1 (`SELECT sum(b)`): `filterMutationCommands` drops `UPDATE a`
+-- because the read does not need `a` directly. If the skip set used to gate
+-- `performRequiredConversions` is built from the full `mutation_commands`
+-- list it still excludes `a`, but the surviving `UPDATE b = isNotNull(materialize(a))`
+-- reads `a` as a source: the block ends up advertising `a` as
 -- `LowCardinality(Nullable(String))` while the column data is still on-disk
--- `Nullable(String)`, and `materialize` fails with `LOGICAL_ERROR: Unexpected
--- return type from materialize`.
+-- `Nullable(String)` and `materialize` fails with
+-- `LOGICAL_ERROR: Unexpected return type from materialize`.
+--
+-- Variant 2 (`SELECT sum(b), any(a)`): both UPDATEs survive filtering. If the
+-- skip set is a chain-wide union attached to every step, the earlier step
+-- (UPDATE b) still skips `a` even though only the later step (UPDATE a)
+-- overwrites it, so the same mismatch fires.
 
 DROP TABLE IF EXISTS t_filtered_chain_isnotnull SYNC;
 
@@ -39,7 +48,13 @@ ALTER TABLE t_filtered_chain_isnotnull
     MODIFY COLUMN a LowCardinality(Nullable(String))
     SETTINGS mutations_sync = 0, alter_sync = 0;
 
+-- Variant 1: `filterMutationCommands` drops the later `UPDATE a`.
 SELECT sum(b)
+FROM t_filtered_chain_isnotnull
+SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
+
+-- Variant 2: both `UPDATE`s survive filtering, exercises the per-step skip set.
+SELECT sum(b), any(a)
 FROM t_filtered_chain_isnotnull
 SETTINGS apply_mutations_on_fly = 1, optimize_functions_to_subcolumns = 0;
 

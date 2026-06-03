@@ -236,20 +236,21 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// overwrites — pre-casting the on-disk value would fail on values the UPDATE is
     /// about to replace (e.g. `CAST('x' AS UInt64)` before `UPDATE v = '100'`).
     ///
-    /// But the same step also produces pass-through columns the mutation never touches.
+    /// The same step also produces pass-through columns the mutation never touches.
     /// Skipping conversion for those leaves the block advertising the post-MODIFY
     /// metadata type over the on-disk column class, and downstream operators
     /// (`MergingSortedTransform`'s `ColumnLowCardinality::insertFrom`, `NativeWriter`'s
     /// `typeid_cast<ColumnLowCardinality>`, etc.) trip on the type-vs-storage mismatch.
     ///
-    /// Null out the columns named in `columns_overwritten_by_chain` while running
-    /// `performRequiredConversions` so they're skipped, then restore them so the next
-    /// step's action sees them in their on-disk form.
+    /// `prewhere_info->columns_overwritten_by_chain` is the set of columns THIS step
+    /// will write itself. Null those out around `performRequiredConversions` so they
+    /// are skipped, then restore them so the step's action sees them in their on-disk
+    /// form. An empty skip set still triggers a full conversion pass.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
         merge_tree_reader->performRequiredConversions(read_columns);
     }
-    else if (!prewhere_info->columns_overwritten_by_chain.empty())
+    else
     {
         const auto & reader_columns = merge_tree_reader->getColumns();
         const auto & skip = prewhere_info->columns_overwritten_by_chain;

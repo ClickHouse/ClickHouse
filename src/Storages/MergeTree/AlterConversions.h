@@ -71,20 +71,12 @@ private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);
     void addPatchPart(PatchPartInfoForReader patch_part);
 
-    struct MutationActionsChain
-    {
-        std::vector<MutationActions> actions;
-        /// Columns the filtered chain actually overwrites (UPDATE/DELETE targets of
-        /// commands that survived `filterMutationCommands`). Used by `getMutationSteps`
-        /// to decide which columns must skip `performRequiredConversions` in
-        /// `MergeTreeReadersChain::executeActionsBeforePrewhere`.
-        NameSet overwritten_by_chain;
-    };
-
     /// Returns a chain of actions that can be
     /// applied to block to execute mutation commands
-    /// that affect columns from @read_columns.
-    MutationActionsChain getMutationActions(
+    /// that affect columns from @read_columns. Each returned `MutationActions`
+    /// step carries its own `overwritten_columns` set so the on-fly reader chain
+    /// can apply per-step alter conversion.
+    std::vector<MutationActions> getMutationActions(
         const IMergeTreeDataPartInfoForReader & part_info,
         const NamesAndTypesList & read_columns,
         const StorageMetadataPtr & metadata_snapshot,

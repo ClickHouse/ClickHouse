@@ -2327,6 +2327,20 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
     std::vector<MutationActions> result;
     for (const auto & stage : stages)
     {
+        /// Targets of this stage's UPDATE assignments. Attached to the
+        /// stage's expression step so the on-fly reader chain knows which
+        /// columns will be overwritten and can skip their on-disk conversion.
+        NameSet update_targets;
+        for (const auto & [column, _] : stage.column_to_updated)
+            update_targets.insert(column);
+
+        auto build_overwritten = [&](size_t step_index) -> NameSet
+        {
+            if (step_index < stage.filter_column_names.size())
+                return {stage.filter_column_names[step_index]};
+            return update_targets;
+        };
+
         if (stage.analyzer)
         {
             /// Old path
@@ -2334,10 +2348,8 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
             {
                 const auto & step = stage.expressions_chain.steps[i];
                 bool project_input = step->actions()->project_input;
-                if (i < stage.filter_column_names.size())
-                    result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
-                else
-                    result.push_back({step->actions()->dag.clone(), "", project_input, stage.mutation_version});
+                String filter = i < stage.filter_column_names.size() ? stage.filter_column_names[i] : String{};
+                result.push_back({step->actions()->dag.clone(), std::move(filter), project_input, stage.mutation_version, build_overwritten(i)});
             }
         }
         else
@@ -2348,10 +2360,8 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
             {
                 const auto & step = chain_steps[i];
                 bool project_input = step->getActions()->project_input;
-                if (i < stage.filter_column_names.size())
-                    result.push_back({step->getActions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
-                else
-                    result.push_back({step->getActions()->dag.clone(), "", project_input, stage.mutation_version});
+                String filter = i < stage.filter_column_names.size() ? stage.filter_column_names[i] : String{};
+                result.push_back({step->getActions()->dag.clone(), std::move(filter), project_input, stage.mutation_version, build_overwritten(i)});
             }
         }
     }
