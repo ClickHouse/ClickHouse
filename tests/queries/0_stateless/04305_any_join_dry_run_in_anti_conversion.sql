@@ -1,12 +1,12 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/101671
--- FunctionIn dry_run zeros cause filterResultForMatchedRows to return FALSE
--- instead of UNKNOWN, leading to incorrect ANTI JOIN conversion in
--- convertAnyJoinToSemiOrAntiJoin.
+-- This test guards against a past regression where `convertAnyJoinToSemiOrAntiJoin`
+-- incorrectly converted ANY LEFT JOIN to ANTI JOIN.
 --
--- filterResultForNotMatchedRows (Utils.cpp) correctly checks for not-ready sets
--- and returns UNKNOWN. filterResultForMatchedRows (convertAnyJoinToSemiOrAntiJoin.cpp)
--- lacks this check — it evaluates via dry-run where FunctionIn returns zeros for
--- not-ready sets, producing a concrete FALSE that triggers ANTI conversion.
+-- Historically, `filterResultForMatchedRows` evaluated the filter via dry-run without
+-- a not-ready-set guard, so `FunctionIn` returned zeros for a not-ready set and produced
+-- a concrete FALSE (instead of UNKNOWN), triggering the bogus ANTI conversion. The sibling
+-- `filterResultForNotMatchedRows` already checked for not-ready sets. Master now guards both
+-- paths with `dagContainsNonReadySet` before dry-run evaluation.
 
 DROP TABLE IF EXISTS t1_04305;
 DROP TABLE IF EXISTS t2_04305;
@@ -24,9 +24,9 @@ SET enable_analyzer = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 -- Case 1: The filter toUInt64(1 IN (SELECT number FROM numbers(10))) > 0 is
--- always TRUE at runtime. With the bug, FunctionIn dry_run returns 0 for the
--- not-ready set, filterResultForMatchedRows returns FALSE, and the optimizer
--- incorrectly converts ANY LEFT JOIN to ANTI JOIN — dropping all matched rows.
+-- always TRUE at runtime. With the historical bug, `FunctionIn` dry-run returns 0 for
+-- the not-ready set, `filterResultForMatchedRows` returns FALSE, and the optimizer
+-- incorrectly converts ANY LEFT JOIN to ANTI JOIN, dropping all matched rows.
 -- Expected: all 3 rows (matched a=1,2 + unmatched a=3).
 SELECT a, b, c
 FROM t1_04305
@@ -35,7 +35,7 @@ WHERE toUInt64(1 IN (SELECT number FROM numbers(10))) > 0
 ORDER BY a
 SETTINGS query_plan_filter_push_down = 0;
 
--- Case 2: Same bug, but with globalIn — the set might not be ready even
+-- Case 2: Same bug, but with globalIn, where the set might not be ready even
 -- in the subquery pipeline stage. Same incorrect ANTI conversion expected.
 SELECT a, b, c
 FROM t1_04305
