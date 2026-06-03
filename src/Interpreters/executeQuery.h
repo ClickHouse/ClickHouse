@@ -22,15 +22,12 @@ class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
-struct Settings;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
 
 /// Validate that nested AST nodes do not contradict the enclosing query's `allow_experimental_analyzer` value.
-void validateAnalyzerSettings(ASTPtr ast, bool context_value);
-
-/// Check `max_ast_depth` / `max_ast_elements` limits against the given settings.
-void checkASTSizeLimits(const IAST & ast, const Settings & settings);
+/// Public entry point for the INSERT ... RETURNING delayed planning path (see `buildReturningSelectPipeline`).
+void validateAnalyzerSettingsForReturning(ASTPtr ast, bool context_value);
 
 struct QueryResultDetails
 {

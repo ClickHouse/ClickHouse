@@ -87,6 +87,8 @@ namespace Setting
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsOverflowMode result_overflow_mode;
@@ -137,7 +139,7 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
 
     /// `executeQueryImpl` skips these pre-execution checks for the detached RETURNING subquery (so they run with the
     /// subquery's own settings, not the outer INSERT's). Re-run them here, exactly as for a standalone `SELECT`.
-    validateAnalyzerSettings(select_to_interpret, returning_settings[Setting::allow_experimental_analyzer]);
+    validateAnalyzerSettingsForReturning(select_to_interpret, returning_settings[Setting::allow_experimental_analyzer]);
     if (returning_settings[Setting::enforce_strict_identifier_format])
     {
         WriteBufferFromOwnString buf;
@@ -145,7 +147,10 @@ QueryPipeline buildReturningSelectPipeline(const ASTPtr & returning_select, Cont
         enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
         select_to_interpret->format(buf, enforce_strict_identifier_format_settings);
     }
-    checkASTSizeLimits(*select_to_interpret, returning_settings);
+    if (returning_settings[Setting::max_ast_depth])
+        select_to_interpret->checkDepth(returning_settings[Setting::max_ast_depth]);
+    if (returning_settings[Setting::max_ast_elements])
+        select_to_interpret->checkSize(returning_settings[Setting::max_ast_elements]);
 
     const auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete);
     if (returning_settings[Setting::allow_experimental_analyzer])

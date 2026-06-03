@@ -234,7 +234,7 @@ namespace FailPoints
     extern const char libcxx_hardening_out_of_bounds_assertion[];
 }
 
-void checkASTSizeLimits(const IAST & ast, const Settings & settings)
+static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
     if (settings[Setting::max_ast_depth])
         ast.checkDepth(settings[Setting::max_ast_depth]);
@@ -989,7 +989,7 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1039,6 +1039,15 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
             nodes_to_process.push_back(std::move(child));
         }
     }
+}
+
+/// `validateAnalyzerSettings` has internal linkage in this translation unit. The INSERT ... RETURNING subquery is
+/// planned in a separate translation unit (`buildReturningSelectPipeline`) but must run the same analyzer-setting
+/// validation as any standalone `SELECT`. Expose it through this thin wrapper instead of changing the linkage of the
+/// original function.
+void validateAnalyzerSettingsForReturning(ASTPtr ast, bool context_value)
+{
+    validateAnalyzerSettings(ast, context_value);
 }
 
 class ImplicitTransactionControlExecutor
