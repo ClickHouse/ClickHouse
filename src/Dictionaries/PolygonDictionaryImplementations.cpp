@@ -110,7 +110,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
     {
         for (const auto & candidate : cell->polygon_ids)
         {
-            size_t unused;
+            size_t unused = 0;
             if (buckets[candidate].find(point, unused))
             {
                 polygon_index = candidate;
@@ -203,8 +203,8 @@ DictionaryPtr createLayout(const std::string & /*name*/,
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
     const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}));
 
-    IPolygonDictionary::InputType input_type;
-    IPolygonDictionary::PointType point_type;
+    IPolygonDictionary::InputType input_type = {};
+    IPolygonDictionary::PointType point_type = {};
 
     if (key_type->equals(multi_polygon_array))
     {
@@ -274,6 +274,7 @@ DictionaryPtr createLayout(const std::string & /*name*/,
         return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, configuration);
 }
 
+void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
     factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true, true, Documentation{

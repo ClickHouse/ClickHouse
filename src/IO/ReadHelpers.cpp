@@ -700,7 +700,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos;
+        char * next_pos = nullptr;
         if constexpr (support_crlf)
         {
             next_pos = find_first_symbols<'\t', '\n', '\\','\r'>(buf.position(), buf.buffer().end());
@@ -1155,7 +1155,7 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
     readCSVStringInto<String, true>(s, buf, settings);
 }
 
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
+static void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
 {
     /// Check that delimiters are not empty.
     if (first_delimiter.empty() || second_delimiter.empty())
@@ -1857,7 +1857,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
         if (*buf.position() == '+')
             ++buf.position();
 
-        double v;
+        double v = 0;
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
@@ -2438,7 +2438,7 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         /// It's an integer, float or decimal. They all can be parsed as float.
         auto parse_func = [](ReadBuffer & in)
         {
-            Float64 tmp;
+            Float64 tmp = 0;
             if constexpr (throw_exception)
                 readFloatText(tmp, in);
             else
