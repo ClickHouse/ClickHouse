@@ -2006,7 +2006,11 @@ void TCPHandler::receiveHello()
             }) != authentication_types.end();
 
         if (!user_supports_ssh_authentication)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
+            session->onAuthenticationFailure(user, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
 
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");

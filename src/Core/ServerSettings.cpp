@@ -1577,7 +1577,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```xml
     <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
     ```
-    )", 0)
+    )", 0) \
+    DECLARE(Bool, allow_experimental_audit_log, false, R"(Enable experimental audit logging. Requires `logger.auditlog` to be set.)", EXPERIMENTAL)
 
 /// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
@@ -1603,7 +1604,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, logger_auditlog, "", R"(Path to the audit log file. When set, audit events are written to this file.)", EXPERIMENTAL, "logger.auditlog") \
     DECLARE(String, logger_auditlog_types, "", R"(Comma-separated list of audit log categories to record. Supported values: USER, DDL, DML, DCL, MISC. Defaults to DDL if empty.)", EXPERIMENTAL, "logger.auditlog_types") \
-    DECLARE(Bool, allow_experimental_audit_log, false, R"(Enable experimental audit logging. Requires `logger.auditlog` to be set.)", EXPERIMENTAL) \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
     DECLARE(String, openssl_server_certificate_file, "", R"(Path to the client/server certificate file in PEM format. You can omit it if `<privateKeyFile>` contains the certificate.)", 0, "openSSL.server.certificateFile") \
     DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.server.caConfig") \

@@ -1671,7 +1671,9 @@ public:
         mt.send(Messaging::ErrorOrNoticeResponse(Messaging::ErrorOrNoticeResponse::ERROR, "0A000", "Authentication method is not supported"),
                 true);
 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "None of the authentication methods registered for the user are supported");
+        auto exception = Exception(ErrorCodes::NOT_IMPLEMENTED, "None of the authentication methods registered for the user are supported");
+        session.onAuthenticationFailure(user_name, address, exception);
+        throw exception; /// NOLINT
     }
 };
 }

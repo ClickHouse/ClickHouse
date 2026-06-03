@@ -91,6 +91,7 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -1082,10 +1083,24 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
 
     std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
 
+    /// Ensure the audit record occupies exactly one physical line.
+    /// toOneLineQuery collapses most whitespace but preserves newlines after
+    /// line comments; unconditionally strip CR/LF from all free-form fields.
+    auto escape_for_audit = [](String s)
+    {
+        std::replace(s.begin(), s.end(), '\n', ' ');
+        std::replace(s.begin(), s.end(), '\r', ' ');
+        return s;
+    };
+
+    String safe_query = escape_for_audit(toOneLineQuery(elem.query));
+    String safe_object_names = escape_for_audit(object_names);
+    String safe_user = escape_for_audit(elem.client_info.current_user);
+
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
-            audit_type, elem.query_kind, elem.exception_code, elem.client_info.current_user,
-            host, object_names, toOneLineQuery(elem.query));
+            audit_type, elem.query_kind, elem.exception_code, safe_user,
+            host, safe_object_names, safe_query);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
