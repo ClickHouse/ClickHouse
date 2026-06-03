@@ -798,7 +798,7 @@ public:
 
         while (pos < end)
         {
-            Table::LookupResult it;
+            Table::LookupResult it = {};
 
             size_t context_size = params.order;
             while (true)

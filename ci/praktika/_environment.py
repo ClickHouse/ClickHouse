@@ -39,7 +39,7 @@ class _Environment(MetaClasses.Serializable):
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
-    REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    REPORT_MESSAGES: List[Dict[str, str]] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -226,7 +226,7 @@ class _Environment(MetaClasses.Serializable):
             COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
-            REPORT_INFO=[],
+            REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
@@ -292,9 +292,29 @@ class _Environment(MetaClasses.Serializable):
 
         return cls.from_dict(env_dict)
 
-    def add_info(self, info):
-        self.REPORT_INFO.append(info)
+    def _add_report_message(self, message, kind, source=""):
+        """
+        Accumulate a structured report message in the environment.
+
+        Messages are collected during job execution and later written to both
+        the job and workflow ``Result.ext`` as ``{"message": str, "from": str}``
+        entries.  Grouping of duplicate messages is done at the rendering level
+        in ``json.html``.
+        Prefer the typed wrappers ``add_workflow_warning/error/note``.
+        """
+        self.REPORT_MESSAGES.append(
+            {"message": message, "kind": kind, "from": source or self.JOB_NAME}
+        )
         self.dump()
+
+    def add_workflow_warning(self, message, source=""):
+        self._add_report_message(message, kind="warning", source=source)
+
+    def add_workflow_error(self, message, source=""):
+        self._add_report_message(message, kind="error", source=source)
+
+    def add_workflow_note(self, message, source=""):
+        self._add_report_message(message, kind="note", source=source)
 
     @classmethod
     def get(cls):

@@ -117,13 +117,11 @@ Settings:
 
 Examples:
 
-```sql
+```sql title="Query"
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
-
-```sql
+```sql title="Response"
 SELECT *
 FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
 WHERE (a.number = b.number) AND (b.number = c.number)
@@ -131,13 +129,11 @@ WHERE (a.number = b.number) AND (b.number = c.number)
 
 With `run_query_tree_passes`:
 
-```sql
+```sql title="Query"
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
-Output:
-
-```sql
+```sql title="Response"
 SELECT
     __table1.number AS `a.number`,
     __table2.number AS `b.number`,
@@ -524,11 +520,14 @@ Expression ((Project names + Projection))
 
 In both examples, the query plan shows the complete execution flow including local and remote steps.
 
-With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation,
-and additional information is shown for key steps:
+With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation, and additional information is shown for key steps:
 
 - **Query output columns** are printed at the top of the plan.
+- **Expressions** in filters, aggregation keys, sort descriptions, and window functions are displayed in human-readable SQL-like notation (e.g., `a + 1 > 5` instead of `greater(plus(a, 1), 5)`). Internal column identifier prefixes (such as `__table1.`) are removed for clarity.
 - **Source steps** (such as `ReadFromMergeTree`) display their output columns.
+- **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
+- **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
+- **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
 - **Join steps** display the join relation using mathematical notation, estimated result row count,
   and which output columns come from the left vs. right side. The following symbols are used to
   represent different join types:
@@ -549,8 +548,7 @@ For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
 The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
 when table statistics are available.
 
-The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and
-detailed action info, making the plan easier to read.
+The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
 ```sql
 EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
@@ -582,10 +580,10 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.id) = (__table2.id)]
 │  Output:
 │    Left:  id, value
 │    Right: id, value
+│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -603,6 +601,14 @@ Settings:
 - `header` — Prints header for each output port. Default: 0.
 - `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 - `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+- `compact_repeated_processor_chains` — Compacts adjacent repeated processor chains in text output by showing one copy of the chain with a repetition count. This can make parallel pipelines easier to read when the same chain appears many times, for example in joins. It does not affect graph output. Default: 0.
+
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+```
 
 When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
@@ -635,21 +641,17 @@ Shows the estimated number of rows, marks and parts to be read from the tables w
 
 Creating a table:
 
-```sql
+```sql title="Query"
 CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
 INSERT INTO ttt SELECT number FROM numbers(128);
 OPTIMIZE TABLE ttt;
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 EXPLAIN ESTIMATE SELECT * FROM ttt;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
@@ -664,21 +666,19 @@ Also does some validation, throwing an exception if the override would have caus
 
 Assume you have a remote MySQL table like this:
 
-```sql
+```sql title="Query"
 CREATE TABLE db.tbl (
     id INT PRIMARY KEY,
     created DATETIME DEFAULT now()
 )
 ```
 
-```sql
+```sql title="Query"
 EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
 PARTITION BY toYYYYMM(assumeNotNull(created))
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─explain─────────────────────────────────────────────────┐
 │ PARTITION BY uses columns: `created` Nullable(DateTime) │
 └─────────────────────────────────────────────────────────┘
