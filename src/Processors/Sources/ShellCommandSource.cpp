@@ -559,25 +559,33 @@ namespace
                 }
             }
 
-            /// Executable (non-pool) path: `wait4` populated child rusage when it
-            /// exited. On the success path `prepare()` already called `command->wait()`,
-            /// which in turn calls `tryWaitImpl`. On error paths the child may still
-            /// be running here — try a NON-blocking reap so we never extend the
-            /// destructor's bounded SIGTERM path; if the child is stuck, the
-            /// ShellCommand destructor handles termination as before and the rusage
-            /// is unavailable for this invocation.
+            /// Executable (non-pool) path: `wait4` populated the child rusage when it
+            /// exited (see `ShellCommand::tryWaitImpl`). With `check_exit_code=true`,
+            /// `prepare()` already reaped via `command->wait()`, so `isWaitCalled()` is
+            /// true and we fall straight through to read the captured usage. With
+            /// `check_exit_code=false` the child is still unreaped here, so we reap it
+            /// below (see the inner comment) before the `ShellCommand` destructor would —
+            /// the destructor reaps via `waitForPid`/`waitpid`, which yields no rusage.
             ///
-            /// `waitIfProccesTerminated` calls `tryWaitImpl(false)`, which sets
-            /// `last_resource_usage` on the wait4 success branch BEFORE any throw for
-            /// `WIFSIGNALED` / `WIFSTOPPED` / non-zero exit. So we read
-            /// `wasChildReaped` regardless of whether the inner call threw.
+            /// `tryWaitImpl` sets `last_resource_usage` on the `wait4` success branch
+            /// BEFORE any throw for `WIFSIGNALED` / `WIFSTOPPED` / non-zero exit, so
+            /// `wasChildReaped` is reliable regardless of whether the reap threw.
             if (configuration.sampler && command && !process_pool)
             {
                 if (!command->isWaitCalled())
                 {
                     try
                     {
-                        command->waitIfProccesTerminated();
+                        /// Normal finish: the child closed stdout and is expected to exit
+                        /// imminently, so block until it is reaped to capture `wait4` rusage —
+                        /// this matches the `check_exit_code=true` path, where `prepare` already
+                        /// blocks in `command->wait`. On an error/timeout unwind the child may be
+                        /// stuck, so keep the non-blocking reap and let `~ShellCommand` apply its
+                        /// bounded SIGTERM teardown.
+                        if (!command_is_invalid)
+                            command->tryWait();
+                        else
+                            command->waitIfProccesTerminated();
                     }
                     catch (...)
                     {
