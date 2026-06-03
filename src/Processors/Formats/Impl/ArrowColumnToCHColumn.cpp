@@ -703,9 +703,8 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(const std::sh
             /// If at least one value size is not equal to the size if big integer, fallback to reading String column and further cast to result type.
             if (!chunk.IsNull(i) && chunk.value_length(i) != sizeof(ValueType))
                 return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
-
-            total_size += chunk_length;
         }
+        total_size += chunk_length;
     }
 
     auto internal_column = column_type->createColumn();
