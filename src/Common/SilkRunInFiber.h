@@ -54,7 +54,7 @@ template <typename F>
 }
 
 template <typename F>
-[[nodiscard]] int RunInFiber(F && func, DB::ThreadGroupPtr thread_group)
+[[nodiscard]] int RunInFiber(F && func)
 {
     silk::FiberFuture future;
     int r = RunInFiber(std::forward<F>(func), future);
