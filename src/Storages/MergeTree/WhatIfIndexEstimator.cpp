@@ -125,11 +125,8 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Strip nested SELECT `SETTINGS` that WHATIF must control: `force_data_skipping_indices`
-/// (collected into `removed_force` for later re-validation, else it throws `INDEX_NOT_USED`
-/// on the index-less baseline), `enable_parallel_replicas` with its alias (the estimate is
-/// session-local and must stay on a local plan), and `use_skip_indexes_on_data_read` (on by
-/// default; if 1 the baseline defers existing-index pruning to read time and over-reports marks).
+/// Drop the inner-SELECT settings we pin for a deterministic local baseline
+/// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later
 void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
 {
     if (!node)
@@ -168,10 +165,8 @@ void collectFilterInputColumns(const ActionsDAG::Node * node, NameSet & out)
         collectFilterInputColumns(child, out);
 }
 
-/// True if an `or` has the candidate's column in one branch and a non-index column
-/// in another. A real read can combine the candidate with an existing skip index on
-/// that other column (`use_skip_indexes_for_disjunctions`); the estimator cannot, so
-/// these cases are reported unsupported rather than understating the benefit.
+/// An OR with the candidate's column on one side and another column on the other. The real
+/// read can combine them (use_skip_indexes_for_disjunctions) we can't, so we bail on those    todo.
 bool disjunctionMixesIndexAndOtherColumns(const ActionsDAG::Node * node, const NameSet & index_columns)
 {
     if (!node)
@@ -223,8 +218,8 @@ bool tryEstimateWithStatistics(
     if (parts.empty())
         return false;
 
-    /// Only estimate when the filter is purely on the index's columns, otherwise
-    /// other columns' selectivity would inflate the hypothetical index's skip ratio.
+    /// Only when filter touches just the index's columns, else other columns'
+    /// selectivity leaks into the skip ratio
     NameSet index_columns_set;
     for (const auto & col : index_helper->getColumnsRequiredForIndexCalc())
         index_columns_set.insert(col);
@@ -279,7 +274,7 @@ bool tryEstimateWithStatistics(
     return true;
 }
 
-/// Build the index in memory for baseline marks only and check each granule — accurate
+/// Build the candidate index in memory over the baseline marks and check each granule
 bool tryEstimateEmpirical(
     WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
@@ -297,9 +292,8 @@ bool tryEstimateEmpirical(
     if (index_columns.empty())
         return false;
 
-    /// The empirical counter treats each surviving granule independently. With
-    /// non-zero seek-gap settings the real read coalesces nearby ranges, so the
-    /// estimate would diverge — fall back to statistical/applicability instead.
+    /// We count each granule on its own. With seek-gap settings the real read merges nearby
+    /// ranges, so pass to statistics/applicability rather than guess
     if (context->getSettingsRef()[Setting::merge_tree_min_rows_for_seek] != 0
         || context->getSettingsRef()[Setting::merge_tree_min_bytes_for_seek] != 0)
         return false;
@@ -308,8 +302,8 @@ bool tryEstimateEmpirical(
     UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
-    /// The whole-part scan is not the normal read pipeline, so enforce the query's
-    /// read limits explicitly (max_execution_time is handled by the process-list element).
+    /// This scan isn't the normal read pipeline, so apply the read limits by hand
+    /// (max_execution_time still comes from the process-list element)
     const auto & limit_settings = context->getSettingsRef();
     const SizeLimits read_limits(
         limit_settings[Setting::max_rows_to_read],
@@ -337,13 +331,11 @@ bool tryEstimateEmpirical(
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
                 in_baseline[m] = true;
 
-        /// Read the whole part: non-zero-start mark_ranges trip a LOGICAL_ERROR
-        /// in MergeTreeSequentialSource on adaptive granularity. TODO: fix that
-        /// and read only baseline-aligned ranges
+        /// Read the whole part: non-zero-start ranges hit a LOGICAL_ERROR in
+        /// MergeTreeSequentialSource with adaptive granularity                    todo.
         RangesInDataPart part_for_read(part);
 
-        /// Apply patch parts / on-the-fly mutations so the empirical scan sees
-        /// the same values a real read would, instead of stale raw part data
+        /// Apply patch parts / on-the-fly mutations so we see the up-to-date values, not raw part data
         auto alter_conversions = mutations_snapshot
             ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context)
             : std::make_shared<AlterConversions>();
@@ -362,8 +354,7 @@ bool tryEstimateEmpirical(
             false,
             false);
 
-        /// Enforce the real read's execution-speed limits on this internal scan (size limits
-        /// are checked explicitly below, break-safe; max_execution_time by the process-list element).
+        /// Apply the query's execution-speed limits here too (size is the explicit check below)
         if (auto query_limits = read_step->getQueryInfo().storage_limits)
         {
             auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
@@ -378,7 +369,7 @@ bool tryEstimateEmpirical(
         }
 
         QueryPipeline pipeline(std::move(pipe));
-        /// Account the scan against the query so quota, speed, and time limits apply.
+        /// Tie the scan to the query so quota / speed / time limits apply
         pipeline.setProcessListElement(context->getProcessListElement());
         pipeline.setProgressCallback(context->getProgressCallback());
         pipeline.setQuota(context->getQuota());
@@ -428,19 +419,16 @@ bool tryEstimateEmpirical(
 
             total_rows_read += block.rows();
             total_bytes_read += block.bytes();
-            /// `throw` mode raises here; `break` mode returns false (the scan would be
-            /// partial, so don't report it as a complete empirical estimate — fall back).
+            /// throw mode raises here; break mode returns false so we don't pass off a partial scan as done
             if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
                                    ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
                 return false;
 
-            /// Evaluate the index expression so the aggregator sees what a real
-            /// MATERIALIZE INDEX would see (e.g. lower(s) instead of raw s)
+            /// Run the index expression (e.g. lower(s)) so the aggregator sees what MATERIALIZE INDEX would
             if (index_expression)
                 index_expression->execute(block);
 
-            /// Index aggregators require full columns; sparse-serialized parts
-            /// would otherwise trip `getRawData` (matches the real index writer).
+            /// Aggregators want full columns; sparse-serialized parts would otherwise trip `getRawData`.
             for (auto & column : block)
                 column.column = recursiveRemoveSparse(column.column);
 
@@ -492,8 +480,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.total_parts = data.getActivePartsCount();
     result.total_marks = data.getTotalMarksCount();
 
-    /// `context` here is the effective query context (after inner SELECT `SETTINGS`),
-    /// so these gates mirror what a real read sees.
+    /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -501,9 +488,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// Mirror the real read's `ignore_data_skipping_indices`: parse when the setting is
-    /// changed (an empty value throws `CANNOT_PARSE_TEXT`, exactly as a real read), then
-    /// drop the candidate if its exact name is listed.
+    /// parse ignore_data_skipping_indices when changed (an empty value throws
+    /// CANNOT_PARSE_TEXT) and skip the candidate if it's named
     {
         const auto & user_settings = context->getSettingsRef();
         if (user_settings[Setting::ignore_data_skipping_indices].changed)
@@ -519,8 +505,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         }
     }
 
-    /// Rebuild against current metadata so a schema change since CREATE either
-    /// yields a fresh descriptor or surfaces as `not_applicable`.
+    /// Rebuild from current metadata, so a schema change since CREATE turns into not_applicable
     IndexDescription fresh_index_desc;
     try
     {
@@ -552,12 +537,11 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// The descriptor was authorized at CREATE, but the empirical/statistical scan reads
-    /// these columns now — re-check column-level SELECT against the current grants so a
-    /// grant revoked since CREATE denies the estimate, exactly as a real read would.
+    /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
+    /// current grants, a grant revoked since CREATE should deny the estimate
     context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
 
-    /// Text indexes need a tokenized block layout the empirical pipeline doesn't build. That's a TODO
+    /// Text indexes need a tokenized block layout the empirical pipeline doesn't build      todo.
     if (index_desc.type == "text")
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -573,8 +557,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// Canonicalize the predicate the same way a real read does (push NOT to leaves, drop
-    /// aliases) so the index condition can use independent conjuncts of a mixed AND/OR predicate.
+    /// Canonicalize the predicate (push NOT down, drop aliases) the way the read path does,
+    /// so the condition can pick up a standalone conjunct out of a mixed AND/OR
     ActionsDAGWithInversionPushDown predicate_dag(filter_dag->getOutputs().front(), context);
     const ActionsDAG::Node * predicate = predicate_dag.predicate;
 
@@ -590,10 +574,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// Let the condition decide applicability first: a standalone conjunct can make the candidate
-    /// usable even when it also appears in a mixed `OR`. Only when it can't prune on its own does
-    /// a mixed disjunction matter — a real read might still prune by combining it with an existing
-    /// skip index (use_skip_indexes_for_disjunctions), which the estimator can't model.
+    /// Let the condition decide first, a standalone conjunct can still be usable inside a mixed
+    /// OR. Only fall through to the disjunction case when it can't prune on its own
     if (!condition || condition->alwaysUnknownOrTrue())
     {
         result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
@@ -615,7 +597,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
 
-    /// Empirical first — build index in memory, check each granule
     if (settings.empirical)
     {
         if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
@@ -627,11 +608,9 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Disabled;
     }
 
-    /// Fall back to column statistics
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
-    /// No estimation available
     result.estimate_source = "applicability_only";
     result.estimated_marks = analysis.selected_marks;
     result.estimated_parts = analysis.selected_parts;
@@ -648,12 +627,11 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
 
-    /// Lock down inner `SETTINGS` so baseline contract stays deterministic
+    /// Lock down inner `SETTINGS` so baseline stays deterministic
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
-    /// Capture the forced skip-index names (session + inner-query), then drop them for
-    /// baseline planning — the contract is re-validated after candidates are evaluated.
+    /// Grab the forced index names, drop them for baseline planning, re-check them at the end
     std::vector<String> forced_strings;
     if (context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
@@ -700,24 +678,20 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// FINAL prevents skip indexes from pruning granules (the merge needs every
-    /// granule), so a hypothetical index can't help. Report not_applicable
+    /// FINAL needs every granule for the merge, so a skip index can't help here
     const bool query_with_final = read_step->isQueryWithFinal();
 
-    /// Mirror the effective skip-index state of a real read (`ReadFromMergeTree`):
-    /// `use_skip_indexes` on the effective query context (after inner SELECT `SETTINGS`),
-    /// and disabled under FINAL unless `use_skip_indexes_if_final` is set.
+    /// Effective use_skip_indexes, same as ReadFromMergeTree: on the effective context,
+    /// and off under FINAL unless use_skip_indexes_if_final
     const auto & effective_settings = plan_context->getSettingsRef();
     const bool effective_use_skip_indexes = effective_settings[Setting::use_skip_indexes]
         && !(query_with_final && !effective_settings[Setting::use_skip_indexes_if_final]);
 
-    /// The real read only honors `force_data_skipping_indices` when skip indexes are
-    /// effectively enabled; otherwise the forced list is ignored and not even parsed.
+    /// force_data_skipping_indices only matters when skip indexes are actually on
     NameSet forced_indices;
     if (effective_use_skip_indexes)
     {
-        /// Parse every changed value (including ""): the parser throws `CANNOT_PARSE_TEXT`
-        /// on an unparseable force list exactly as a real read does.
+        /// Parse every changed value, incl. "": a bad list throws CANNOT_PARSE_TEXT, same as a real read
         for (const auto & forced_string : forced_strings)
             for (const auto & name : parseIdentifiersOrStringLiteralsToSet(forced_string, effective_settings))
                 forced_indices.insert(name);
@@ -728,14 +702,12 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// A parent-table hypothetical index isn't materialized on projection parts,
-    /// so applying it to a projection-driven plan would mis-attribute pruning
+    /// A parent-table index isn't on projection parts, so projection plan would mis-attribute pruning
     if (analysis.readFromProjection())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "EXPLAIN WHATIF is not supported when the query is served from a projection");
 
-    /// Pipeline build moved parts_with_ranges out of the analysis
-    /// re-run selectRangesToRead to get a fresh copy of the filtered parts
+    /// Building the pipeline consumed parts_with_ranges, re-run selectRangesToRead for a fresh copy
     read_step->setAnalyzedResult(nullptr);
     auto fresh_analysis = read_step->selectRangesToRead();
     RangesInDataParts baseline_parts;
@@ -757,9 +729,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
                 static_cast<double>(total_bytes) / static_cast<double>(total_rows) * static_cast<double>(analysis.selected_rows));
     }
 
-    /// Honor `force_data_skipping_indices`: each forced name must be a useful real
-    /// skip index (from the baseline analysis) or an applicable hypothetical candidate,
-    /// otherwise throw `INDEX_NOT_USED` exactly as a real read would.
+    /// Every forced name must be a useful real skip index or an applicable candidate,
+    /// otherwise throw INDEX_NOT_USED like a real read
     auto validate_forced_indices = [&]
     {
         if (forced_indices.empty())

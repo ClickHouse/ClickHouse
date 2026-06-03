@@ -30,7 +30,7 @@ ASTPtr ASTHypotheticalIndexQuery::clone() const
     if (index_decl)
     {
         res->index_decl = index_decl->clone();
-        /// `ASTIndexDeclaration::clone` does not carry this flag over; preserve it so the
+        /// `ASTIndexDeclaration::clone` does not carry this flag over. Preserve it so the
         /// cloned declaration keeps its `CREATE INDEX` formatting.
         if (auto * cloned_decl = res->index_decl->as<ASTIndexDeclaration>())
             cloned_decl->part_of_create_index_query = index_decl->as<ASTIndexDeclaration &>().part_of_create_index_query;

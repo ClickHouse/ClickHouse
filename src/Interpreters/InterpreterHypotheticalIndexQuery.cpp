@@ -76,7 +76,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             table->getName());
 
     /// The store keys entries by UUID; without one (Ordinary databases) a stored
-    /// index would never match later lookups, so reject it up front.
+    /// index would never match later lookups, so reject it up front
     if (table_id.uuid == UUIDHelpers::Nil)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -88,9 +88,8 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::Drop)
     {
-        /// No access check: a session-local drop leaks nothing (unlike CREATE, whose
-        /// column-level SELECT guards EXPLAIN WHATIF empirical leakage), and every entry
-        /// in the session store already passed that check at creation.
+        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
+        /// in the session store already passed that check at creation
         auto index_name = query.index_name->as<ASTIdentifier &>().name();
         store.remove(table_id, index_name, query.if_exists);
         return {};
@@ -102,7 +101,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
     /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a
-    /// hypothetical index already uses it or a real secondary index does.
+    /// hypothetical index already uses it or a real secondary index does
     if (query.if_not_exists)
     {
         for (const auto & existing : store.getForTable(table_id))
@@ -125,7 +124,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     if (index_desc.expression)
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
 
-    /// Reject unsupported types before the type-specific validator can throw a confusing error.
+    /// Reject unsupported types before the type-specific validator can throw a confusing error.   todo.
     if (index_desc.type == "text" || index_desc.type == "vector_similarity")
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
