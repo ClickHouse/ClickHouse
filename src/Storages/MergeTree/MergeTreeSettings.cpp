@@ -1534,6 +1534,10 @@ namespace ErrorCodes
     If enabled all the replicas try to fetch part in memory data (like primary
     key, partition info and so on) from other replicas where it already exists.
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup, false, R"(
+    If enabled all the replicas try to fetch part in memory data (like primary
+    key, partition info and so on) on startup from other replicas where it already exists.
+    )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_update_replica_flags_delay_ms, 30000, R"(
     How often replica will try to reload it's flags according to background schedule.
     )", 0) \
@@ -1894,7 +1898,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
+    Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -2584,10 +2588,7 @@ MergeTreeSettings::MergeTreeSettings(const MergeTreeSettings & settings) : impl(
 {
 }
 
-MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept
-    : impl(std::make_unique<MergeTreeSettingsImpl>(std::move(*settings.impl)))
-{
-}
+MergeTreeSettings::MergeTreeSettings(MergeTreeSettings && settings) noexcept = default;
 
 MergeTreeSettings::~MergeTreeSettings() = default;
 
