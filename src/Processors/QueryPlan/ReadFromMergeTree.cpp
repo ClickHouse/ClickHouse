@@ -8,7 +8,6 @@
 #include <Core/Names.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
