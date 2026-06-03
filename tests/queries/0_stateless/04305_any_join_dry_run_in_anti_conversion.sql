@@ -17,6 +17,10 @@ CREATE TABLE t2_04305 (a UInt64, c UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t1_04305 VALUES (1, 10), (2, 20), (3, 30);
 INSERT INTO t2_04305 VALUES (1, 100), (2, 200);
 
+-- Pin the conversion on; the runner randomizes it and 0 would skip the
+-- conversion under test, passing vacuously.
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
+
 -- Case 1: The filter toUInt64(1 IN (SELECT number FROM numbers(10))) > 0 is
 -- always TRUE at runtime. With the bug, FunctionIn dry_run returns 0 for the
 -- not-ready set, filterResultForMatchedRows returns FALSE, and the optimizer
