@@ -6246,15 +6246,10 @@ Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. I
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
-)", 0) \
     DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
 Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
 
 Used by the aggregate projection matcher (and any future projection matcher that needs to compare `IN`-clause sets). Computing the content hash is `O(N log N)` in the number of set elements; this setting bounds the cost paid during planning when many `IN`-clauses appear in the query or the projection.
-)", 0) \
-    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
-Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
 )", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
