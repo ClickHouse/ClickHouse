@@ -736,6 +736,70 @@ INSERT INTO test SELECT randomString(200);
     assert elements <= expected
 
 
+def test_proactive_invalidated_entries_cleanup(cluster):
+    node = cluster.instances["node"]
+    cache_name = "proactive_invalidated_cleanup"
+    # keep_free_space_*_ratio are left at their defaults (disabled), so the only
+    # thing that purges invalidated (lazily-removed) priority queue entries is the
+    # dedicated background cleanup task. max_size/max_elements are large enough to
+    # hold everything, so no eviction happens (eviction would purge them itself).
+    node.query(
+        f"""
+DROP TABLE IF EXISTS test_proactive_cleanup;
+
+CREATE TABLE test_proactive_cleanup (a String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            name = {cache_name},
+            max_size = '1Gi',
+            max_elements = 100000,
+            max_file_segment_size = 10,
+            boundary_alignment = 10,
+            path = "test_proactive_invalidated_cleanup",
+            invalidated_entries_cleanup_threshold = 5,
+            invalidated_entries_cleanup_interval_ms = 500,
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    wait_for_cache_initialized(node, "test_proactive_invalidated_cleanup")
+
+    node.query("INSERT INTO test_proactive_cleanup SELECT randomString(2000);")
+    node.query("SELECT * FROM test_proactive_cleanup FORMAT Null")
+
+    cached = int(
+        node.query(
+            f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
+        )
+    )
+    # We need clearly more than the cleanup threshold of invalidated entries.
+    assert cached > 5
+
+    def removed_count():
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events "
+                "WHERE event = 'FilesystemCacheBackgroundRemovedInvalidatedEntries'"
+            )
+        )
+
+    before = removed_count()
+
+    # Removing the segments invalidates their priority queue entries lazily
+    # (without taking the priority write lock), leaving them in the queue.
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE '{cache_name}'")
+
+    removed = 0
+    for _ in range(120):
+        removed = removed_count() - before
+        if removed >= cached:
+            break
+        time.sleep(0.5)
+
+    assert removed >= cached
+
+
 cache_dynamic_resize_config = """
 <clickhouse>
     <storage_configuration>

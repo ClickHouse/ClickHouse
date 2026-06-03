@@ -163,6 +163,9 @@ private:
     using LRUQueue = std::list<EntryPtr>;
     friend class SLRUFileCachePriority;
 
+    void collectInvalidatedEntries(
+        size_t max_batch, InvalidatedEntriesInfos & res, const CachePriorityGuard::ReadLock &) override;
+
     LRUQueue queue;
     const std::string description;
     LoggerPtr log;
@@ -174,6 +177,11 @@ private:
     /// skipping elements which are likely in non-evictable state.
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
+    /// Resume position for collectInvalidatedEntries, so that draining many
+    /// invalidated entries sweeps the queue once instead of rescanning from the head
+    /// on every batch. Touched only by the single cleanup scan (read lock) and by
+    /// remove() (write lock), so the priority guard alone protects it (like `queue`).
+    LRUQueue::iterator cleanup_pos;
     /// Id of the current priority queue.
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
@@ -226,6 +234,7 @@ private:
     LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;
     void setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
+    void moveCleanupPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

@@ -1,8 +1,17 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Interpreters/StorageID.h>
 
+namespace ProfileEvents
+{
+    extern const Event FilesystemCacheBackgroundRemovedInvalidatedEntries;
+    extern const Event FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds;
+}
 
 namespace DB
 {
@@ -88,6 +97,70 @@ void IFileCachePriority::removeEntries(
         if (entry_state != Entry::State::Removed)
             it->remove(lock);
     }
+}
+
+void IFileCachePriority::onEntryInvalidated()
+{
+    const size_t threshold = invalidated_threshold.load(std::memory_order_relaxed);
+    const size_t prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
+    if (invalidate_notifier && threshold && prev + 1 == threshold)
+        invalidate_notifier();
+}
+
+void IFileCachePriority::startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard)
+{
+    cleanup_guard = &cache_guard;
+    cleanup_task = pool.createTask(StorageID::createEmpty(), "FileCacheInvalidatedEntriesCleanup", [this] { cleanupTaskFunc(); });
+    /// Propagate the wake hook (and threshold) to all sub-queues so any of them can
+    /// nudge the single task.
+    setInvalidateNotifier(invalidated_threshold.load(std::memory_order_relaxed), [this] { cleanup_task->schedule(); });
+    cleanup_task->scheduleAfter(cleanup_interval_ms);
+}
+
+void IFileCachePriority::deactivateBackgroundOperations()
+{
+    if (cleanup_task)
+        cleanup_task->deactivate();
+}
+
+void IFileCachePriority::cleanupTaskFunc()
+{
+    Stopwatch watch;
+
+    const size_t removed = removeInvalidatedEntries(cleanup_batch, *cleanup_guard);
+
+    if (removed)
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundRemovedInvalidatedEntries, removed);
+
+    ProfileEvents::increment(
+        ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, watch.elapsedMilliseconds());
+
+    /// A full batch likely means there is more to clean: come back immediately.
+    if (removed && removed == cleanup_batch)
+        cleanup_task->schedule();
+    else
+        cleanup_task->scheduleAfter(cleanup_interval_ms ? cleanup_interval_ms : 1);
+}
+
+size_t IFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
+{
+    if (invalidated_count.load(std::memory_order_relaxed) == 0)
+        return 0;
+
+    InvalidatedEntriesInfos entries;
+    {
+        auto lock = cache_guard.readLock();
+        collectInvalidatedEntries(max_batch, entries, lock);
+    }
+
+    if (entries.empty())
+        return 0;
+
+    {
+        auto lock = cache_guard.writeLock();
+        removeEntries(entries, lock);
+    }
+    return entries.size();
 }
 
 }

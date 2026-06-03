@@ -154,6 +154,9 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     if (entry.size)
         state->sub(entry.size, /* elements */1);
 
+    if (entry.getState() == Entry::State::Invalidated)
+        onInvalidatedEntryRemoved();
+
     entry.setRemoved(lock);
 
     LOG_TEST(
@@ -161,6 +164,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         entry.key, entry.offset, entry.size.load());
 
     moveEvictionPosIfEqual(it, lock);
+    moveCleanupPosIfEqual(it, lock);
     return queue.erase(it);
 }
 
@@ -203,6 +207,27 @@ void LRUFileCachePriority::iterate(
 {
     InvalidatedEntriesInfos invalidated_entries;
     iterateImpl(queue.begin(), func, stat, invalidated_entries, lock);
+}
+
+void LRUFileCachePriority::collectInvalidatedEntries(
+    size_t max_batch, InvalidatedEntriesInfos & res, const CachePriorityGuard::ReadLock &)
+{
+    /// Resume from where the previous scan stopped and wrap around, so that draining
+    /// many invalidated entries sweeps the queue once instead of rescanning from the
+    /// head on every batch. We examine at most queue.size() entries (a full loop), so
+    /// any invalidated entry is found. Unlike iterateImpl we neither lock keys nor
+    /// invoke a callback - we only pick up the entries left behind by invalidate().
+    const size_t to_examine = queue.size();
+    auto it = cleanup_pos == LRUQueue::iterator{} ? queue.begin() : cleanup_pos;
+    for (size_t examined = 0; examined < to_examine && res.size() < max_batch; ++examined)
+    {
+        if (it == queue.end())
+            it = queue.begin();
+        if ((*it)->getState() == Entry::State::Invalidated)
+            res.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
+        ++it;
+    }
+    cleanup_pos = it;
 }
 
 LRUFileCachePriority::LRUQueue::iterator
@@ -533,6 +558,8 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
 #endif
 
     moveEvictionPosIfEqual(it.iterator, lock);
+    /// The entry leaves `other`, so advance `other`'s cleanup cursor off it.
+    other.moveCleanupPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -607,6 +634,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);
+    moveCleanupPosIfEqual(it, lock);
     queue.splice(queue.end(), queue, it);
     return true;
 }
@@ -644,6 +672,8 @@ void LRUFileCachePriority::LRUIterator::invalidate()
 
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);
+
+    cache_priority->onEntryInvalidated();
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(
@@ -795,5 +825,11 @@ void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const C
     std::lock_guard lk(eviction_pos_mutex);
     if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)
         eviction_pos = std::next(it);
+}
+
+void LRUFileCachePriority::moveCleanupPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
+{
+    if (cleanup_pos != LRUQueue::iterator{} && cleanup_pos == it)
+        cleanup_pos = std::next(it);
 }
 }

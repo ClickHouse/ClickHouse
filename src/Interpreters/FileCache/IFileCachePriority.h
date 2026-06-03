@@ -2,11 +2,13 @@
 
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <Core/Types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 #include <fmt/ranges.h>
@@ -18,10 +20,14 @@ class EvictionCandidates;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
+class BackgroundSchedulePool;
 
 
 class IFileCachePriority : private boost::noncopyable
 {
+    /// SplitFileCachePriority reaches its inner priorities through base references.
+    friend class SplitFileCachePriority;
+
 public:
     using Key = FileCacheKey;
     using QueueEntryType = FileCacheQueueEntryType;
@@ -327,6 +333,20 @@ public:
     /// Used to cleanup invalidated queue entries.
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
+    /// Configure the background invalidated-entries cleanup (before startup).
+    void setCleanupSettings(size_t threshold, size_t interval_ms, size_t batch)
+    {
+        invalidated_threshold.store(threshold, std::memory_order_relaxed);
+        cleanup_interval_ms = interval_ms;
+        cleanup_batch = batch;
+    }
+
+    /// Start background operations.
+    void startup(BackgroundSchedulePool & pool, CachePriorityGuard & cache_guard);
+
+    /// Stop the background operations created in startup().
+    void deactivateBackgroundOperations();
+
     struct UsageStat
     {
         size_t size;
@@ -401,8 +421,42 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
+    void onEntryInvalidated();
+
+    void onInvalidatedEntryRemoved() { invalidated_count.fetch_sub(1, std::memory_order_relaxed); }
+
+    /// Register a hook called from invalidate() once the number of pending
+    /// invalidated entries reaches `threshold`.
+    virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
+    {
+        invalidated_threshold.store(threshold, std::memory_order_relaxed);
+        invalidate_notifier = on_invalidate;
+    }
+
+    /// Remove up to `max_batch` invalidated entries. Returns the number removed.
+    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard);
+
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
+
+private:
+    void cleanupTaskFunc();
+
+    /// Collect up to `max_batch` invalidated entries from this priority's own queue.
+    /// Implemented by leaf priorities (LRU); composites have no queue of their own.
+    virtual void collectInvalidatedEntries(
+        size_t /* max_batch */, InvalidatedEntriesInfos & /* res */, const CachePriorityGuard::ReadLock &) {}
+
+    /// Number of entries left in the queue by invalidate(), awaiting removal.
+    std::atomic<size_t> invalidated_count = 0;
+    std::atomic<size_t> invalidated_threshold = 0;
+    std::function<void()> invalidate_notifier;
+
+    /// The single cleanup task lives on the top-level priority only.
+    BackgroundSchedulePoolTaskHolder cleanup_task;
+    CachePriorityGuard * cleanup_guard = nullptr;
+    size_t cleanup_interval_ms = 0;
+    size_t cleanup_batch = 0;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

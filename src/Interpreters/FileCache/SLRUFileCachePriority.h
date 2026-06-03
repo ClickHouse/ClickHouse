@@ -119,6 +119,20 @@ public:
     FileCachePriorityPtr copy() const;
 
 protected:
+    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    {
+        protected_queue.setInvalidateNotifier(threshold, on_invalidate);
+        probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
+    }
+
+    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override
+    {
+        size_t removed = protected_queue.removeInvalidatedEntries(max_batch, cache_guard);
+        if (removed < max_batch)
+            removed += probationary_queue.removeInvalidatedEntries(max_batch - removed, cache_guard);
+        return removed;
+    }
+
     size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }
 
     size_t getHoldElements() override { return protected_queue.getHoldElements() + probationary_queue.getHoldElements(); }

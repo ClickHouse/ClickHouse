@@ -118,6 +118,20 @@ public:
     void resetEvictionPos() override;
 
 protected:
+    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
+    {
+        getPriority(SegmentType::Data).setInvalidateNotifier(threshold, on_invalidate);
+        getPriority(SegmentType::System).setInvalidateNotifier(threshold, on_invalidate);
+    }
+
+    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override
+    {
+        size_t removed = getPriority(SegmentType::Data).removeInvalidatedEntries(max_batch, cache_guard);
+        if (removed < max_batch)
+            removed += getPriority(SegmentType::System).removeInvalidatedEntries(max_batch - removed, cache_guard);
+        return removed;
+    }
+
     size_t getHoldSize() override;
 
     size_t getHoldElements() override;
