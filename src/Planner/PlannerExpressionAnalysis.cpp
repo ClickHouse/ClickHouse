@@ -90,7 +90,9 @@ std::optional<FilterAnalysisResult> analyzeFilter(
         && !isUInt8(output_filter_type)
         && output->result_type->canBeUsedInBooleanContext())
     {
-        auto zero_column = output->result_type->createColumnConst(1, output->result_type->getDefault());
+        /// Zero from the non-nullable type: `getDefault` on `Nullable`/`LowCardinality` yields
+        /// `NULL`, which would make the rewrite `notEquals(key, NULL)` and disable index analysis.
+        auto zero_column = output->result_type->createColumnConst(1, output_filter_type->getDefault());
         const auto & zero_node = dag.addColumn({zero_column, output->result_type, "0"});
         auto ne_func = FunctionFactory::instance().get("notEquals", planner_context->getQueryContext());
         const auto & ne_node = dag.addFunction(ne_func, {output, &zero_node}, {});
