@@ -184,6 +184,13 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
             "Cannot INSERT into view {} because its query contains LIMIT or OFFSET",
             view_id.getFullTableName());
 
+    /// `SAMPLE` selects a fraction of rows on read, but the insert path forwards every row.
+    /// Accepting it would silently ignore the clause, so reject it like the other read-only clauses.
+    if (select.sampleSize() || select.sampleOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains SAMPLE",
+            view_id.getFullTableName());
+
     if (hasJoin(select))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot INSERT into view {} because its query contains a JOIN",
@@ -412,9 +419,8 @@ public:
         /// Create the inner INSERT pipeline for the target table.
         ASTPtr insert_query_ptr = insert_query;
         InterpreterInsertQuery interpreter(insert_query_ptr, insert_context, /*allow_materialized=*/false, /*no_squash=*/false, /*no_destination=*/false, async_insert);
-        auto block_io = interpreter.execute();
-        pipeline_ = std::move(block_io.pipeline);
-        executor_ = std::make_unique<PushingPipelineExecutor>(pipeline_);
+        block_io_ = interpreter.execute();
+        executor_ = std::make_unique<PushingPipelineExecutor>(block_io_.pipeline);
         executor_->start();
 
         /// Build WHERE constraint expression if the view has a WHERE clause.
@@ -507,10 +513,23 @@ public:
             }
         }
 
-        /// Rename view columns to target table columns.
-        for (const auto & [view_name, target_name] : column_mapping_)
-            if (block.has(view_name))
-                block.getByName(view_name).name = target_name;
+        /// Rename view columns to target table columns, processing each column by position.
+        /// A name-based in-place rename is unsafe when aliases collide with target column
+        /// names: for `CREATE VIEW v AS SELECT a AS b, b AS a FROM t` the mapping holds both
+        /// `b -> a` and `a -> b`, and renaming one column first leaves the block with two
+        /// columns sharing a name, so a later `getByName` could pick the wrong one. Building a
+        /// fresh block from the original column order, mapping each name exactly once, avoids
+        /// the ambiguity and rebuilds the name index consistently.
+        Block renamed_block;
+        for (const auto & col : block)
+        {
+            auto renamed_col = col;
+            auto it = column_mapping_.find(col.name);
+            if (it != column_mapping_.end())
+                renamed_col.name = it->second;
+            renamed_block.insert(std::move(renamed_col));
+        }
+        block = std::move(renamed_block);
 
         /// Push to the inner `INSERT` pipeline which handles constraints and writing.
         executor_->push(std::move(block));
@@ -519,6 +538,22 @@ public:
     void onFinish() override
     {
         executor_->finish();
+        executor_.reset();
+
+        block_io_.onFinish();
+        block_io_ = {};
+    }
+
+    void onException(std::exception_ptr) override
+    {
+        /// A chunk may fail mid-insert — for example a later chunk violates the view's `WHERE`
+        /// constraint after earlier chunks were already pushed. Cancel and tear down the inner
+        /// insert pipeline so it does not leak or block, mirroring `StorageAlias::AliasSink`.
+        if (executor_)
+            executor_->cancel();
+        executor_.reset();
+        block_io_.onException();
+        block_io_ = {};
     }
 
 private:
@@ -596,7 +631,7 @@ private:
     StorageID view_id_;
     ContextPtr context_;
 
-    QueryPipeline pipeline_;
+    BlockIO block_io_;
     std::unique_ptr<PushingPipelineExecutor> executor_;
 
     ExpressionActionsPtr where_actions_;
