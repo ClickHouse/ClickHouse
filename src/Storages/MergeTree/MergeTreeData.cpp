@@ -594,6 +594,44 @@ void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, 
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
     const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
 
+    /// Serialize once -- used both for the read-only divergence check below
+    /// and for every per-disk write.
+    String new_contents;
+    {
+        WriteBufferFromString out(new_contents);
+        mapping.serialize(out);
+    }
+
+    /// Refuse to publish if any read-only / write-once disk in the policy
+    /// holds an EXISTING copy that doesn't match what we're about to write.
+    /// Otherwise a successful `ALTER` here followed by a restart would see
+    /// divergent copies (old on the read-only disk, new on the writable
+    /// disks) and `loadColumnIdMappingFromDisk` would refuse to load the
+    /// table.  Failing here keeps the on-disk mapping in a consistent
+    /// state (writable disks aren't touched yet).
+    for (const auto & disk : target_policy->getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+        if (!disk->isReadOnly() && !disk->isWriteOnce())
+            continue;
+
+        auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
+        if (!buf)
+            continue;
+        String existing_contents;
+        readStringUntilEOF(existing_contents, *buf);
+        if (existing_contents != new_contents)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot publish a new column ID mapping for table {}: "
+                "disk `{}` is read-only/write-once but already holds an "
+                "older `{}` that disagrees with the new mapping.  Publishing "
+                "to the writable disks would leave divergent copies and "
+                "block restart.  Make the disk writable, remove the stale "
+                "file manually, or rebalance parts off this disk first.",
+                getStorageID().getNameForLogs(), disk->getName(), COLUMN_IDS_FILE_NAME);
+    }
+
     /// Write to EVERY writable disk in the target policy.  Writing to only
     /// the first writable disk leaves stale copies on other disks: if the
     /// first writable disk later becomes read-only, the load path would

@@ -200,10 +200,20 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         for (const auto & col : columns_txt)
         {
             String phys;
-            if (pn_mapping->hasLogicalName(col.name))
-                phys = pn_mapping->getColumnId(col.name);
-            else if (pn_mapping->hasColumnId(col.name))
+            /// Prefer column-ID resolution first: `columns.txt` for parts
+            /// written with column-IDs active stores the column_id form,
+            /// and after a `RENAME COLUMN b TO d` followed by reuse of the
+            /// name `b` for a new column, the on-disk token `b` is the
+            /// column_id for logical `d` (id_to_logical), NOT the logical
+            /// name for the new `b` (logical_to_id `b -> 1`).  Treating
+            /// `b` as a logical name first would compare the old part's
+            /// stream against the new `b` column's type and falsely report
+            /// `CORRUPTED_DATA`.  Mirrors `SerializationInfoByName::readJSONWithColumnIds`
+            /// and `remapColumnsWithPhysicalNames`.
+            if (pn_mapping->hasColumnId(col.name))
                 phys = col.name;
+            else if (pn_mapping->hasLogicalName(col.name))
+                phys = pn_mapping->getColumnId(col.name);
             else
                 continue;
 
