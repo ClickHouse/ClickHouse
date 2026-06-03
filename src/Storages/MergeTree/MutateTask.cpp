@@ -2461,12 +2461,12 @@ private:
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
-            /// `prepare` copies `source_part->checksums` wholesale, so a `<name>.proj`
-            /// entry can be inherited for a projection whose directory was skipped during
-            /// hardlinking (it is in `files_to_skip`) and that produced no part — both for
-            /// a zero-row rebuild and for drop/throw mode. Drop such entries; otherwise the
-            /// next load that verifies consistency (server startup or `ATTACH`) marks the
-            /// projection broken via `loadProjections`.
+            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
+            /// Such an entry points at a directory missing from the new part, so the projection
+            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
+            /// An inherited entry is an orphan when both hold:
+            ///   1. the directory was not hardlinked into the new part, and
+            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
             for (const auto & projection : ctx->metadata_snapshot->getProjections())
             {
                 const auto projection_file = projection.getDirectoryName();
