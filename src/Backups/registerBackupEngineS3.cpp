@@ -71,6 +71,9 @@ void registerBackupEngineS3(BackupFactory & factory)
         String role_arn;
         String role_session_name;
         const bool allow_config_credentials = params.is_internal_backup && !params.is_user_controlled_backup_destination;
+        /// Internal `ON CLUSTER` subqueries run after the initiator has checked endpoint user filters.
+        /// They may use that endpoint config, but user-controlled destinations still must not inherit top-level credentials.
+        const bool ignore_endpoint_user_filter = params.is_internal_backup;
 
         if (auto collection = params.backup_info.getNamedCollection(params.context))
         {
@@ -169,7 +172,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.read_settings,
                 params.write_settings,
                 params.context,
-                allow_config_credentials);
+                allow_config_credentials,
+                ignore_endpoint_user_filter);
 
             return std::make_unique<BackupImpl>(
                 params.backup_info,
@@ -188,7 +192,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.read_settings,
                 params.write_settings,
                 params.context,
-                allow_config_credentials);
+                allow_config_credentials,
+                ignore_endpoint_user_filter);
 
 
             auto snapshot_reader_creator = [&](const String & s3_uri_, const String & s3_bucket_)
@@ -207,7 +212,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                     params.read_settings,
                     params.write_settings,
                     params.context,
-                    allow_config_credentials);
+                    allow_config_credentials,
+                    ignore_endpoint_user_filter);
             };
 
             return std::make_unique<BackupImpl>(params, archive_params, reader, snapshot_reader_creator);
@@ -225,7 +231,8 @@ void registerBackupEngineS3(BackupFactory & factory)
                 params.read_settings,
                 params.write_settings,
                 params.context,
-                allow_config_credentials);
+                allow_config_credentials,
+                ignore_endpoint_user_filter);
 
             return std::make_unique<BackupImpl>(params, archive_params, writer);
         }

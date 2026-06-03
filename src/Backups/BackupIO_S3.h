@@ -52,7 +52,8 @@ public:
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
-        bool allow_config_credentials);
+        bool allow_config_credentials,
+        bool ignore_endpoint_user_filter);
     ~BackupReaderS3() override;
 
     bool fileExists(const String & file_name) override;
@@ -86,7 +87,8 @@ public:
         const ReadSettings & read_settings_,
         const WriteSettings & write_settings_,
         const ContextPtr & context_,
-        bool allow_config_credentials);
+        bool allow_config_credentials,
+        bool ignore_endpoint_user_filter);
     ~BackupWriterS3() override;
 
     bool fileExists(const String & file_name) override;
