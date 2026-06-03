@@ -1483,7 +1483,7 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
     /// Find column in output nodes and remove.
-    const Node * col;
+    const Node * col = nullptr;
     {
         auto it = outputs.begin();
         for (; it != outputs.end(); ++it)
@@ -1705,7 +1705,7 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
-void ActionsDAG::decorrelate() noexcept
+void ActionsDAG::decorrelate()
 {
     for (auto & node : nodes)
     {
@@ -2290,7 +2290,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
                     for (auto & child : copy.children)
                     {
                         child = data[child].to_first;
-                        assert(child != nullptr);
+                        chassert(child != nullptr);
                     }
 
                     if (cur_data.used_in_result)
@@ -2792,7 +2792,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     for (const auto & col : all_inputs)
     {
-        const Node * input;
+        const Node * input = nullptr;
         auto & list = required_inputs[col.name];
         if (list.empty())
             input = &actions.addInput(col);
@@ -3076,7 +3076,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
         for (const auto & input_column : stream_header.getColumnsWithTypeAndName())
         {
-            const Node * input;
+            const Node * input = nullptr;
             auto & list = updated_filter_inputs[input_column.name];
             if (list.empty())
             {
@@ -3408,8 +3408,16 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
     bool single_output_condition_node)
 {
+    /// Only INPUT nodes should be replaced from the map.  Non-INPUT nodes (ALIAS,
+    /// FUNCTION, etc.) represent computed values — replacing them with a raw INPUT
+    /// would discard the computation chain (e.g. a CAST inserted by an
+    /// ExpressionStep when a MaterializedView maps one column type to another).
+    /// Discarding the chain leads to incorrect key extraction in storage filter
+    /// push-down and therefore to wrong query results (see #83894).
     auto replacement_lookup = [&](const ActionsDAG::Node * node) -> const ColumnWithTypeAndName *
     {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return nullptr;
         auto it = node_name_to_input_node_column.find(node->result_name);
         if (it == node_name_to_input_node_column.end())
             return nullptr;
@@ -3629,19 +3637,19 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     readStringBinary(capture.return_name, in);
     capture.return_type = decodeDataType(in);
 
-    UInt64 num_names;
+    UInt64 num_names = 0;
     readVarUInt(num_names, in);
     capture.captured_names.resize(num_names);
     for (auto & name : capture.captured_names)
         readStringBinary(name, in);
 
-    UInt64 num_types;
+    UInt64 num_types = 0;
     readVarUInt(num_types, in);
     capture.captured_types.resize(num_types);
     for (auto & type : capture.captured_types)
         type = decodeDataType(in);
 
-    UInt64 num_args;
+    UInt64 num_args = 0;
     readVarUInt(num_args, in);
     capture.lambda_arguments.clear();
     for (size_t i = 0; i < num_args; ++i)
@@ -3745,7 +3753,7 @@ static MutableColumnPtr deserializeConstant(
 {
     if (WhichDataType(type).isSet())
     {
-        UInt8 flags;
+        UInt8 flags = 0;
         readBinary(flags, in);
 
         /// is_constant flag is read for backward compatibility but no longer used;
@@ -3767,7 +3775,7 @@ static MutableColumnPtr deserializeConstant(
         deserializeCapture(capture, in);
         auto capture_dag = ActionsDAG::deserialize(in, registry, context);
 
-        UInt64 num_captured_columns;
+        UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
         ColumnsWithTypeAndName captured_columns(num_captured_columns);
 
@@ -3917,7 +3925,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
 ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context)
 {
-    size_t nodes_size;
+    size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
 
     std::list<Node> nodes;
@@ -3938,11 +3946,11 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         readStringBinary(node.result_name, in);
         node.result_type = decodeDataType(in);
 
-        size_t children_size;
+        size_t children_size = 0;
         readVarUInt(children_size, in);
         for (size_t j = 0; j < children_size; ++j)
         {
-            size_t child_id;
+            size_t child_id = 0;
             readVarUInt(child_id, in);
             node.children.push_back(id_to_node.at(child_id));
         }
@@ -4047,14 +4055,14 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         }
     }
 
-    size_t inputs_size;
+    size_t inputs_size = 0;
     readVarUInt(inputs_size, in);
     std::vector<const Node *> inputs;
     std::unordered_set<const Node *> inputs_set;
     inputs.reserve(inputs_size);
     for (size_t i = 0; i < inputs_size; ++i)
     {
-        size_t input_id;
+        size_t input_id = 0;
         readVarUInt(input_id, in);
         const auto * input = id_to_node.at(input_id);
 
@@ -4070,13 +4078,13 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
         inputs.push_back(input);
     }
 
-    size_t outputs_size;
+    size_t outputs_size = 0;
     readVarUInt(outputs_size, in);
     std::vector<const Node *> outputs;
     outputs.reserve(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i)
     {
-        size_t output_id;
+        size_t output_id = 0;
         readVarUInt(output_id, in);
         outputs.push_back(id_to_node.at(output_id));
     }
