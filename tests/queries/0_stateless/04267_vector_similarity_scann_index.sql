@@ -238,6 +238,36 @@ CREATE TABLE tab_scann_dim_ins (id Int32, vec Array(Float32), INDEX idx vec TYPE
 INSERT INTO tab_scann_dim_ins VALUES (0, [1.0, 2.0, 3.0]); -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_dim_ins;
 
+-- Test 11: scann_num_leaves_to_search too small relative to LIMIT must not truncate
+-- result cardinality. With scann_num_leaves_to_search=1 ScaNN searches a single IVF
+-- partition (~sqrt(N) vectors), so nn.size() < num_candidates when LIMIT is large.
+-- The fix falls back to a full-granule exact scan, returning exactly LIMIT rows.
+SELECT '11. scann_num_leaves_to_search small: result cardinality equals LIMIT';
+DROP TABLE IF EXISTS tab_scann_few_leaves;
+CREATE TABLE tab_scann_few_leaves (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
+INSERT INTO tab_scann_few_leaves
+    SELECT toInt32(number), [toFloat32(number), toFloat32(0.0)]
+    FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_few_leaves FINAL;
+-- count() = 1 means exactly 100 rows were returned.
+SELECT count() = 100 FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
+);
+-- Fallback uses exact distances so results must match brute-force.
+SELECT count() FROM (
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SETTINGS vector_search_with_rescoring = 0, use_skip_indexes = 1, scann_num_leaves_to_search = 1
+    EXCEPT
+    WITH [toFloat32(1000), toFloat32(0.0)] AS ref
+    SELECT id FROM tab_scann_few_leaves ORDER BY L2Distance(vec, ref) ASC LIMIT 100
+    SETTINGS use_skip_indexes = 0
+);
+DROP TABLE tab_scann_few_leaves;
+
 SELECT '12. non-finite values rejected at insert (NaN/Inf)';
 DROP TABLE IF EXISTS tab_scann_nonfinite;
 CREATE TABLE tab_scann_nonfinite (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
@@ -257,8 +287,22 @@ WITH [nan, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(
 WITH [inf, 0.0] AS ref SELECT id FROM tab_scann_nonfinite_q ORDER BY L2Distance(vec, ref) LIMIT 1 SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
 DROP TABLE tab_scann_nonfinite_q;
 
--- Test 14: index survives DETACH/ATTACH (serialization round-trip).
-SELECT '14. Serialization round-trip (DETACH/ATTACH)';
+-- Test 14: Float64 query values that are finite as double but overflow to +Inf when
+-- narrowed to float must be rejected. Regression for the bug where isfinite was checked
+-- on the double value before the static_cast<float>, letting 1e100 pass validation.
+SELECT '14. Float64 value overflowing to float32 +Inf rejected in query vector';
+DROP TABLE IF EXISTS tab_scann_f64_overflow;
+CREATE TABLE tab_scann_f64_overflow (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
+    ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_scann_f64_overflow SELECT toInt32(number), [toFloat32(number), toFloat32(0.0)] FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_f64_overflow FINAL;
+WITH [toFloat64(1e100), toFloat64(0.0)] AS ref
+SELECT id FROM tab_scann_f64_overflow ORDER BY L2Distance(vec, ref) ASC LIMIT 1
+SETTINGS use_skip_indexes = 1; -- { serverError INCORRECT_DATA }
+DROP TABLE tab_scann_f64_overflow;
+
+-- Test 15: index survives DETACH/ATTACH (serialization round-trip).
+SELECT '15. Serialization round-trip (DETACH/ATTACH)';
 DROP TABLE IF EXISTS tab_scann_detach;
 CREATE TABLE tab_scann_detach (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

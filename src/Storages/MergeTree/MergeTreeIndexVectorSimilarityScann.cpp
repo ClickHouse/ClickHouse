@@ -740,6 +740,20 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityScann::calculateApproxi
             "ScaNN search failed: {}", status.ToString());
 
     const auto & nn = result_vecs[0];
+
+    /// If ScaNN returned fewer candidates than requested (e.g. scann_num_leaves_to_search
+    /// searched too few IVF partitions), the approximate result set is incomplete.
+    /// Fall back to a full-granule scan without distances: returning all row offsets with
+    /// distances unset causes the upstream executor to read every row in the granule and
+    /// compute exact distances, guaranteeing correct result cardinality.
+    if (nn.size() < num_candidates)
+    {
+        NearestNeighbours result;
+        result.rows.resize(granule->num_vectors);
+        std::iota(result.rows.begin(), result.rows.end(), UInt64{0});
+        return result;
+    }
+
     NearestNeighbours result;
     result.rows.reserve(nn.size());
     if (parameters->return_distances)
