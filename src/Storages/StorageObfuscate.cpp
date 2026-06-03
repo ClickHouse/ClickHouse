@@ -66,6 +66,7 @@ void StorageObfuscate::read(
     query_plan.addStep(std::move(obfuscation));
 }
 
+void registerStorageObfuscate(StorageFactory & factory);
 void registerStorageObfuscate(StorageFactory & factory)
 {
     factory.registerStorage("Obfuscate", [](const StorageFactory::Arguments & args)

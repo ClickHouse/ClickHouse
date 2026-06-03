@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/ObfuscateSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -43,7 +44,7 @@ ObfuscateStep::ObfuscateStep(
     markov_model_params.frequency_cutoff = settings[Setting::obfuscate_markov_frequency_cutoff];
     markov_model_params.num_buckets_cutoff = settings[Setting::obfuscate_markov_num_buckets_cutoff];
     markov_model_params.frequency_add = settings[Setting::obfuscate_markov_frequency_add];
-    markov_model_params.frequency_desaturate = settings[Setting::obfuscate_markov_frequency_desaturate];
+    markov_model_params.frequency_desaturate = static_cast<double>(settings[Setting::obfuscate_markov_frequency_desaturate]);
     markov_model_params.determinator_sliding_window_size = settings[Setting::obfuscate_markov_determinator_sliding_window_size];
 }
 

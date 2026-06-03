@@ -29,8 +29,8 @@ private:
     ASTPtr inner_query;
     Names column_names;
     ContextPtr context;
-    MarkovModelParameters markov_model_params;
-    UInt64 seed;
+    MarkovModelParameters markov_model_params{};
+    UInt64 seed = 0;
 };
 
 }

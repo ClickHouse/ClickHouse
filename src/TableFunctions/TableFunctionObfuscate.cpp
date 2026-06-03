@@ -30,7 +30,7 @@ const ASTSelectWithUnionQuery & TableFunctionObfuscate::getSelectQuery() const
     return *create.select;
 }
 
-std::vector<size_t> TableFunctionObfuscate::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionObfuscate::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -76,7 +76,19 @@ StoragePtr TableFunctionObfuscate::executeImpl(
 
 void registerTableFunctionObfuscate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionObfuscate>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionObfuscate>(
+        {
+            .description = R"(
+Obfuscates the result of a query, producing a table that retains some statistical properties of the source data (cardinalities, value distributions, string lengths, compression ratios, etc.) while replacing the actual values with different ones.
+
+It is designed to publish almost real production data for usage in benchmarks. The transformation is deterministic for a given seed, controlled by the `obfuscate_*` settings. It uses some cryptographic primitives, but the result should never be considered secure.
+
+See also the `clickhouse obfuscator` tool, which implements the same algorithm over files.
+)",
+            .examples{{"obfuscate", "SELECT * FROM obfuscate(SELECT number, toString(number) FROM numbers(10000)) LIMIT 10", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true});
 }
 
 }
