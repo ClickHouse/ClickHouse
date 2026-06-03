@@ -1,6 +1,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
+#include <cmath>
 #include <iostream>
 
 #include <Common/logger_useful.h>
@@ -8,6 +9,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -120,7 +123,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
-                if (last_element->finalized && last_element->function != RPNElement::FUNCTION_UNKNOWN)
+                if (last_element->finalized)
                     last_element->selectivity = 1 - last_element->selectivity;
                 else
                 {
@@ -144,7 +147,12 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
     Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
-    final_rows = std::max<Float64>(final_rows, 0);
+    /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
+    /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
+    if (!std::isfinite(final_rows) || final_rows < 0)
+        final_rows = 0;
+    else if (final_rows > static_cast<Float64>(total_rows))
+        final_rows = static_cast<Float64>(total_rows);
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
@@ -209,7 +217,25 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
         String func_name = func.getFunctionName();
         if (atom_map.find(func_name) == std::end(atom_map))
+        {
+            /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
+            /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
+            if (func_name == "like" || func_name == "ilike")
+                out.selectivity = default_like_factor;
+            else if (func_name == "notLike" || func_name == "notILike")
+                out.selectivity = 1.0 - default_like_factor;
+            else if (func_name == "__applyFilter")
+            {
+                /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
+                /// (after cheaper column predicates) and neutral for join reorder estimates.
+                out.selectivity = 1.0;
+            }
+            else
+                return false;
+
+            out.finalized = true;
             return false;
+        }
 
         if (num_args == 2)
         {
@@ -278,6 +304,20 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
                 if (column_desc)
                     column_type = removeLowCardinalityAndNullable(column_desc->type);
+                else
+                {
+                    /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
+                    /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
+                    /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
+                    if (func_name == "equals" || func_name == "in")
+                        out.selectivity = default_cond_equal_factor;
+                    else if (func_name == "notEquals" || func_name == "notIn")
+                        out.selectivity = 1.0 - default_cond_equal_factor;
+                    else /// less, greater, lessOrEquals, greaterOrEquals
+                        out.selectivity = default_cond_range_factor;
+                    out.finalized = true;
+                    return false;
+                }
             }
             /// In some cases we need to cast the type of const
             bool cast_not_needed = !column_type || !const_type ||
@@ -330,11 +370,46 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     if (!column_type->equals(*common_type))
                     {
-                        /// we assume that is "cast(column) < const", will not estimate this condition.
-                        return false;
+                        /// The common type is wider than the column type (e.g. Float64 literal on a
+                        /// Float32 column). For floating-point columns, narrow the constant to the
+                        /// column type so that column statistics can be used.
+                        /// For other combinations (e.g. Int32 column with Float64 constant) the
+                        /// conversion semantics are non-trivial (ceiling vs. floor for range queries),
+                        /// so we skip statistics estimation.
+                        if (!isFloat(column_type))
+                            return false;
+
+                        Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        /// Narrowing to the column type is only semantically sound when the literal is
+                        /// exactly representable in that type. At execution time the column value is
+                        /// widened to the literal's type and compared against the original literal, not
+                        /// against its narrowed value. For a non-representable literal (e.g. `f32 = 0.1`)
+                        /// the comparison is always false, but narrowing would round the literal to a
+                        /// representable value and make an impossible predicate look selective, which can
+                        /// reorder PREWHERE incorrectly. Detect this with a round-trip and short-circuit
+                        /// equality/inequality instead of estimating from the narrowed value.
+                        if (func_name == "equals" || func_name == "notEquals")
+                        {
+                            Field round_trip = tryConvertFieldToType(converted, *common_type, column_type.get(), {});
+                            if (round_trip.isNull() || round_trip != const_value)
+                            {
+                                out.function = func_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                        }
+
+                        const_value = converted;
                     }
                 }
             }
+
+            /// The atom handlers for IN / NOT IN expect a Tuple but we may have parsed a single scalar in the case of IN (single_value).
+            if (is_in_operator && const_value.getType() != Field::Types::Tuple)
+                const_value = Tuple{const_value};
+
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;
@@ -380,17 +455,22 @@ ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstima
 
 Float64 ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
 {
+    if (stats->getNumRows() == 0)
+        return 0;
     Float64 result = 0;
     for (const Range & range : ranges.ranges)
     {
-        result += stats->estimateRange(range);
+        if (auto estimate = stats->estimateRange(range))
+            result += *estimate;
+        else if (range.left == range.right)
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_equal_factor;
+        else
+            result += static_cast<Float64>(stats->getNumRows()) * default_cond_range_factor;
     }
-    /// In case that there is an empty statistics.
-    if (stats->getNumRows() == 0)
-        return 0;
     Float64 selectivity = result / static_cast<Float64>(stats->getNumRows());
-    selectivity = std::max<Float64>(selectivity, 0);
-    return selectivity;
+    /// Clamp to [0, 1]. Selectivity can exceed 1 when summing estimates across
+    /// multiple ranges (e.g. IN with many values) that together exceed total rows.
+    return std::max(0.0, std::min(1.0, selectivity));
 }
 
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
@@ -536,6 +616,18 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return;
     }
 
+    if (function == ALWAYS_FALSE)
+    {
+        selectivity = 0.0;
+        return;
+    }
+
+    if (function == ALWAYS_TRUE)
+    {
+        selectivity = 1.0;
+        return;
+    }
+
     auto estimate_unknown_ranges = [&](const PlainRanges & ranges)
     {
         Float64 equal_selectivity = 0;
@@ -585,5 +677,14 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     }
     if (function == FUNCTION_OR)
         selectivity = 1 - selectivity;
+
+    /// Clamp to valid probability range. Selectivity can exceed [0, 1] when
+    /// estimateRanges() sums individual range estimates that together exceed the
+    /// total row count (e.g. IN with many values and over-counting statistics),
+    /// or become NaN from floating-point edge cases.
+    if (!std::isfinite(selectivity))
+        selectivity = default_unknown_cond_factor;
+    else
+        selectivity = std::max(0.0, std::min(1.0, selectivity));
 }
 }

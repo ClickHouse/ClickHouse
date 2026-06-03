@@ -7,11 +7,13 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperReadThreadPool.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
 #include <base/defines.h>
+#include <memory>
 
 #include <Coordination/CompactChildrenSet.h>
 
@@ -51,7 +53,7 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_children_data.ephemeral_owner;
+            return ephemeral_or_seq_num.ephemeral_owner;
 
         return 0;
     }
@@ -59,52 +61,26 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
     }
 
-    int32_t numChildren() const
+    int64_t seqNum() const
     {
         if (isEphemeral())
             return 0;
 
-        return ephemeral_or_children_data.children_info.num_children;
+        return ephemeral_or_seq_num.seq_num;
     }
 
-    void setNumChildren(int32_t num_children)
+    void setSeqNum(int64_t seq_num)
     {
-        is_ephemeral_and_ctime.is_ephemeral = false;
-        ephemeral_or_children_data.children_info.num_children = num_children;
-    }
-
-    void increaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.num_children;
-    }
-
-    void decreaseNumChildren()
-    {
-        chassert(!isEphemeral());
-        --ephemeral_or_children_data.children_info.num_children;
-    }
-
-    int32_t seqNum() const
-    {
-        if (isEphemeral())
-            return 0;
-
-        return ephemeral_or_children_data.children_info.seq_num;
-    }
-
-    void setSeqNum(int32_t seq_num)
-    {
-        ephemeral_or_children_data.children_info.seq_num = seq_num;
+        ephemeral_or_seq_num.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
         chassert(!isEphemeral());
-        ++ephemeral_or_children_data.children_info.seq_num;
+        ++ephemeral_or_seq_num.seq_num;
     }
 
     int64_t ctime() const
@@ -126,17 +102,14 @@ private:
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
-    /// ephemeral notes cannot have children so a node can set either
-    /// ephemeral_owner OR seq_num + num_children
+    /// ephemeral nodes cannot have children, so a node either stores
+    /// ephemeral_owner (the owning session) OR seq_num (the counter
+    /// for generating sequential children names under this node)
     union
     {
         int64_t ephemeral_owner;
-        struct
-        {
-            int32_t seq_num;
-            int32_t num_children;
-        } children_info;
-    } ephemeral_or_children_data{0};
+        int64_t seq_num;
+    } ephemeral_or_seq_num{0};
 };
 
 /// KeeperRocksNodeInfo is used in RocksDB keeper.
@@ -144,13 +117,25 @@ private:
 struct KeeperRocksNodeInfo
 {
     NodeStats stats;
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    ACLId acl_id = 0; /// 0 -- no ACL by default
+    int32_t num_children = 0;
+
+    int32_t numChildren() const
+    {
+        if (stats.isEphemeral())
+            return 0;
+        return num_children;
+    }
+
+    void setNumChildren(int32_t value) { num_children = value; }
+    void increaseNumChildren() { ++num_children; }
+    void decreaseNumChildren() { --num_children; }
 
     /// dummy interface for test
     void addChild(std::string_view) {}
     auto getChildren() const
     {
-        return std::vector<int>(stats.numChildren());
+        return std::vector<int>(numChildren());
     }
 
     void copyStats(const Coordination::Stat & stat);
@@ -182,6 +167,7 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     {
         stats = other.stats;
         acl_id = other.acl_id;
+        num_children = other.num_children;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -222,7 +208,19 @@ struct KeeperMemNode
     std::unique_ptr<char[]> data{nullptr};
     mutable uint64_t cached_digest = 0;
 
-    uint64_t acl_id = 0; /// 0 -- no ACL by default
+    ACLId acl_id = 0; /// 0 -- no ACL by default
+    int32_t num_children = 0;
+
+    int32_t numChildren() const
+    {
+        if (stats.isEphemeral())
+            return 0;
+        return num_children;
+    }
+
+    void setNumChildren(int32_t value) { num_children = value; }
+    void increaseNumChildren() { ++num_children; }
+    void decreaseNumChildren() { --num_children; }
 
     KeeperMemNode() = default;
 
@@ -274,8 +272,17 @@ private:
     CompactChildrenSet children{};
 };
 
+/// Going to >160 bytes pushes to jemalloc bin #10 (192 bytes).
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+static_assert(sizeof(KeeperMemNode) <= 160);
+#endif
+
 struct KeeperStorageStats
 {
+    KeeperStorageStats() = default;
+    KeeperStorageStats(const KeeperStorageStats & other);
+    KeeperStorageStats & operator=(const KeeperStorageStats & other);
+
     std::atomic<uint64_t> nodes_count = 0;
     std::atomic<uint64_t> approximate_data_size = 0;
     std::atomic<uint64_t> total_watches_count = 0;
@@ -408,6 +415,8 @@ public:
     /// Mapping session_id -> set of watched nodes paths
     SessionAndWatcher sessions_and_watchers;
 
+    KeeperReadThreadPool read_thread_pool;
+
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
     void finalize();
@@ -459,7 +468,7 @@ protected:
 
     struct TransactionInfo
     {
-        int64_t zxid;
+        int64_t zxid{};
         KeeperDigest nodes_digest;
         /// index in storage of the log containing the transaction
         int64_t log_idx = 0;
@@ -523,7 +532,7 @@ public:
 
         std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(std::string_view path) const;
+        Coordination::ACLs getACLs(std::string_view path, bool should_lock_storage = true) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
         void applyDelta(const Delta & delta, uint64_t * digest);
@@ -588,10 +597,50 @@ public:
 
     UncommittedState uncommitted_state{*this};
 
-    // Apply uncommitted state to another storage using only transactions
-    // with zxid > last_zxid
+    struct UncommittedStateForSnapshot
+    {
+        UncommittedStateForSnapshot();
+        ~UncommittedStateForSnapshot();
+        UncommittedStateForSnapshot(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot & operator=(UncommittedStateForSnapshot &&) noexcept;
+        UncommittedStateForSnapshot(const UncommittedStateForSnapshot &) = delete;
+        UncommittedStateForSnapshot & operator=(const UncommittedStateForSnapshot &) = delete;
+
+        struct Transaction
+        {
+            int64_t zxid = 0;
+            KeeperDigest nodes_digest;
+            int64_t log_idx = 0;
+        };
+
+        std::vector<Transaction> transactions;
+        std::list<Delta> deltas;
+
+        bool empty() const { return transactions.empty(); }
+    };
+
+    /// Collect uncommitted transactions and deltas with `log_idx > last_log_idx`.
+    UncommittedStateForSnapshot copyUncommittedStateAfter(int64_t last_log_idx) const;
+
+    /// Like `copyUncommittedStateAfter`, but removes the returned transactions
+    /// and deltas from this storage instead of copying them.
+    UncommittedStateForSnapshot detachUncommittedStateAfter(int64_t last_log_idx);
+    void applyUncommittedState(UncommittedStateForSnapshot uncommitted_state_for_snapshot);
+
+    // Compatibility wrapper for the non-low-memory snapshot apply path.
     void applyUncommittedState(KeeperStorage & other, int64_t last_log_idx);
 
+private:
+    void collectUncommittedTransactionsAfter(
+        int64_t last_log_idx,
+        UncommittedStateForSnapshot & result,
+        std::unordered_set<int64_t> & zxids_to_apply) const;
+    static void detachMatchingDeltasNoexcept(
+        std::list<Delta> & source,
+        std::list<Delta> & destination,
+        const std::unordered_set<int64_t> & zxids_to_apply) noexcept;
+
+public:
     Coordination::Error commit(DeltaRange deltas);
 
     // Create node in the storage
@@ -605,9 +654,10 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local, bool should_lock_storage);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+    ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
 
@@ -618,9 +668,12 @@ public:
     KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid,
-        bool check_acl = true,
-        bool is_local = false);
+        std::optional<int64_t> new_last_zxid);
+
+    /// Process a batch of local read requests (no deltas, no commit).
+    KeeperResponsesForSessions processLocalRequests(
+        const KeeperRequestsForSessions & requests,
+        bool check_acl = true);
     KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
@@ -662,7 +715,14 @@ public:
 
     void updateStats();
 
+    /// Register watches from a request/response pair.
+    void updateWatches(
+        const Coordination::ZooKeeperRequestPtr & zk_request,
+        const Coordination::Response * response,
+        int64_t session_id);
+
     void recalculateStats();
+
 private:
     void removeDigest(const Node & node, std::string_view path);
     void addDigest(const Node & node, std::string_view path);
