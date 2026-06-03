@@ -44,7 +44,6 @@ class CloudInfrastructure:
             all=False,
             only: Optional[List[str]] = None,
             instance: Optional[List[str]] = None,
-            wait: bool = False,
         ):
             """
             Deploy Lambda functions.
@@ -56,8 +55,6 @@ class CloudInfrastructure:
                 instance: Debug helper. If set to a list of EC2 instance ids, only
                      those instances have their user_data updated; all other EC2
                      instances and other component types are left untouched.
-                wait: If True, block on the EC2 Mac dedicated-host scrub when starting
-                     a stopped instance instead of warning and leaving it stopped.
             """
             # --instance is a targeted EC2 user_data update; it makes no sense for
             # the other component types, so restrict the deploy to EC2 instances.
@@ -145,7 +142,7 @@ class CloudInfrastructure:
                     print("\n" + "=" * 60)
                     print(f"Deploying EC2 Instance: {instance_config.name}")
                     print("=" * 60)
-                    instance_config.deploy(only_instance_ids=instance, wait=wait)
+                    instance_config.deploy(only_instance_ids=instance)
 
             # Deploy Image Builder pipelines
             if _wants("ImageBuilder", "ImageBuilders"):

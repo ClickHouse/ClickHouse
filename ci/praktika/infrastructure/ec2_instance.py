@@ -288,91 +288,43 @@ class EC2Instance:
 
             return instances[0]
 
-        def _reconcile_user_data(
-            self, ec2, existing_instances, only_instance_ids=None
-        ) -> List[str]:
-            """If `update_user_data_on_change` is set, compare live UserData on each
-            existing instance with `self.user_data`. For mismatches, stop the
-            instance (waiting until it is fully stopped) and call
-            ModifyInstanceAttribute to install the new UserData. Returns the list
-            of instance IDs whose UserData was updated; the caller is responsible
-            for starting them back up if needed.
+        def _user_data_matches(self, ec2, instance_id) -> bool:
+            """Return True if the instance's live UserData already equals `self.user_data`."""
+            resp = ec2.describe_instance_attribute(
+                InstanceId=instance_id, Attribute="userData"
+            )
+            encoded = (resp.get("UserData") or {}).get("Value") or ""
+            if isinstance(encoded, bytes):
+                encoded = encoded.decode("ascii")
+            current = base64.b64decode(encoded).decode("utf-8") if encoded else ""
+            return current == self.user_data
 
-            `only_instance_ids` restricts the reconciliation to the given instance
-            ids (the `--instance` debug helper); other instances are left untouched.
+        def _install_user_data(self, ec2, instance_id, state):
+            """Stop the instance (waiting until fully stopped) and install
+            `self.user_data` via ModifyInstanceAttribute, which requires the instance
+            to be stopped (otherwise it returns IncorrectInstanceState).
             """
-            if not self.update_user_data_on_change or not self.user_data:
-                return []
-
-            only = set(only_instance_ids or [])
-            to_update: List[str] = []
-            for inst in existing_instances:
-                instance_id = inst.get("InstanceId")
-                if not instance_id:
-                    continue
-                if only and instance_id not in only:
-                    continue
-                resp = ec2.describe_instance_attribute(
-                    InstanceId=instance_id, Attribute="userData"
-                )
-                encoded = (resp.get("UserData") or {}).get("Value") or ""
-                if isinstance(encoded, bytes):
-                    encoded = encoded.decode("ascii")
-                current = (
-                    base64.b64decode(encoded).decode("utf-8") if encoded else ""
-                )
-                if current != self.user_data:
-                    to_update.append(instance_id)
-
-            if not to_update:
-                return []
-
-            print(
-                f"EC2Instance '{self.name}': user_data changed for "
-                f"{len(to_update)} instance(s): {to_update}"
-            )
-
-            # ModifyInstanceAttribute requires the instance to be fully stopped,
-            # otherwise it returns IncorrectInstanceState. _find_existing_instances
-            # returns pending/running/stopping/stopped, so stop the ones that are
-            # still up and then wait for everything that is not already stopped
-            # (including instances that were already in the stopping state).
-            state_by_id = {
-                inst.get("InstanceId"): (inst.get("State") or {}).get("Name")
-                for inst in existing_instances
-            }
-            running_ids = [
-                instance_id
-                for instance_id in to_update
-                if state_by_id.get(instance_id) in ["pending", "running"]
-            ]
-            if running_ids:
+            if state in ("pending", "running"):
                 print(
-                    f"EC2Instance '{self.name}': stopping {len(running_ids)} instance(s) to update user_data"
+                    f"EC2Instance '{self.name}': stopping {instance_id} to update user_data"
                 )
-                ec2.stop_instances(InstanceIds=running_ids)
-
-            pending_stop_ids = [
-                instance_id
-                for instance_id in to_update
-                if state_by_id.get(instance_id) != "stopped"
-            ]
-            if pending_stop_ids:
-                ec2.get_waiter("instance_stopped").wait(InstanceIds=pending_stop_ids)
-
-            for instance_id in to_update:
-                # UserData.Value is a blob; boto3 base64-encodes it for the API
-                # call, so pass the raw script bytes here. Pre-encoding would
-                # double-encode and store base64 text as the boot script.
-                ec2.modify_instance_attribute(
-                    InstanceId=instance_id,
-                    UserData={"Value": self.user_data.encode("utf-8")},
+                ec2.stop_instances(InstanceIds=[instance_id])
+            if state != "stopped":
+                # A Mac instance stop can exceed the waiter's 10-min default
+                # (15s x 40) once the host starts scrubbing, so wait up to 40 min.
+                ec2.get_waiter("instance_stopped").wait(
+                    InstanceIds=[instance_id],
+                    WaiterConfig={"Delay": 30, "MaxAttempts": 80},
                 )
-            print(
-                f"EC2Instance '{self.name}': updated user_data on {len(to_update)} instance(s)"
+
+            # UserData.Value is a blob; boto3 base64-encodes it for the API call, so
+            # pass the raw script bytes here. Pre-encoding would double-encode and
+            # store base64 text as the boot script.
+            ec2.modify_instance_attribute(
+                InstanceId=instance_id,
+                UserData={"Value": self.user_data.encode("utf-8")},
             )
-
-            return to_update
+            print(f"EC2Instance '{self.name}': updated user_data on {instance_id}")
 
         def fetch(self):
             instances = self._find_existing_instances()
@@ -405,7 +357,7 @@ class EC2Instance:
                 self.ext["launch_time"] = inst.get("LaunchTime")
             return self
 
-        def deploy(self, only_instance_ids: Optional[List[str]] = None, wait=False):
+        def deploy(self, only_instance_ids: Optional[List[str]] = None):
             import boto3
 
             if not self.image_id or not self.instance_type:
@@ -428,10 +380,26 @@ class EC2Instance:
             if not only_instance_ids:
                 self._create_missing_instances(ec2, existing_instances)
 
-            # Reconcile user_data after any (slow) create, so one deploy does both.
-            self._reconcile_user_data_and_start(
-                ec2, existing_instances, only_instance_ids, wait=wait
-            )
+            # Reconcile one instance at a time - never stop the whole fleet at once
+            # (this runs against production). For each in-scope instance: if its
+            # user_data changed, stop it and reinstall; then, if it is stopped and
+            # start_on_deploy is set, start it - this also brings up instances that
+            # were merely left stopped, with no user_data change.
+            only = set(only_instance_ids or [])
+            update_user_data = self.update_user_data_on_change and bool(self.user_data)
+            for inst in existing_instances:
+                instance_id = inst.get("InstanceId")
+                if not instance_id or (only and instance_id not in only):
+                    continue
+                state = (inst.get("State") or {}).get("Name")
+
+                if update_user_data and not self._user_data_matches(ec2, instance_id):
+                    self._install_user_data(ec2, instance_id, state)
+                    state = "stopped"
+
+                if self.start_on_deploy and state == "stopped":
+                    self._start_instances(ec2, [instance_id])
+
             return self
 
         def _load_user_data(self):
@@ -565,43 +533,11 @@ class EC2Instance:
                 f"EC2Instance '{self.name}': launched {len(created_ids)} instance(s): {created_ids}"
             )
 
-        def _reconcile_user_data_and_start(
-            self, ec2, existing_instances, only_instance_ids, wait=False
-        ):
-            """Reconcile user_data on existing instances (optionally restricted to
-            `only_instance_ids`) and start the ones that ended up stopped. With
-            `wait`, block on the dedicated-host scrub instead of warning.
-            """
-            if not existing_instances:
-                return
-
-            only = set(only_instance_ids or [])
-            updated_ids = self._reconcile_user_data(
-                ec2, existing_instances, only_instance_ids=only_instance_ids
-            )
-            # Reconciliation left these stopped; reflect that locally so they are
-            # picked up by the start below.
-            for inst in existing_instances:
-                if inst.get("InstanceId") in updated_ids:
-                    inst["State"] = {"Name": "stopped"}
-
-            if not self.start_on_deploy:
-                return
-
-            stopped_ids = [
-                inst.get("InstanceId")
-                for inst in existing_instances
-                if (inst.get("State") or {}).get("Name") == "stopped"
-                and (not only or inst.get("InstanceId") in only)
-            ]
-            self._start_instances(ec2, stopped_ids, wait=wait)
-
-        def _start_instances(self, ec2, instance_ids, wait=False):
+        def _start_instances(self, ec2, instance_ids):
             """Start the given instances. On EC2 Mac dedicated hosts a stop puts the
             host into a multi-hour scrub (state `pending`), so `StartInstances` is
             rejected with `InsufficientHostCapacity` until the host returns to
-            `available`. Without `wait` we warn and leave the instance stopped for a
-            later deploy; with `wait` we block on the host scrub (see
+            `available`; in that case we block on the scrub (see
             `_wait_for_hosts_available`) and retry. On success the IAM instance
             profile is re-synced, which is skipped while an instance is stopped.
             """
@@ -618,16 +554,10 @@ class EC2Instance:
             except ClientError as e:
                 if e.response.get("Error", {}).get("Code") != "InsufficientHostCapacity":
                     raise
-                if not wait:
-                    print(
-                        f"EC2Instance '{self.name}': WARNING no host capacity to start {instance_ids}: {e}"
-                    )
-                    return
                 self._wait_for_hosts_available(ec2, instance_ids)
                 ec2.start_instances(InstanceIds=instance_ids)
 
-            if wait:
-                ec2.get_waiter("instance_running").wait(InstanceIds=instance_ids)
+            ec2.get_waiter("instance_running").wait(InstanceIds=instance_ids)
 
             started = ec2.describe_instances(InstanceIds=instance_ids)
             started_instances = [
@@ -662,7 +592,7 @@ class EC2Instance:
 
             print(
                 f"EC2Instance '{self.name}': waiting for dedicated host(s) {host_ids} "
-                f"to finish scrubbing (state 'available')"
+                f"to finish scrubbing (state 'available'); press Ctrl+C to abort waiting"
             )
             model = WaiterModel(
                 {

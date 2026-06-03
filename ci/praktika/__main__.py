@@ -301,17 +301,6 @@ def create_parser():
         type=str,
         default=None,
     )
-    _infra_parser.add_argument(
-        "--wait",
-        help=(
-            "With --deploy: when starting a stopped EC2 instance hits "
-            "InsufficientHostCapacity (EC2 Mac dedicated-host scrub), block until "
-            "the host returns to 'available' and then start it, instead of warning "
-            "and leaving it stopped."
-        ),
-        action="store_true",
-        default=False,
-    )
     return parser
 
 
@@ -349,7 +338,6 @@ def main():
                         all=args.all,
                         only=remaining_components,
                         instance=args.instance,
-                        wait=args.wait,
                     )
             else:
                 from .mangle import _get_infra_config
@@ -358,7 +346,6 @@ def main():
                     all=args.all,
                     only=args.only,
                     instance=args.instance,
-                    wait=args.wait,
                 )
 
         if args.shutdown:
