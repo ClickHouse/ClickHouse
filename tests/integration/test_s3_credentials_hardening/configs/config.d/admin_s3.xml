@@ -32,5 +32,16 @@
             <http_client>gcp_oauth</http_client>
             <google_adc_client_id>ADC_CLIENT_ID</google_adc_client_id>
         </backup_gcp_oauth_partial_adc_endpoint>
+        <backup_session_token_endpoint>
+            <endpoint>http://resolver:18080/backup_session_token/</endpoint>
+            <access_key_id>TEMP_FAKE_KEY</access_key_id>
+            <secret_access_key>TEMP_FAKE_SECRET</secret_access_key>
+            <session_token>TRUSTED_SESSION_TOKEN</session_token>
+        </backup_session_token_endpoint>
+        <backup_access_header_endpoint>
+            <endpoint>http://resolver:18080/backup_access_header/</endpoint>
+            <use_environment_credentials>false</use_environment_credentials>
+            <access_header>X-Backup-Access: TRUSTED_ACCESS_HEADER</access_header>
+        </backup_access_header_endpoint>
     </s3>
 </clickhouse>

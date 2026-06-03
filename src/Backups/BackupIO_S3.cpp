@@ -52,6 +52,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
     extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
@@ -127,8 +128,11 @@ private:
         HTTPHeaderEntries headers;
         if (access_key_id.empty())
         {
-            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
-            headers = settings.auth_settings.headers;
+            credentials = Aws::Auth::AWSCredentials(
+                settings.auth_settings[S3AuthSetting::access_key_id],
+                settings.auth_settings[S3AuthSetting::secret_access_key],
+                settings.auth_settings[S3AuthSetting::session_token]);
+            headers = settings.auth_settings.getHeaders();
         }
 
         const auto & request_settings = settings.request_settings;
@@ -205,7 +209,8 @@ private:
                 std::move(role_arn),
                 std::move(role_session_name),
                 /*sts_endpoint_override=*/""
-            });
+            },
+            credentials.GetSessionToken());
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)

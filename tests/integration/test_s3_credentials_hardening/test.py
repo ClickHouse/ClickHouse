@@ -207,6 +207,22 @@ def test_backup_endpoint_gcp_oauth_adc_fields_are_forwarded():
         _remove_minio_prefix(backup_prefix)
 
 
+@pytest.mark.parametrize(
+    "endpoint_prefix",
+    ["backup_session_token", "backup_access_header"],
+)
+def test_backup_endpoint_auth_surface_is_forwarded(endpoint_prefix):
+    table_name = f"backup_{endpoint_prefix}_credentials"
+    backup_url = f"http://resolver:18080/{endpoint_prefix}/{uuid.uuid4().hex}/backup"
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"CREATE TABLE {table_name} (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query(f"INSERT INTO {table_name} VALUES (1)")
+    try:
+        node.query(f"BACKUP TABLE {table_name} TO S3('{backup_url}')")
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_s3_storage_refresh_does_not_inherit_server_headers():
     node.query("DROP TABLE IF EXISTS s3_refresh")
     node.query(
@@ -453,6 +469,23 @@ def test_named_collection_role_arn_does_not_inherit_admin_keys():
         )
     finally:
         node.query("DROP NAMED COLLECTION IF EXISTS nc_role_no_keys")
+
+
+def test_named_collection_gcp_oauth_mixed_case_requires_adc():
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_gcp_oauth_mixed_case")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION nc_gcp_oauth_mixed_case AS
+            url = '{ENDPOINT}',
+            http_client = 'GCP_OAUTH'
+        """
+    )
+    try:
+        _expect_access_denied(
+            "SELECT * FROM s3(nc_gcp_oauth_mixed_case, format = 'TSV', structure = 'x UInt8')"
+        )
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_gcp_oauth_mixed_case")
 
 
 def test_named_collection_role_arn_with_partial_keys():

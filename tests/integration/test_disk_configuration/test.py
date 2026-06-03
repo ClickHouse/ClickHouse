@@ -637,6 +637,8 @@ def test_dynamic_disk_security_settings(start_cluster):
     minio = cluster.minio_client
 
     # Cleanup from any previous failed run
+    node.query("DROP TABLE IF EXISTS test_security_gcp_oauth_mixed_case SYNC")
+    node.query("DROP TABLE IF EXISTS test_security_role_arn_no_keys SYNC")
     node.query("DROP TABLE IF EXISTS test_security_from_env_ok SYNC")
     node.query("DROP TABLE IF EXISTS test_security_from_zk_ok SYNC")
     node.query("DROP TABLE IF EXISTS test_security_include_ok SYNC")
@@ -678,6 +680,30 @@ def test_dynamic_disk_security_settings(start_cluster):
             user="restricted_user",
         )
         assert "ACCESS_DENIED" in error and "dynamic_disk_allow_from_env" in error, error
+
+        error = node.query_and_get_error(
+            """
+            CREATE TABLE test_security_gcp_oauth_mixed_case (a Int32) ENGINE = MergeTree() ORDER BY tuple()
+            SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://minio1:9001/root/data/',
+                http_client = 'GCP_OAUTH')
+            """,
+            user="restricted_user",
+        )
+        assert "ACCESS_DENIED" in error and "gcp_oauth" in error, error
+
+        error = node.query_and_get_error(
+            """
+            CREATE TABLE test_security_role_arn_no_keys (a Int32) ENGINE = MergeTree() ORDER BY tuple()
+            SETTINGS disk = disk(
+                type = s3,
+                endpoint = 'http://minio1:9001/root/data/',
+                role_arn = 'arn:aws:iam::123456789012:role/Test')
+            """,
+            user="restricted_user",
+        )
+        assert "ACCESS_DENIED" in error and "role_arn" in error, error
 
         # restricted_user (default profile): include is blocked
         error = node.query_and_get_error(
@@ -814,6 +840,8 @@ def test_dynamic_disk_security_settings(start_cluster):
             user="privileged_user",
         )
     finally:
+        node.query("DROP TABLE IF EXISTS test_security_gcp_oauth_mixed_case SYNC")
+        node.query("DROP TABLE IF EXISTS test_security_role_arn_no_keys SYNC")
         node.query("DROP TABLE IF EXISTS test_security_from_env_ok SYNC")
         node.query("DROP TABLE IF EXISTS test_security_from_zk_ok SYNC")
         node.query("DROP TABLE IF EXISTS test_security_include_ok SYNC")

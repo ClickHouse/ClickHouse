@@ -10,6 +10,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
+#include <Poco/String.h>
 #include <Server/CloudPlacementInfo.h>
 
 namespace DB
@@ -986,7 +987,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    if (credentials_configuration.no_sign_request || Poco::toLower(configuration.http_client) == "gcp_oauth")
         return;
 
     /// add explicit credentials to the front of the chain
@@ -1310,7 +1311,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const CredentialsConfiguration & credentials_configuration)
 {
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    if (credentials_configuration.no_sign_request || Poco::toLower(configuration.http_client) == "gcp_oauth")
     {
         credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     }

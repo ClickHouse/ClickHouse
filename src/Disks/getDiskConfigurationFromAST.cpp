@@ -15,6 +15,7 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/String.h>
 #include <Common/StringUtils.h>
 #include <boost/algorithm/string/trim.hpp>
 
@@ -72,6 +73,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_explicit_google_adc_client_secret = false;
     bool has_explicit_google_adc_refresh_token = false;
     bool has_include = false;
+    Poco::AutoPtr<Poco::XML::Element> role_arn_element;
+    Poco::AutoPtr<Poco::XML::Element> role_session_name_element;
     /// "Explicit" here means the value is a literal in the SQL — not a
     /// `from_env`/`from_zk` reference. Indirect values must not count as the
     /// user-supplied keys that authorize a `role_arn`, since they could
@@ -106,6 +109,19 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || startsWith(key, "access_header");
     };
 
+    auto clear_element_value = [&](Poco::AutoPtr<Poco::XML::Element> element)
+    {
+        if (!element)
+            return;
+
+        while (auto * child = element->firstChild())
+            element->removeChild(child);
+
+        element->removeAttribute("from_env");
+        element->removeAttribute("from_zk");
+        element->appendChild(xml_document->createTextNode(""));
+    };
+
     for (const auto & arg : disk_args)
     {
         const auto * setting_function = arg->as<const ASTFunction>();
@@ -127,6 +143,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         std::string key = key_identifier->name();
         Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement(key));
         root->appendChild(key_element);
+        if (key == "role_arn")
+            role_arn_element = key_element;
+        else if (key == "role_session_name")
+            role_session_name_element = key_element;
 
         if (!function_args[1]->as<ASTLiteral>() && !function_args[1]->as<ASTIdentifier>())
             throwBadConfiguration("expected values to be literals or identifiers");
@@ -169,7 +189,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         }
         else if (key == "role_arn" && !value_str.empty())
             has_role_arn = true;
-        else if (key == "http_client" && value_str == "gcp_oauth")
+        else if (key == "http_client" && Poco::toLower(value_str) == "gcp_oauth")
             has_gcp_oauth = true;
         else if (key == "google_adc_client_id" && !value_str.empty() && !is_indirect_value(value_str))
             has_explicit_google_adc_client_id = true;
@@ -247,6 +267,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         root->appendChild(key_element);
         Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode("false"));
         key_element->appendChild(value_element);
+    }
+
+    if (is_loading_from_existing_metadata && apply_s3_credential_checks && has_role_arn
+        && (!has_explicit_access_key_id || !has_explicit_secret_access_key))
+    {
+        clear_element_value(role_arn_element);
+        clear_element_value(role_session_name_element);
     }
 
     if (!is_loading_from_existing_metadata && apply_s3_credential_checks && !indirect_s3_credential_key.empty())

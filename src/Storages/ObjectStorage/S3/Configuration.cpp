@@ -25,6 +25,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
+#include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -289,7 +290,8 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
             "Using `use_environment_credentials` in S3 named collections is not allowed");
     }
 
-    if (collection.getOrDefault<String>("http_client", "") == "gcp_oauth" && !namedCollectionHasFullADC(collection))
+    if (Poco::toLower(collection.getOrDefault<String>("http_client", "")) == "gcp_oauth"
+        && !namedCollectionHasFullADC(collection))
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Using `http_client = gcp_oauth` without explicit ADC credentials in S3 named collections is not allowed");
