@@ -36,6 +36,7 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
     return endpoint_name + path;
 }
 
+void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
     writeVarUInt(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION, out);
@@ -88,7 +89,10 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
     }
 }
 
-static void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
+namespace
+{
+
+void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
     UInt64 version = 0;
     readVarUInt(version, in);
@@ -159,6 +163,8 @@ static void deserializeTask(DistributedQueryTaskDescription & task_description, 
         readStringBinary(host, in);
         task_description.exchange_stream_sources.stream_hosts[stream] = host;
     }
+}
+
 }
 
 void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)

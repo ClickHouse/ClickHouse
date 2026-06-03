@@ -1,5 +1,4 @@
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
-#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -13,7 +12,10 @@
 namespace DB
 {
 
-static String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
+namespace
+{
+
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -60,6 +62,11 @@ static String doSendTask(const String & endpoint_uri, const String & task_id, st
 
     return s;
 }
+
+}
+
+void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out);
+
 
 String sendTask(const String & endpoint_uri, const String & unique_task_id, const DistributedQueryTaskDescription & task_description, const String & unique_temp_file_path, const ContextPtr & context)
 {
