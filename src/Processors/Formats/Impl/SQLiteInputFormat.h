@@ -6,10 +6,7 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IRowInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 
 namespace arrow::io { class RandomAccessFile; }
@@ -41,6 +38,7 @@ private:
     const FormatSettings format_settings;
     bool continue_read = true;
 };
-};
+
+}
 
 #endif
