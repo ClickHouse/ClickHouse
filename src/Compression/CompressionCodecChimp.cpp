@@ -1,6 +1,8 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/registerCompressionCodecs.h>
+#include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -38,7 +40,7 @@ protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -142,8 +144,8 @@ template <typename T>
 BinaryValueInfo getBinaryValueInfo(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
-    const UInt8 lz = LeadingZero::round[getLeadingZeroBits(value)];
-    const UInt8 tz = getTrailingZeroBits(value);
+    const UInt8 lz = static_cast<UInt8>(LeadingZero::round[getLeadingZeroBits(value)]);
+    const UInt8 tz = static_cast<UInt8>(getTrailingZeroBits(value));
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
     return {lz, data_size, tz};
 }
@@ -283,8 +285,9 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
+UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 dest_size)
 {
+    const char * const original_dest = dest;
     static const Int16 NO_PREVIOUS_VALUES = sizeof(T) * 16;
     static const Int16 LOG_NO_PREVIOUS_VALUES = log2(NO_PREVIOUS_VALUES);
     int current_index = 0;
@@ -297,7 +300,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     const char * const source_end = source + source_size;
 
     if (source + sizeof(UInt32) > source_end)
-        return;
+        return static_cast<UInt32>(dest - original_dest);
 
 
     const UInt32 items_count = unalignedLoadLittleEndian<UInt32>(source);
@@ -307,7 +310,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
 
     // decoding first item
     if (source + sizeof(T) > source_end || items_count < 1)
-        return;
+        return static_cast<UInt32>(dest - original_dest);
 
     if (static_cast<UInt64>(items_count) * sizeof(T) > dest_size)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
@@ -333,12 +336,12 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         BinaryValueInfo curr_xored_info = prev_xored_info;
         T xored_data = 0;
         UInt64 match_index;
-        UInt8 flag = reader.readBits(2);
+        UInt8 flag = static_cast<UInt8>(reader.readBits(2));
         switch (flag)
         {
             // 0b11 prefix
             case 3:
-                curr_xored_info.leading_zero_bits = LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)];
+                curr_xored_info.leading_zero_bits = static_cast<UInt8>(LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)]);
                 curr_xored_info.data_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits;
                 xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
                 curr_value = prev_value ^ xored_data;
@@ -354,8 +357,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             case 1:
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
                 prev_value = stored_values[match_index];
-                curr_xored_info.leading_zero_bits = LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)];
-                curr_xored_info.data_bits = reader.readBits(DATA_BIT_LENGTH);
+                curr_xored_info.leading_zero_bits = static_cast<UInt8>(LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)]);
+                curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
                 if (curr_xored_info.data_bits == 0)
                     curr_xored_info.data_bits = sizeof(T) * 8;
                 curr_xored_info.trailing_zero_bits = sizeof(T) * 8 - curr_xored_info.leading_zero_bits - curr_xored_info.data_bits;
@@ -380,6 +383,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         prev_xored_info = curr_xored_info;
         prev_value = curr_value;
     }
+
+    return static_cast<UInt32>(dest - original_dest);
 }
 
 UInt8 getDataBytesSize(const IDataType * column_type)
@@ -402,7 +407,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecChimp::CompressionCodecChimp(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Chimp", {std::make_shared<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+    setCodecDescription("Chimp", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecChimp::getMethodByte() const
@@ -447,7 +452,7 @@ UInt32 CompressionCodecChimp::doCompressData(const char * source, UInt32 source_
     return 2 + bytes_to_skip + result_size;
 }
 
-void CompressionCodecChimp::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecChimp::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data. File has wrong header");
@@ -468,14 +473,12 @@ void CompressionCodecChimp::doDecompressData(const char * source, UInt32 source_
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     UInt32 uncompressed_size_left = uncompressed_size - bytes_to_skip;
-    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (bytes_size)
     {
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], uncompressed_size_left);
     default:
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data. File has wrong header");
     }
@@ -511,5 +514,10 @@ void registerCodecChimp(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecChimp>(data_bytes_size);
     };
     factory.registerCompressionCodecWithType("Chimp", method_code, codec_builder);
+}
+
+CompressionCodecPtr getCompressionCodecChimp(UInt8 data_bytes_size)
+{
+    return std::make_shared<CompressionCodecChimp>(data_bytes_size);
 }
 }
