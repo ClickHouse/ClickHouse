@@ -166,7 +166,9 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
     if (x >= 0)
         return transform(x, seed);
 
-    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+    /// Negate using unsigned arithmetic to obtain the magnitude.
+    /// This is well-defined even for the minimum signed number, while `-x` on a signed integer would be undefined behavior.
+    return -transform(-static_cast<UInt64>(x), seed);
 }
 
 
