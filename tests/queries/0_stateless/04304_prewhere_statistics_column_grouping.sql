@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 DROP TABLE IF EXISTS prewhere_stats_group;
 CREATE TABLE prewhere_stats_group (
     a UInt64 STATISTICS(tdigest, countmin),

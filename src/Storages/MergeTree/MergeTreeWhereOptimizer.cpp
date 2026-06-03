@@ -475,6 +475,33 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
     const WhereOptimizerContext & where_optimizer_context) const
 {
     Conditions res;
+
+    if (!where_optimizer_context.allow_reorder_prewhere_conditions)
+    {
+        std::vector<RPNBuilderTreeNode> conjuncts;
+        collectAndConjuncts(node, conjuncts);
+        for (const auto & conjunct : conjuncts)
+        {
+            NameSet columns;
+            bool has_invalid_column = false;
+            bool may_use_primary_index = true;
+            collectColumns(conjunct, nullptr, table_columns, columns, has_invalid_column, may_use_primary_index);
+
+            Condition cond({conjunct});
+            cond.table_columns = columns;
+            cond.columns_size = getColumnsSize(columns);
+            cond.viable =
+                !has_invalid_column
+                && !columns.empty()
+                && !cannotBeMoved(conjunct, where_optimizer_context)
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
+                && columnsSupportPrewhere(columns)
+                && columns.size() < queried_columns.size();
+            res.emplace_back(std::move(cond));
+        }
+        return res;
+    }
+
     std::set<Int64> pk_positions;
     analyzeImpl(res, node, where_optimizer_context, pk_positions);
 
@@ -550,7 +577,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
     {
         moved_conditions_count++;
-        LOG_DEBUG(log, "Condition {} moved to PREWHERE", cond_it->toString());
+        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->toString());
         if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
