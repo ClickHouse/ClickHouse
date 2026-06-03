@@ -51,6 +51,10 @@ public:
         return Traits::getName();
     }
 
+    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
+    /// default printed form collides with String literals — so we print parameters with ::Type.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     using Bucket = typename Traits::Bucket;
 
     struct State
@@ -59,17 +63,11 @@ public:
         UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
     };
 
-    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_,
+    explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_)
         : Base(
             argument_types_,
-            {
-                /// Normalize all parameters to decimals with the same scale as the scale of timestamp argument
-                DecimalField<Decimal64>(start_timestamp_, timestamp_scale_),
-                DecimalField<Decimal64>(end_timestamp_, timestamp_scale_),
-                DecimalField<Decimal64>(step_, timestamp_scale_),
-                DecimalField<Decimal64>(window_, timestamp_scale_)
-            },
+            parameters_,
             createResultType())
         , bucket_count(bucketCount(start_timestamp_, end_timestamp_, step_))
         , start_timestamp(start_timestamp_)
@@ -438,19 +436,19 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt16 format_version;
+        UInt16 format_version = 0;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with different format version");
 
-        size_t size;
+        size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
         if (size != bucket_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot deserialize data with different bucket count");
 
-        size_t buckets_size;
+        size_t buckets_size = 0;
         readBinaryLittleEndian(buckets_size, buf);
 
         if (buckets_size > bucket_count)
@@ -460,7 +458,7 @@ public:
 
         for (size_t i = 0; i < buckets_size; ++i)
         {
-            size_t index;
+            size_t index = 0;
             readBinaryLittleEndian(index, buf);
 
             if (index >= bucket_count)

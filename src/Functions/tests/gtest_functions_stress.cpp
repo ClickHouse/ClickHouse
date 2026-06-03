@@ -272,6 +272,7 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "aiClassify",
     "aiExtract",
     "aiTranslate",
+    "aiEmbed",
     "naiveBayesClassifier",
     "transactionLatestSnapshot",
     "transactionOldestSnapshot",
@@ -1158,7 +1159,7 @@ thread_local FunctionsStressTestThread constinit * current_stress_thread = nullp
 
 struct FunctionsStressTestThread
 {
-    size_t thread_idx;
+    size_t thread_idx{};
     std::thread thread;
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};
@@ -1303,7 +1304,7 @@ struct FunctionsStressTestThread
 
             thread_status->memory_tracker.resetCounters(); // reset the peak
             thread_status->memory_tracker.setHardLimit(MEMORY_LIMIT_BYTES_PER_THREAD);
-            thread_status->untracked_memory = 0;
+            thread_status->untracked_memory.store(0);
 
             randomizeSettings();
 
@@ -1432,7 +1433,7 @@ struct FunctionsStressTestThread
             }
             stats.max(S_TIME_MAX_NS, ns);
 
-            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory;
+            Int64 memory_balance = thread_status->memory_tracker.get() + thread_status->untracked_memory.load();
             Int64 memory_peak = thread_status->memory_tracker.getPeak();
 
             stats.add(S_MEMORY_BALANCE, memory_balance);
@@ -1452,6 +1453,10 @@ struct FunctionsStressTestThread
             }
         }
 
+        /// We mutate `context->setCurrentQueryId()` per iteration but never refresh
+        /// `ThreadStatus::query_id`, so detach before destroying `thread_status` to
+        /// keep the destructor's id-vs-context invariant happy.
+        CurrentThread::detachFromGroupIfNotDetached();
         thread_status.reset(); // must be done from this thread
 
         {
@@ -2227,6 +2232,7 @@ struct FunctionsStressTestThread
 
 extern "C" {
 #pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 void __tsan_on_report(void * /*report*/) // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 {
