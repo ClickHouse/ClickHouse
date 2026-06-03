@@ -25,9 +25,9 @@
 --- CSV input: deserializeTextCSV with quote char ---
 00:00:00.000
 12:30:45.123
---- CSV input: deserializeTextCSV without quotes (numeric) ---
+--- CSV input: deserializeTextCSV rejects unquoted numeric with trailing data ---
+--- CSV input: deserializeTextCSV accepts valid unquoted numeric ---
 00:00:00.000
-00:00:45.000
 --- TSV input: deserializeTextEscaped ---
 00:00:00.000
 12:30:45.123

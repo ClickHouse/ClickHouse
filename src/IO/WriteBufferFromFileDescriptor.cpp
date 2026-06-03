@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <cerrno>
-#include <cassert>
 #include <sys/stat.h>
 
 #include <Common/Throttler.h>
@@ -164,7 +163,7 @@ void WriteBufferFromFileDescriptor::truncate(off_t length) // NOLINT
 
 off_t WriteBufferFromFileDescriptor::size() const
 {
-    struct stat buf;
+    struct stat buf{};
     int res = fstat(fd, &buf);
     if (-1 == res)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_FSTAT, getFileName(), "Cannot execute fstat {}", getFileName());
