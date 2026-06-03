@@ -16,17 +16,21 @@ using namespace DB;
 namespace
 {
 
-/// Sink that pulls and discards every chunk. Unlike `NullSink` it does not close its input
-/// on the first `prepare`, so the upstream `ConcatProcessor` is driven to consume its inputs
-/// sequentially - which is what reproduces the stuck-pipeline scenario.
-class DrainingSink final : public ISink
+/// Sink that pulls every chunk and counts the rows it received. Unlike `NullSink` it does not
+/// close its input on the first `prepare`, so the upstream `ConcatProcessor` is driven to
+/// consume its inputs sequentially - which is what reproduces the stuck-pipeline scenario.
+/// Counting the rows lets the test assert that the queued chunks actually drained downstream
+/// rather than being silently dropped.
+class CountingSink final : public ISink
 {
 public:
-    explicit DrainingSink(SharedHeader header_) : ISink(std::move(header_)) {}
-    String getName() const override { return "DrainingSink"; }
+    explicit CountingSink(SharedHeader header_) : ISink(std::move(header_)) {}
+    String getName() const override { return "CountingSink"; }
+
+    size_t total_rows = 0;
 
 protected:
-    void consume(Chunk) override {}
+    void consume(Chunk chunk) override { total_rows += chunk.getNumRows(); }
 };
 
 SharedHeader makeHeader()
@@ -73,24 +77,30 @@ Chunk makeSkewedChunk(size_t num_rows, UInt64 key)
 /// input is exhausted, otherwise `Concat` waits on it forever and the queued data on the last
 /// shard never drains (#106237). With the fix the executor drains the pipeline and returns;
 /// without it the empty output is never finished and `PipelineExecutor` reports `Pipeline stuck`.
+///
+/// We push more than `MAX_QUEUE_LENGTH` chunks so the loaded shard's queue hits the soft cap
+/// while the sibling port is still empty and asking. This exercises the cap-bypass path
+/// (`any_queue_at_capacity && has_pushable_empty_port`) in addition to the empty-output finish
+/// path. The counting sink asserts every row drained downstream, proving the queued chunks were
+/// pushed through `Concat` rather than dropped.
 TEST(BufferedShardByHashTransform, SkewedInputDoesNotStallConcat)
 {
     constexpr size_t num_shards = 2;
+    constexpr size_t num_chunks = 12; /// > MAX_QUEUE_LENGTH (10) so the loaded queue overshoots the soft cap
+    constexpr size_t rows_per_chunk = 64;
 
     /// Route everything to the last shard - the one `Concat` consumes last - so the empty
     /// first input is the one that must be finished to let `Concat` advance.
     const UInt64 key = keyForShard(num_shards - 1, num_shards);
 
-    /// Several chunks so the last shard's queue stays non-empty: the first chunk occupies the
-    /// (unconsumed) output port, the rest pile up in the queue while the input is exhausted.
     Chunks chunks;
-    for (size_t i = 0; i < 8; ++i)
-        chunks.emplace_back(makeSkewedChunk(64, key));
+    for (size_t i = 0; i < num_chunks; ++i)
+        chunks.emplace_back(makeSkewedChunk(rows_per_chunk, key));
 
     auto source = std::make_shared<SourceFromChunks>(makeHeader(), std::move(chunks));
     auto transform = std::make_shared<BufferedShardByHashTransform>(makeHeader(), num_shards, ColumnNumbers{0});
     auto concat = std::make_shared<ConcatProcessor>(makeHeader(), num_shards);
-    auto sink = std::make_shared<DrainingSink>(makeHeader());
+    auto sink = std::make_shared<CountingSink>(makeHeader());
 
     connect(source->getPort(), transform->getInputs().front());
 
@@ -103,6 +113,8 @@ TEST(BufferedShardByHashTransform, SkewedInputDoesNotStallConcat)
 
     connect(concat->getOutputPort(), sink->getPort());
 
+    auto * sink_ptr = sink.get();
+
     auto processors = std::make_shared<Processors>();
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(transform));
@@ -112,4 +124,6 @@ TEST(BufferedShardByHashTransform, SkewedInputDoesNotStallConcat)
     QueryStatusPtr element;
     PipelineExecutor executor(processors, element);
     executor.execute(1, false);
+
+    EXPECT_EQ(sink_ptr->total_rows, num_chunks * rows_per_chunk);
 }
