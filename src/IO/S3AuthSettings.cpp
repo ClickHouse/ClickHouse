@@ -193,7 +193,7 @@ HTTPHeaderEntries S3AuthSettings::getHeaders() const
         || !secret_access_key.empty()
         || !session_token.empty()
         || (*this)[S3AuthSetting::no_sign_request]
-        || ((*this)[S3AuthSetting::use_environment_credentials] && impl->isChanged("use_environment_credentials"))
+        || (*this)[S3AuthSetting::use_environment_credentials]
         || (*this)[S3AuthSetting::use_insecure_imds_request]
         || !role_arn.empty()
         || !role_session_name.empty()

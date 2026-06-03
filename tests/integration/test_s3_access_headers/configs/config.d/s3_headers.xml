@@ -2,6 +2,7 @@
   <s3>
       <s3_mock>
           <endpoint>http://resolver:8081/</endpoint>
+          <use_environment_credentials>false</use_environment_credentials>
           <access_header>custom-auth-token: ValidToken1234</access_header>
       </s3_mock>
   </s3>
