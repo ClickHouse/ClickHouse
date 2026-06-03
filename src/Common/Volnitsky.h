@@ -9,6 +9,7 @@
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
 
 #ifdef __SSE4_1__
@@ -71,7 +72,7 @@ namespace VolnitskyTraits
             UInt8 c1;
         };
 
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             Ngram n;
             Chars chars;
@@ -126,7 +127,7 @@ namespace VolnitskyTraits
             UInt8 c1;
         };
 
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             VolnitskyTraits::Ngram n;
             Chars chars;
@@ -194,6 +195,9 @@ namespace VolnitskyTraits
 
                         if (length_l < 2 || length_r < 2)
                             return false;  /// Some part of the given ngram contains an invalid UTF-8 sequence.
+
+                        if (length_l <= seq_ngram_offset + 1 || length_r <= seq_ngram_offset + 1)
+                            return false;
 
                         chars.c0 = seq_l[seq_ngram_offset];
                         chars.c1 = seq_l[seq_ngram_offset + 1];
@@ -398,9 +402,9 @@ public:
         : needle{reinterpret_cast<const UInt8 *>(needle_)}
         , needle_size{needle_size_}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle_, needle_size}
+        , fallback_searcher{needle, needle_size}
     {
-        if (fallback || fallback_searcher.force_fallback)
+        if (fallback || fallback_searcher.getForceFallback())
             return;
 
         hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
@@ -418,7 +422,7 @@ public:
               */
             if (!ok)
             {
-                fallback_searcher.force_fallback = true;
+                fallback_searcher.setForceFallback(true);
                 hash = nullptr;
                 return;
             }
@@ -438,7 +442,7 @@ public:
         return fallback_searcher.search(haystack, haystack_end);
 #endif
 
-        if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
+        if (fallback || haystack_size <= needle_size || fallback_searcher.getForceFallback())
             return fallback_searcher.search(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
@@ -463,7 +467,7 @@ public:
 
     const char * search(const char * haystack, size_t haystack_size) const
     {
-        return reinterpret_cast<const char *>(search(reinterpret_cast<const UInt8 *>(haystack), haystack_size));
+        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
 
 protected:
@@ -475,7 +479,7 @@ protected:
         while (hash[cell_num])
             cell_num = (cell_num + 1) % VolnitskyTraits::hash_size; /// Search for the next free cell.
 
-        hash[cell_num] = offset;
+        hash[cell_num] = static_cast<UInt8>(offset);
     }
 };
 
@@ -485,12 +489,12 @@ class MultiVolnitskyBase
 {
 private:
     /// needles and their offsets
-    const std::vector<std::string_view> & needles;
+    const VectorWithMemoryTracking<std::string_view> & needles;
 
 
     /// fallback searchers
-    std::vector<size_t> fallback_needles;
-    std::vector<FallbackSearcher> fallback_searchers;
+    VectorWithMemoryTracking<size_t> fallback_needles;
+    VectorWithMemoryTracking<FallbackSearcher> fallback_searchers;
 
     /// because std::pair<> is not POD
     struct OffsetId
@@ -511,7 +515,7 @@ private:
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
-    explicit MultiVolnitskyBase(const std::vector<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
+    explicit MultiVolnitskyBase(const VectorWithMemoryTracking<std::string_view> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
         hash = std::unique_ptr<OffsetId[]>(new OffsetId[VolnitskyTraits::hash_size]);   /// No zero initialization, it will be done later.
@@ -555,29 +559,44 @@ public:
             else
             {
                 /// put all bigrams
-                auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset)
+                VectorWithMemoryTracking<size_t> inserted_cells;
+                auto callback = [this, &inserted_cells](const VolnitskyTraits::Ngram ngram, const int offset)
                 {
-                    return this->putNGramBase(ngram, offset, this->last);
+                    return this->putNGramBase(ngram, offset, this->last, inserted_cells);
                 };
 
-                buf += cur_needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+                const size_t needle_ngrams = cur_needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
                 /// this is the condition when we actually need to stop and start searching with known needles
-                if (buf > small_limit)
+                if (buf + needle_ngrams > small_limit)
                     break;
 
-                step = std::min(step, cur_needle_size - sizeof(VolnitskyTraits::Ngram) + 1);
+                bool ok = true;
                 for (auto i = static_cast<int>(cur_needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
                 {
-                    VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
+                    ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
                         reinterpret_cast<const UInt8 *>(cur_needle_data) + i,
                         i + 1,
                         reinterpret_cast<const UInt8 *>(cur_needle_data),
                         cur_needle_size,
                         callback);
+                    if (!ok)
+                        break;
+                }
+
+                if (!ok)
+                {
+                    for (const auto cell_num : inserted_cells)
+                        hash[cell_num].off = 0;
+                    fallback_needles.push_back(last);
+                }
+                else
+                {
+                    buf += needle_ngrams;
+                    step = std::min(step, needle_ngrams);
                 }
             }
-            fallback_searchers.emplace_back(cur_needle_data, cur_needle_size);
+            fallback_searchers.emplace_back(reinterpret_cast<const UInt8 *>(cur_needle_data), cur_needle_size);
         }
         return true;
     }
@@ -717,12 +736,19 @@ public:
         }
     }
 
-    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num)
+    /** Inserts an n-gram into the open-addressing hash table for the needle identified by `num`.
+      * `inserted_cells` accumulates the indices of all cells written by this insertion so that
+      * the caller can roll the inserts back if some later n-gram for the same needle fails to
+      * convert (in which case the partial state would otherwise leak into searches for other needles).
+      */
+    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num, VectorWithMemoryTracking<size_t> & inserted_cells)
     {
         size_t cell_num = ngram % VolnitskyTraits::hash_size;
 
         while (hash[cell_num].off)
             cell_num = (cell_num + 1) % VolnitskyTraits::hash_size;
+
+        inserted_cells.push_back(cell_num);
 
         hash[cell_num] = {static_cast<VolnitskyTraits::Id>(num), static_cast<VolnitskyTraits::Offset>(offset)};
     }

@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
@@ -74,7 +75,10 @@ namespace Setting
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -206,7 +210,7 @@ namespace
         /// Extracts the settings of transport compression from a query info if possible.
         static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
         {
-            TransportCompression res;
+            TransportCompression res{};
             if (!query_info.transport_compression_type().empty())
             {
                 res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
@@ -242,7 +246,7 @@ namespace
         /// Extracts the settings of transport compression from the server configuration.
         static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
         {
-            TransportCompression res;
+            TransportCompression res{};
             if (config.has("grpc.transport_compression_type"))
             {
                 res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
@@ -649,8 +653,8 @@ namespace
     private:
         bool nextImpl() override
         {
-            const void * new_pos;
-            size_t new_size;
+            const void * new_pos = nullptr;
+            size_t new_size = 0;
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
@@ -746,7 +750,7 @@ namespace
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
-        std::optional<CurrentThread::QueryScope> query_scope;
+        std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
@@ -835,7 +839,7 @@ namespace
     {
         try
         {
-            setThreadName("GRPCServerCall");
+            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
             receiveQuery();
             executeQuery();
             processInput();
@@ -924,7 +928,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope.emplace(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
+        query_scope = QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1013,7 +1017,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr(context, false)->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1022,7 +1026,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in InputBlocksReader");
 
             Block block;
-            while (!block && pipeline_executor->pull(block));
+            while (block.empty() && pipeline_executor->pull(block));
 
             return block;
         });
@@ -1066,7 +1070,7 @@ namespace
         Block block;
         while (pipeline_executor->pull(block))
         {
-            if (block)
+            if (!block.empty())
                 executor.push(block);
         }
 
@@ -1078,7 +1082,7 @@ namespace
 
     void Call::initializePipeline(const Block & header)
     {
-        assert(!read_buffer);
+        chassert(!read_buffer);
         read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
@@ -1137,9 +1141,19 @@ namespace
 
         read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
-        assert(!pipeline);
-        auto source
-            = query_context->getInputFormat(input_format, *read_buffer, header, query_context->getSettingsRef()[Setting::max_insert_block_size]);
+        chassert(!pipeline);
+
+        const Settings & settings = query_context->getSettingsRef();
+
+        auto source = query_context->getInputFormat(
+            input_format,
+            *read_buffer,
+            header,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
 
         pipeline = std::make_unique<QueryPipeline>(std::move(source));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
@@ -1185,7 +1199,7 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
@@ -1206,13 +1220,22 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
+                    const Settings & settings = external_table_context->getSettingsRef();
+
                     auto in = external_table_context->getInputFormat(
-                        format, *buf, metadata_snapshot->getSampleBlock(), external_table_context->getSettingsRef()[Setting::max_insert_block_size]);
+                        format,
+                        *buf,
+                        metadata_snapshot->getSampleBlock(),
+                        settings[Setting::max_insert_block_size],
+                        std::nullopt,
+                        settings[Setting::max_insert_block_size_bytes],
+                        settings[Setting::min_insert_block_size_rows],
+                        settings[Setting::min_insert_block_size_bytes]);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
                     cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    cur_pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType)
                     {
                         return std::make_shared<EmptySink>(header);
                     });
@@ -1311,7 +1334,7 @@ namespace
                 if (!check_for_cancel())
                     break;
 
-                if (block && !io.null_format)
+                if (!block.empty() && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
@@ -1423,7 +1446,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
             }
         }
@@ -1435,7 +1458,7 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entry.reset();
+        io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1446,7 +1469,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline.reset();
+        pipeline = nullptr;
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1590,7 +1613,7 @@ namespace
 
     void Call::addTotalsToResult(const Block & totals)
     {
-        if (!totals)
+        if (totals.empty())
             return;
 
         PODArray<char> memory;
@@ -1608,7 +1631,7 @@ namespace
 
     void Call::addExtremesToResult(const Block & extremes)
     {
-        if (!extremes)
+        if (extremes.empty())
             return;
 
         PODArray<char> memory;
@@ -1671,13 +1694,13 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                std::string_view query_id = column_query_id.getDataAt(row).toView();
+                std::string_view query_id = column_query_id.getDataAt(row);
                 log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                std::string_view source = column_source.getDataAt(row).toView();
+                std::string_view source = column_source.getDataAt(row);
                 log_entry.set_source(source.data(), source.size());
-                std::string_view text = column_text.getDataAt(row).toView();
+                std::string_view text = column_text.getDataAt(row);
                 log_entry.set_text(text.data(), text.size());
             }
         }
@@ -1697,7 +1720,7 @@ namespace
         /// Copy output to `result.output`, with optional compressing.
         if (write_buffer)
         {
-            size_t output_size;
+            size_t output_size = 0;
             if (send_final_message)
             {
                 if (compressing_write_buffer)
@@ -1900,7 +1923,7 @@ private:
 
     void run()
     {
-        setThreadName("GRPCServerQueue");
+        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
 
         bool ok = false;
         void * tag = nullptr;

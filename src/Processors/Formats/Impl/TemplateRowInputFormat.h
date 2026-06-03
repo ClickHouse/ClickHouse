@@ -18,7 +18,7 @@ class TemplateRowInputFormat final : public RowInputFormatWithDiagnosticInfo
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:
-    TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);
@@ -30,7 +30,7 @@ public:
     void resetReadBuffer() override;
 
 private:
-    TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);
@@ -104,10 +104,10 @@ private:
     const std::string row_between_delimiter;
     const FormatSettings & format_settings;
     size_t format_data_idx;
-    size_t row_num;
+    size_t row_num{};
 };
 
-class TemplateSchemaReader : public IRowSchemaReader
+class TemplateSchemaReader final : public IRowSchemaReader
 {
 public:
     TemplateSchemaReader(ReadBuffer & in_,

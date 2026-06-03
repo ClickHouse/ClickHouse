@@ -6,6 +6,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -61,9 +62,7 @@ public:
 
         /// Used to check the table existence on remote node
         StorageID main_table;
-        Block header;
-
-        bool has_missing_objects = false;
+        SharedHeader header;
 
         Cluster::ShardInfo shard_info;
 
@@ -76,8 +75,7 @@ public:
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        const Block & header_,
-        const ColumnsDescriptionByShardNum & objects_by_shard_,
+        SharedHeader header_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
 
@@ -91,7 +89,8 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -103,10 +102,10 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
-    const Block header;
-    const ColumnsDescriptionByShardNum objects_by_shard;
+    SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
 
@@ -123,7 +122,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false);
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
 };
 
 }

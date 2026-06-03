@@ -1,6 +1,10 @@
+import dataclasses
+import hashlib
+import json
 import platform
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -15,6 +19,7 @@ from .info import Info
 from .mangle import _get_workflows
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
+from .s3 import S3
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -22,15 +27,13 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow):
+def _GH_Auth(force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+    if force or not Shell.check(f"gh auth status", verbose=True):
+        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -110,9 +113,12 @@ def _build_dockers(workflow, job_name):
     dockers = workflow.dockers
     ready = []
     results = []
-    job_status = Result.Status.SUCCESS
+    job_status = Result.Status.OK
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
+    for d in dockers:
+        if isinstance(d.platforms, str):
+            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
@@ -138,19 +144,19 @@ def _build_dockers(workflow, job_name):
             "docker buildx create --use --name mybuilder --driver docker-container",
             verbose=True,
         ):
-            job_status = Result.Status.FAILED
+            job_status = Result.Status.FAIL
             job_info = "Failed to install docker buildx driver"
 
-    if job_status == Result.Status.SUCCESS:
-        if not Docker.login(
+    if job_status == Result.Status.OK:
+        if not Info().is_local_run and not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
-            job_status = Result.Status.FAILED
+            job_status = Result.Status.FAIL
             job_info = "Failed to login to dockerhub"
 
     if (
-        job_status == Result.Status.SUCCESS
+        job_status == Result.Status.OK
         and job_name != Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         for docker in dockers:
@@ -158,7 +164,12 @@ def _build_dockers(workflow, job_name):
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
+            platforms = (
+                docker.platforms
+                if isinstance(docker.platforms, list)
+                else [docker.platforms]
+            )
+            if any(p not in Docker.Platforms.arm_amd for p in platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
@@ -172,16 +183,17 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
+                    disable_push=Info().is_local_run,
                 )
             )
             if results[-1].is_ok():
                 ready.append(docker.name)
             else:
-                job_status = Result.Status.FAILED
+                job_status = Result.Status.FAIL
                 break
 
     if (
-        job_status == Result.Status.SUCCESS
+        job_status == Result.Status.OK
         and job_name == Settings.DOCKER_BUILD_MANIFEST_JOB_NAME
     ):
         print("Start docker manifest merge")
@@ -198,6 +210,162 @@ def _build_dockers(workflow, job_name):
     return Result.create_from(results=results, info=job_info)
 
 
+def _clean_buildx_volumes():
+    Shell.check("docker buildx rm --all-inactive --force", verbose=True)
+    Shell.check(
+        "docker ps -a --filter name=buildx_buildkit -q | xargs -r docker rm -f",
+        verbose=True,
+    )
+    Shell.check(
+        "docker volume ls -q | grep buildx_buildkit | xargs -r docker volume rm",
+        verbose=True,
+    )
+
+
+def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
+    """Compute a content-addressed hash of submodule SHAs and ensure a cache
+    archive exists in S3.  Stores the hash in workflow_config so that downstream
+    jobs with needs_submodules=True can restore it."""
+    stop_watch = Utils.Stopwatch()
+    info = ""
+    try:
+        submodule_shas = Digest.get_submodule_shas()
+        if not submodule_shas:
+            print("WARNING: No submodules found, skipping submodule cache")
+            return Result.create_from(
+                name="Submodule Cache",
+                status=Result.Status.OK,
+                stopwatch=stop_watch,
+                info="No submodules",
+            )
+
+        cache_hash = hashlib.sha256(submodule_shas.encode()).hexdigest()[:16]
+        s3_path = f"{Settings.CACHE_S3_PATH}/submodules/{cache_hash}.tar.zst"
+        print(f"Submodule cache hash: {cache_hash}")
+
+        # Check if cache already exists in S3
+        if S3.head_object(s3_path):
+            print(f"Submodule cache hit: {s3_path}")
+            info = f"cache hit: {cache_hash}"
+        else:
+            print(f"Submodule cache miss, creating: {s3_path}")
+            Shell.check("git submodule sync", verbose=True, strict=True)
+            Shell.check("git submodule init", verbose=True, strict=True)
+            Shell.check(
+                "git submodule update --depth=1 --single-branch --jobs 64",
+                verbose=True,
+                strict=True,
+                retries=3,
+            )
+            archive_path = f"{Settings.TEMP_DIR}/submodules_{cache_hash}.tar.zst"
+            Shell.check(
+                f"tar -cf - .git/modules | zstd -c -T0 > {archive_path}",
+                verbose=True,
+                strict=True,
+            )
+            S3.copy_file_to_s3(s3_path=s3_path, local_path=archive_path, with_rename=True)
+            Shell.check(f"rm -f {archive_path}")
+            info = f"cache miss, created: {cache_hash}"
+
+        workflow_config.submodule_cache_hash = cache_hash
+        workflow_config.dump()
+        status = Result.Status.OK
+    except Exception as e:
+        print(f"WARNING: Submodule cache failed: {e}")
+        traceback.print_exc()
+        info = f"{e}\n{traceback.format_exc()}"
+        status = Result.Status.OK  # non-fatal, jobs fall back to GitHub clone
+
+    return Result.create_from(
+        name="Submodule Cache",
+        status=status,
+        stopwatch=stop_watch,
+        info=info,
+    )
+
+
+def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
+    """
+    Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
+
+    Two fixes relative to the original inline algorithm:
+
+    Fix 1 (Bug 2) — jobs already filtered by workflow_filter_hooks are skipped.
+    They will not run, so their 'requires' must not keep their dependencies alive.
+
+    Fix 2 (Bug 3) — all_required_artifacts is propagated to a fixed point after
+    the initial sweep.  When an unaffected job is rescued because an affected job
+    requires it, that rescued job's own dependencies are also rescued.
+    """
+    affected_artifacts = []
+    unaffected_jobs = {}  # name → job
+    all_required_artifacts = set()
+
+    for job in jobs:
+        if _is_praktika_job(job.name):
+            continue
+        if job.name in workflow_config.filtered_jobs:
+            continue  # Already filtered by workflow_filter_hooks — skip entirely
+
+        is_affected = False
+
+        if any(dep in affected_artifacts for dep in job.requires):
+            print(f"Job [{job.name}] requires affected artifacts")
+            is_affected = True
+        elif job.get_docker_image_name() in affected_dockers:
+            print(
+                f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
+            )
+            is_affected = True
+        elif job.is_affected_by(changed_files):
+            print(f"Job [{job.name}] is directly affected by changed files")
+            is_affected = True
+
+        if is_affected:
+            affected_artifacts.extend(job.provides)
+            # Propagate the job name so downstream jobs requiring it by name
+            # are marked as affected.
+            affected_artifacts.append(job.name)
+            for req in job.requires:
+                all_required_artifacts.add(req)
+        else:
+            print(f"Job [{job.name}] is not affected by the change")
+            unaffected_jobs[job.name] = job
+
+    print(f"All required artifacts [{all_required_artifacts}]")
+    print(f"Affected artifacts [{affected_artifacts}]")
+
+    # Propagate all_required_artifacts transitively: when an unaffected job is
+    # rescued (because an affected job requires it), add its own requirements so
+    # the jobs that produce its inputs are also rescued.
+    changed = True
+    while changed:
+        changed = False
+        for job in unaffected_jobs.values():
+            if (
+                any(a in all_required_artifacts for a in job.provides)
+                or job.name in all_required_artifacts
+            ):
+                for req in job.requires:
+                    if req not in all_required_artifacts:
+                        all_required_artifacts.add(req)
+                        changed = True
+
+    for job_name, job in unaffected_jobs.items():
+        if (
+            any(a in all_required_artifacts for a in job.provides)
+            or job_name in all_required_artifacts
+        ):
+            print(
+                f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
+            )
+        else:
+            workflow_config.set_job_as_filtered(
+                job_name,
+                "Not affected by the changed files and not required",
+            )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -205,9 +373,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
         commands = [
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
             f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
-            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            f'sh -c \'changed=$(git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}); if [ -n "$changed" ]; then echo "ERROR: workflows are outdated. Changed files:"; printf "%s\\n" "$changed"; exit 1; fi\'',
         ]
 
         return Result.from_commands_run(
@@ -230,7 +397,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         info = "\n".join(infos)
         return Result(
             name="Check Secrets",
-            status=(Result.Status.FAILED if infos else Result.Status.SUCCESS),
+            status=(Result.Status.FAIL if infos else Result.Status.OK),
             start_time=stop_watch.start_time,
             duration=stop_watch.duration,
             info=info,
@@ -245,36 +412,50 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         ).check()
         return Result(
             name="Check CI DB",
-            status=(Result.Status.FAILED if not res else Result.Status.SUCCESS),
+            status=(Result.Status.FAIL if not res else Result.Status.OK),
             start_time=stop_watch.start_time,
             duration=stop_watch.duration,
             info=info,
         )
 
-    if workflow.enable_report:
-        print("Push pending CI report")
-        HtmlRunnerHooks.push_pending_ci_report(workflow)
-
     print(f"Start [{job_name}], workflow [{workflow.name}]")
-    results = []
     files = []
     env = _Environment.get()
-    _ = RunConfig(
-        name=workflow.name,
-        digest_jobs={},
-        digest_dockers={},
-        sha=env.SHA,
-        cache_success=[],
-        cache_success_base64=[],
-        cache_artifacts={},
-        cache_jobs={},
-        filtered_jobs={},
-        custom_data={},
-    ).dump()
 
+    # Ensure the local repository has full history (not a shallow clone).
+    # Some Praktika features require complete git metadata, such as:
+    # - all authors who contributed to the PR
+    # - the original commit messages before GitHub's ephemeral merge commit
+    commands = [
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+    ]
+    if env.BASE_BRANCH and env.PR_NUMBER:
+        commands.append(
+            f"git fetch --prune --no-recurse-submodules --filter=tree:0 origin {env.BASE_BRANCH} ||:"
+        )
+    results = [
+        Result.from_commands_run(
+            name="repo unshallow",
+            command=commands,
+        ),
+    ]
+
+    if not env.COMMIT_MESSAGE:
+        env.COMMIT_MESSAGE = Shell.get_output(
+            f"git log -1 --pretty=%s {env.SHA}", verbose=True
+        )
+        env.dump()
+
+    try:
+        _GH_Auth(force=True)
+    except Exception as e:
+        print(f"WARNING: Failed to auth with GH: [{e}]")
+
+    # refresh PR data
     if env.PR_NUMBER > 0:
-        # refresh PR data
         title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
         if title:
             if title != env.PR_TITLE:
                 print("PR title has been changed")
@@ -286,6 +467,47 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 print("PR labels have been changed")
                 env.PR_LABELS = labels
             env.dump()
+
+    if workflow.enable_report:
+        print("Push pending CI report")
+        HtmlRunnerHooks.push_pending_ci_report(workflow)
+
+        info = Info()
+        report_url_latest_sha = info.get_report_url(latest=True)
+        report_url_current_sha = info.get_report_url(latest=False)
+        body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={
+                "report": body,
+                "param_1": "",
+                "summary": "",
+                "review": "",
+            },
+        )
+        res1 = GH.post_commit_status(
+            name=workflow.name,
+            status=Result.Status.PENDING,
+            description="",
+            url=report_url_current_sha,
+        )
+        if not (res1 or res2):
+            Utils.raise_with_error(
+                "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
+            )
+
+    _ = RunConfig(
+        name=workflow.name,
+        digest_jobs={},
+        digest_dockers={},
+        sha=env.SHA,
+        cache_success=[],
+        cache_success_base64=[],
+        cache_artifacts={},
+        cache_jobs={},
+        filtered_jobs={},
+        submodule_cache_hash="",
+        custom_data={},
+    ).dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -300,11 +522,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
+        # reread env object in case some new dada (JOB_KV_DATA) has been added in .pre_hooks
+        env = _Environment.get()
 
     # checks:
     if not results or results[-1].is_ok():
         result_ = _check_yaml_up_to_date()
-        if result_.status != Result.Status.SUCCESS:
+        if result_.status != Result.Status.OK:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
         results.append(result_)
 
@@ -312,7 +536,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     #       An error occurred (ThrottlingException) when calling the GetParameter operation (reached max retries: 2): Rate exceeded
     # if results[-1].is_ok() and workflow.secrets:
     #     result_ = _check_secrets(workflow.secrets)
-    #     if result_.status != Result.Status.SUCCESS:
+    #     if result_.status != Result.Status.OK:
     #         print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
     #     results.append(result_)
 
@@ -339,7 +563,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Calculate docker digests",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -347,18 +571,24 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            for job in workflow.jobs:
-                if _is_praktika_job(job.name):
-                    continue
-                for hook in workflow.workflow_filter_hooks:
-                    should_skip, reason = hook(job.name)
-                    if should_skip:
-                        print(
-                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
-                        )
-                        workflow_config.set_job_as_filtered(job.name, reason)
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+            else:
+                for job in workflow.jobs:
+                    if _is_praktika_job(job.name):
                         continue
-            status = Result.Status.SUCCESS
+                    for hook in workflow.workflow_filter_hooks:
+                        should_skip, reason = hook(job.name)
+                        if should_skip:
+                            print(
+                                f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                            )
+                            workflow_config.set_job_as_filtered(job.name, reason)
+                            continue
+            status = Result.Status.OK
             workflow_config.dump()
             info = ""
         except Exception as e:
@@ -376,6 +606,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+                return
+
             changed_files = Info().get_changed_files()
             if changed_files is None:
                 print(
@@ -388,60 +625,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if all_affected_dockers:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
-            affected_artifacts = []
-            unaffected_jobs_with_artifacts = {}
-            all_required_artifacts = set()
-
-            for job in workflow.jobs:
-                # Skip native Praktika jobs
-                if _is_praktika_job(job.name):
-                    continue
-
-                is_affected = False
-
-                if any(dep in affected_artifacts for dep in job.requires):
-                    print(f"Job [{job.name}] requires affected artifacts")
-                    is_affected = True
-                elif job.get_docker_image_name() in all_affected_dockers:
-                    print(
-                        f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
-                    )
-                    is_affected = True
-                elif job.is_affected_by(changed_files):
-                    print(f"Job [{job.name}] is directly affected by changed files")
-                    is_affected = True
-
-                if is_affected:
-                    affected_artifacts.extend(job.provides)
-                    if job.provides:
-                        # for cases when artifact report is used instead of real artifacts
-                        affected_artifacts.append(job.name)
-                    all_required_artifacts.update(job.requires)
-                else:
-                    print(f"Job [{job.name}] is not affected by the change")
-                    if not job.provides:
-                        workflow_config.set_job_as_filtered(
-                            job.name, "Not affected by the changed files"
-                        )
-                    else:
-                        print(
-                            f"NOTE: Job [{job.name}] is not affected, but may provide required artifacts"
-                        )
-                        unaffected_jobs_with_artifacts[job.name] = job.provides
-
-            for job_name, artifacts in unaffected_jobs_with_artifacts.items():
-                if (
-                    any(a in all_required_artifacts for a in artifacts)
-                    or job_name in all_required_artifacts
-                ):
-                    print(
-                        f"NOTE: Job [{job_name}] provides required artifacts — cannot be skipped"
-                    )
-                else:
-                    workflow_config.set_job_as_filtered(
-                        job_name,
-                        "Not affected by the changed files, and artifacts are not required",
-                    )
+            _filter_unaffected_jobs(
+                workflow.jobs, workflow_config, changed_files, all_affected_dockers
+            )
 
             workflow_config.dump()
 
@@ -457,23 +643,110 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            workflow_config = CacheRunnerHooks.configure(workflow)
+            pr_labels = Info().pr_labels
+            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            if not skip_lookup:
+                # Fail loud on missing S3 read access. Otherwise CacheRunnerHooks
+                # silently treats every fetch as a cache miss, hiding the real
+                # cause (e.g. AccessDenied from a misconfigured runner fleet).
+                S3.assert_read_access(f"{Settings.CACHE_S3_PATH}/_read_probe")
+            workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
         except Exception as e:
             res = False
             traceback.print_exc()
             info = traceback.format_exc()
+
         results.append(
             Result(
                 name="Cache Lookup",
-                status=Result.Status.SUCCESS if res else Result.Status.FAILED,
+                status=Result.Status.OK if res else Result.Status.FAIL,
                 start_time=stop_watch.start_time,
                 duration=stop_watch.duration,
                 info=info,
             )
         )
+
+    if results[-1].is_ok() and workflow.enable_cache and Settings.ENABLE_SUBMODULE_CACHE:
+        result = _prepare_submodule_cache(workflow_config)
+        results.append(result)
+
+    if workflow.enable_slack_feed:
+        if env.PR_NUMBER:
+            commit_authors = set()
+            try:
+                # Find the first merge commit (going backwards from SHA) that has no parent from BASE_BRANCH
+                # This indicates a merge from outside the base branch, where we should stop (support complex git scenarious with forks syncronization)
+                stop_commit = ""
+                merge_commits = Shell.get_output(
+                    f"git rev-list --merges origin/{env.BASE_BRANCH}..{env.SHA}",
+                    verbose=True,
+                ).strip()
+
+                if merge_commits:
+                    for merge_commit in reversed(merge_commits.split("\n")):
+                        if not merge_commit:
+                            continue
+                        # Get parents of this merge commit
+                        parents = Shell.get_output(
+                            f"git rev-parse {merge_commit}^@", verbose=False
+                        ).strip()
+
+                        # Check if any parent is reachable from BASE_BRANCH
+                        has_base_parent = False
+                        for parent in parents.split("\n"):
+                            if not parent:
+                                continue
+                            # Check if parent is ancestor of BASE_BRANCH or BASE_BRANCH is ancestor of parent
+                            try:
+                                Shell.check(
+                                    f"git merge-base --is-ancestor {parent} origin/{env.BASE_BRANCH}",
+                                    verbose=False,
+                                )
+                                has_base_parent = True
+                                break
+                            except:
+                                pass
+
+                        if not has_base_parent:
+                            # Found a merge with no parent from BASE_BRANCH - stop here
+                            stop_commit = merge_commit
+                            print(
+                                f"Found merge commit without BASE_BRANCH parent: {merge_commit[:8]}"
+                            )
+                            break
+
+                # Get commit author emails, excluding merge commits, up to stop point
+                if stop_commit:
+                    end_ref = f"{stop_commit}^"
+                else:
+                    end_ref = env.SHA
+
+                commits_emails = Shell.get_output(
+                    f"git log --format='%ae' --no-merges origin/{env.BASE_BRANCH}..{end_ref}",
+                    verbose=True,
+                ).strip()
+
+                if commits_emails:
+                    # Validate emails contain @ symbol
+                    commit_authors = set(
+                        email
+                        for email in commits_emails.split("\n")
+                        if email and "@" in email and "+" not in email
+                    )
+            except Exception as e:
+                print(f"WARNING: Failed to extract commit authors from git: {e}")
+            print(f"Found {len(commit_authors)} commit authors")
+            if commit_authors:
+                env.COMMIT_AUTHORS = list(commit_authors)
+                env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
+                env.dump()
+
+    print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
+    env.WORKFLOW_CONFIG = dataclasses.asdict(workflow_config)
+    env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
         print("Init report")
@@ -482,7 +755,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result(
                 name="Init Report",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 start_time=stop_watch.start_time,
                 duration=stop_watch.duration,
             )
@@ -492,10 +765,55 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
+def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
+    """
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    or infrastructure issues. Can be called on a single job result.
+
+    Args:
+        result: The result object to check and mark
+        job_name: The job name for infrastructure job pattern matching
+
+    Returns:
+        True if successful, False if catalog download failed
+    """
+    from .issue import TestCaseIssueCatalog
+
+    if result.is_ok():
+        print("Result succeeded, no flaky test check needed.")
+        return True
+
+    print("Checking for flaky tests and infrastructure issues...")
+
+    # Download catalog from S3
+    issue_catalog = TestCaseIssueCatalog.from_s3()
+    if not issue_catalog:
+        print("ERROR: Could not load issue catalog")
+        return False
+    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
+
+    # Check all issues against the result tree
+    for issue in issue_catalog.active_test_issues:
+        issue.check_result(result, job_name)
+    result.dump()
+    print("Flaky test check and infrastructure issue check completed")
+    return True
+
+
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
     stop_watch = Utils.Stopwatch()
+
+    workflow_job_data = {}
+    try:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                workflow_job_data = json.load(f)
+    except Exception as e:
+        print(
+            f"ERROR: failed to read workflow status file [{Settings.WORKFLOW_STATUS_FILE}]: {e}"
+        )
 
     print("Check Actions statuses")
     print(env.get_needs_statuses())
@@ -505,6 +823,13 @@ def _finish_workflow(workflow, job_name):
         Result.file_name_static(workflow.name),
     )
     workflow_result = Result.from_fs(workflow.name)
+
+    if (
+        workflow.enable_merge_ready_status
+        or workflow.enable_open_issues_check
+        or workflow.post_hooks
+    ):
+        _GH_Auth()
 
     update_final_report = False
     results = []
@@ -523,7 +848,7 @@ def _finish_workflow(workflow, job_name):
             Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
         )
 
-    ready_for_merge_status = Result.Status.SUCCESS
+    ready_for_merge_status = Result.Status.OK
     ready_for_merge_description = ""
     failed_results = []
     dropped_results = []
@@ -534,33 +859,77 @@ def _finish_workflow(workflow, job_name):
     for result in workflow_result.results:
         if result.name == job_name:
             continue
-        if result.status == Result.Status.SUCCESS:
+        if result.status == Result.Status.OK:
             continue
         if result.status == Result.Status.SKIPPED:
             continue
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
-        if not result.is_completed():
-            print(
-                f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+            continue
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
             )
-            result.status = Result.Status.ERROR
-            # dump workflow result after update - to have an updated result in post
-            workflow_result.dump()
-            # add error into env - should appear in the report on the main page
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-            # add error info to job info as well
-            result.set_info(ResultInfo.NOT_FINALIZED)
-            update_final_report = True
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
+            continue
+        if not result.is_completed():
+            normalized_name = Utils.normalize_string(result.name)
+            gh_job = workflow_job_data.get(normalized_name, {})
+            gh_job_result = (gh_job.get("result") or "").lower()
+            if gh_job_result in ("cancelled", "canceled"):
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
+                )
+                result.status = Result.Status.DROPPED
+                workflow_result.dump()
+                workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+                dropped_results.append(result.name)
+                continue
+            elif gh_job_result == "success":
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to success"
+                )
+                result.status = Result.Status.OK
+                workflow_result.dump()
+                update_final_report = True
+                continue
+            else:
+                print(
+                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                )
+                result.status = Result.Status.ERROR
+                # dump workflow result after update - to have an updated result in post
+                workflow_result.dump()
+                # Attribute the error to the failed job (not Finish Workflow)
+                # so it appears under the correct source on the workflow report page.
+                env.add_workflow_error(
+                    ResultInfo.NOT_FINALIZED, source=result.name
+                )
+                update_final_report = True
         job = workflow.get_job(result.name)
-        if not job or not job.allow_merge_on_failure:
+        if not job or not job.allow_failure:
             print(
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
             failed_results.append(result.name)
 
     if failed_results or dropped_results:
-        ready_for_merge_status = Result.Status.FAILED
+        ready_for_merge_status = Result.Status.FAIL
         failed_jobs_csv = ",".join(failed_results)
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
@@ -569,27 +938,40 @@ def _finish_workflow(workflow, job_name):
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
 
-    if workflow.enable_merge_ready_status or workflow.enable_gh_summary_comment:
-        _GH_Auth(workflow)
+    # Revert PRs should be easy to merge - only Fast test is required
+    if "Reverts ClickHouse/" in env.PR_BODY:
+        fast_test_failed = any(
+            "Fast test" in name for name in failed_results
+        )
+        if not fast_test_failed and ready_for_merge_status != Result.Status.OK:
+            print(
+                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+            )
+            ready_for_merge_status = Result.Status.OK
+            ready_for_merge_description = "Revert PR"
 
-        if workflow.enable_merge_ready_status:
-            if not GH.post_commit_status(
-                name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
-                or f"Ready For Merge [{workflow.name}]",
-                status=ready_for_merge_status,
-                description=ready_for_merge_description,
-                url="",
-            ):
-                print(f"ERROR: failed to set ReadyForMerge status")
-                env.add_info(ResultInfo.GH_STATUS_ERROR)
+    if workflow.enable_merge_ready_status:
+        if not GH.post_commit_status(
+            name=Settings.READY_FOR_MERGE_CUSTOM_STATUS_NAME
+            or f"Ready For Merge [{workflow.name}]",
+            status=ready_for_merge_status,
+            description=ready_for_merge_description,
+            url="",
+        ):
+            print(f"ERROR: failed to set ReadyForMerge status")
+            env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     if results:
-        return Result.create_from(results=results, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, results=results, stopwatch=stop_watch
+        )
     else:
-        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, status=Result.Status.OK, stopwatch=stop_watch
+        )
 
 
 if __name__ == "__main__":
@@ -604,6 +986,7 @@ if __name__ == "__main__":
             Settings.DOCKER_BUILD_AMD_LINUX_JOB_NAME,
         ):
             result = _build_dockers(workflow, job_name)
+            _clean_buildx_volumes()
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
         elif job_name == Settings.FINISH_WORKFLOW_JOB_NAME:

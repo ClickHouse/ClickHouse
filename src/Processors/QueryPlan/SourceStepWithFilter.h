@@ -14,7 +14,7 @@ public:
     using Base = ISourceStep;
     using Base::Base;
 
-    explicit SourceStepWithFilterBase(Header output_header_)
+    explicit SourceStepWithFilterBase(SharedHeader output_header_)
         : ISourceStep(std::move(output_header_))
     {
     }
@@ -36,7 +36,7 @@ public:
         }
 
         if (other.filter_actions_dag)
-            filter_actions_dag = other.filter_actions_dag->clone();
+            filter_actions_dag = std::make_shared<const ActionsDAG>(other.filter_actions_dag->clone());
     }
     SourceStepWithFilterBase(SourceStepWithFilterBase &&) = default;
 
@@ -62,10 +62,11 @@ public:
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
+    virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
 
-    const std::optional<ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
-    std::optional<ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
+    const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
+    std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
 
     bool hasCorrelatedExpressions() const override
     {
@@ -81,7 +82,7 @@ private:
 
 protected:
     std::optional<size_t> limit;
-    std::optional<ActionsDAG> filter_actions_dag;
+    std::shared_ptr<const ActionsDAG> filter_actions_dag;
 };
 
 /** Source step that can use filters and limit for more efficient pipeline initialization.
@@ -95,7 +96,7 @@ public:
     using Base::Base;
 
     SourceStepWithFilter(
-        Header output_header_,
+        SharedHeader output_header_,
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -103,7 +104,6 @@ public:
         : SourceStepWithFilterBase(std::move(output_header_))
         , required_source_columns(column_names_)
         , query_info(query_info_)
-        , prewhere_info(query_info.prewhere_info)
         , storage_snapshot(storage_snapshot_)
         , context(context_)
     {
@@ -112,7 +112,8 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
-    PrewhereInfoPtr getPrewhereInfo() const override { return prewhere_info; }
+    FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
+    PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
     ContextPtr getContext() const { return context; }
     const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
 
@@ -128,12 +129,11 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
+    static Block applyPrewhereActions(Block block, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
 protected:
     Names required_source_columns;
     SelectQueryInfo query_info;
-    PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
 };

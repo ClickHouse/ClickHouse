@@ -1,0 +1,10 @@
+-- { echo ON }
+-- By default, POW POLICY is applied after final. Result should be empty.
+select * from final_row_policy FINAL;
+-- Setting optimize_move_to_prewhere_if_final does not affect the result anymore.
+select * from final_row_policy FINAL settings apply_row_policy_after_final = 0, optimize_move_to_prewhere_if_final=1;
+1	1	1	0	1
+select * from final_row_policy FINAL settings apply_row_policy_after_final = 0, optimize_move_to_prewhere_if_final=0;
+1	1	1	0	1
+select * from final_row_policy FINAL settings apply_row_policy_after_final = 1, optimize_move_to_prewhere_if_final=1;
+select * from final_row_policy FINAL settings apply_row_policy_after_final = 1, optimize_move_to_prewhere_if_final=0;

@@ -5,6 +5,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -49,7 +50,11 @@ void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, Mer
         if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
     }
+}
 
+String MergeTreePartInfo::getOriginalPartitionId() const
+{
+    return isPatch() ? getOriginalPartitionIdOfPatch(partition_id) : partition_id;
 }
 
 std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
@@ -78,7 +83,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
     {
         while (!in.eof())
         {
-            char c;
+            char c = 0;
             readChar(c, in);
             if (c == '_')
                 break;
@@ -158,8 +163,8 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
 
     const auto & date_lut = DateLUT::serverTimezoneInstance();
 
-    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
-    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+    min_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(min_yyyymmdd));
+    max_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(max_yyyymmdd));
 
     auto min_month = date_lut.toNumYYYYMM(min_date);
     auto max_month = date_lut.toNumYYYYMM(max_date);
@@ -211,7 +216,7 @@ String MergeTreePartInfo::getPartNameV1() const
     writeChar('_', wb);
     if (use_legacy_max_level)
     {
-        assert(level == MAX_LEVEL);
+        chassert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
     }
     else
@@ -250,7 +255,7 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     writeChar('_', wb);
     if (use_legacy_max_level)
     {
-        assert(level == MAX_LEVEL);
+        chassert(level == MAX_LEVEL);
         writeIntText(LEGACY_MAX_LEVEL, wb);
     }
     else
@@ -290,7 +295,7 @@ String MergeTreePartInfo::describe() const
 
 void MergeTreePartInfo::deserialize(ReadBuffer & in)
 {
-    UInt64 version;
+    UInt64 version = 0;
     readIntBinary(version, in);
     if (version != DBMS_MERGE_TREE_PART_INFO_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Version for MergeTreePart info mismatched. Got: {}, supported version: {}",

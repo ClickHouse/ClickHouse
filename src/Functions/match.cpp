@@ -19,7 +19,63 @@ using FunctionMatch = FunctionsStringSearch<MatchImpl<NameMatch, MatchTraits::Sy
 
 REGISTER_FUNCTION(Match)
 {
-    factory.registerFunction<FunctionMatch>();
+    FunctionDocumentation::Description description = R"(
+Checks if a provided string matches the provided regular expression pattern.
+
+This function uses the RE2 regular expression library. Please refer to [re2](https://github.com/google/re2/wiki/Syntax) for supported syntax.
+
+Matching works under UTF-8 assumptions, e.g. `¥` uses two bytes internally but matching treats it as a single codepoint.
+The regular expression must not contain NULL bytes.
+If the haystack or the pattern are not valid UTF-8, the behavior is undefined.
+
+Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
+
+The pattern is not anchored. To match the entire string, anchor the pattern yourself using `^` and `$`.
+
+If you just want to search for substrings, you can use functions [`like`](#like) or [`position`](#position) instead, which work much faster than this function.
+
+Alternative operator syntax: `haystack REGEXP pattern`.
+    )";
+    FunctionDocumentation::Syntax syntax = "match(haystack, pattern)";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "String in which the pattern is searched.", {"String"}},
+        {"pattern", "Regular expression pattern.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the pattern matches, `0` otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic pattern matching",
+        "SELECT match('Hello World', 'Hello.*')",
+        R"(
+┌─match('Hello World', 'Hello.*')─┐
+│                               1 │
+└─────────────────────────────────┘
+        )"
+    },
+    {
+        "Pattern not matching",
+        "SELECT match('Hello World', 'goodbye.*')",
+        R"(
+┌─match('Hello World', 'goodbye.*')─┐
+│                                 0 │
+└───────────────────────────────────┘
+        )"
+    },
+    {
+        "Matching a substring",
+        "SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')",
+        R"(
+┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
+│                       1 │                         0 │
+└─────────────────────────┴───────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMatch>(documentation);
     factory.registerAlias("REGEXP_MATCHES", NameMatch::name, FunctionFactory::Case::Insensitive);
 }
 

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
+#include <Processors/Port.h>
 #include <optional>
 
 #if USE_ARROW
@@ -6,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/NetUtils.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
@@ -22,9 +24,10 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
     , stream(stream_)
     , block_missing_values(getPort().getHeader().columns())
@@ -100,7 +103,8 @@ Chunk ArrowBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), file_reader ? file_reader->metadata() : nullptr, block_missing_values_ptr);
+    auto schema_metadata = stream ? stream_reader->schema()->metadata() : file_reader->schema()->metadata();
+    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), schema_metadata, block_missing_values_ptr);
 
     /// There is no easy way to get original record batch size from Arrow metadata.
     /// Let's just use the number of bytes read from read buffer.
@@ -129,6 +133,39 @@ const BlockMissingValues * ArrowBlockInputFormat::getMissingValues() const
 
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
 {
+    /// Validate the stream before passing it to the Arrow library.
+    /// Arrow IPC streaming format interprets the first 4 bytes as either:
+    ///   - a continuation token (0xFFFFFFFF for modern format, >= v0.15.0), or
+    ///   - the metadata length directly (legacy format, < v0.15.0).
+    /// If the data is not actually Arrow IPC (e.g., JSON, CSV), these bytes get
+    /// interpreted as a huge metadata length, causing Arrow to allocate hundreds
+    /// of megabytes of memory before discovering the data is invalid.
+    /// For example, JSON starting with "{\n  " is interpreted as a ~514 MiB metadata length.
+    if (in.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
+
+    constexpr int32_t kIpcContinuationToken = -1; /// 0xFFFFFFFF
+    /// Even a schema with thousands of columns and extensive metadata
+    /// would have a Flatbuffer well under a megabyte. 256 MiB is an extremely
+    /// conservative upper bound — any metadata length above this is certainly
+    /// not valid Arrow IPC data and is the result of misinterpreting random bytes.
+    constexpr int32_t max_reasonable_metadata_length = 256 * 1024 * 1024;
+
+    if (in.available() >= sizeof(int32_t))
+    {
+        int32_t first_int = 0;
+        memcpy(&first_int, in.position(), sizeof(int32_t));
+        /// Arrow IPC uses little-endian byte order on the wire.
+        first_int = DB::fromLittleEndian(first_int);
+
+        /// In the modern format, the first 4 bytes must be the continuation token 0xFFFFFFFF.
+        /// In the legacy format, the first 4 bytes are the metadata length (a positive int32).
+        /// Anything else (zero is handled as EOS by Arrow, negative other than -1 is an error)
+        /// or a metadata length that is unreasonably large indicates this is not Arrow IPC data.
+        if (first_int != kIpcContinuationToken && (first_int <= 0 || first_int > max_reasonable_metadata_length))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow IPC stream");
+    }
+
     auto options = arrow::ipc::IpcReadOptions::Defaults();
     options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
@@ -138,7 +175,10 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     return *stream_reader_status;
 }
 
-static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
+static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
+    ReadBuffer & in,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
@@ -174,6 +214,8 @@ void ArrowBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "Arrow",
         format_settings,
+        std::nullopt,
+        std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -221,7 +263,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        file_reader ? file_reader->metadata() : nullptr,
+        schema->metadata(),
         stream ? "ArrowStream" : "Arrow",
         format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
@@ -245,6 +287,7 @@ std::optional<size_t> ArrowSchemaReader::readNumberOrRows()
     return *rows;
 }
 
+void registerInputFormatArrow(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -254,7 +297,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -264,10 +307,11 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
 }
 
+void registerArrowSchemaReader(FormatFactory & factory);
 void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
@@ -300,6 +344,8 @@ void registerArrowSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatArrow(FormatFactory &);
+void registerArrowSchemaReader(FormatFactory &);
 void registerInputFormatArrow(FormatFactory &)
 {
 }

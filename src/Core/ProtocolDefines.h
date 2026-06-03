@@ -35,11 +35,20 @@ static constexpr auto DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING = 54
 
 static constexpr auto DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION = 1;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA = 2;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = 2;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA = 3;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO = 4;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS = 5;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS = 6;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS;
+
+static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
 static constexpr auto DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD = 4;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 4;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 7;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -74,6 +83,21 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS = 54459;
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS = 54460;
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES = 54461;
+
+/// Upper bound on the number of password-complexity rules carried in the server
+/// Hello packet. Real-world configurations declare a handful of rules at most.
+/// The server rejects configurations that exceed this when constructing its Hello
+/// so the operator sees the limit at its own boundary; the client enforces the
+/// same bound on receive so a hostile server cannot force a huge `reserve`.
+static constexpr auto DBMS_MAX_PASSWORD_COMPLEXITY_RULES = 256;
+
+/// Upper bound on every server-supplied display string carried in the Hello packet
+/// (server name, time zone, display name, password-rule patterns and messages) and
+/// in post-handshake updates of the same fields. Legitimate values are short; a
+/// high cap is purely an attack surface. Enforced symmetrically: the server refuses
+/// to construct an oversized Hello (pointing at the misconfigured field), the
+/// client refuses to read one (defending against a hostile server).
+static constexpr auto DBMS_MAX_HELLO_STRING_SIZE = 4096;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 = 54462;
 
@@ -112,6 +136,16 @@ static constexpr auto DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING = 54478;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL = 54479;
 
+static constexpr auto DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION = 54480;
+static constexpr auto DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS = 54481;
+
+static constexpr auto DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION = 54482;
+
+static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 54483;
+
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 54484;
+
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -119,5 +153,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54479;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54484;
 }

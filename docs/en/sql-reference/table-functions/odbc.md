@@ -4,17 +4,16 @@ sidebar_label: 'odbc'
 sidebar_position: 150
 slug: /sql-reference/table-functions/odbc
 title: 'odbc'
+doc_type: 'reference'
 ---
-
-# odbc Table Function
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
 ## Syntax {#syntax}
 
 ```sql
-odbc(connection_settings, external_database, external_table)
-odbc(connection_settings, external_table)
+odbc(datasource, external_database, external_table)
+odbc(datasource, external_table)
 odbc(named_collection)
 ```
 
@@ -22,7 +21,7 @@ odbc(named_collection)
 
 | Argument            | Description                                                            |
 |---------------------|------------------------------------------------------------------------|
-| `connection_settings` | Name of the section with connection settings in the `odbc.ini` file. |
+| `datasource` | Name of the section with connection settings in the `odbc.ini` file. |
 | `external_database` | Name of a database in an external DBMS.                                |
 | `external_table`    | Name of a table in the `external_database`.                            |
 
@@ -111,5 +110,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Related {#see-also}
 
-- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
+- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
 - [ODBC table engine](/engines/table-engines/integrations/odbc).

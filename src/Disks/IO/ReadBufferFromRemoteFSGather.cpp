@@ -1,8 +1,9 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/CurrentThread.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 #include <IO/SwapHelper.h>
@@ -16,21 +17,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int LOGICAL_ERROR;
+
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     ReadBufferCreator && read_buffer_creator_,
     const StoredObjects & blobs_to_read_,
-    const ReadSettings & settings_,
+    size_t min_bytes_for_seek_,
     bool use_external_buffer_,
     size_t buffer_size)
     : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
-    , settings(settings_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))
     , query_id(CurrentThread::getQueryId())
     , use_external_buffer(use_external_buffer_)
-    , with_file_cache(settings.enable_filesystem_cache)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
     if (!blobs_to_read.empty())
@@ -124,7 +126,13 @@ bool ReadBufferFromRemoteFSGather::readImpl()
         nextimpl_working_buffer_offset = current_buf->offset();
 
         chassert(current_buf->available());
-        chassert(blobs_to_read.size() != 1 || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd());
+        chassert(
+            blobs_to_read.size() != 1
+            || file_offset_of_buffer_end == current_buf->getFileOffsetOfBufferEnd(),
+            fmt::format(
+                "offset: {}, buf offset: {}, available: {}, nextimpl offset: {}",
+                file_offset_of_buffer_end, current_buf->getFileOffsetOfBufferEnd(),
+                current_buf->available(), nextimpl_working_buffer_offset));
     }
 
     return result;
@@ -134,6 +142,27 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
     if (position == read_until_position)
         return;
+
+    if (!use_external_buffer && position < file_offset_of_buffer_end)
+    {
+        /// file has been read beyond new read until position already
+        if (available() >= file_offset_of_buffer_end - position)
+        {
+            /// new read until position is after the current position in the working buffer
+            working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
+            file_offset_of_buffer_end = position;
+            pos = std::min(pos, working_buffer.end());
+        }
+        else
+        {
+            /// new read until position is before the current position in the working buffer
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Attempt to set read until position before already read data ({} < {})",
+                position,
+                getPosition());
+        }
+    }
 
     reset();
     read_until_position = position;
@@ -166,8 +195,8 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
             && static_cast<size_t>(offset) < file_offset_of_buffer_end)
         {
             pos = working_buffer.end() - (file_offset_of_buffer_end - offset);
-            assert(pos >= working_buffer.begin());
-            assert(pos < working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -176,7 +205,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         if (current_buf && offset > position)
         {
             size_t diff = offset - position;
-            if (diff < settings.remote_read_min_bytes_for_seek)
+            if (diff < min_bytes_for_seek)
             {
                 ignore(diff);
                 return offset;

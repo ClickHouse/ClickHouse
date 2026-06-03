@@ -1,6 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
-#include <Common/thread_local_rng.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -19,6 +19,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSeconds receive_timeout;
@@ -158,6 +159,10 @@ void MultiplexedConnections::sendQuery(
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
 
+    modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+        modified_settings[Setting::interactive_delay],
+        distributed_fanout * replica_states.size());
+
     for (auto & replica : replica_states)
     {
         if (!replica.connection)
@@ -186,6 +191,7 @@ void MultiplexedConnections::sendQuery(
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
+    chassert(num_replicas > 0);
     if (num_replicas > 1)
     {
         if (enable_offset_parallel_processing)
@@ -362,7 +368,7 @@ UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_cal
 
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         return current_connection->receivePacketType();
     }
     catch (Exception & e)
@@ -393,7 +399,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     Packet packet;
     try
     {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        AsyncCallbackSetter<Connection> async_setter(current_connection, std::move(async_callback));
         packet = current_connection->receivePacket();
     }
     catch (Exception & e)

@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ bool JSONCompactColumnsReader::checkChunkEnd()
 }
 
 
+void registerInputFormatJSONCompactColumns(FormatFactory & factory);
 void registerInputFormatJSONCompactColumns(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -37,11 +39,12 @@ void registerInputFormatJSONCompactColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONCompactColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONCompactColumnsReader>(buf));
         }
     );
 }
 
+void registerJSONCompactColumnsSchemaReader(FormatFactory & factory);
 void registerJSONCompactColumnsSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

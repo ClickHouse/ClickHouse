@@ -6,6 +6,7 @@ keywords: ['TabSeparatedRawWithNamesAndTypes', 'TSVRawWithNamesAndTypes', 'RawWi
 output_format: true
 slug: /interfaces/formats/TabSeparatedRawWithNamesAndTypes
 title: 'TabSeparatedRawWithNamesAndTypes'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias                                             |
@@ -21,9 +22,9 @@ in that the rows are written without escaping.
 When parsing with this format, tabs or line-feeds are not allowed in each field.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using the following tsv file, named as `football.tsv`:
 
@@ -55,7 +56,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedRawWithNamesAndTypes;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `TabSeparatedRawWithNamesAndTypes` format:
 
@@ -89,4 +90,4 @@ Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

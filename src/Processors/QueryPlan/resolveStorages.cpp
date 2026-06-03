@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace ErrorCodes
@@ -52,6 +53,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
 }
+
+Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context);
 
 Identifier parseTableIdentifier(const std::string & str, const ContextPtr & context)
 {
@@ -68,6 +71,8 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
+
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context);
 
 std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
@@ -91,13 +96,13 @@ static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, cons
 
 static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_expression)
 {
-    auto select = std::make_shared<ASTSelectQuery>();
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto select = make_intrusive<ASTSelectQuery>();
+    auto columns = make_intrusive<ASTExpressionList>();
     for (const auto & name : names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(name));
 
-    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-    auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
     table_element->children.push_back(table_expression);
     table_element->table_expression = std::move(table_expression);
     tables->children.push_back(std::move(table_element));
@@ -110,8 +115,8 @@ static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_express
 
 static ASTPtr wrapWithUnion(ASTPtr select)
 {
-    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
-    auto selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    auto selects = make_intrusive<ASTExpressionList>();
     selects->children.push_back(select);
     select_with_union->list_of_selects = selects;
     select_with_union->children.push_back(select_with_union->list_of_selects);
@@ -127,7 +132,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         return {};
 
     const auto & header = node.step->getOutputHeader();
-    auto column_names = header.getNames();
+    auto column_names = header->getNames();
 
     StoragePtr storage;
     StorageSnapshotPtr snapshot;
@@ -186,11 +191,13 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
     }
 
+    auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     ASTPtr query;
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     if (storage->isRemote() || is_storage_merge)
     {
-        auto table_expression = std::make_shared<ASTTableExpression>();
+        auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
         {
             table_expression->children.push_back(table_function_ast);
@@ -199,7 +206,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         else
         {
             const auto & table_id = storage->getStorageID();
-            auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            auto table_identifier = make_intrusive<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
             table_expression->children.push_back(table_identifier);
             table_identifier->uuid = table_id.uuid;
             table_expression->database_and_table_name = std::move(table_identifier);
@@ -216,6 +223,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         options.ignore_rename_columns = true;
         InterpreterSelectQueryAnalyzer interpreter(wrapWithUnion(std::move(query)), context, options);
         reading_plan = std::move(interpreter).extractQueryPlan();
+        reading_plan.addInterpreterContext(context);
     }
     else
     {
@@ -225,22 +233,33 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         select_query_info.storage_limits = std::move(storage_limits);
         select_query_info.query = std::move(query);
 
+        bool use_parallel_replicas = false;
+        if (reading_from_table)
+            use_parallel_replicas = reading_from_table->useParallelReplicas();
+
+        auto mutable_context = Context::createCopy(context);
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);
+
         storage->read(
             reading_plan,
             column_names,
             snapshot,
             select_query_info,
-            context,
+            mutable_context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
             context->getSettingsRef()[Setting::max_threads]
         );
+
+        /// Preserve the mutable_context for the lifetime of query execution
+        /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it
+        reading_plan.addInterpreterContext(mutable_context);
     }
 
     if (!reading_plan.isInitialized())
     {
         /// Create step which reads from empty source if storage has no data.
-        auto source_header = snapshot->getSampleBlockForColumns(column_names);
+        auto source_header = std::make_shared<const Block>(snapshot->getSampleBlockForColumns(column_names));
         Pipe pipe(std::make_shared<NullSource>(source_header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource");
@@ -248,12 +267,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     }
 
     auto converting_actions = ActionsDAG::makeConvertingActions(
-        reading_plan.getCurrentHeader().getColumnsWithTypeAndName(),
-        header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        reading_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
+        header->getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
 
     node.step = std::make_unique<ExpressionStep>(reading_plan.getCurrentHeader(), std::move(converting_actions));
     node.children = {reading_plan.getRootNode()};
+
+    reading_plan.addStorageHolder(std::move(storage));
+    reading_plan.addTableLock(std::move(table_lock));
 
     auto nodes_and_resource = QueryPlan::detachNodesAndResources(std::move(reading_plan));
 

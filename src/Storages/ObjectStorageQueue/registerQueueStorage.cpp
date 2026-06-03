@@ -2,6 +2,7 @@
 
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -26,11 +27,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
+    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+}
+
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 template <typename Configuration>
@@ -41,7 +49,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -50,15 +58,15 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
     const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
 
-    if (!is_attach)
+    if (!is_attach && args.storage_def->settings)
     {
         if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
         {
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
 
-            bool is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-            bool is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+            bool is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+            bool is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal() &&
                 database_engine == "Replicated";
 
             /// Allow implicit {uuid} macros only for keeper_path in ON CLUSTER queries
@@ -72,8 +80,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
-            /// Make sure that {uuid} macro is allowed, if present.
-            args.getContext()->getMacros()->expand(path, info);
+            {
+                /// Some fields (e.g.: level) in MacroExpansionInfo are modified during macro expansion.
+                /// Let's make a copy, so the next call won't interfere with this one.
+                auto info_copy = info;
+                /// Make sure that {uuid} macro is allowed, if present.
+                args.getContext()->getMacros()->expand(path, info_copy);
+            }
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;
@@ -97,6 +110,17 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         format_settings = getFormatSettings(args.getContext());
     }
 
+    if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        if (!is_attach &&
+            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental 'use_hive_partitioning' setting is not enabled "
+                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
+        }
+    }
+
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
         std::move(configuration),
@@ -112,6 +136,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 }
 
 #if USE_AWS_S3
+void registerStorageS3Queue(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -123,13 +148,14 @@ void registerStorageS3Queue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::S3,
+            .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
+void registerStorageAzureQueue(StorageFactory & factory);
 void registerStorageAzureQueue(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -141,7 +167,7 @@ void registerStorageAzureQueue(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
-            .source_access_type = AccessType::AZURE,
+            .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }

@@ -7,7 +7,7 @@ namespace DB
 class ExtremesStep : public ITransformingStep
 {
 public:
-    explicit ExtremesStep(const Header & input_header_);
+    explicit ExtremesStep(const SharedHeader & input_header_);
 
     String getName() const override { return "Extremes"; }
 
@@ -16,7 +16,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override

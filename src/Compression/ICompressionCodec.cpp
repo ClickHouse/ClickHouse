@@ -1,6 +1,5 @@
 #include <Compression/ICompressionCodec.h>
 
-#include <cassert>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
@@ -22,26 +21,20 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
-{
-    if (!needsVectorDimensionUpfront())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
-}
 
 void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
 {
-    std::shared_ptr<ASTFunction> result = std::make_shared<ASTFunction>();
+    boost::intrusive_ptr<ASTFunction> result = make_intrusive<ASTFunction>();
     result->name = "CODEC";
 
     /// Special case for codec Multiple, which doesn't have name. It's just list
     /// of other codecs.
     if (codec_name.empty())
     {
-        ASTPtr codec_desc = std::make_shared<ASTExpressionList>();
+        ASTPtr codec_desc = make_intrusive<ASTExpressionList>();
         for (const auto & argument : arguments)
             codec_desc->children.push_back(argument);
         result->arguments = codec_desc;
@@ -50,11 +43,11 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
     {
         ASTPtr codec_desc;
         if (arguments.empty()) /// Codec without arguments is just ASTIdentifier
-            codec_desc = std::make_shared<ASTIdentifier>(codec_name);
+            codec_desc = make_intrusive<ASTIdentifier>(codec_name);
         else /// Codec with arguments represented as ASTFunction
             codec_desc = makeASTFunction(codec_name, arguments);
 
-        result->arguments = std::make_shared<ASTExpressionList>();
+        result->arguments = make_intrusive<ASTExpressionList>();
         result->arguments->children.push_back(codec_desc);
     }
 
@@ -91,7 +84,7 @@ UInt64 ICompressionCodec::getHash() const
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
 
@@ -106,7 +99,7 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Decompressing);
 
@@ -122,9 +115,16 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception(decompression_error_code, "Can't decompress data with codec byte {} using codec with byte {}", method, our_method);
 
     UInt32 decompressed_size = readDecompressedBlockSize(source);
-    doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    UInt32 final_decompressed_size = doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    if (decompressed_size != final_decompressed_size)
+        throw Exception(
+            decompression_error_code,
+            "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) for codec '{}'",
+            final_decompressed_size,
+            decompressed_size,
+            getCodecDesc()->formatForErrorMessage());
 
-    return decompressed_size;
+    return final_decompressed_size;
 }
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source) const

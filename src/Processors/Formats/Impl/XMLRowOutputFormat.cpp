@@ -9,8 +9,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_->getNamesAndTypes()), format_settings(format_settings_)
 {
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
@@ -249,14 +249,16 @@ void XMLRowOutputFormat::writeException()
     writeCString("</exception>\n", *ostr);
 }
 
+void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory)
 {
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");

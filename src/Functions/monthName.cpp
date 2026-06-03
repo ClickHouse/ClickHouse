@@ -2,17 +2,23 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
+namespace
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+
+bool isDateOrDateTime(const IDataType & type)
+{
+    return isDate(type) || isDateTime(type) || isDateTime64(type);
 }
 
-class FunctionMonthName : public IFunction
+}
+
+class FunctionMonthName final : public IFunction
 {
 public:
     static constexpr auto name = "monthName";
@@ -35,20 +41,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(),
-                arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
+        };
 
-        WhichDataType argument_type(arguments[0].type);
-        if (!argument_type.isDate() && !argument_type.isDateTime() && !argument_type.isDateTime64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of argument of function {}, should be Date, DateTime or DateTime64",
-                getName());
-
+        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -79,7 +76,32 @@ private:
 
 REGISTER_FUNCTION(MonthName)
 {
-    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the name of the month as a string from a date or date with time value.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+monthName(datetime)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date or date with time.", {"Date", "Date32", "DateTime", "DateTime64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the name of the month.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get month name from date", R"(
+WITH toDateTime('2021-04-14 11:22:33') AS date_value
+SELECT monthName(date_value)
+        )",
+        R"(
+┌─monthName(date_value)─┐
+│ April                 │
+└───────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

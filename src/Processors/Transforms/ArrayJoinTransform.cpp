@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 template <typename Container>
-Block transformHeaderImpl(Block header, const Container & array_join_columns)
+Block transformHeaderImpl(const Block & header, const Container & array_join_columns)
 {
     auto columns = header.getColumnsWithTypeAndName();
     ArrayJoinAction::prepare(array_join_columns, columns);
@@ -20,16 +20,16 @@ Block transformHeaderImpl(Block header, const Container & array_join_columns)
     return res;
 }
 
-Block ArrayJoinTransform::transformHeader(Block header, const Names & array_join_columns)
+Block ArrayJoinTransform::transformHeader(const Block & header, const Names & array_join_columns)
 {
-    return transformHeaderImpl(std::move(header), array_join_columns);
+    return transformHeaderImpl(header, array_join_columns);
 }
 
 ArrayJoinTransform::ArrayJoinTransform(
-    const Block & header_,
+    SharedHeader header_,
     ArrayJoinActionPtr array_join_,
     bool /*on_totals_*/)
-    : IInflatingTransform(header_, transformHeaderImpl(header_, array_join_->columns))
+    : IInflatingTransform(header_, std::make_shared<const Block>(transformHeaderImpl(*header_, array_join_->columns)))
     , array_join(std::move(array_join_))
 {
     /// TODO

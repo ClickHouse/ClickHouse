@@ -9,7 +9,7 @@ namespace DB
 class OffsetStep : public ITransformingStep
 {
 public:
-    OffsetStep(const Header & input_header_, size_t offset_);
+    OffsetStep(const SharedHeader & input_header_, size_t offset_);
 
     String getName() const override { return "Offset"; }
 
@@ -21,7 +21,7 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override

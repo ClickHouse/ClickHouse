@@ -73,7 +73,11 @@ public:
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
-        AccessType source_access_type = AccessType::NONE;
+        /// Whether `UNIQUE KEY` is accepted at CREATE time. Currently set only on
+        /// non-replicated MergeTree variants — replicated metadata does not yet
+        /// serialize `unique_key`, which would allow replicas to diverge silently.
+        bool supports_unique_key = false;
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
@@ -109,7 +113,8 @@ public:
         .supports_deduplication = false,
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
-        .source_access_type = AccessType::NONE,
+        .supports_unique_key = false,
+        .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     });
 
@@ -136,7 +141,7 @@ public:
         return result;
     }
 
-    AccessType getSourceAccessType(const String & table_engine) const;
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject(const String & table_engine) const;
 
     const StorageFeatures & getStorageFeatures(const String & storage_name) const;
 

@@ -159,7 +159,12 @@ public:
         }
         catch (const std::runtime_error & e)
         {
+            /// musl defines `stderr` as a recursive macro `(stderr)`,
+            /// which triggers `-Wdisabled-macro-expansion` when used as a function argument.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             fmt::print(stderr, "{}", e.what());
+#pragma clang diagnostic pop
         }
     }
 
@@ -198,7 +203,7 @@ std::string replxx_now_ms_str()
 {
     std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
     time_t t = ms.count() / 1000;
-    tm broken;
+    tm broken{};
     if (!localtime_r(&t, &broken))
         return {};
 
@@ -349,6 +354,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
 
     rx.set_completion_callback(callback);
+
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
@@ -425,10 +431,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
     rx.bind_key(Replxx::KEY::meta('#'), insert_comment_action);
 
+    char key_fuzzy = 'R';
+    char key_regular = 'T';
+    if (options.interactive_history_legacy_keymap)
+        std::swap(key_fuzzy, key_regular);
+
 #if USE_SKIM
     if (!options.embedded_mode)
     {
-        auto interactive_history_search = [this](char32_t code)
+        auto interactive_history_search = [this, key_regular](char32_t code)
         {
             std::vector<std::string> words;
             {
@@ -445,7 +456,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             }
             catch (const std::exception & e)
             {
-                rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
+                rx.print("skim failed: %s (consider using Ctrl-%c for a regular non-fuzzy reverse search)\n", e.what(), key_regular);
             }
 
             /// REPAINT before to avoid prompt overlap by the query
@@ -461,15 +472,15 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             return rx.invoke(Replxx::ACTION::REPAINT, code);
         };
 
-        rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
+        rx.bind_key(Replxx::KEY::control(key_fuzzy), interactive_history_search);
     }
 #endif
 
-    /// Rebind regular incremental search to C-T.
+    /// Rebind regular incremental search.
     ///
     /// NOTE: C-T by default this is a binding to swap adjustent chars
     /// (TRANSPOSE_CHARACTERS), but for SQL it sounds pretty useless.
-    rx.bind_key(Replxx::KEY::control('T'), [this](char32_t)
+    rx.bind_key(Replxx::KEY::control(key_regular), [this](char32_t)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
@@ -587,6 +598,15 @@ void ReplxxLineReader::disableBracketedPaste()
 {
     bracketed_paste_enabled = false;
     rx.disable_bracketed_paste();
+}
+
+void ReplxxLineReader::setInitialText(const String & text)
+{
+    // Preload the buffer with the initial text
+    if (!text.empty())
+    {
+        rx.set_preload_buffer(text);
+    }
 }
 
 }

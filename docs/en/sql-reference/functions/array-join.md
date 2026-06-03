@@ -1,12 +1,10 @@
 ---
 description: 'Documentation for arrayJoin function'
 sidebar_label: 'arrayJoin'
-sidebar_position: 15
 slug: /sql-reference/functions/array-join
 title: 'arrayJoin function'
+doc_type: 'reference'
 ---
-
-# arrayJoin function
 
 This is a very unusual function.
 
@@ -16,6 +14,11 @@ The `arrayJoin` function takes each row and generates a set of rows (unfold).
 
 This function takes an array as an argument, and propagates the source row to multiple rows for the number of elements in the array.
 All the values in columns are simply copied, except the values in the column where this function is applied; it is replaced with the corresponding array value.
+
+:::note
+If the array is empty, `arrayJoin` produces no rows.
+To return a single row containing the default value of the array type, you can wrap it with [emptyArrayToSingle](./array-functions.md#emptyArrayToSingle), for example: `arrayJoin(emptyArrayToSingle(...))`.
+:::
 
 For example:
 
@@ -85,7 +88,7 @@ In those cases, consider modifying repeated array expressions with extra operati
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     arrayJoin(dice) AS first_throw,
     /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
@@ -100,7 +103,7 @@ Note the [`ARRAY JOIN`](../statements/select/array-join.md) syntax in the SELECT
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     sum(1) AS impressions,
     city,
@@ -119,7 +122,7 @@ GROUP BY
     3
 ```
 
-```text
+```text title="Response"
 ┌─impressions─┬─city─────┬─browser─┐
 │           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │

@@ -2,6 +2,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <Common/ProfileEvents.h>
+#include <IO/BufferWithOwnMemory.h>
 
 namespace DB
 {
@@ -18,7 +19,18 @@ public:
 
 private:
     ProfileEvents::Event write_event;
-    char data[128];
+    char data[128]{};
+};
+
+/// Similar to above, but allocated memory,
+/// which is useful when WriteBufferFromFileDecorator<NullWriteBufferWithMemory> is used.
+class NullWriteBufferWithMemory final : public BufferWithOwnMemory<WriteBufferFromPointer>
+{
+public:
+    explicit NullWriteBufferWithMemory(size_t size);
+    ~NullWriteBufferWithMemory() override;
+
+    void nextImpl() override {}
 };
 
 }

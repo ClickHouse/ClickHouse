@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -26,7 +25,7 @@ $CLICKHOUSE_CLIENT -q "
     WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_3'
     ORDER BY format;
 
-    SYSTEM FLUSH ASYNC INSERT QUEUE;
+    SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_native_3;
 
     SELECT * FROM t_async_insert_native_3 ORDER BY id;
 
@@ -34,7 +33,7 @@ $CLICKHOUSE_CLIENT -q "
 
     SELECT format, status, rows, data_kind, format
     FROM system.asynchronous_insert_log
-    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_3'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' AND table = 't_async_insert_native_3'
     ORDER BY event_time_microseconds;
 
     DROP TABLE t_async_insert_native_3;

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Type
 
 from . import Job, Workflow
 from .settings import Settings
-from .utils import MetaClasses, Shell, T
+from .utils import MetaClasses, Shell, T, Utils
 
 
 @dataclasses.dataclass
@@ -19,6 +19,7 @@ class _Environment(MetaClasses.Serializable):
     SHA: str
     PR_NUMBER: int
     EVENT_TYPE: str
+    EVENT_TIME: str
     JOB_OUTPUT_STREAM: str
     EVENT_FILE_PATH: str
     CHANGE_URL: str
@@ -33,14 +34,29 @@ class _Environment(MetaClasses.Serializable):
     PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
+    COMMIT_MESSAGE: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
-    REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
+    REPORT_MESSAGES: List[Dict[str, str]] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
+    WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
+    WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
+
+    @classmethod
+    def _load_workflow_job_data(cls) -> dict:
+        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
+            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
+                return json.load(f)
+        print(
+            f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
+        )
+        return {}
 
     @classmethod
     def from_env(cls) -> "_Environment":
@@ -56,11 +72,16 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
+        COMMIT_AUTHORS = []
         FORK_NAME = REPOSITORY
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
+        EVENT_TIME = ""
+        COMMIT_MESSAGE = ""
+
+        WORKFLOW_JOB_DATA = cls._load_workflow_job_data()
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -78,6 +99,9 @@ class _Environment(MetaClasses.Serializable):
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
+                EVENT_TIME = github_event.get("pull_request", {}).get(
+                    "updated_at", None
+                )
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -91,6 +115,14 @@ class _Environment(MetaClasses.Serializable):
                 if len(parts) >= 2:
                     pr_str = parts[1].split()[0]
                     LINKED_PR_NUMBER = int(pr_str) if pr_str.isdigit() else 0
+                EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
+                commit_authors = set()
+                for commit in github_event["commits"]:
+                    email = commit["author"]["email"]
+                    # Validate email contains @ symbol
+                    if email and "@" in email:
+                        commit_authors.add(email)
+                COMMIT_AUTHORS = list(commit_authors)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
                 SHA = os.getenv(
@@ -163,6 +195,7 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
+            COMMIT_MESSAGE = ""
             INSTANCE_TYPE = ""
             INSTANCE_ID = ""
             INSTANCE_LIFE_CYCLE = ""
@@ -176,6 +209,7 @@ class _Environment(MetaClasses.Serializable):
             JOB_OUTPUT_STREAM=JOB_OUTPUT_STREAM,
             SHA=SHA,
             EVENT_TYPE=EVENT_TYPE,
+            EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
             CHANGE_URL=CHANGE_URL,
@@ -187,11 +221,23 @@ class _Environment(MetaClasses.Serializable):
             PR_BODY=PR_BODY,
             PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
+            COMMIT_AUTHORS=COMMIT_AUTHORS,
             FORK_NAME=FORK_NAME,
+            COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
-            REPORT_INFO=[],
+            REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
+            # TODO: Find a better way to store and pass commit authors data through workflow
+            JOB_KV_DATA={
+                "commit_authors": COMMIT_AUTHORS,
+                # Initial parent PR inference:
+                # - Defaults to LINKED_PR_NUMBER, which is the PR merged by a push/merge-queue event
+                # - Can be explicitly overridden later via workflow hooks (see Info.set_parent_pr_number)
+                "parent_pr_number": LINKED_PR_NUMBER,
+            },
+            WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
+            WORKFLOW_CONFIG=None,
         )
 
     @classmethod
@@ -204,26 +250,113 @@ class _Environment(MetaClasses.Serializable):
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
-        return cls(**obj)
+        # Filter out unexpected arguments - only keep fields defined in the dataclass
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_obj = {k: v for k, v in obj.items() if k in valid_fields}
+        return cls(**filtered_obj)
 
-    def add_info(self, info):
-        self.REPORT_INFO.append(info)
+    @classmethod
+    def from_workflow_data(cls) -> "_Environment":
+        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+            workflow_status_data = json.load(f)
+        # Access the config job data and parse the JSON string in "data" field
+        # Job names are normalized in the workflow status file
+        normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
+        config_job_data = workflow_status_data.get(normalized_job_name, {})
+        data_str = config_job_data.get("outputs", {}).get("data", "{}")
+        env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+
+        # Reread instance metadata from the host
+        env_dict["INSTANCE_TYPE"] = (
+            os.getenv("INSTANCE_TYPE", None)
+            or Shell.get_output("ec2metadata --instance-type")
+            or ""
+        )
+        env_dict["INSTANCE_ID"] = (
+            os.getenv("INSTANCE_ID", None)
+            or Shell.get_output("ec2metadata --instance-id")
+            or ""
+        )
+        env_dict["INSTANCE_LIFE_CYCLE"] = (
+            os.getenv("INSTANCE_LIFE_CYCLE", None)
+            or Shell.get_output(
+                "curl -s --fail http://169.254.169.254/latest/meta-data/instance-life-cycle"
+            )
+            or ""
+        )
+
+        # Override WORKFLOW_JOB_DATA with the current job's data so that
+        # check_run_id refers to this job rather than to the config job whose
+        # serialised environment we loaded above.
+        env_dict["WORKFLOW_JOB_DATA"] = cls._load_workflow_job_data()
+
+        return cls.from_dict(env_dict)
+
+    def _add_report_message(self, message, kind, source=""):
+        """
+        Accumulate a structured report message in the environment.
+
+        Messages are collected during job execution and later written to both
+        the job and workflow ``Result.ext`` as ``{"message": str, "from": str}``
+        entries.  Grouping of duplicate messages is done at the rendering level
+        in ``json.html``.
+        Prefer the typed wrappers ``add_workflow_warning/error/note``.
+        """
+        self.REPORT_MESSAGES.append(
+            {"message": message, "kind": kind, "from": source or self.JOB_NAME}
+        )
         self.dump()
+
+    def add_workflow_warning(self, message, source=""):
+        self._add_report_message(message, kind="warning", source=source)
+
+    def add_workflow_error(self, message, source=""):
+        self._add_report_message(message, kind="error", source=source)
+
+    def add_workflow_note(self, message, source=""):
+        self._add_report_message(message, kind="note", source=source)
 
     @classmethod
     def get(cls):
         if Path(cls.file_name_static()).is_file():
             return cls.from_fs("environment")
         else:
-            print("WARNING: Environment: get from env")
-            env = cls.from_env()
-            env.dump()
-            return env
+            try:
+                env = cls.from_workflow_data()
+                env.dump()
+                return env
+            except FileNotFoundError as e:
+                # For workflows without Config job
+                print(
+                    f"NOTE: Workflow context file [{Settings.WORKFLOW_STATUS_FILE}] does not exist - read context from GH event"
+                )
+                env = cls.from_env()
+                env.dump()
+                return env
 
     def set_job_name(self, job_name):
         self.JOB_NAME = job_name
         self.dump()
         return self
+
+    def set_pr_labels(self, labels: List[str], reset: bool = False) -> None:
+        if reset:
+            self.PR_LABELS = list(labels)
+        else:
+            for label in labels:
+                if label not in self.PR_LABELS:
+                    self.PR_LABELS.append(label)
+        self.dump()
+
+    def add_pr_label(self, label: str) -> None:
+        if label not in self.PR_LABELS:
+            self.PR_LABELS.append(label)
+            self.dump()
+
+    def remove_pr_label(self, label: str) -> None:
+        if label in self.PR_LABELS:
+            self.PR_LABELS.remove(label)
+            self.dump()
 
     @staticmethod
     def get_needs_statuses():

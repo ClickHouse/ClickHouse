@@ -23,14 +23,14 @@ INSERT INTO t_bloom_filter
 SELECT
     number % 100 as key, -- 100 unique keys
     rand() % 100 as value -- 100 unique values
-FROM numbers(50_000);
+FROM numbers(15_000);
 
 -- And another part
 INSERT INTO t_bloom_filter
 SELECT
     number % 100 as key, -- 100 unique keys
     rand() % 100 as value -- 100 unique values
-FROM numbers(50_000, 50_000);
+FROM numbers(15_000, 15_000);
 
 SYSTEM START MERGES t_bloom_filter;
 

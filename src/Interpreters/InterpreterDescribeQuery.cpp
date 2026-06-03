@@ -1,6 +1,7 @@
 #include <Storages/IStorage.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/BlockIO.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
@@ -27,7 +28,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
-    extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -101,7 +101,7 @@ BlockIO InterpreterDescribeQuery::execute()
     else if (table_expression.table_function)
         fillColumnsFromTableFunction(table_expression);
     else
-        fillColumnsFromTable(table_expression);
+        fillColumnsFromTable(table_expression, ast.temporary);
 
     Block sample_block = getSampleBlock(
         settings[Setting::describe_include_subcolumns], settings[Setting::describe_include_virtual_columns], settings[Setting::describe_compact_output]);
@@ -125,7 +125,7 @@ BlockIO InterpreterDescribeQuery::execute()
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();
-    auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
     res.pipeline = QueryPipeline(std::move(source));
 
     return res;
@@ -133,7 +133,7 @@ BlockIO InterpreterDescribeQuery::execute()
 
 void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression & table_expression)
 {
-    Block sample_block;
+    SharedHeader sample_block;
     auto select_query = table_expression.subquery->children.at(0);
     auto current_context = getContext();
 
@@ -147,8 +147,8 @@ void InterpreterDescribeQuery::fillColumnsFromSubquery(const ASTTableExpression 
         sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context);
     }
 
-    for (auto && column : sample_block)
-        columns.emplace_back(std::move(column.name), std::move(column.type));
+    for (auto && column : *sample_block)
+        columns.emplace_back(column.name, column.type);
 }
 
 void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpression & table_expression)
@@ -156,7 +156,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     auto current_context = getContext();
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
 
-    auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+    auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 
@@ -165,45 +165,40 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            auto virtuals = table->getVirtualsPtr();
-            for (const auto & column : *virtuals)
-            {
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(current_context, false);
+            const auto & virtuals = metadata_snapshot->virtuals;
+            for (const auto & column : virtuals)
                 if (!column_descriptions.has(column.name))
                     virtual_columns.push_back(column);
-            }
         }
     }
 }
 
-void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression)
+void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary)
 {
     auto query_context = getContext();
-    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name);
+    auto resolve_type = temporary ? Context::ResolveExternal : Context::ResolveAll;
+    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
-    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
+    table->updateExternalDynamicMetadataIfExists(query_context);
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 
     if (settings[Setting::describe_include_virtual_columns])
     {
-        auto virtuals = table->getVirtualsPtr();
-        for (const auto & column : *virtuals)
-        {
+        const auto & virtuals = metadata_snapshot->virtuals;
+        for (const auto & column : virtuals)
             if (!column_descriptions.has(column.name))
                 virtual_columns.push_back(column);
-        }
     }
-
-    if (settings[Setting::describe_extend_object_types])
-        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 }
 
 void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
@@ -211,11 +206,10 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
     size_t i = 0;
     res_columns[i++]->insert(column.name);
 
-    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
     if (settings[Setting::print_pretty_type_names])
-        res_columns[i++]->insert(type->getPrettyName());
+        res_columns[i++]->insert(column.type->getPrettyName());
     else
-        res_columns[i++]->insert(type->getName());
+        res_columns[i++]->insert(column.type->getName());
 
     if (!settings[Setting::describe_compact_output])
     {
@@ -252,8 +246,6 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
-    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
-
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -288,9 +280,10 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
         if (settings[Setting::describe_include_virtual_columns])
             res_columns[i++]->insert(is_virtual);
 
-    }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
+    }, ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
 }
 
+void registerInterpreterDescribeQuery(InterpreterFactory & factory);
 void registerInterpreterDescribeQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

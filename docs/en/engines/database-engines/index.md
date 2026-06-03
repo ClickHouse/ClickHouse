@@ -5,9 +5,8 @@ toc_folder_title: 'Database Engines'
 toc_priority: 27
 toc_title: 'Introduction'
 title: 'Database Engines'
+doc_type: 'landing-page'
 ---
-
-# Database Engines
 
 Database engines allow you to work with tables. By default, ClickHouse uses the [Atomic](../../engines/database-engines/atomic.md) database engine, which provides configurable [table engines](../../engines/table-engines/index.md) and an [SQL dialect](../../sql-reference/syntax.md).
 
