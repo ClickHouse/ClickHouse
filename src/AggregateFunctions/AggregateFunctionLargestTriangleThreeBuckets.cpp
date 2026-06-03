@@ -351,6 +351,7 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 }
 
 
+void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -397,7 +398,7 @@ SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_tes
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, {}, documentation});
+    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, documentation});
     factory.registerAlias("lttb", AggregateFunctionLargestTriangleThreeBuckets::name);
 }
 

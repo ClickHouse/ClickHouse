@@ -2,7 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB

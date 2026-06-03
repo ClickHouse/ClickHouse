@@ -27,3 +27,9 @@ timeSeriesJoinTags:
 
 timeSeriesReplaceTag:
 [('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a:c'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]	[('__name__','up'),('foo','begin a sep c end'),('job','api-server'),('service','a:c')]	[('__name__','up'),('job','api-server'),('service','c:a')]	[('__name__','up'),('job','api-server')]	1	1	1
+
+timeSeriesReplaceTag (2):
+[('eleventh','a'),('seq','0123456789a')]	[('eleventh_braced','a'),('seq','0123456789a')]	1	1	1	[('big','0123456789a'),('seq','0123456789a')]	[('literal_dollar','$1'),('seq','0123456789a')]	[('seq','0123456789a'),('trailing_dollar','price$')]	[('dollar_then_punct','$.tail'),('seq','0123456789a')]
+
+timeSeriesThrowDuplicateSeriesIf:
+0

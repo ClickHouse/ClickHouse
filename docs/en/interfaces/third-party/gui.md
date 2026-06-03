@@ -7,8 +7,6 @@ title: 'Visual Interfaces from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Visual interfaces from third-party developers
-
 ## Open-source {#open-source}
 
 ### agx {#agx}
@@ -44,6 +42,23 @@ Features:
 
 [ChartDB Source Code](https://github.com/chartdb/chartdb).
 
+### DataStoria {#datastoria}
+
+[DataStoria](https://github.com/FrankChen021/datastoria) is an AI-powered web console application that manages multiple ClickHouse clusters in one place.
+
+Features:
+
+- **AI-Powered Intelligence**: Use natural language to explore data, optimize and fix SQL queries, and visualize your data.
+- **Official ClickHouse Agent Skills Integration**: Leverage [official best practices](https://github.com/ClickHouse/agent-skills) to ask AI for database optimizations and suggestions.
+- **Smart Error Diagnostics**: Pinpoint syntax errors instantly with precise line and column highlighting, and get AI-powered fix suggestions with one click.
+- **System Table Inspection**: Dive deep into `system.query_log`, `system.query_views_log`, `system.zookeeper`, `system.ddl_distributed_queue`, `system.part_log`, and `system.processes` with a powerful visualization dashboard and filters to quickly understand your cluster.
+- **One-Click Explain**: Instantly understand query execution plans with visual AST and pipeline views.
+- **Dependency Graph**: Visualize table relationships and trace data flows through Materialized Views, Distributed tables, and external systems.
+- **Cluster Monitoring**: Monitor all nodes with real-time metrics, merge operations, replication status, query performance, and more.
+- **Privacy & Security**: All SQL queries run directly from your browser to your ClickHouse server, ensuring complete privacy.
+
+[DataStoria documentation](https://docs.datastoria.app).
+
 ### DataPup {#datapup}
 
 [DataPup](https://github.com/DataPupOrg/DataPup) is a modern, AI-assisted, cross-platform database client with native ClickHouse support.
@@ -58,20 +73,38 @@ Features:
 - Fast and responsive performance
 - Open-source and MIT licensed
 
-### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+### Dory {#dory}
 
-[ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is a powerful open-source web application for visualizing ClickHouse table relationships using Mermaid.js diagrams. Browse databases and tables with an intuitive interface, explore table metadata with optional row counts and size information, and export interactive schema diagrams.
+[Dory](https://github.com/dorylab/dory) AI-native SQL workspace with first-class ClickHouse support, AI built-in.
 
 Features:
 
-- Browse ClickHouse databases and tables with an intuitive interface
-- Visualize table relationships with Mermaid.js diagrams
-- Color-coded icons matching table types for better visualization
-- View direction of data flow between tables
-- Export diagrams as standalone HTML files
-- Toggle metadata visibility (table rows and size information)
-- Secure connection to ClickHouse with TLS support
-- Responsive web interface for all devices
+- AI Copilot for SQL generation, explanation, and debugging
+- Manage and query multiple ClickHouse clusters from a unified workspace
+- Schema-aware SQL autocomplete and multi-tab query workspace
+- Interactive query result exploration with filtering and visualization
+- AI-powered table summaries for understanding datasets
+- Direct ClickHouse connections with SSH tunnel support
+- Modern developer-friendly interface with light, dark, and theme support
+- Cross-platform desktop app (macOS, Windows, Linux), and Docker support
+- Open-source and MIT licensed
+
+### ClickHouse Schema Flow Visualizer {#clickhouse-schemaflow-visualizer}
+
+[ClickHouse Schema Flow Visualizer](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer) is an open-source web application for visualizing ClickHouse table relationships.
+It connects to a ClickHouse instance, parses `system.tables` metadata (engine types, dependencies, materialized view SELECTs), and renders interactive table-level data-flow diagrams alongside column-level relationships with the transformation expression labelled on every edge. Diagrams are laid out with Dagre and rendered as plain inline SVG — no client-side diagramming runtime is loaded.
+
+Features:
+
+- Browse ClickHouse databases and tables with an intuitive sidebar
+- Data Flow view: table-level upstream sources and downstream materialized views
+- Relationships view: column-level mapping with the parsed transformation expression on each edge (e.g. `toStartOfHour(scheduled_departure)`, `avgState(delay_minutes)`)
+- Engine-aware icons and colour coding for `MergeTree`, `Replicated*`, `Distributed`, `MaterializedView`, and `Dictionary`
+- Click a column in the Relationships view to highlight its full data path through the pipeline
+- Live sidebar filter and a `Ctrl+K` / `⌘K` command palette to jump to any table, column, or engine
+- Optional metadata overlay showing row counts and on-disk size per table
+- Export the current diagram as a self-contained HTML file
+- TLS connection to ClickHouse, with optional skip-verify and custom CA / client certificates
 
 [ClickHouse Schema Flow Visualizer - source code](https://github.com/FulgerX2007/clickhouse-schemaflow-visualizer)
 
@@ -332,6 +365,34 @@ Features:
 
 [ClickLens Source Code](https://github.com/ntk148v/clicklens)
 
+### CHouse UI {#chouse-ui}
+
+[CHouse UI](https://chouse-ui.com) is an open-source, self-hosted ClickHouse web interface built for **teams running ClickHouse in production**. Most tools nail one piece — a query workspace, a dashboard, an AI assistant, a cluster monitor; CHouse UI is the *combination*: a team access layer paired with multi-cluster fleet monitoring and an autonomous, read-only AI SRE. Unlike clients that need direct database credentials, it stores them encrypted server-side and gates access with its own **Role-Based Access Control (RBAC)** layer, so the browser never sees a ClickHouse password.
+
+Features:
+
+- **Team access & security** - App-level RBAC (predefined + custom roles, granular per-database/table data-access rules), audit logging with real session context, and AES-256-GCM encrypted server-side credentials.
+- **Multi-cluster fleet** - Watch every configured cluster in one pane (status, memory, active queries, exceptions, trend sparklines), each card polling independently, backed by a backend snapshot poller.
+- **Chouse AI — Fleet Doctor** - An autonomous, read-only AI SRE: it scans the fleet with a guarded `system.*`-only `SELECT` tool (ClickHouse `readonly=1`), pins root causes, and writes a structured report with a heavy-query deep-dive and suggested rewrites. It never mutates the cluster.
+- **AI in the monitoring tabs** - "Optimize with Chouse AI" on a Query Logs row (rewrite + before→after `EXPLAIN` estimate + open in the SQL workspace), plus one-click "Diagnose" on a `system.errors` row or a part-log entry.
+- **Threshold alerts** - Node memory %, per-query memory, and long-running-query rules delivered to Slack and email — with an autonomous root-cause analysis attached on breach.
+- **Full workspace** - Monaco SQL editor, schema explorer, live-query view with kill support, ClickHouse-native monitoring (memory breakdown, parts/merges, replica lag, latency percentiles), and data import/export.
+
+Open-source (Apache 2.0), on-prem first — every feature ships in the box, with no paid tier.
+
+[CHouse UI Source Code](https://github.com/daun-gatal/chouse-ui)
+
+### clickhouse-flow {#clickhouse-flow}
+[clickhouse-flow](https://github.com/MikeAmputer/clickhouse-flow) is an open-source tool for visualizing data flows and dependencies between ClickHouse tables, views, and materialized views.
+
+Features:
+
+- Automatically builds a schema graph from ClickHouse metadata.
+- Visualizes data flows through materialized views.
+- Interactive UI for exploring schema structure.
+- Export diagrams as PDF or SVG for documentation and sharing.
+- Docker-based deployment for quick setup in development environments.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
@@ -443,3 +504,18 @@ Features:
 - Provides cluster node monitoring and zookeeper monitoring
 - Monitor the status of tables and partitions, and monitor slow SQL statements
 - Provides an easy-to-use SQL execution page
+
+### 1bench {#1bench}
+
+[1bench](https://1bench.dev) is a native desktop GUI for multiple databases with first-class ClickHouse support — spanning server overview, schema management, vector search, and large result-set browsing.
+
+Features:
+
+- Server overview on connect — version, uptime, running queries, active merges, parts and storage sizes, replica status, clusters and nodes at a glance.
+- Visual query builder (column pickers, filters, sort, limit) alongside a Monaco SQL editor with syntax highlighting and query history per connection.
+- Visual `CREATE TABLE` wizard supporting `MergeTree` variants, `ORDER BY`, `PARTITION BY`, `SETTINGS`, and `Nullable()` auto-wrapping.
+- Native ClickHouse type handling — `Nullable`, `Array`, `LowCardinality`, nested objects.
+- Vector search support — `Array(Float32)` embedding columns rendered as compact vector cells, 2D embedding visualization, and Find Similar via `cosineDistance`.
+- Inline data editing in result tables with batched save, plus CSV/JSON/SQL export and import using ClickHouse's native formats.
+- Connection options: HTTP/HTTPS, SSH tunnel for private clusters behind a firewall, optional read-only mode for safe production browsing.
+- Works with ClickHouse Cloud and self-hosted.

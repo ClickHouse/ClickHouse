@@ -203,7 +203,7 @@ def test_cache(cluster, node_name):
 
         result = node2.query(
             """
-            SYSTEM DROP FILESYSTEM CACHE;
+            SYSTEM CLEAR FILESYSTEM CACHE;
             SELECT count() FROM system.filesystem_cache;
         """
         )

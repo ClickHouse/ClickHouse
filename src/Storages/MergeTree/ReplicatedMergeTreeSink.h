@@ -1,12 +1,13 @@
 #pragma once
 
+#include <optional>
 #include <string>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 
@@ -21,6 +22,8 @@ namespace zkutil
 
 namespace DB
 {
+enum class InsertDeduplicationVersions : uint8_t;
+
 
 class StorageReplicatedMergeTree;
 struct BlockWithPartition;
@@ -65,7 +68,8 @@ public:
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false,
-        bool allow_attach_while_readonly_ = false);
+        bool allow_attach_while_readonly_ = false,
+        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt);
 
     ~ReplicatedMergeTreeSink() override;
 
@@ -84,7 +88,7 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<std::string> detectConflictsInAsyncBlockIDs(const std::vector<std::string> & ids);
+    std::vector<DeduplicationHash> detectConflictsInAsyncBlockIDs(const std::vector<DeduplicationHash> & deduplication_hashes);
 
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
@@ -92,10 +96,11 @@ protected:
 
     /// Rename temporary part and commit to ZooKeeper.
     /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
-    std::map<std::string, std::string> commitPart(
+    std::vector<DeduplicationHash> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
-        const std::vector<std::string> & block_ids);
+        const std::vector<DeduplicationHash> & deduplication_hashes,
+        const std::vector<String> & deduplication_block_ids);
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -130,10 +135,10 @@ protected:
     std::optional<size_t> required_quorum_size;
     size_t quorum_replicas_num = 0;
     size_t quorum_timeout_ms;
-
     size_t max_parts_per_block;
 
-    UInt64 cache_version = 0;
+    UInt64 deduplication_cache_version = 0;
+    UInt64 deduplication_async_inserts_cache_version = 0;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
@@ -145,8 +150,10 @@ protected:
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
+    InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 };
 
 }

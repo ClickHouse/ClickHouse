@@ -92,7 +92,7 @@ struct AggregateFunctionVarianceMatrixData
 
     static constexpr StatisticsMatrixFunctionKind kind = _kind;
     PaddedPODArray<DataType> data_matrix;
-    size_t num_args;
+    size_t num_args{};
 };
 
 template <typename Data>
@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionVarianceMatrix(
 
 }
 
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSampMatrix_description = R"(
@@ -217,7 +218,7 @@ FROM test
     FunctionDocumentation::Category covarSampMatrix_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn covarSampMatrix_introduced_in = {23, 2};
     FunctionDocumentation covarSampMatrix_documentation = {covarSampMatrix_description, covarSampMatrix_syntax, covarSampMatrix_arguments, covarSampMatrix_parameters, covarSampMatrix_returned_value, covarSampMatrix_examples, covarSampMatrix_introduced_in, covarSampMatrix_category};
-    factory.registerFunction("covarSampMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarSampMatrix>, {}, covarSampMatrix_documentation});
+    factory.registerFunction("covarSampMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarSampMatrix>, covarSampMatrix_documentation});
 
     FunctionDocumentation::Description covarPopMatrix_description = R"(
 Returns the population covariance matrix over N variables.
@@ -260,7 +261,7 @@ FROM test
     FunctionDocumentation::IntroducedIn covarPopMatrix_introduced_in = {23, 2};
     FunctionDocumentation covarPopMatrix_documentation = {covarPopMatrix_description, covarPopMatrix_syntax, covarPopMatrix_arguments, covarPopMatrix_parameters, covarPopMatrix_returned_value, covarPopMatrix_examples, covarPopMatrix_introduced_in, covarPopMatrix_category};
 
-    factory.registerFunction("covarPopMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>, {}, covarPopMatrix_documentation});
+    factory.registerFunction("covarPopMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCovarPopMatrix>, covarPopMatrix_documentation});
 
     FunctionDocumentation::Description corrMatrix_description = R"(
 Computes the correlation matrix over N variables.
@@ -303,7 +304,7 @@ FROM test
     FunctionDocumentation::IntroducedIn corrMatrix_introduced_in = {23, 2};
     FunctionDocumentation corrMatrix_documentation = {corrMatrix_description, corrMatrix_syntax, corrMatrix_arguments, corrMatrix_parameters, corrMatrix_returned_value, corrMatrix_examples, corrMatrix_introduced_in, corrMatrix_category};
 
-    factory.registerFunction("corrMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCorrMatrix>, {}, corrMatrix_documentation});
+    factory.registerFunction("corrMatrix", {createAggregateFunctionVarianceMatrix<AggregateFunctionCorrMatrix>, corrMatrix_documentation});
 }
 
 }

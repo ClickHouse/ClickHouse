@@ -5,6 +5,7 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Client/JWTProvider.h>
 
@@ -87,10 +88,13 @@ void ClientApplicationBase::setupSignalHandler()
 {
     ClientApplicationBase::getInstance().stopQuery();
 
-    struct sigaction new_act;
+    struct sigaction new_act{};
     memset(&new_act, 0, sizeof(new_act));
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     new_act.sa_handler = interruptSignalHandler;
+#pragma clang diagnostic pop
     new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)

@@ -14,7 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -178,7 +179,7 @@ public:
                 key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
             }
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
@@ -205,7 +206,7 @@ public:
         {
             const auto & it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place;
+            AggregateDataPtr nested_place = nullptr;
             if (it == merged_maps.end())
             {
                 // elem.second cannot be copied since this it will be destroyed after merging,
@@ -269,13 +270,13 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-        UInt64 size;
+        UInt64 size = 0;
 
         readVarUInt(size, buf);
         for (UInt64 i = 0; i < size; ++i)
         {
-            KeyType key;
-            AggregateDataPtr nested_place;
+            KeyType key{};
+            AggregateDataPtr nested_place = nullptr;
 
             this->data(place).readKey(key, buf);
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
@@ -460,6 +461,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());

@@ -4,6 +4,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <Common/JSONBuilder.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
 
@@ -295,8 +298,33 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
+        Int64 scaled_value = 0;
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (value > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", value);
+            scaled_value = static_cast<Int64>(value);
+        }
+        else if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            UInt64 scaling = 1ULL << fraction_bit_num;
+            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
+                    Float64(value),
+                    integer_bit_num,
+                    fraction_bit_num);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(value * static_cast<UInt64>(1ULL << fraction_bit_num));
+        }
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -463,6 +491,19 @@ public:
      */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-addition requires a deep copy because the full adder logic below
+        /// performs in-place XOR on shared bitmaps (`sum->rb_xor(*addend)` where
+        /// `sum` and `addend` alias the same Roaring bitmap via `shallowCopyFrom`),
+        /// which triggers an assertion in CRoaring (`assert(x1 != x2)`) and would
+        /// produce incorrect results (A XOR A = 0) in release builds.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseAddInplace(copy);
+            return;
+        }
+
         if (isEmpty())
         {
             deepCopyFrom(rhs);
@@ -539,6 +580,16 @@ public:
      */
     void pointwiseSubtractInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-subtraction requires a deep copy for the same reason as
+        /// `pointwiseAddInplace`: in-place XOR on aliased bitmaps is undefined.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseSubtractInplace(copy);
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 
@@ -809,7 +860,7 @@ public:
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
-                UInt64 row;
+                UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
@@ -924,7 +975,7 @@ public:
                 constexpr UInt64 shift = 6;
                 for (int j = 0; j < cnt[i]; ++j)
                 {
-                    UInt64 tmp_offset;
+                    UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
@@ -1117,6 +1168,16 @@ public:
         }
         checkValidValue(rhs);
 
+        /// The Float64 conversion below silently clamps to UInt64::max via `float64ToUInt64`.
+        /// Reject UInt64 above Int64::max to stay consistent with `initializeFromVectorAndValue`
+        /// and the other scalar pointwise ops (see PR #102546).
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+        }
+
         auto lhs_non_zero_indexes = lhs.getAllNonZeroIndex();
 
         PaddedPODArray<UInt32> indexes(65536);
@@ -1271,28 +1332,41 @@ public:
 
         res_bm = lhs.getAllNonZeroIndex();
 
-        UInt64 long_value = UInt64(std::floor(rhs));
-        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
-        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
+        /// Convert the scalar to the same fixed-point two's complement representation
+        /// used by initializeFromVectorAndValue, then compare bit by bit.
+        UInt64 scaling = 1ULL << lhs.fraction_bit_num;
 
-        size_t i = 0;
-        for (; i < lhs.fraction_bit_num; ++i)
+        Int64 scaled_value = 0;
+        if constexpr (std::is_floating_point_v<ValueType>)
         {
-            if ((decimal_value & 1L) == 1)
-            {
-                res_bm->rb_and(*lhs.getDataArrayAt(i));
-            }
-            else
-            {
-                res_bm->rb_andnot(*lhs.getDataArrayAt(i));
-            }
-            decimal_value >>= 1;
+            auto scaled = static_cast<Float64>(rhs * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
+                return std::make_shared<Roaring>(); /// Out of representable range, no element can match.
+            scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
         }
+        else if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+            scaled_value = static_cast<Int64>(rhs);
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(rhs * scaling);
+        }
+
+        UInt64 bit_pattern = static_cast<UInt64>(scaled_value);
+
         const UInt32 total_bit_num = lhs.getTotalBitNum();
-        for (; i < total_bit_num; ++i)
+        if (total_bit_num == 0)
+            return std::make_shared<Roaring>();
+
+        for (size_t i = 0; i < total_bit_num; ++i)
         {
-            if ((long_value & 1L) == 1)
+            if ((bit_pattern >> i) & 1)
             {
                 res_bm->rb_and(*lhs.getDataArrayAt(i));
             }
@@ -1300,13 +1374,22 @@ public:
             {
                 res_bm->rb_andnot(*lhs.getDataArrayAt(i));
             }
-            long_value >>= 1;
         }
-        if (long_value != 0)
+
+        /// Check if the value has significant bits beyond what BSI stores.
+        /// For signed two's complement, the remaining upper bits must all match the sign bit.
+        if (total_bit_num < 64)
         {
-            Roaring for_clear;
-            res_bm->rb_and(for_clear);
+            UInt64 remaining = bit_pattern >> total_bit_num;
+            bool sign_bit = (bit_pattern >> (total_bit_num - 1)) & 1;
+            UInt64 expected = sign_bit ? (UINT64_MAX >> total_bit_num) : 0;
+            if (remaining != expected)
+            {
+                Roaring for_clear;
+                res_bm->rb_and(for_clear);
+            }
         }
+
         return res_bm;
     }
 
@@ -1644,9 +1727,10 @@ public:
         }
         else if constexpr (std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
         {
-            constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
-
-            if (fabs(value) > lim / static_cast<Float64>(scaling))
+            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",

@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_MYSQL
@@ -74,7 +75,7 @@ namespace ErrorCodes
 
 constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
-static const std::chrono::seconds lock_acquire_timeout{10};
+static const Poco::Timespan lock_acquire_timeout{10ull, 0ull};
 
 DatabaseMySQL::DatabaseMySQL(
     ContextPtr context_,
@@ -207,7 +208,6 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
     {
         ASTStorage * ast_storage = table_storage_define->as<ASTStorage>();
         ast_storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-        ASTs storage_children = ast_storage->children;
         auto storage_engine_arguments = ast_storage->engine->arguments;
 
         /// Add table_name to engine arguments
@@ -223,8 +223,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         }
 
         /// Unset settings
-        std::erase_if(storage_children, [&](const ASTPtr & element) { return element.get() == ast_storage->settings; });
-        ast_storage->settings = nullptr;
+        ast_storage->reset(ast_storage->settings);
     }
 
     const Settings & settings = getContext()->getSettingsRef();
@@ -234,7 +233,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         true,
         static_cast<unsigned>(settings[Setting::max_parser_depth]),
         static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
-        throw_on_error);
+        throw_on_error,
+        getContext());
     return create_table_query;
 }
 
@@ -538,6 +538,7 @@ void DatabaseMySQL::dropTable(ContextPtr local_context, const String & table_nam
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP TABLE is not supported for non-persistent MySQL database");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMySQL::dropTable");
     detachTablePermanently(local_context, table_name);
 }
 
@@ -590,6 +591,7 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
+void registerDatabaseMySQL(DatabaseFactory & factory);
 void registerDatabaseMySQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -660,7 +662,12 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true});
+    factory.registerDatabase("MySQL", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::MYSQL,
+    });
 }
 }
 

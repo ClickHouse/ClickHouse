@@ -12,6 +12,8 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <stdexcept>
+
 namespace DB
 {
 namespace Setting
@@ -53,7 +55,7 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
     return res;
 }
 
-bool isRetryableSchemaInferenceError(int code)
+static bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
 }
@@ -100,7 +102,7 @@ static const std::vector<String> & getSimilarFormatsSetForDetection()
     return formats_order;
 }
 
-std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
+static std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
@@ -249,10 +251,14 @@ try
                         *format_name);
                 }
                 SchemaReaderPtr schema_reader;
+                auto schema_reader_settings = format_settings;
+                if (!schema_reader_settings)
+                    schema_reader_settings = getFormatSettings(context);
+                schema_reader_settings->log_full_buffer_fallback_during_schema_inference = true;
 
                 try
                 {
-                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
+                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, schema_reader_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
                     auto num_rows = schema_reader->readNumberOrRows();
@@ -274,7 +280,7 @@ try
                     if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
                     {
                         size_t rows_read = schema_reader->getNumRowsRead();
-                        assert(rows_read <= max_rows_to_read);
+                        chassert(rows_read <= max_rows_to_read);
                         max_rows_to_read -= schema_reader->getNumRowsRead();
                         size_t bytes_read = iterator_data.buf->count();
                         /// We could exceed max_bytes_to_read a bit to complete row parsing.
@@ -346,7 +352,7 @@ try
 
                         break;
                     }
-                    catch (...)
+                    catch (const std::exception &)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -383,7 +389,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
@@ -439,6 +445,14 @@ try
 
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
+
+        if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} file format doesn't support schema inference. You must specify the structure manually",
+                *format_name);
+        }
 
         /// We need some stateless methods of ISchemaReader, but during reading schema we
         /// could not even create a schema reader (for example when we got schema from cache).
@@ -519,7 +533,7 @@ try
         if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(context, false);
             auto names_in_storage = metadata->getColumns().getNamesOfPhysical();
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);
             if (ordered_list)

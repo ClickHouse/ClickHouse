@@ -145,7 +145,7 @@ BlockIO XDBCDictionarySource::loadUpdatedAll()
 }
 
 
-BlockIO XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO XDBCDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     BlockIO io;
@@ -154,7 +154,7 @@ BlockIO XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO XDBCDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     BlockIO io;
@@ -193,9 +193,7 @@ bool XDBCDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (invalidate_query_response == response)
-            return false;
-        invalidate_query_response = response;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -243,6 +241,7 @@ QueryPipeline XDBCDictionarySource::loadFromQuery(const Poco::URI & uri, const B
     return QueryPipeline(std::move(format));
 }
 
+void registerDictionarySourceXDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -284,6 +283,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 }
 
 
+void registerDictionarySourceJDBC(DictionarySourceFactory & factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

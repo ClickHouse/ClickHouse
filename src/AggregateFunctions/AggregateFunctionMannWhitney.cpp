@@ -48,7 +48,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
-        Float64 tie_correction;
+        Float64 tie_correction = 0;
 
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
@@ -142,6 +142,7 @@ private:
     bool continuity_correction{true};
 
 public:
+    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
@@ -268,6 +269,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -312,7 +314,7 @@ SELECT mannWhitneyUTest('greater')(sample_data, sample_index) FROM mww_ttest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, {}, documentation});
+    factory.registerFunction("mannWhitneyUTest", {createAggregateFunctionMannWhitneyUTest, documentation, {}});
 }
 
 }
