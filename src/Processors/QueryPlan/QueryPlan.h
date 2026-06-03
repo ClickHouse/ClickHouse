@@ -3,10 +3,12 @@
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#if CLICKHOUSE_CLOUD
+#include <Processors/QueryPlan/ExchangeLookup.h>
+#endif
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
@@ -77,6 +79,9 @@ struct ExplainPlanOptions
 
     SettingsChanges toSettingsChanges() const;
 };
+#if CLICKHOUSE_CLOUD
+struct DistributedQueryPlan;
+#endif
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -87,7 +92,9 @@ public:
     QueryPlan();
     ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
-    QueryPlan & operator=(QueryPlan &&) noexcept;
+    /// Not noexcept: move-assignment appends the QueryPlanResourceHolder, which allocates and can
+    /// throw. The move constructor stays noexcept because it steals the holder instead of appending.
+    QueryPlan & operator=(QueryPlan &&); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
     void addStep(QueryPlanStepPtr step);
@@ -112,6 +119,11 @@ public:
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+#if CLICKHOUSE_CLOUD
+    /// Converts the original plan to distributed plan and replaces the original plan with a plan that
+    /// contains a step that executes the distributed plan and a step that receives the result.
+    void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
+#endif
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -122,10 +134,20 @@ public:
     {
         /// Show header of output ports.
         bool header = false;
+        /// Show remote pipelines for distributed query.
+        bool distributed = false;
+        /// Compact repeated processor chains.
+        bool compact_repeated_processor_chains = false;
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset = 0, size_t max_description_length = 0) const;
+    void explainPlan(
+        WriteBuffer & buffer,
+        const ExplainPlanOptions & options,
+        size_t offset = 0,
+        size_t max_description_length = 0,
+        const std::string & parent_tree_prefix = "",
+        bool is_last_child_plan = true) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
@@ -161,6 +183,7 @@ public:
     Node * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
     void replaceNodeWithPlan(Node * node, QueryPlan plan);
+    void replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header);
 
     QueryPlan extractSubplan(Node * subplan_root);
     void cloneInplace(Node * node_to_replace, Node * subplan_root);
