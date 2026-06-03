@@ -5344,7 +5344,19 @@ void MergeTreeData::changeSettings(
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
+        {
+            /// Newly introduced disks in the policy do not have a copy of
+            /// `column_ids.json` yet.  A subsequent background move can place
+            /// a column-ID part there; if the original disk is later removed
+            /// or broken, startup has no mapping copy to resolve non-identity
+            /// IDs.  Push the current mapping onto every writable disk in the
+            /// new policy before allowing moves.  `writeColumnIdMappingToDisk`
+            /// is idempotent on disks that already hold the same bytes.
+            if (auto current_mapping = getColumnIdMapping())
+                writeColumnIdMappingToDisk(*current_mapping);
+
             startBackgroundMovesIfNeeded();
+        }
 
         if (has_refresh_statistics_interval_changed)
         {
@@ -9933,8 +9945,13 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getVisibleDataPartsVector(local_context);
 
-    /// Snapshot with the parts so a concurrent ALTER cannot pair frozen
-    /// files with a newer mapping (e.g. DROP+ADD mid-freeze).
+    /// FREEZE PARTITION holds only `lockForShare`, but column-ID ALTERs run
+    /// under the separate `lockForAlter`.  A `RENAME` or `DROP`+`ADD` can
+    /// therefore slip in between the visible-parts snapshot above and the
+    /// mapping snapshot below.  Pin the mapping pointer now and re-check it
+    /// after the freeze loop -- if it changed the shadow tree would hold
+    /// frozen parts from the old layout paired with a newer mapping, which
+    /// makes offline readers resolve columns through the wrong IDs.
     auto column_ids_mapping_snapshot = getColumnIdMapping();
 
     bool has_zero_copy_part = false;
@@ -10027,6 +10044,18 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Pointer equality is the column-ID mapping version check: MultiVersion::set
+    /// always installs a fresh unique_ptr, so a changed pointer means a
+    /// column-ID `ALTER` (RENAME, DROP+ADD activation, ...) ran between the
+    /// parts snapshot and now.  The user must retry FREEZE for the
+    /// mapping/parts pair to be coherent.
+    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed concurrently with FREEZE; the shadow "
+            "tree would mix frozen parts from the old layout with a newer "
+            "mapping.  Retry the FREEZE without a concurrent column-ID ALTER.");
 
     /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the
     /// mapping alongside the frozen parts to resolve non-identity IDs.

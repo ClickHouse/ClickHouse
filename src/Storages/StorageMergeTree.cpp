@@ -682,6 +682,13 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
     /// `finalizeColumnIdRenames` removes the old `b -> b` entry, the mapping
     /// has no entry for the new `b` and reads fall back to physical name `b`,
     /// which is the dropped column's bytes.
+    ///
+    /// For flattened Nested columns the detection must be parent-aware:
+    /// `RENAME COLUMN n.x TO m.x, RENAME COLUMN n.y TO m.y, ADD COLUMN n
+    /// Nested(x UInt64, y String)` frees `n.x`/`n.y` and the re-added
+    /// `ADD COLUMN n Nested(...)` is expanded by `commands.apply` into
+    /// `n.x`/`n.y` in `new_col_names`.  Mirror the DROP+re-ADD logic
+    /// above and walk the children of any added Nested parent.
     std::set<String> rename_target_freed;
     for (const auto & command : commands)
     {
@@ -695,6 +702,15 @@ StorageMergeTree::ColumnIdAlterPlan StorageMergeTree::prepareColumnIdMappingForA
             continue;
         if (rename_target_freed.contains(command.column_name))
             plan.force_mutation_columns.insert(command.column_name);
+        else
+        {
+            String prefix = command.column_name + ".";
+            for (const auto & new_name : new_col_names)
+            {
+                if (new_name.starts_with(prefix) && rename_target_freed.contains(new_name))
+                    plan.force_mutation_columns.insert(new_name);
+            }
+        }
     }
 
     if (!plan.force_mutation_columns.empty())
@@ -3501,9 +3517,12 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    /// Snapshot in-memory at parts-snapshot time: a lazy
-    /// `BackupEntryFromSmallFile` would otherwise let a concurrent ALTER
-    /// drift the mapping bytes materialized into the backup.
+    /// `BackupEntriesCollector` only holds `tryLockForShare`; column-ID
+    /// `ALTER`s use the separate `lockForAlter`, so the parts vector above
+    /// and the mapping below are two independent snapshots.  Pin the
+    /// mapping pointer now and re-check after collecting entries -- if it
+    /// changed, the backup would pair the old parts with a newer mapping
+    /// and `RESTORE` would resolve columns through the wrong IDs.
     auto column_ids_mapping_snapshot = getColumnIdMapping();
 
     Int64 min_data_version = std::numeric_limits<Int64>::max();
@@ -3515,6 +3534,18 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+
+    /// Pointer equality is the column-ID mapping version check: `MultiVersion::set`
+    /// always installs a fresh unique_ptr, so a different pointer here means
+    /// a column-ID ALTER ran during the BACKUP collection.  Fail closed so
+    /// the user retries -- a silent partial snapshot would resolve restored
+    /// columns through the wrong IDs.
+    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed concurrently with BACKUP collection; "
+            "the snapshot would pair the captured parts with a newer mapping. "
+            "Retry the BACKUP without a concurrent column-ID ALTER.");
 
     /// Without the mapping, restored parts cannot resolve any non-identity
     /// column ID (DROP+ADD or RENAME).
