@@ -4728,6 +4728,9 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     StorageID table_id = data.getStorageID();
     writeStringBinary(table_id.getDatabaseName(), ctx.out);
     writeStringBinary(table_id.getTableName(), ctx.out);
+    /// UUID of the table. Used to resolve the table on the worker when an Atomic database
+    /// has renamed or recreated it between coordinator planning and worker execution.
+    writeBinary(table_id.uuid, ctx.out);
     writeVarUInt(getAllColumnNames().size(), ctx.out);
     for (const auto & column : getAllColumnNames())
         writeStringBinary(column, ctx.out);
@@ -4772,6 +4775,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     String table_name;
     readStringBinary(database_name, ctx.in);
     readStringBinary(table_name, ctx.in);
+    UUID table_uuid = UUIDHelpers::Nil;
+    readBinary(table_uuid, ctx.in);
 
     size_t num_columns = 0;
     readVarUInt(num_columns, ctx.in);
@@ -4816,7 +4821,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
 
-    StorageID table_id(database_name, table_name);
+    StorageID table_id(database_name, table_name, table_uuid);
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
     if (!storage_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} not found in catalog", database_name, table_name);
