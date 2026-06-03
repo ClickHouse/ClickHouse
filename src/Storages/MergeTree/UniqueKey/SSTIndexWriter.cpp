@@ -4,6 +4,7 @@
 #include <Core/SortDescription.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -12,7 +13,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -36,7 +36,6 @@ namespace ProfileEvents
 #endif
 
 #include <cstring>
-#include <filesystem>
 #include <limits>
 #include <string>
 #include <vector>
@@ -91,6 +90,12 @@ LoggerPtr getWriterLogger()
 struct SSTIndexWriter::Impl
 {
     rocksdb::SstFileWriter writer;
+    /// Holder owns the local-temp file lifecycle: increments
+    /// `TotalTemporaryFiles` / `ExternalProcessingFilesTotal` on creation
+    /// and removes via `disk->removeRecursive` on dtor. The `tmp` prefix
+    /// makes the file participate in `Context::setupTmpPath` startup
+    /// cleanup if the server exits before the holder runs.
+    TemporaryFileOnDiskHolder tmp_file;
     std::string tmp_full_path;
     WriteSettings write_settings;
     bool opened = false;
@@ -117,9 +122,12 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr cont
 {
 #if USE_ROCKSDB
     /// RocksDB SstFileWriter requires a real local filesystem path. Stage
-    /// the SST under ClickHouse's configured temporary volume so it honors
-    /// `tmp_path` / `tmp_policy` / reservations rather than going to the
-    /// host's `/tmp`. `finalizeToStorage` then streams the bytes through
+    /// the SST under ClickHouse's configured temporary volume so the file
+    /// honors `tmp_path` / `tmp_policy` selection and the standard tmp
+    /// accounting (`TotalTemporaryFiles`, `ExternalProcessingFilesTotal`)
+    /// via `TemporaryFileOnDisk`. Byte-level `reserve()` is not used —
+    /// the final SST size is unknown until RocksDB closes the writer.
+    /// `finalizeToStorage` then streams the bytes through
     /// `part_storage.writeFile`, routing through the IDisk abstraction
     /// (correct for `DiskObjectStorage` / transactional part builds).
     auto tmp_volume = context->getGlobalTemporaryVolume();
@@ -136,11 +144,11 @@ SSTIndexWriter::SSTIndexWriter(IDataPartStorage & part_storage_, ContextPtr cont
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "SSTIndexWriter: temporary disk '{}' is remote; UNIQUE KEY SST staging requires a local tmp_policy disk",
             tmp_disk->getName());
-    /// `tmp` prefix is required: `Context::setupTmpPath` only sweeps names
-    /// starting with `tmp` on startup, so an unclean exit before the dtor
-    /// would otherwise leak the staging file.
-    impl->tmp_full_path = (std::filesystem::path(tmp_disk->getPath())
-        / ("tmp_uk_index_" + getRandomASCIIString(8) + ".sst")).string();
+    /// Holder routes creation/cleanup through `IDisk` and bumps the
+    /// `TotalTemporaryFiles` metric + `ExternalProcessingFilesTotal`
+    /// event — same accounting as every other tmp-volume user.
+    impl->tmp_file = std::make_unique<TemporaryFileOnDisk>(tmp_disk, "tmp_uk_index_");
+    impl->tmp_full_path = impl->tmp_file->getAbsolutePath();
     impl->write_settings = context->getWriteSettings();
     auto status = impl->writer.Open(impl->tmp_full_path);
     if (!status.ok())
@@ -176,18 +184,9 @@ void SSTIndexWriter::finish()
 #endif
 }
 
-SSTIndexWriter::~SSTIndexWriter()
-{
-#if USE_ROCKSDB
-    /// Best-effort: remove the local-temp SST if the writer was dropped
-    /// before `finalizeToStorage` copied the bytes through `writeFile`.
-    if (impl && !finalized && !impl->tmp_full_path.empty())
-    {
-        std::error_code ec;
-        std::filesystem::remove(impl->tmp_full_path, ec);
-    }
-#endif
-}
+SSTIndexWriter::~SSTIndexWriter() = default;
+/// `impl->tmp_file` (TemporaryFileOnDisk) cleans the local temp via
+/// `disk->removeRecursive` when Impl is destroyed.
 
 void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row_number)
 {
@@ -223,11 +222,11 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     if (!impl->opened)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::finalizeToStorage on closed writer");
 
-    auto cleanup_local_tmp = [&]
-    {
-        std::error_code ec;
-        std::filesystem::remove(impl->tmp_full_path, ec);
-    };
+    /// Local-temp lifecycle is owned by `impl->tmp_file`: drop the holder
+    /// to release the staging SST through `IDisk::removeRecursive` and
+    /// decrement the tmp metric/event. Called in both success and error
+    /// paths below.
+    auto release_local_tmp = [&] { impl->tmp_file.reset(); };
 
     try
     {
@@ -235,7 +234,7 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     }
     catch (...)
     {
-        cleanup_local_tmp();
+        release_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         throw;
@@ -244,7 +243,7 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     if (entries_added == 0)
     {
         finalized = true;
-        cleanup_local_tmp();
+        release_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         LOG_DEBUG(getWriterLogger(), "Finalized empty SST (no .sst produced) at {}", impl->tmp_full_path);
@@ -274,7 +273,7 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     catch (...)
     {
         cleanup_staging();
-        cleanup_local_tmp();
+        release_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         throw;
@@ -286,12 +285,12 @@ UInt64 SSTIndexWriter::finalizeToStorage()
     catch (...)
     {
         cleanup_staging();
-        cleanup_local_tmp();
+        release_local_tmp();
         ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
             impl->lifetime_watch.elapsedMicroseconds());
         throw;
     }
-    cleanup_local_tmp();
+    release_local_tmp();
     ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
         impl->lifetime_watch.elapsedMicroseconds());
 
