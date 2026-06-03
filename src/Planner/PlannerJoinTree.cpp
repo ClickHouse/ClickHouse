@@ -108,6 +108,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool extremes;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -851,6 +852,14 @@ void pushOrderByIntoView(
     if (!outer->hasLimit())
         return;
 
+    /// Skip when `extremes` is enabled. The outer planner adds an `ExtremesStep`
+    /// before the final `LIMIT`, so with `extremes = 1` the extremes are supposed
+    /// to be computed over the full pre-`LIMIT` stream. Pushing `LIMIT` into the
+    /// view would truncate the stream first, so the outer `ExtremesStep` would
+    /// only see the top-N rows and could report wrong min/max values.
+    if (query_context->getSettingsRef()[Setting::extremes])
+        return;
+
     /// Skip when the outer query has filtration: `WHERE`, `PREWHERE`, or
     /// `QUALIFY`. The outer filter is materialized as a separate filter step
     /// above the view subquery, while `query_info.filter_actions_dag` is only
@@ -905,6 +914,17 @@ void pushOrderByIntoView(
     /// LIMIT_LENGTH into the view would truncate per-shard before the global
     /// tie set is known.
     if (outer->isLimitWithTies())
+        return;
+
+    /// Only push a plain non-negative integer LIMIT. A fractional LIMIT such as
+    /// `LIMIT 0.1` is evaluated by `FractionalLimitStep`, which must count the
+    /// full input before deciding how many rows to keep. Pushing it into the
+    /// view would make the view return only a fraction of its rows, and then the
+    /// outer fractional LIMIT would apply the same fraction again, yielding far
+    /// too few rows. Negative LIMIT values are rejected for the same reason
+    /// (they are not representable as a plain `UInt64`).
+    const auto * limit_node = outer->getLimit()->as<ConstantNode>();
+    if (!limit_node || convertFieldToType(limit_node->getValue(), DataTypeUInt64()).isNull())
         return;
 
     /// Validate ORDER BY: must be simple columns from this view, and must not

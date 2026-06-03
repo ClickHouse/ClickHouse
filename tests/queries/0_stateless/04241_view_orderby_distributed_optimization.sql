@@ -219,6 +219,31 @@ SELECT 'outer inline OVER disables pushdown:',
     (SELECT count() = 0 FROM (EXPLAIN SELECT row_number() OVER (ORDER BY id) AS rn, id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
      WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
 
+-- Fractional outer LIMIT (e.g. `LIMIT 0.1`): pushdown must be disabled.
+-- A fractional `LIMIT` is evaluated by `FractionalLimitStep`, which must count
+-- the full input before deciding how many rows to keep. Pushing it into the
+-- view would make the view return only a fraction of its rows, and the outer
+-- fractional `LIMIT` would then apply the same fraction again, yielding far
+-- too few rows. The correctness check below relies on this: the two-shard
+-- cluster reads the 100-row local table on both shards (200 rows), so
+-- `LIMIT 0.1` must return 20 rows; buggy pushdown would return far fewer.
+SELECT 'fractional LIMIT disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 0.1)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'fractional LIMIT result count:', count() FROM (
+    SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 0.1
+);
+
+-- `extremes` setting: pushdown must be disabled. The outer planner adds an
+-- `ExtremesStep` before the final `LIMIT`, so with `extremes = 1` the extremes
+-- are computed over the full pre-`LIMIT` stream. Pushing `LIMIT` into the view
+-- would truncate the stream first, so the outer `ExtremesStep` would only see
+-- the top-N rows and could report wrong min/max values.
+SELECT 'extremes disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10 SETTINGS extremes = 1)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

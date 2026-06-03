@@ -25,3 +25,6 @@ view named WINDOW disables pushdown:	1
 view inline OVER disables pushdown:	1
 outer named WINDOW disables pushdown:	1
 outer inline OVER disables pushdown:	1
+fractional LIMIT disables pushdown:	1
+fractional LIMIT result count:	20
+extremes disables pushdown:	1
