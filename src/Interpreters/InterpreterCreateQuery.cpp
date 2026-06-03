@@ -1886,14 +1886,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
             if (database && database->getEngineName() == "Replicated")
             {
-                const bool actual_is_replicated =
-                    typeid_cast<const StorageReplicatedMergeTree *>(existing_table.get()) != nullptr;
-
                 const bool allow_heavy =
                     getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create];
 
-
-                if (!allow_heavy && actual_is_replicated)
+                if (!allow_heavy)
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
                         "AND INSERT into an existing table with a Replicated engine is not supported "
