@@ -9,6 +9,7 @@
 #include <Common/iota.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <climits>
@@ -325,7 +326,7 @@ struct BlockMyersEditDistance
     {
         static constexpr size_t W = sizeof(Word) * 8;
         UInt32 num_blocks = 0;
-        std::vector<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
+        VectorWithMemoryTracking<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
 
         void build(const UInt8 * needle, UInt32 m)
         {
@@ -344,7 +345,7 @@ struct BlockMyersEditDistance
         UInt32 num_blocks = 0;
         using Map = HashMapWithStackMemory<UInt32, UInt32, DefaultHash<UInt32>, 6>;
         Map offset_map;
-        std::vector<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
+        VectorWithMemoryTracking<Word> arena; // flat: arena[offset_map[c] + k] = bitmask of positions of char c in block k
 
         void build(const UInt32 * needle, UInt32 m)
         {
@@ -354,8 +355,8 @@ struct BlockMyersEditDistance
             UInt32 num_unique = 0;
             for (UInt32 i = 0; i < m; ++i)
             {
-                Map::LookupResult it;
-                bool inserted;
+                Map::LookupResult it = nullptr;
+                bool inserted = false;
                 offset_map.emplace(needle[i], it, inserted);
                 if (inserted)
                 {
@@ -403,17 +404,17 @@ struct BlockMyersEditDistance
 
         // As in the non-blocked version, but this time per block:
         // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
-        std::vector<Word> VP(num_blocks, ~Word(0));
-        std::vector<Word> VN(num_blocks, Word(0));
+        VectorWithMemoryTracking<Word> VP(num_blocks, ~Word(0));
+        VectorWithMemoryTracking<Word> VN(num_blocks, Word(0));
         UInt32 score = needle_len;
 
         // 3 * 128 * sizeof(Word) bytes of stack (3 KB for Word=UInt64).
         // Covers needles up to 128*64 = 8192 chars
         constexpr size_t stack_limit = 128;
 
-        std::vector<Word> hp_heap;
-        std::vector<Word> hn_heap;
-        std::vector<Word> d0_heap;
+        VectorWithMemoryTracking<Word> hp_heap;
+        VectorWithMemoryTracking<Word> hn_heap;
+        VectorWithMemoryTracking<Word> d0_heap;
         if (num_blocks > stack_limit)
         {
             hp_heap.resize(num_blocks);
@@ -719,8 +720,8 @@ struct ByteDamerauLevenshteinDistanceImpl
 
         /// Dynamically allocate memory for the 2D array
         /// Allocating a 2D array, for convenience starts is an array of pointers to the start of the rows.
-        std::vector<int> d((needle_size + 1) * (haystack_size + 1));
-        std::vector<int *> starts(haystack_size + 1);
+        VectorWithMemoryTracking<int> d((needle_size + 1) * (haystack_size + 1));
+        VectorWithMemoryTracking<int *> starts(haystack_size + 1);
 
         /// Setting the pointers in starts to the beginning of (needle_size + 1)-long intervals.
         /// Also initialize the row values based on the mentioned algorithm.
@@ -783,8 +784,8 @@ struct ByteJaroSimilarityImpl
 
         /// Window size to search for matches in the other string
         const int max_range = std::max(0, std::max(s1len, s2len) / 2 - 1);
-        std::vector<int> s1_matching(s1len, -1);
-        std::vector<int> s2_matching(s2len, -1);
+        VectorWithMemoryTracking<int> s1_matching(s1len, -1);
+        VectorWithMemoryTracking<int> s2_matching(s2len, -1);
 
         /// Calculate matching characters
         size_t matching_characters = 0;

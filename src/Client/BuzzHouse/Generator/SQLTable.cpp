@@ -1,5 +1,7 @@
 #include <Common/checkStackSize.h>
 
+#include <fstream>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
@@ -251,9 +253,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}, size_tp.get()));
         }
-        else if (
-            t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
-            || t.isURLEngine())
+        else if (t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyLakeEngine() || t.isFileEngine() || t.isURLEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}, string_tp.get()));
@@ -595,96 +595,96 @@ void StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t
     entries.clear();
 }
 
-static const std::vector<SQLFunc> multicolHash
-    = {SQLFunc::FUNChalfMD5,
-       SQLFunc::FUNCsipHash64,
-       SQLFunc::FUNCsipHash128,
-       SQLFunc::FUNCsipHash128Reference,
-       SQLFunc::FUNCcityHash64,
-       SQLFunc::FUNCfarmFingerprint64,
-       SQLFunc::FUNCfarmHash64,
-       SQLFunc::FUNCmetroHash64,
-       SQLFunc::FUNCmurmurHash2_32,
-       SQLFunc::FUNCmurmurHash2_64,
-       SQLFunc::FUNCgccMurmurHash,
-       SQLFunc::FUNCkafkaMurmurHash,
-       SQLFunc::FUNCmurmurHash3_32,
-       SQLFunc::FUNCmurmurHash3_64,
-       SQLFunc::FUNCmurmurHash3_128,
-       SQLFunc::FUNCxxh3,
-       SQLFunc::FUNCxxh3_128};
+static const std::vector<std::string> multicolHash
+    = {"halfMD5",
+       "sipHash64",
+       "sipHash128",
+       "sipHash128Reference",
+       "cityHash64",
+       "farmFingerprint64",
+       "farmHash64",
+       "metroHash64",
+       "murmurHash2_32",
+       "murmurHash2_64",
+       "gccMurmurHash",
+       "kafkaMurmurHash",
+       "murmurHash3_32",
+       "murmurHash3_64",
+       "murmurHash3_128",
+       "xxh3",
+       "xxh3_128"};
 
-static const std::vector<SQLFunc> datesHash
-    = {SQLFunc::FUNCtoYear,
-       SQLFunc::FUNCtoQuarter,
-       SQLFunc::FUNCtoMonth,
-       SQLFunc::FUNCtoDayOfYear,
-       SQLFunc::FUNCtoDayOfMonth,
-       SQLFunc::FUNCtoDayOfWeek,
-       SQLFunc::FUNCtoHour,
-       SQLFunc::FUNCtoMinute,
-       SQLFunc::FUNCtoSecond,
-       SQLFunc::FUNCtoMillisecond,
-       SQLFunc::FUNCtoUnixTimestamp,
-       SQLFunc::FUNCtoStartOfYear,
-       SQLFunc::FUNCtoStartOfISOYear,
-       SQLFunc::FUNCtoStartOfQuarter,
-       SQLFunc::FUNCtoStartOfMonth,
-       SQLFunc::FUNCtoLastDayOfMonth,
-       SQLFunc::FUNCtoMonday,
-       SQLFunc::FUNCtoStartOfWeek,
-       SQLFunc::FUNCtoLastDayOfWeek,
-       SQLFunc::FUNCtoStartOfDay,
-       SQLFunc::FUNCtoStartOfHour,
-       SQLFunc::FUNCtoStartOfMinute,
-       SQLFunc::FUNCtoStartOfSecond,
-       SQLFunc::FUNCtoStartOfMillisecond,
-       SQLFunc::FUNCtoStartOfMicrosecond,
-       SQLFunc::FUNCtoStartOfNanosecond,
-       SQLFunc::FUNCtoStartOfFiveMinutes,
-       SQLFunc::FUNCtoStartOfTenMinutes,
-       SQLFunc::FUNCtoStartOfFifteenMinutes,
-       SQLFunc::FUNCtoTime,
-       SQLFunc::FUNCtoRelativeYearNum,
-       SQLFunc::FUNCtoRelativeQuarterNum,
-       SQLFunc::FUNCtoRelativeMonthNum,
-       SQLFunc::FUNCtoRelativeWeekNum,
-       SQLFunc::FUNCtoRelativeDayNum,
-       SQLFunc::FUNCtoRelativeHourNum,
-       SQLFunc::FUNCtoRelativeMinuteNum,
-       SQLFunc::FUNCtoRelativeSecondNum,
-       SQLFunc::FUNCtoISOYear,
-       SQLFunc::FUNCtoISOWeek,
-       SQLFunc::FUNCtoWeek,
-       SQLFunc::FUNCtoYearWeek,
-       SQLFunc::FUNCtoDaysSinceYearZero,
-       SQLFunc::FUNCtimeSlot,
-       SQLFunc::FUNCtoYYYYMM,
-       SQLFunc::FUNCtoYYYYMMDD,
-       SQLFunc::FUNCtoYYYYMMDDhhmmss,
-       SQLFunc::FUNCmonthName,
-       SQLFunc::FUNCtoModifiedJulianDay,
-       SQLFunc::FUNCtoModifiedJulianDayOrNull};
+static const std::vector<std::string> datesHash
+    = {"toYear",
+       "toQuarter",
+       "toMonth",
+       "toDayOfYear",
+       "toDayOfMonth",
+       "toDayOfWeek",
+       "toHour",
+       "toMinute",
+       "toSecond",
+       "toMillisecond",
+       "toUnixTimestamp",
+       "toStartOfYear",
+       "toStartOfISOYear",
+       "toStartOfQuarter",
+       "toStartOfMonth",
+       "toLastDayOfMonth",
+       "toMonday",
+       "toStartOfWeek",
+       "toLastDayOfWeek",
+       "toStartOfDay",
+       "toStartOfHour",
+       "toStartOfMinute",
+       "toStartOfSecond",
+       "toStartOfMillisecond",
+       "toStartOfMicrosecond",
+       "toStartOfNanosecond",
+       "toStartOfFiveMinutes",
+       "toStartOfTenMinutes",
+       "toStartOfFifteenMinutes",
+       "toTime",
+       "toRelativeYearNum",
+       "toRelativeQuarterNum",
+       "toRelativeMonthNum",
+       "toRelativeWeekNum",
+       "toRelativeDayNum",
+       "toRelativeHourNum",
+       "toRelativeMinuteNum",
+       "toRelativeSecondNum",
+       "toISOYear",
+       "toISOWeek",
+       "toWeek",
+       "toYearWeek",
+       "toDaysSinceYearZero",
+       "timeSlot",
+       "toYYYYMM",
+       "toYYYYMMDD",
+       "toYYYYMMDDhhmmss",
+       "monthName",
+       "toModifiedJulianDay",
+       "toModifiedJulianDayOrNull"};
 
-static const std::vector<SQLFunc> arithmeticFuncs
-    = {SQLFunc::FUNCplus,
-       SQLFunc::FUNCminus,
-       SQLFunc::FUNCmultiply,
-       SQLFunc::FUNCdivide,
-       SQLFunc::FUNCintDiv,
-       SQLFunc::FUNCintDivOrZero,
-       SQLFunc::FUNCifNotFinite,
-       SQLFunc::FUNCmodulo,
-       SQLFunc::FUNCmoduloOrZero,
-       SQLFunc::FUNCpositiveModulo,
-       SQLFunc::FUNCgcd,
-       SQLFunc::FUNClcm,
-       SQLFunc::FUNCmax2,
-       SQLFunc::FUNCmin2,
-       SQLFunc::FUNCicebergBucket,
-       SQLFunc::FUNCicebergTruncate};
+static const std::vector<std::string> arithmeticFuncs
+    = {"plus",
+       "minus",
+       "multiply",
+       "divide",
+       "intDiv",
+       "intDivOrZero",
+       "ifNotFinite",
+       "modulo",
+       "moduloOrZero",
+       "positiveModulo",
+       "gcd",
+       "lcm",
+       "max2",
+       "min2",
+       "icebergBucket",
+       "icebergTruncate"};
 
-static const std::vector<SQLFunc> icebergFuncs = {SQLFunc::FUNCicebergBucket, SQLFunc::FUNCicebergTruncate};
+static const std::vector<std::string> icebergFuncs = {"icebergBucket", "icebergTruncate"};
 
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
@@ -757,8 +757,7 @@ void StatementGenerator::colRefOrExpression(
               SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
               func_call->mutable_func()->set_catalog_func(
-                  (b.isAnyIcebergEngine() && rg.nextBool()) ? SQLFunc::FUNCidentity
-                                                            : static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
+                  (b.isAnyIcebergEngine() && rg.nextBool()) ? "identity" : rg.pickRandomly(this->one_arg_funcs).fname);
               columnPathRef(entry, func_call->add_args()->mutable_expr());
           }},
          {hash_func,
@@ -782,7 +781,7 @@ void StatementGenerator::colRefOrExpression(
           [&]
           {
               /// Use random func
-              expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+              expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("rand");
           }},
          {arithmetic_func,
           [&]
@@ -978,6 +977,18 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     {
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
     }
+    /// TODO re-enable this once https://github.com/ClickHouse/ClickHouse/issues/104963 is fixed
+    if (!entries.empty() && rg.nextSmallNumber() < 1)
+    {
+        TableKey * ukey = te->mutable_unique_key();
+        const uint32_t ncols = rg.randomInt<uint32_t>(1, std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3)));
+
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            columnPathRef(entries[i], ukey->add_exprs()->mutable_expr());
+        }
+    }
 
     const int npkey = te->primary_key().exprs_size();
     if (npkey && !b.is_deterministic && rg.nextSmallNumber() < 5)
@@ -1122,7 +1133,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     if (this->allow_not_deterministic && rg.nextMediumNumber() < 26)
     {
         /// Use random sharding key sometimes
-        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
+        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("rand");
     }
     else if (t.has_value())
     {
@@ -1408,7 +1419,7 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(static_cast<uint32_t>(keys_limit_dist(rg.generator)));
         }
     }
-    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
+    else if (te->has_engine() && (b.isAnyLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
         if (b.integration != IntegrationCall::None)
         {
@@ -1546,14 +1557,14 @@ void StatementGenerator::addTableColumnInternal(
     {
         if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
-            Integers nint;
+            Integers nint = {};
 
             std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
         else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
-            Dates dd;
+            Dates dd = {};
 
             std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
@@ -1569,16 +1580,15 @@ void StatementGenerator::addTableColumnInternal(
         /// Use now() functions for TTL
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-        static const std::vector<SQLFunc> ttlfuncs
-            = {SQLFunc::FUNCnow, SQLFunc::FUNCnowInBlock, SQLFunc::FUNCnow64, SQLFunc::FUNCnowInBlock64};
-        const SQLFunc tfunc = rg.pickRandomly(ttlfuncs);
+        static const std::vector<std::string> ttlfuncs = {"now", "nowInBlock", "now64", "nowInBlock64"};
+        const std::string & tfunc = rg.pickRandomly(ttlfuncs);
 
         tp = randomDateTimeType(
             rg, std::numeric_limits<uint64_t>::max(), cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
         def_value->set_dvalue(DModifier::DEF_MATERIALIZED);
         col.dmod = std::optional<DModifier>(DModifier::DEF_MATERIALIZED);
         fcall->mutable_func()->set_catalog_func(tfunc);
-        if (tfunc != SQLFunc::FUNCnowInBlock && rg.nextBool())
+        if (tfunc != "nowInBlock" && rg.nextBool())
         {
             /// Add precision modifier
             fcall->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_int_lit(3);
@@ -1587,7 +1597,7 @@ void StatementGenerator::addTableColumnInternal(
     else if (special == ColumnSpecial::ID_COL)
     {
         /// Use generateSerialID
-        Integers nint;
+        Integers nint = {};
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -1595,7 +1605,7 @@ void StatementGenerator::addTableColumnInternal(
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         def_value->set_dvalue(DModifier::DEF_MATERIALIZED);
         col.dmod = std::optional<DModifier>(DModifier::DEF_MATERIALIZED);
-        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCgenerateSerialID);
+        fcall->mutable_func()->set_catalog_func("generateSerialID");
         /// Add precision modifier
         fcall->add_args()->mutable_expr()->mutable_lit_val()->set_string_lit("id" + std::to_string(id_counter++));
     }
@@ -1816,7 +1826,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
+            static const DB::Strings tokenizerVals
+                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams", "asciiCJK", "unicodeWord"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);
@@ -1999,11 +2010,11 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
     chassert(this->ids.empty());
     if (b.is_deterministic && !b.is_temp && !b.isExternalDistributedEngine())
     {
-        if (!b.isMySQLEngine() && connections.hasMySQLConnection())
+        if (!b.isMySQLEngine() && connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection())
+        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
@@ -2080,8 +2091,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
-    const bool allow_mysql_tbl = connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0;
-    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0;
+    const bool allow_mysql_tbl
+        = connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty() && (fc.engine_mask & allow_mysql) != 0;
+    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty()
+        && (fc.engine_mask & allow_postgresql) != 0;
 
     if ((fc.engine_mask & allow_file) != 0)
     {
@@ -2117,13 +2130,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     if (storage == LakeStorage::All || storage == LakeStorage::Local)
     {
-        if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergLocal) != 0)
+        if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergLocal) != 0)
         {
             this->ids.emplace_back(IcebergLocal);
         }
-        if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakelocal) != 0)
+        if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakelocal) != 0)
         {
             this->ids.emplace_back(DeltaLakeLocal);
+        }
+        if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonLocal) != 0)
+        {
+            this->ids.emplace_back(PaimonLocal);
         }
     }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
@@ -2174,12 +2191,9 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(MySQL);
         }
-        if (connections.hasPostgreSQLConnection())
+        if (allow_postgresql_tbl)
         {
-            if (allow_postgresql_tbl)
-            {
-                this->ids.emplace_back(PostgreSQL);
-            }
+            this->ids.emplace_back(PostgreSQL);
             if ((fc.engine_mask & allow_materialized_postgresql) != 0)
             {
                 this->ids.emplace_back(MaterializedPostgreSQL);
@@ -2189,7 +2203,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(SQLite);
         }
-        if (connections.hasMongoDBConnection() && (fc.engine_mask & allow_mongodb) != 0)
+        if (connections.hasMongoDBConnection() && !fc.mongodb_server.value().named_collection.empty()
+            && (fc.engine_mask & allow_mongodb) != 0)
         {
             this->ids.emplace_back(MongoDB);
         }
@@ -2209,13 +2224,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::S3)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergS3) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergS3) != 0)
                 {
                     this->ids.emplace_back(IcebergS3);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeS3) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeS3) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeS3);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonS3) != 0)
+                {
+                    this->ids.emplace_back(PaimonS3);
                 }
             }
         }
@@ -2231,13 +2250,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::Azure)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergAzure) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergAzure) != 0)
                 {
                     this->ids.emplace_back(IcebergAzure);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeAzure) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeAzure) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeAzure);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonAzure) != 0)
+                {
+                    this->ids.emplace_back(PaimonAzure);
                 }
             }
         }
@@ -2531,6 +2554,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     uint32_t col_counter = 0;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
+    const bool is_polygon = dl == POLYGON || dl == POLYGON_SIMPLE || dl == POLYGON_INDEX_EACH || dl == POLYGON_INDEX_CELL;
     const bool is_complex_key
         = (dl == COMPLEX_KEY_CACHE || dl == COMPLEX_KEY_DIRECT || dl == COMPLEX_KEY_HASHED || dl == COMPLEX_KEY_HASHED_ARRAY
            || dl == COMPLEX_KEY_RANGE_HASHED || dl == COMPLEX_KEY_SPARSE_HASHED || dl == COMPLEX_KEY_SSD_CACHE);
@@ -2581,12 +2605,18 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
-    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
-    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
-    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
-    const uint32_t null_src = 5;
+    /// REGEXP_TREE layout is tied to YAMLRegExpTree source: skip all other source types when this layout is in use.
+    /// Polygon layouts need a ClickHouse/null source (not YAML).
+    const uint32_t generic_src_mult = static_cast<uint32_t>(dl != REGEXP_TREE);
+    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table) * generic_src_mult;
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty()) * generic_src_mult;
+    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view) * generic_src_mult;
+    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary) * generic_src_mult;
+    const uint32_t null_src = 5 * generic_src_mult;
+    /// YAMLRegExpTree only makes sense when paired with REGEXP_TREE layout.
+    const uint32_t yaml_regexp_tree_src = !generic_src_mult ? 100 : 0;
     DictionarySourceDetails * clickhouse_dsd = nullptr;
+    DictionarySourceDetails * yaml_dsd = nullptr;
 
     rg.pickWeighted(
         {{dict_table,
@@ -2602,10 +2632,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::POSTGRESQL);
               }
               else if (t.isMySQLEngine() && fc.mysql_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2615,10 +2652,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MYSQL);
               }
               else if (t.isMongoDBEngine() && fc.mongodb_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2628,11 +2672,36 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MONGODB);
+              }
+              else if (t.isFileEngine() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_path(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::FILE);
+              }
+              else if (t.isURLEngine() && fc.http_server.has_value() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_url(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::HTTP);
               }
               else if (t.isRedisEngine() && fc.redis_server.has_value() && rg.nextSmallNumber() < 8)
               {
@@ -2690,7 +2759,14 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
               dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
               clickhouse_dsd = dsd;
           }},
-         {null_src, [&] { cd->mutable_source()->set_null_src(true); }}});
+         {null_src, [&] { cd->mutable_source()->set_null_src(true); }},
+         {yaml_regexp_tree_src,
+          [&]
+          {
+              DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+              dsd->set_source(DictionarySourceDetails::YAMLRegExpTree);
+              yaml_dsd = dsd;
+          }}});
 
     /// Set columns
     for (uint32_t i = 0; i < dictionary_ncols; i++)
@@ -2707,7 +2783,26 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
                 | allow_time | allow_array | (is_complex_key ? UINT64_C(0) : allow_fixed_strings));
-        col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+        if (is_polygon && i == 0)
+        {
+            /// Polygon layouts require a key of Array(Array(Array(Array(Float64))))
+            TopTypeName * arr = dc->mutable_type()->mutable_type();
+            for (int d = 0; d < 4; d++)
+                arr = arr->mutable_array();
+            arr->mutable_non_nullable()->set_floats(Float64);
+            col.tp = std::make_unique<ArrayType>(
+                std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<FloatType>(64)))));
+        }
+        else if (yaml_dsd && i == 0)
+        {
+            /// YAMLRegExpTree requires the primary key to be exactly one String column.
+            dc->mutable_type()->mutable_type()->mutable_non_nullable()->set_standard_string(true);
+            col.tp = std::make_unique<StringType>(std::nullopt);
+        }
+        else
+        {
+            col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+        }
         this->next_type_mask = type_mask_backup;
 
         const String dict_col_name = col.getColumnName();
@@ -2790,9 +2885,22 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             clickhouse_dsd->set_update_lag(rg.randomInt<uint32_t>(0, 3600));
         }
     }
-    if (dl == IP_TRIE)
+    if (is_polygon)
     {
-        /// IP_TRIE requires a String primary key
+        /// Polygon layouts require the polygon key column (first column, Array type)
+        std::vector<ColumnPathChain> arr_entries;
+        for (const auto & e : this->entries)
+        {
+            const SQLType * tp = e.getBottomType();
+            if (tp && tp->getTypeClass() == SQLTypeClass::ARRAY)
+                arr_entries.push_back(e);
+        }
+        if (!arr_entries.empty())
+            this->entries = std::move(arr_entries);
+    }
+    else if (dl == IP_TRIE || yaml_dsd)
+    {
+        /// IP_TRIE and YAMLRegExpTree both require a String primary key
         std::vector<ColumnPathChain> str_entries;
         for (const auto & e : this->entries)
         {
@@ -2824,13 +2932,110 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         if (!uint64_entries.empty() && !isRange)
             this->entries = std::move(uint64_entries);
     }
-    const size_t kcols
-        = (dl == IP_TRIE || !is_complex_key) ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
+    const size_t kcols = (dl == IP_TRIE || is_polygon || !is_complex_key)
+        ? 1
+        : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
     for (size_t i = 0; i < kcols; i++)
     {
         columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
+    }
+    if (yaml_dsd && !this->entries.empty())
+    {
+        /// Write a small YAML fixture that matches the dictionary's columns so that both
+        /// CREATE-time validation and runtime LOAD succeed. The chosen primary-key column
+        /// is the regex pattern; every other column becomes an attribute.
+        ///
+        /// regexp_tree's loader parses YAML attribute values via deserializeWholeText for
+        /// the target type, which expects plain text (NOT SQL literal syntax with quotes
+        /// or `::Type` casts). We emit a fixed plain-text default per type class instead
+        /// of using appendRandomRawValue (which produces SQL literals).
+        const auto yaml_plain_value = [](const SQLType * tp) -> std::optional<String>
+        {
+            const SQLType * t = tp;
+            if (t && t->getTypeClass() == SQLTypeClass::NULLABLE)
+                t = static_cast<const Nullable *>(t)->subtype.get();
+            if (t && t->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+                t = static_cast<const LowCardinality *>(t)->subtype.get();
+            if (!t)
+                return std::nullopt;
+            switch (t->getTypeClass())
+            {
+                case SQLTypeClass::BOOL:
+                    return "true";
+                case SQLTypeClass::INT:
+                case SQLTypeClass::FLOAT:
+                case SQLTypeClass::DECIMAL:
+                    return "0";
+                case SQLTypeClass::ENUM: {
+                    /// regexp_tree parses enum YAML values via deserializeWholeText with
+                    /// enum_as_number=false, so we must emit a label, not a numeric id.
+                    const auto * et = static_cast<const EnumType *>(t);
+                    if (et->values.empty())
+                        return "0";
+                    String label = et->values[0].val;
+                    /// EnumValue::val stores the SQL form including surrounding single quotes
+                    /// (e.g. "'foo'" or "'-1'"); strip them for the YAML plain text.
+                    if (label.size() >= 2 && label.front() == '\'' && label.back() == '\'')
+                        label = label.substr(1, label.size() - 2);
+                    return label;
+                }
+                case SQLTypeClass::STRING:
+                    return "text";
+                case SQLTypeClass::DATE:
+                    return "2024-01-01";
+                case SQLTypeClass::DATETIME:
+                    return "2024-01-01 12:00:00";
+                case SQLTypeClass::TIME:
+                    return "12:00:00";
+                case SQLTypeClass::UUID:
+                    return "00000000-0000-0000-0000-000000000000";
+                case SQLTypeClass::IPV4:
+                    return "0.0.0.0";
+                case SQLTypeClass::IPV6:
+                    return "::";
+                default:
+                    /// Skip complex (Array/Map/Tuple/JSON/Variant/Dynamic/etc.)
+                    return std::nullopt;
+            }
+        };
+
+        const String pkey_name = this->entries[0].getBottomName();
+        const String fname = fmt::format("d{}.yaml", next.counter);
+        std::ofstream yaml_file(fc.client_file_path / fname);
+        if (!yaml_file.is_open())
+        {
+            /// user_files isn't writable from this process — fail closed by switching to a null
+            /// source so we don't generate a CREATE DICTIONARY pointing at a non-existent file.
+            /// This will still fail validation (REGEXP_TREE requires YAMLRegExpTree), but with a
+            /// meaningful "incompatible source/layout" error instead of CANNOT_OPEN_FILE.
+            LOG_DEBUG(
+                getLogger("BuzzHouse"),
+                "Failed to open YAML fixture {} for write — falling back to null dictionary source",
+                (fc.client_file_path / fname).generic_string());
+            cd->mutable_source()->Clear();
+            cd->mutable_source()->set_null_src(true);
+        }
+        else
+        {
+            for (uint32_t j = 0; j < 3; j++)
+            {
+                /// regexp_tree requires each rule to use the dictionary's primary-key field name
+                /// (not a literal "regexp"). This is the column we forced to String earlier.
+                yaml_file << "- " << pkey_name << ": '.*pattern" << j << ".*'\n";
+                for (const auto & [cname, cdata] : next.cols)
+                {
+                    if (cname == pkey_name || !cdata.tp)
+                        continue;
+                    auto value = yaml_plain_value(cdata.tp.get());
+                    if (value.has_value())
+                        yaml_file << "  " << cname << ": " << value.value() << "\n";
+                }
+            }
+            yaml_file.close();
+            yaml_dsd->set_path(fmt::format("{}/{}", fc.server_file_path.generic_string(), fname));
+        }
     }
     if (isRange && this->entries.size() > 1)
     {
