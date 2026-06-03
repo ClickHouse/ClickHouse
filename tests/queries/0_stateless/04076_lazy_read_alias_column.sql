@@ -34,6 +34,14 @@ SELECT trimLeft(explain) AS s
 FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
+-- 3. The reported regression is the filtered top-K shape `WHERE ... ORDER BY ... LIMIT`.
+--    Assert the optimization is applied there too, not only for the unfiltered query,
+--    so result correctness alone cannot hide a lost optimization.
+SELECT 'alias_filtered_plan';
+SELECT trimLeft(explain) AS s
+FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias WHERE severity = 'medium' ORDER BY time DESC LIMIT 10)
+WHERE s LIKE 'LazilyRead%';
+
 -- 4. Verify correctness: ALIAS column result must match the expression on source column.
 SELECT 'alias_result';
 SELECT body_alias

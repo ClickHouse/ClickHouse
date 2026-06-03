@@ -2,6 +2,8 @@ physical_column_plan
 LazilyReadFromMergeTree
 alias_column_plan
 LazilyReadFromMergeTree
+alias_filtered_plan
+LazilyReadFromMergeTree
 alias_result
 short
 short
