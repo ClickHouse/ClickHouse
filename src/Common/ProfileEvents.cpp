@@ -813,6 +813,8 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor.", ValueType::Number) \
     M(ReaderExecutorSourceRequests, "Number of source-side requests opened by ReaderExecutor (excludes live-buffer reuses).", ValueType::Number) \
+    M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment.", ValueType::Number) \
+    M(ReaderExecutorOverReadBytes, "Bytes ReaderExecutor fetched from source that did not serve the requested window (segment/block head-alignment slack and mergeRanges bridged-gap bytes).", ValueType::Bytes) \
     M(ReaderExecutorCacheGetMicroseconds, "Time spent inside ICacheHandle::get serving cache hits in ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorCachePopulateMicroseconds, "Time spent inside ICacheHandle::put populating caches in ReaderExecutor.", ValueType::Microseconds) \
     M(ReaderExecutorSourceReadMicroseconds, "Time spent in source reads driven by ReaderExecutor (foreground and prefetch worker combined).", ValueType::Microseconds) \

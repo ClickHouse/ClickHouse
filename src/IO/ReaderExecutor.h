@@ -264,6 +264,10 @@ private:
     /// drained and reusable, and dropping it lets the next read open a fresh
     /// streamed connection instead of falling to the stateless one-shot path.
     void releaseLiveBufferAtBound();
+    /// Account a `live_buffer` about to be dropped: count it as an incomplete
+    /// (not pool-reusable) connection unless it was drained to its effective end.
+    /// `at_eof` lets EOF drop sites treat a reached-EOF connection as complete.
+    void accountLiveBufferDrop(bool at_eof);
 
     /// readPhysicalWindow + remap the window's offsets to logical (subtract the
     /// encryption header). Payload decryption is deferred to the consumer
@@ -412,6 +416,12 @@ private:
         size_t cache_get_requests = 0;
         size_t cache_populate_requests = 0;
         size_t source_requests = 0;
+        /// Source connections dropped before being drained to their right bound:
+        /// not pool-reusable, forcing a re-establishment (the metric's `I`).
+        size_t incomplete_connections = 0;
+        /// Bytes fetched from source that did not serve the requested window
+        /// (segment/block head-alignment slack + mergeRanges bridged-gap bytes).
+        size_t over_read_bytes = 0;
         UInt64 cache_get_us = 0;
         UInt64 cache_populate_us = 0;
         UInt64 source_read_us = 0;
@@ -451,6 +461,8 @@ private:
             cache_get_requests += o.cache_get_requests;
             cache_populate_requests += o.cache_populate_requests;
             source_requests += o.source_requests;
+            incomplete_connections += o.incomplete_connections;
+            over_read_bytes += o.over_read_bytes;
             cache_get_us += o.cache_get_us;
             cache_populate_us += o.cache_populate_us;
             source_read_us += o.source_read_us;

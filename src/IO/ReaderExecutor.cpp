@@ -31,6 +31,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorSourceRequests;
+    extern const Event ReaderExecutorIncompleteConnections;
+    extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorCacheGetMicroseconds;
     extern const Event ReaderExecutorCachePopulateMicroseconds;
     extern const Event ReaderExecutorSourceReadMicroseconds;
@@ -209,6 +211,10 @@ ReaderExecutor::~ReaderExecutor()
     if (is_transient)
         return;
 
+    /// A live connection still open here was never drained to its bound (else
+    /// releaseLiveBufferAtBound would have reset it): an incomplete connection.
+    accountLiveBufferDrop(/*at_eof=*/false);
+
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, stats.bytes_from_page_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, stats.bytes_from_filesystem_cache);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, stats.bytes_from_source);
@@ -217,6 +223,8 @@ ReaderExecutor::~ReaderExecutor()
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, stats.cache_get_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, stats.cache_populate_requests);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, stats.source_requests);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, stats.incomplete_connections);
+    ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, stats.over_read_bytes);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetMicroseconds, stats.cache_get_us);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateMicroseconds, stats.cache_populate_us);
     ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceReadMicroseconds, stats.source_read_us);
@@ -242,7 +250,8 @@ ReaderExecutor::~ReaderExecutor()
         "prefetch_hits={} prefetch_cancelled={} prefetch_pool_full={} "
         "prefetch_discarded_running={} prefetch_discard_wait_us={} "
         "prefetch_issued_source_bytes={} prefetch_issued_cache_bytes={} "
-        "prefetch_wasted_source_bytes={} prefetch_wasted_cache_bytes={}",
+        "prefetch_wasted_source_bytes={} prefetch_wasted_cache_bytes={} "
+        "incomplete_connections={} over_read_bytes={}",
         stats.bytes_from_page_cache, stats.bytes_from_filesystem_cache, stats.bytes_from_source,
         stats.bytes_pushed_to_cache_sync, stats.bytes_pushed_to_cache_async,
         stats.cache_get_requests, stats.cache_populate_requests, stats.source_requests,
@@ -252,7 +261,8 @@ ReaderExecutor::~ReaderExecutor()
         stats.prefetch_hits, stats.prefetch_cancelled, stats.prefetch_pool_full,
         stats.prefetch_discarded_running, stats.prefetch_discard_wait_us,
         stats.prefetch_issued_source_bytes, stats.prefetch_issued_cache_bytes,
-        stats.prefetch_wasted_source_bytes, stats.prefetch_wasted_cache_bytes);
+        stats.prefetch_wasted_source_bytes, stats.prefetch_wasted_cache_bytes,
+        stats.incomplete_connections, stats.over_read_bytes);
 
     if (reader_executor_log)
     {
@@ -275,6 +285,8 @@ ReaderExecutor::~ReaderExecutor()
         elem.cache_get_requests = stats.cache_get_requests;
         elem.cache_populate_requests = stats.cache_populate_requests;
         elem.source_requests = stats.source_requests;
+        elem.incomplete_connections = stats.incomplete_connections;
+        elem.over_read_bytes = stats.over_read_bytes;
         elem.cache_get_us = stats.cache_get_us;
         elem.cache_populate_us = stats.cache_populate_us;
         elem.source_read_us = stats.source_read_us;
@@ -492,6 +504,22 @@ void ReaderExecutor::releaseLiveBufferAtBound()
         live_buffer.reset();
         inflight_segment_pin.reset();
     }
+}
+
+void ReaderExecutor::accountLiveBufferDrop(bool at_eof)
+{
+    if (!live_buffer)
+        return;
+    /// Reusable iff the response was fully consumed: read to its right bound, or
+    /// to EOF. An open-ended buffer dropped before EOF, or a bounded one dropped
+    /// before its bound, is abandoned mid-response and not pool-reusable.
+    bool drained = false;
+    if (at_eof)
+        drained = true;
+    else if (live_buffer->read_until)
+        drained = live_buffer->current_position >= *live_buffer->read_until;
+    if (!drained)
+        ++stats.incomplete_connections;
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -893,6 +921,7 @@ Rope ReaderExecutor::readNextWindow()
             /// Release per-stream resources at EOF instead of waiting for
             /// the caller to drop the `PipelineReadBuffer`. A subsequent
             /// seek-back will re-open and re-acquire.
+            accountLiveBufferDrop(/*at_eof=*/true);
             live_buffer.reset();
             inflight_segment_pin.reset();
             pre_acquired_slot.reset();
@@ -919,6 +948,7 @@ Rope ReaderExecutor::readNextWindow()
     /// release the live connection + slot now rather than leaking it.
     if (reached_eof)
     {
+        accountLiveBufferDrop(/*at_eof=*/true);
         live_buffer.reset();
         inflight_segment_pin.reset();
         pre_acquired_slot.reset();
@@ -966,6 +996,7 @@ void ReaderExecutor::seek(size_t new_position)
         {
             LOG_TRACE(log, "seek: live buffer for {} (at {}) no longer matches target, closing",
                 live_buffer->slot.objectPath(), live_buffer->current_position);
+            accountLiveBufferDrop(/*at_eof=*/false);
             live_buffer.reset();
             inflight_segment_pin.reset();
         }
@@ -1094,6 +1125,7 @@ Rope ReaderExecutor::readFromSource(
     {
         LOG_TRACE(log, "readFromSource: closing live buffer for {} (was at {}), need {}:{}",
             live_buffer->slot.objectPath(), live_buffer->current_position, object.remote_path, offset);
+        accountLiveBufferDrop(/*at_eof=*/false);
         live_buffer.reset();
         inflight_segment_pin.reset();
     }
@@ -1192,7 +1224,8 @@ Rope ReaderExecutor::readFromSource(
 
     /// No slot kept: bound the one-shot read so its connection is fully consumed
     /// and reusable by the pool, rather than abandoning an open-ended GET.
-    if (!hasUnknownSize() && opened->supportsRightBoundedReads() && want > 0)
+    const bool stateless_bounded = !hasUnknownSize() && opened->supportsRightBoundedReads() && want > 0;
+    if (stateless_bounded)
         opened->setReadUntilPosition(offset + want);
 
     auto & buf = *opened;
@@ -1200,6 +1233,7 @@ Rope ReaderExecutor::readFromSource(
 
     Rope rope;
     size_t total_read = 0;
+    bool hit_eof = false;
 
     for (auto & block : blocks)
     {
@@ -1211,11 +1245,19 @@ Rope ReaderExecutor::readFromSource(
             got > 0 ? static_cast<unsigned char>(block->data()[0]) : 0);
 
         if (got == 0)
+        {
+            hit_eof = true;
             break;
+        }
 
         rope.append(RopeNode{block, 0, got, logical_offset + total_read});
         total_read += got;
     }
+
+    /// An unbounded one-shot GET (unknown-size source: the bound above was
+    /// skipped) that did not reach EOF is dropped mid-response — not reusable.
+    if (!stateless_bounded && !hit_eof)
+        ++stats.incomplete_connections;
 
     return rope;
 }
@@ -1403,6 +1445,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
             /// Use `actual` so the recorded range tracks what the source
             /// actually delivered — diverges from `pr.size` only at EOF.
             ByteRange pr_range{logical_pos, actual};
+            /// Over-read: fetched bytes that do not serve the requested window —
+            /// head/tail alignment slack outside `physical_window`, plus bytes
+            /// inside it already covered by an earlier hit (a mergeRanges bridged
+            /// gap). Measured before `covered.add` below mutates the set.
+            {
+                const size_t lo = std::max(pr_range.offset, physical_window.offset);
+                const size_t hi = std::min(pr_range.end(), physical_window.end());
+                size_t needed = 0;
+                if (hi > lo)
+                    for (const auto & sub : covered.subtract(ByteRange{lo, hi - lo}))
+                        needed += sub.size;
+                stats.over_read_bytes += actual - needed;
+            }
             auto uncovered = covered.subtract(pr_range);
             for (const auto & sub : uncovered)
             {
@@ -1448,7 +1503,10 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window, bool from_pre
             && live_buffer->slot.objectPath() == next_obj->remote_path
             && live_buffer->current_position == next_physical - next_obj_file_offset;
         if (!live_continues)
+        {
+            accountLiveBufferDrop(/*at_eof=*/false);
             live_buffer.reset();
+        }
     }
 
     /// Strategy A pin: re-point to the partial segment under the new frontier

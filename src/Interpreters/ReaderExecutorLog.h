@@ -31,6 +31,8 @@ struct ReaderExecutorLogElement
     UInt64 cache_get_requests = 0;
     UInt64 cache_populate_requests = 0;
     UInt64 source_requests = 0;
+    UInt64 incomplete_connections = 0;
+    UInt64 over_read_bytes = 0;
 
     UInt64 cache_get_us = 0;
     UInt64 cache_populate_us = 0;
