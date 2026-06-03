@@ -675,6 +675,14 @@ protected:
         {
             findArrowFlightSecretArguments();
         }
+        else if ((engine_name == "Remote") || (engine_name == "RemoteSecure"))
+        {
+            /// Remote('addresses_expr', db, table, 'user', 'password', ...)
+            /// RemoteSecure(...) - same as Remote(...)
+            /// The arguments are identical to the `remote`/`remoteSecure` table functions, so reuse
+            /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
+            findRemoteFunctionSecretArguments();
+        }
         else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
         {
             /// JDBC('DSN', database, table)

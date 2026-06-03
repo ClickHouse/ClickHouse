@@ -31,5 +31,10 @@ CREATE TABLE t_remote_engine (dummy UInt8) ENGINE = RemoteSecure('127.0.0.1', sy
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_remote_engine';
 DROP TABLE t_remote_engine;
 
+-- The password is hidden in `SHOW CREATE TABLE` / `system.tables.engine_full`, like for the table function.
+CREATE TABLE t_remote_engine (dummy UInt8) ENGINE = Remote('127.0.0.1', system, one, 'default', 'secret');
+SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_remote_engine';
+DROP TABLE t_remote_engine;
+
 -- No arguments is an error.
 CREATE TABLE t_remote_engine ENGINE = Remote; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
