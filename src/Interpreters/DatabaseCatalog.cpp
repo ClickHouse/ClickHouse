@@ -88,7 +88,6 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -1706,7 +1705,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     // NOLINTNEXTLINE(bugprone-empty-catch)
     catch (...)
     {
-        // Database may not exist anymore, ignore
+        // Ok: database may not exist anymore, ignore
     }
 
     removeUUIDMappingFinally(table.table_id.uuid);
