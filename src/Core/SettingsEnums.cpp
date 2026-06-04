@@ -225,6 +225,10 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", UniqueKeyProbeImplementation::Auto},
+     {"sequential", UniqueKeyProbeImplementation::Sequential}})
+
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},
      {"drop", AlterColumnSecondaryIndexMode::DROP},
