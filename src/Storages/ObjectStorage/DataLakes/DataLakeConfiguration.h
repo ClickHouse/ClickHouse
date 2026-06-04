@@ -100,6 +100,9 @@ public:
     StorageObjectStorageConfiguration::Path getRawPath() const override
     {
         auto result = BaseStorageConfiguration::getRawPath().path;
+        if (result.empty())
+            return StorageObjectStorageConfiguration::Path("");
+
         return StorageObjectStorageConfiguration::Path(result.ends_with('/') ? result : result + "/");
     }
 
