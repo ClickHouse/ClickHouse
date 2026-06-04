@@ -263,11 +263,13 @@ TEST(SimpleMergeSelector, SmallPartsMinCountReducesWriteAmplification)
               << " final_parts=" << with_small.final_parts << std::endl;
 
     /// The new setting should reduce write amplification (or at least not increase it significantly)
-    /// and reduce the number of merges
+    /// and strictly reduce the number of merges. The simulation is deterministic, so a strict
+    /// assertion actually guards the PR's merge-count reduction claim: if the setting ever stops
+    /// affecting the simulation, this test must fail rather than silently pass.
     EXPECT_LE(with_small.writeAmplification(), baseline.writeAmplification() + 0.5)
         << "Small parts restriction should not significantly increase write amplification";
-    EXPECT_LE(with_small.num_merges, baseline.num_merges)
-        << "Small parts restriction should reduce or maintain merge count";
+    EXPECT_LT(with_small.num_merges, baseline.num_merges)
+        << "Small parts restriction should reduce merge count";
 }
 
 
