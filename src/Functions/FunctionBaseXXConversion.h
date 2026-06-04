@@ -5,8 +5,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <fmt/format.h>
 #include <Common/Base58.h>
+
+#include <functional>
 
 
 namespace DB
@@ -25,7 +29,7 @@ struct BaseXXEncode
     static constexpr bool has_size_optimization = false;
 
     template <bool /* with_size_optimization */>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, const std::function<void()> & check_cancellation)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -46,7 +50,7 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
-            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
@@ -56,7 +60,7 @@ struct BaseXXEncode
     }
 
     template <bool /* with_size_optimization */>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, const std::function<void()> & check_cancellation)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -73,7 +77,7 @@ struct BaseXXEncode
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+            size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
             current_dst_offset += encoded_size;
             dst_offsets[row] = current_dst_offset;
         }
@@ -95,7 +99,7 @@ struct BaseXXDecode
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
 
     template <bool with_size_optimization>
-    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
+    static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, const std::function<void()> & check_cancellation)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -118,8 +122,8 @@ struct BaseXXDecode
             size_t src_length = current_src_offset - prev_src_offset;
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size);
-                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
+                    return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size, check_cancellation);
+                return Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             }();
             if (!decoded_size)
             {
@@ -142,7 +146,7 @@ struct BaseXXDecode
     }
 
     template <bool with_size_optimization>
-    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size)
+    static void processFixedString(const ColumnFixedString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, const std::function<void()> & check_cancellation)
     {
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
@@ -161,8 +165,8 @@ struct BaseXXDecode
         {
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
-                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size);
-                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
+                    return Traits::performWithSizeHint({&src[row * N], N}, &dst[current_dst_offset], expected_size, check_cancellation);
+                return Traits::perform({&src[row * N], N}, &dst[current_dst_offset], check_cancellation);
             }();
             if (!decoded_size)
             {
@@ -188,7 +192,9 @@ class FunctionBaseXXConversion final : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBaseXXConversion>(); }
+    explicit FunctionBaseXXConversion(QueryStatusPtr query_status_) : query_status(std::move(query_status_)) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBaseXXConversion>(context->getProcessListElementSafe()); }
     String getName() const override { return Func::name; }
     bool isVariadic() const override { return has_size_optimization; }
     size_t getNumberOfArguments() const override { return has_size_optimization ? 0 : 1; }
@@ -225,6 +231,13 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// The generic (variable-length) Base58 conversion is quadratic in the input length and can run
+        /// for a long time on a single large value, ignoring the query's time limit (which is only checked
+        /// between pipeline blocks). Pass a callback so the conversion can periodically check for cancellation.
+        std::function<void()> check_cancellation;
+        if (query_status)
+            check_cancellation = [this] { query_status->checkTimeLimit(); };
+
         size_t expected_size = 0;
         if constexpr (has_size_optimization)
         {
@@ -244,13 +257,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size);
+                    Func::template processString<true>(*col_string, col_res, input_rows_count, expected_size, check_cancellation);
                 else
-                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+                    Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, check_cancellation);
             }
             else
             {
-                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size);
+                Func::template processString<false>(*col_string, col_res, input_rows_count, expected_size, check_cancellation);
             }
             return col_res;
         }
@@ -260,13 +273,13 @@ public:
             if constexpr (has_size_optimization)
             {
                 if (expected_size > 0)
-                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                    Func::template processFixedString<true>(*col_fixed_string, col_res, input_rows_count, expected_size, check_cancellation);
                 else
-                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                    Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, check_cancellation);
             }
             else
             {
-                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size);
+                Func::template processFixedString<false>(*col_fixed_string, col_res, input_rows_count, expected_size, check_cancellation);
             }
             return col_res;
         }
@@ -277,6 +290,9 @@ public:
             arguments[0].column->getName(),
             getName());
     }
+
+private:
+    QueryStatusPtr query_status;
 };
 
 }

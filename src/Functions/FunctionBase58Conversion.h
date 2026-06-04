@@ -4,6 +4,8 @@
 
 #include <Common/Base58.h>
 
+#include <functional>
+
 namespace DB
 {
 struct Base58EncodeTraits
@@ -18,14 +20,14 @@ struct Base58EncodeTraits
         return static_cast<size_t>(ceil(oversize * src_length + 1));
     }
 
-    static size_t perform(std::string_view src, UInt8 * dst)
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation = {})
     {
         if (src.size() == 32)
             return encodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), dst);
         else if (src.size() == 64)
             return encodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), dst);
         else
-            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
     }
 };
 
@@ -46,18 +48,18 @@ struct Base58DecodeTraits
         return src_column.getChars().size();
     }
 
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & check_cancellation = {})
     {
-        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
     }
 
-    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size)
+    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size, const std::function<void()> & check_cancellation = {})
     {
         if (expected_size == 32)
             return decodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
         if (expected_size == 64)
             return decodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
-        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
     }
 };
 }

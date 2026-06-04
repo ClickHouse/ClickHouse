@@ -661,7 +661,7 @@ size_t encodeBase58_64_fd(const uint8_t * src, uint8_t * dst)
 } // anonymous namespace
 
 
-size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation)
 {
     const char * base58_encoding_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -680,6 +680,10 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
 
     while (processed < src_length)
     {
+        /// This loop is quadratic in the input length; check for cancellation periodically.
+        if (check_cancellation && (processed & 1023) == 0)
+            check_cancellation();
+
         UInt32 carry = *src;
 
         for (size_t j = 0; j < idx; ++j)
@@ -717,7 +721,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
 }
 
 
-std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst)
+std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation)
 {
     // clang-format off
     static const Int8 map_digits[256] =
@@ -756,6 +760,10 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
 
     while (processed < src_length)
     {
+        /// This loop is quadratic in the input length; check for cancellation periodically.
+        if (check_cancellation && (processed & 1023) == 0)
+            check_cancellation();
+
         Int8 digit = map_digits[*src];
         UInt32 carry = digit == -1 ? 0xFFFFFFFFU : static_cast<UInt32>(digit);
         if (carry == 0xFFFFFFFFU)

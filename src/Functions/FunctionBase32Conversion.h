@@ -4,6 +4,8 @@
 
 #include <Common/Base32.h>
 
+#include <functional>
+
 namespace DB
 {
 struct Base32EncodeTraits
@@ -17,7 +19,8 @@ struct Base32EncodeTraits
         return ((src_length + src_column.size() * 4) / 5) * 8;
     }
 
-    static size_t perform(std::string_view src, UInt8 * dst)
+    /// Base32 conversion is linear in the input length, so the cancellation callback is unused.
+    static size_t perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
         return encodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
@@ -35,7 +38,8 @@ struct Base32DecodeTraits
         return (string_length * 5 + 7) / 8;
     }
 
-    static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
+    /// Base32 conversion is linear in the input length, so the cancellation callback is unused.
+    static std::optional<size_t> perform(std::string_view src, UInt8 * dst, const std::function<void()> & = {})
     {
         return decodeBase32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
