@@ -4,6 +4,8 @@ description: 'Documentation for the OpenMetrics text format'
 input_format: true
 output_format: true
 keywords: ['OpenMetrics']
+sidebar_label: 'OpenMetrics'
+sidebar_position: 30
 slug: /interfaces/formats/OpenMetrics
 title: 'OpenMetrics'
 doc_type: 'reference'
