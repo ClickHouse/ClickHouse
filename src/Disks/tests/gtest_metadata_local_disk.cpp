@@ -1464,3 +1464,41 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
             });
     }
 }
+
+TEST_F(MetadataLocalDiskTest, TestGetRemovalQueueSize)
+{
+    auto metadata = getMetadataStorage("/TestGetRemovalQueueSize");
+    metadata->startup();
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("queue-size");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getRemovalQueueSize(), 0);
+
+    auto stored = [](const std::string & blob_key, const std::string & file)
+    {
+        return DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute(blob_key).serialize(), file, 1);
+    };
+
+    {
+        auto tx = metadata->createTransaction();
+        for (const auto & key : {"a-1", "a-2", "a-3"})
+        {
+            const std::string file = std::string("queue-size/f-") + key;
+            tx->createMetadataFile(file, {stored(key, file)});
+            tx->unlinkFile(file, /*if_exists=*/false, /*should_remove_objects=*/true);
+        }
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(metadata->getRemovalQueueSize(), 3);
+
+    EXPECT_EQ(metadata->recordAsRemoved({stored("a-1", "queue-size/f-a-1")}), 1);
+    EXPECT_EQ(metadata->getRemovalQueueSize(), 2);
+
+    EXPECT_EQ(metadata->recordAsRemoved({stored("a-2", "queue-size/f-a-2"), stored("a-3", "queue-size/f-a-3")}), 2);
+    EXPECT_EQ(metadata->getRemovalQueueSize(), 0);
+}

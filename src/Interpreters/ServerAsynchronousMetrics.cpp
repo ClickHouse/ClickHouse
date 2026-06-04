@@ -11,6 +11,8 @@
 
 #include <Databases/IDatabase.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <Common/PageCache.h>
@@ -267,6 +269,18 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (unreserved)
                     new_values[fmt::format("DiskUnreserved_{}", name)] = { *unreserved,
                         "Available bytes on the disk (virtual filesystem) without the reservations for merges, fetches, and moves. Remote filesystems may not provide this information and can show a large value like 16 EiB." };
+            }
+
+            try
+            {
+                if (auto metadata_storage = disk->getMetadataStorage())
+                {
+                    new_values[fmt::format("BlobKillerObjectsToRemove_{}", name)] = { metadata_storage->getRemovalQueueSize(),
+                        "Number of object-storage blobs queued for background removal by `BlobKillerThread` for this disk. Sustained growth indicates the drain rate is below the producer rate and `metadata_request_size` should be increased." };
+                }
+            }
+            catch (...)
+            {
             }
 
 #if USE_AWS_S3
