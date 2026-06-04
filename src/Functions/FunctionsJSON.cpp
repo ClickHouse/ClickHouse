@@ -821,7 +821,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        size_t size;
+        size_t size = 0;
         if (element.isArray())
             size = element.getArray().size();
         else if (element.isObject())
@@ -885,7 +885,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        UInt8 type;
+        UInt8 type = 0;
         switch (element.type())
         {
             case ElementType::INT64:
@@ -975,7 +975,7 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, std::string_view, const FormatSettings &, String &)
     {
-        bool value;
+        bool value = false;
         switch (element.type())
         {
             case ElementType::BOOL:
