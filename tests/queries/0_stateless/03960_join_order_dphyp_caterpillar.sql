@@ -61,7 +61,8 @@ SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize',
 -- ==========================================================================
 -- K = 15 caterpillar (30 nodes, limit = 30)
 -- DPsize is NOT run at this scale (~8.6B candidate pairs).
--- DPhyp processes K*10 = 150 inner iterations; result is verified against greedy.
+-- DPhyp enumerates more partial plans than the default search budget allows, so the budget is
+-- disabled here to exercise its full enumeration; the result is verified against greedy.
 -- ==========================================================================
 SELECT 'K=15 caterpillar: DPhyp (limit=30)';
 SELECT count()
@@ -86,6 +87,7 @@ WHERE s1.id BETWEEN 0 AND 9
   AND l13.id = s13.id + 100  AND l14.id = s14.id + 100  AND l15.id = s15.id + 100
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp',
          query_plan_optimize_join_order_limit = 30,
+         query_plan_optimize_join_order_max_searched_plans = 0,
          enable_parallel_replicas = 0;
 
 SELECT 'K=15 caterpillar: greedy (must match)';
