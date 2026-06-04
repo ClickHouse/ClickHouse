@@ -7,7 +7,6 @@
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -23,7 +22,6 @@ namespace DB::ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace ProfileEvents
@@ -51,19 +49,21 @@ namespace ProfileEvents
     extern const Event DiskAzureWriteRequestsErrors;
     extern const Event DiskAzureWriteRequestsThrottling;
     extern const Event DiskAzureWriteRequestsRedirects;
+
+    extern const Event AzureGetRequestThrottlerCount;
+    extern const Event AzureGetRequestThrottlerSleepMicroseconds;
+    extern const Event AzurePutRequestThrottlerCount;
+    extern const Event AzurePutRequestThrottlerSleepMicroseconds;
+
+    extern const Event DiskAzureGetRequestThrottlerCount;
+    extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
+    extern const Event DiskAzurePutRequestThrottlerCount;
+    extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric AzureRequests;
-}
-
-namespace HistogramMetrics
-{
-    extern MetricFamily & AzureBlobConnect;
-    extern MetricFamily & DiskAzureConnect;
-    extern MetricFamily & AzureFirstByte;
-    extern MetricFamily & DiskAzureFirstByte;
 }
 
 namespace DB
@@ -178,17 +178,28 @@ PocoAzureHTTPClient::AzureMetricKind PocoAzureHTTPClient::getMetricKind(const st
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported request method: {}", method);
 }
 
-void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, HistogramMetrics::Value latency) const
+void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatencyType type, Histogram::Value latency) const
 {
     if (type == AzureLatencyType::Connect)
     {
-        static HistogramMetrics::Metric & azure_connect_metric = HistogramMetrics::AzureBlobConnect.withLabels({});
-        azure_connect_metric.observe(latency);
+        const Histogram::Buckets connect_buckets = {100, 1000, 10000, 100000, 200000, 300000, 500000, 1000000, 1500000};
+        static Histogram::MetricFamily & azure_blob_connect = Histogram::Factory::instance().registerMetric(
+            "azure_connect_microseconds",
+            "Time to establish connection with Azure Blob Storage, in microseconds.",
+            connect_buckets,
+            {}
+        );
+        azure_blob_connect.withLabels({}).observe(latency);
 
         if (for_disk_azure)
         {
-            static HistogramMetrics::Metric & disk_azure_connect_metric = HistogramMetrics::DiskAzureConnect.withLabels({});
-            disk_azure_connect_metric.observe(latency);
+            static Histogram::MetricFamily & disk_azure_connect = Histogram::Factory::instance().registerMetric(
+                "disk_azure_connect_microseconds",
+                "Time to establish connection with DiskAzure, in microseconds.",
+                connect_buckets,
+                {}
+            );
+            disk_azure_connect.withLabels({}).observe(latency);
         }
         return;
     }
@@ -204,15 +215,28 @@ void PocoAzureHTTPClient::observeLatency(const std::string & method, AzureLatenc
         }
     }(type);
 
-    const HistogramMetrics::LabelValues first_byte_label_values = {method, attempt_label};
+    const Histogram::Buckets first_byte_buckets = {100, 1000, 10000, 100000, 300000, 500000, 1000000, 2000000, 5000000, 10000000, 15000000, 20000000, 25000000, 30000000, 35000000};
+    const Histogram::Labels first_byte_labels = {"http_method", "attempt"};
+    const Histogram::LabelValues first_byte_label_values = {method, attempt_label};
 
-    HistogramMetrics::observe(
-        HistogramMetrics::AzureFirstByte, first_byte_label_values, latency);
+    static Histogram::MetricFamily & azure_first_byte = Histogram::Factory::instance().registerMetric(
+        "azure_first_byte_microseconds",
+        "Time to receive the first byte from an Azure Blob Storage request, in microseconds.",
+        first_byte_buckets,
+        first_byte_labels
+    );
+    azure_first_byte.withLabels(first_byte_label_values).observe(latency);
+
 
     if (for_disk_azure)
     {
-        HistogramMetrics::observe(
-            HistogramMetrics::DiskAzureFirstByte, first_byte_label_values, latency);
+        static Histogram::MetricFamily & disk_azure_first_byte = Histogram::Factory::instance().registerMetric(
+            "disk_azure_first_byte_microseconds",
+            "Time to receive the first byte from a DiskAzure request, in microseconds.",
+            first_byte_buckets,
+            first_byte_labels
+        );
+        disk_azure_first_byte.withLabels(first_byte_label_values).observe(latency);
     }
 }
 
@@ -237,7 +261,8 @@ PocoAzureHTTPClient::PocoAzureHTTPClient(const PocoAzureHTTPClientConfiguration 
     , http_max_field_name_size(client_configuration.http_max_field_name_size)
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , for_disk_azure(client_configuration.for_disk_azure)
-    , request_throttler(client_configuration.request_throttler)
+    , get_request_throttler(client_configuration.get_request_throttler)
+    , put_request_throttler(client_configuration.put_request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {}
 
@@ -349,10 +374,37 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         }
 
         if (method == "GET" || method == "HEAD")
-            request_throttler.throttleHTTPGet();
-        else if (method == "PUT" || method == "POST" || method == "PATCH")
-            // Note that DELETE is free on Azure and thus we don't throttle it
-            request_throttler.throttleHTTPPut();
+        {
+            if (get_request_throttler)
+            {
+                UInt64 sleep_ns = get_request_throttler->throttle(1);
+                UInt64 sleep_us = sleep_ns / 1000UL;
+                ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerCount);
+                ProfileEvents::increment(ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds, sleep_us);
+
+                if (for_disk_azure)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskAzureGetRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskAzureGetRequestThrottlerSleepMicroseconds, sleep_us);
+                }
+            }
+        }
+        else if (method == "PUT" || method == "POST" || method == "DELETE" || method == "PATCH")
+        {
+            if (put_request_throttler)
+            {
+                UInt64 sleep_ns = put_request_throttler->throttle(1);
+                UInt64 sleep_us = sleep_ns / 1000UL;
+                ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerCount);
+                ProfileEvents::increment(ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds, sleep_us);
+
+                if (for_disk_azure)
+                {
+                    ProfileEvents::increment(ProfileEvents::DiskAzurePutRequestThrottlerCount);
+                    ProfileEvents::increment(ProfileEvents::DiskAzurePutRequestThrottlerSleepMicroseconds, sleep_us);
+                }
+            }
+        }
 
         Poco::URI uri;
         uri.setScheme(url.GetScheme());
@@ -374,8 +426,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         Stopwatch watch;
         std::ostream & request_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
 
-        observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-        observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+        observeLatency(method, AzureLatencyType::Connect, connect_time);
+        observeLatency(method, first_byte_latency_type, first_byte_time);
         latency_recorded = true;
 
         if (auto * body_stream = request.GetBodyStream(); body_stream != nullptr && body_stream->Length() > 0)
@@ -384,7 +436,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            VectorWithMemoryTracking<uint8_t> buffer(8192);
+            std::vector<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
@@ -429,25 +481,14 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             if (redirects_left > 0)
             {
                 auto location = poco_response.get("location");
+                remote_host_filter.checkURL(Poco::URI(location));
 
                 if (!location.empty())
                 {
                     // Check if the redirect URL is allowed by the remote host filter
                     remote_host_filter.checkURL(Poco::URI(location));
-                    // Update request URL and retry. The Azure SDK Url parser calls
-                    // std::stoi on the port substring and throws std::invalid_argument /
-                    // std::out_of_range for malformed ports — translate to DB::Exception
-                    // so a malicious or buggy redirect target does not abort the server
-                    // in debug/sanitizer builds via getCurrentExceptionMessageAndPattern.
-                    try
-                    {
-                        request.GetUrl() = Azure::Core::Url(location);
-                    }
-                    catch (const std::logic_error & e)
-                    {
-                        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
-                            "Azure HTTP redirect Location header has malformed URL '{}': {}", location, e.what());
-                    }
+                    // Update request URL and retry
+                    request.GetUrl() = Azure::Core::Url(location);
                     return makeRequestInternalImpl(request, context, redirects_left - 1);
                 }
             }
@@ -470,8 +511,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
@@ -488,8 +529,8 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     {
         if (!latency_recorded)
         {
-            observeLatency(method, AzureLatencyType::Connect, static_cast<HistogramMetrics::Value>(connect_time));
-            observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
+            observeLatency(method, AzureLatencyType::Connect, connect_time);
+            observeLatency(method, first_byte_latency_type, first_byte_time);
         }
 
         auto response = std::make_unique<Azure::Core::Http::RawResponse>(

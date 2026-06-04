@@ -1,7 +1,6 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -36,12 +35,12 @@ TEST(ColumnObject, GetName)
     ASSERT_EQ(col->getName(), "Object(max_dynamic_paths=20, max_dynamic_types=10, a.b Array(String), b.d UInt32)");
 }
 
-static Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
+Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
 {
     auto data = values->getDataAt(n);
-    ReadBufferFromMemory buf(data);
+    ReadBufferFromMemory buf(data.data, data.size);
     Field res;
-    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(res, buf, FormatSettings());
+    std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
     return res;
 }
 
@@ -320,7 +319,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
     col_object2.deserializeAndInsertFromArena(in, nullptr);
     col_object2.deserializeAndInsertFromArena(in, nullptr);
     col_object2.deserializeAndInsertFromArena(in, nullptr);
@@ -347,7 +346,7 @@ TEST(ColumnObject, SkipSerializedInArena)
     col_object.serializeValueIntoArena(2, arena, pos, nullptr);
 
     auto col2 = type->createColumn();
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);
     col2->skipSerializedInArena(in);
@@ -434,7 +433,7 @@ TEST(ColumnObject, RepairDuplicatesInDynamicPathsAndSharedData)
     column_object_with_shared_data_paths.insert(Object{{"d", Field{1u}}, {"b", Field{1u}}});
     column_object_with_shared_data_paths.insert(Object{});
 
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths;
+    std::unordered_map<String, MutableColumnPtr> dynamic_paths;
     for (const auto & [path, column] : column_object_with_dynamic_paths.getDynamicPaths())
         dynamic_paths[path] = IColumn::mutate(column);
 
@@ -487,7 +486,7 @@ TEST(ColumnObject, TryInsertRestoresSortedDynamicPaths)
     auto ref = col_object.serializeValueIntoArena(0, arena, begin, nullptr);
 
     /// Round-trip sanity check.
-    ReadBufferFromMemory buf(ref.data(), ref.size());
+    ReadBufferFromMemory buf(ref.data, ref.size);
     col_object.deserializeAndInsertFromArena(buf, nullptr);
     ASSERT_EQ(col_object.size(), 2u);
     ASSERT_EQ(col_object[1], col_object[0]);

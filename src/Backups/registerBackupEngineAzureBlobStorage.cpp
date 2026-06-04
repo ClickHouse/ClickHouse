@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Backups/BackupFactory.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -29,11 +28,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-namespace Setting
-{
-extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
-}
-
 #if USE_AZURE_BLOB_STORAGE
 namespace
 {
@@ -50,8 +44,6 @@ namespace
     }
 }
 #endif
-
-void registerBackupEngineAzureBlobStorage(BackupFactory &);
 
 void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 {
@@ -129,7 +121,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
-            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {
@@ -147,10 +138,20 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
+            auto lightweight_snapshot_writer = std::make_shared<BackupWriterAzureBlobStorage>(
+                connection_params,
+                "",
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
+
             return std::make_unique<BackupImpl>(
                 params.backup_info,
                 archive_params,
-                reader);
+                reader,
+                lightweight_snapshot_writer);
         }
 
         params.use_same_s3_credentials_for_base_backup = false;

@@ -43,14 +43,6 @@ MATH(EXPR MARIADB_VERSION_ID "${MARIADB_CLIENT_VERSION_MAJOR} * 10000 +
                               ${MARIADB_CLIENT_VERSION_MINOR} * 100   +
                               ${MARIADB_CLIENT_VERSION_PATCH}")
 
-set(CPACK_PACKAGE_VERSION_MAJOR 3)
-set(CPACK_PACKAGE_VERSION_MINOR 1)
-set(CPACK_PACKAGE_VERSION_PATCH 29)
-set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
-MATH(EXPR MARIADB_PACKAGE_VERSION_ID "${CPACK_PACKAGE_VERSION_MAJOR} * 10000 +
-                                      ${CPACK_PACKAGE_VERSION_MINOR} * 100   +
-                                      ${CPACK_PACKAGE_VERSION_PATCH}")
-
 IF (NOT MARIADB_PORT)
   set(MARIADB_PORT 3306)
 ENDIF ()
@@ -215,7 +207,7 @@ set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES}
 ${CC_SOURCE_DIR}/plugins/auth/my_auth.c
 ${CC_SOURCE_DIR}/libmariadb/ma_array.c
 ${CC_SOURCE_DIR}/libmariadb/ma_charset.c
-${CC_SOURCE_DIR}/libmariadb/ma_hashtbl.c
+${CC_SOURCE_DIR}/libmariadb/ma_hash.c
 ${CC_SOURCE_DIR}/libmariadb/ma_net.c
 ${CC_SOURCE_DIR}/libmariadb/mariadb_charset.c
 ${CC_SOURCE_DIR}/libmariadb/ma_time.c
@@ -255,11 +247,5 @@ target_include_directories(_mariadbclient PRIVATE ${CC_BINARY_DIR}/include-priva
 target_include_directories(_mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(_mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
-# NOTE: revert it once https://github.com/llvm/llvm-project/issues/173168 will be resolved
-target_compile_options(_mariadbclient
-    PRIVATE
-        -Wno-incompatible-pointer-types
-)
-
 
 add_library(ch_contrib::mariadbclient ALIAS _mariadbclient)

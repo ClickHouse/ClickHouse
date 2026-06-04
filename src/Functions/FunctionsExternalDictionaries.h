@@ -19,6 +19,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -64,18 +65,19 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper
+class FunctionDictHelper : public WithContext
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+        auto current_context = getContext();
+        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
         if (!access_checked)
         {
-            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -141,10 +143,8 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
+        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
-
-    const ContextPtr context;
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
@@ -617,47 +617,6 @@ public:
 
 private:
 
-    /// When maskedExecute evaluates a short-circuit argument only on the rows where the
-    /// dictionary key was not found (mask == 1), it expands the result back to full size by
-    /// filling mask == 0 rows with NULLs via ColumnNullable::expand. Those rows are about to
-    /// be overwritten by the dictionary result, but castColumnAccurate rejects the column if
-    /// it contains any NULLs while casting to a non-Nullable type.
-    /// This helper clears the spurious null-map bits at mask == 0 positions so the cast only
-    /// fails when the user-provided default genuinely evaluates to NULL on a row that needs it.
-    static void clearMaskedNullsBeforeCast(
-        IColumn & column,
-        const IColumn::Filter & mask,
-        const DataTypePtr & result_type)
-    {
-        if (result_type->isNullable())
-            return;
-
-        if (auto * nullable = typeid_cast<ColumnNullable *>(&column))
-        {
-            auto & null_map = nullable->getNullMapData();
-            chassert(null_map.size() == mask.size());
-            for (size_t i = 0; i < null_map.size(); ++i)
-            {
-                if (!mask[i])
-                    null_map[i] = 0;
-            }
-            /// Recurse in case nested is e.g. Tuple(Nullable(...)).
-            clearMaskedNullsBeforeCast(nullable->getNestedColumn(), mask, result_type);
-        }
-        else if (auto * tuple_col = typeid_cast<ColumnTuple *>(&column))
-        {
-            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(result_type.get()))
-            {
-                const size_t n = std::min(tuple_col->tupleSize(), tuple_type->getElements().size());
-                for (size_t col_idx = 0; col_idx < n; ++col_idx)
-                {
-                    clearMaskedNullsBeforeCast(
-                        tuple_col->getColumn(col_idx), mask, tuple_type->getElements()[col_idx]);
-                }
-            }
-        }
-    }
-
     std::pair<ColumnPtr, ColumnPtr> getDefaultsShortCircuit(
         IColumn::Filter && default_mask,
         const DataTypePtr & result_type,
@@ -666,11 +625,8 @@ private:
         ColumnWithTypeAndName column_before_cast = last_argument;
         maskedExecute(column_before_cast, default_mask);
 
-        auto mutable_col = IColumn::mutate(column_before_cast.column->convertToFullColumnIfConst());
-        clearMaskedNullsBeforeCast(*mutable_col, default_mask, result_type);
-
         ColumnWithTypeAndName column_to_cast = {
-            std::move(mutable_col),
+            column_before_cast.column->convertToFullColumnIfConst(),
             column_before_cast.type,
             column_before_cast.name};
 
@@ -687,7 +643,7 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
-        auto if_func = FunctionFactory::instance().get("if", helper.context);
+        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
@@ -1050,17 +1006,7 @@ private:
         ColumnPtr result;
 
         WhichDataType dictionary_get_result_data_type(dictionary_get_result_type);
-
-        /// We need to mutate the result column's null map below (via `addNullMap`).
-        /// `IColumn::mutate` performs a deep clone of any shared sub-columns, while
-        /// `assumeMutable` only casts away const without checking for sharing.
-        /// This matters when the dictionary key argument is `Nullable`: in that case
-        /// `FunctionDictGetNoType::executeImpl` calls `wrapInNullable`, which produces a
-        /// `ColumnNullable` whose null map shares storage with the input key column's
-        /// null map. Mutating that shared null map would corrupt the input column —
-        /// see issue #73633 where `dictGetOrNull` with a `Nullable` key column was
-        /// silently overwriting other columns in the SELECT projection with `NULL`.
-        auto dictionary_get_result_column_mutable = IColumn::mutate(std::move(dictionary_get_result_column));
+        auto dictionary_get_result_column_mutable = dictionary_get_result_column->assumeMutable();
 
         if (dictionary_get_result_data_type.isTuple())
         {
@@ -1095,11 +1041,11 @@ private:
             {
                 auto & null_map_data = nullable_column->getNullMapData();
                 addNullMap(null_map_data, is_key_in_dictionary_data);
-                result = std::move(dictionary_get_result_column_mutable);
+                result = std::move(dictionary_get_result_column);
             }
             else
             {
-                result = ColumnNullable::create(std::move(dictionary_get_result_column_mutable), std::move(is_key_in_dictionary_column_mutable));
+                result = ColumnNullable::create(dictionary_get_result_column, std::move(is_key_in_dictionary_column_mutable));
             }
         }
 
@@ -1108,7 +1054,7 @@ private:
 
     static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
     {
-        chassert(null_map.size() == null_map_to_add.size());
+        assert(null_map.size() == null_map_to_add.size());
 
         for (size_t i = 0; i < null_map.size(); ++i)
             null_map[i] = null_map[i] || null_map_to_add[i];

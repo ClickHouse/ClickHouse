@@ -13,7 +13,6 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
-#include <ranges>
 
 namespace DB
 {
@@ -87,7 +86,7 @@ void validateFilters(const QueryTreeNodePtr & query_node)
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
-static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
 {
     using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
     std::vector<NodePair> nodes_to_process;
@@ -201,8 +200,6 @@ public:
 
         auto column_node_source = column_node->getColumnSource();
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
-            return;
-        if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
@@ -364,9 +361,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
         if (query_node_typed.hasInterpolate())
             validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
-
-        if (query_node_typed.hasLimitBy())
-            validate_group_by_columns_visitor.visit(query_node_typed.getLimitByNode());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }

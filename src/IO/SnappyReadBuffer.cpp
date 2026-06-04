@@ -39,7 +39,7 @@ bool SnappyReadBuffer::nextImpl()
         bool success = snappy::Uncompress(compress_buffer.data(), compress_buffer.size(), &uncompress_buffer);
         if (!success)
         {
-            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncompress failed: ");
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncomress failed: ");
         }
         BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
         return true;
@@ -51,7 +51,7 @@ SnappyReadBuffer::~SnappyReadBuffer() = default;
 
 off_t SnappyReadBuffer::seek(off_t off, int whence)
 {
-    off_t new_pos = 0;
+    off_t new_pos;
     if (whence == SEEK_SET)
         new_pos = off;
     else if (whence == SEEK_CUR)

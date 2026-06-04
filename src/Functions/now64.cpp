@@ -26,7 +26,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow64 final : public IExecutableFunction
+class ExecutableFunctionNow64 : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow64(Field time_) : time_value(time_) {}
@@ -42,7 +42,7 @@ private:
     Field time_value;
 };
 
-class FunctionBaseNow64 final : public IFunctionBase
+class FunctionBaseNow64 : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow64(Field time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -81,7 +81,7 @@ private:
     DataTypePtr return_type;
 };
 
-class Now64OverloadResolver final : public IFunctionOverloadResolver
+class Now64OverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now64";
@@ -150,7 +150,7 @@ REGISTER_FUNCTION(Now64)
 Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-now64([scale[, timezone]])
+now64([scale], [timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},
@@ -169,7 +169,7 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<Now64OverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }
