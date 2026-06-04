@@ -173,6 +173,7 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorSparkbar(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSparkbar>());
