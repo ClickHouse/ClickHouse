@@ -154,3 +154,49 @@ def test_correctness(started_cluster):
         ), f"unexpected S3 changelog file names: {s3_changelog_files}"
     finally:
         stop_zk(node_zk)
+
+
+def test_restart_reads_changelog_from_s3(started_cluster):
+    # Start from a clean state (wipes local coordination data and the MinIO bucket).
+    setup_local_storage(started_cluster, node_logs)
+
+    node_zk = get_fake_zk("node_logs")
+    try:
+        node_zk.create("/test_restart")
+        for _ in range(30):
+            node_zk.create_async("/test_restart/somenode", b"somedata", sequence=True)
+
+        node_logs.wait_for_log_line(
+            "RaftInstance: commit upto",
+            look_behind_lines=1000,
+        )
+
+        children_before = sorted(node_zk.get_children("/test_restart"))
+        assert len(children_before) == 30
+
+        # The changelog is stored only on the S3 disk, so these objects are the sole
+        # durable copy of the log.
+        s3_changelog_files = list_s3_objects(started_cluster, "snaplogs/")
+        assert len(s3_changelog_files) > 0
+    finally:
+        stop_zk(node_zk)
+
+    # Restart Keeper without touching any data. This drops the in-memory entry caches,
+    # so on startup Keeper must rebuild its state by reading the changelog back from S3.
+    # This is the actual storage contract: restart/replay, not just live reads.
+    node_logs.restart_clickhouse()
+    keeper_utils.wait_until_connected(
+        started_cluster, node_logs, wait_complete_readiness=False
+    )
+
+    node_zk = get_fake_zk("node_logs")
+    try:
+        children_after = sorted(node_zk.get_children("/test_restart"))
+        assert children_after == children_before, (
+            "data lost after restart from S3 changelog: "
+            f"before={children_before} after={children_after}"
+        )
+        for child in children_after:
+            assert node_zk.get(f"/test_restart/{child}")[0] == b"somedata"
+    finally:
+        stop_zk(node_zk)
