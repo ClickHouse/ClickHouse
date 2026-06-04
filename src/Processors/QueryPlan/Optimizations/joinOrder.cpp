@@ -802,8 +802,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 
             for (const auto & [_, right] : components[smaller_component_size])
             {
-                checkLimits();
-
                 for (const auto & [_, left] : components[bigger_component_size])
                 {
                     /// Do components overlap?
@@ -814,11 +812,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
                         continue;
 
-                    if (max_searched_plans && ++searched_plans > max_searched_plans)
+                    ++searched_plans;
+                    if (max_searched_plans && searched_plans > max_searched_plans)
                     {
                         LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
                         return nullptr;
                     }
+                    /// `checkLimits` invokes the interactive cancel callback, which can send progress over
+                    /// the network. Poll it once every few thousand pairs instead of on every one.
+                    if ((searched_plans & 0xFFF) == 0)
+                        checkLimits();
 
                     auto join_kind = isValidJoinOrder(left->relations, right->relations);
                     if (!join_kind)
