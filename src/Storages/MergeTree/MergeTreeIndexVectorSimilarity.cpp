@@ -750,78 +750,6 @@ void MergeTreeIndexAggregatorVectorSimilarityFlat::update(const Block & block, s
     *pos += rows_read;
 }
 
-namespace
-{
-
-/// Adapts ClickHouse's global, bounded vector-similarity thread pool to usearch's executor interface
-/// (`size`/`fixed`/`dynamic`), so `exact_search_t` scans in parallel using a shared bounded pool instead of
-/// spawning its own unbounded `std::thread`s. Bounding by the shared pool prevents oversubscription when many
-/// parts are scanned concurrently (each part's scan competes for the same pool).
-class VectorSimilarityPoolExecutor
-{
-public:
-    VectorSimilarityPoolExecutor(ThreadPool & pool_, size_t threads_count_)
-        : pool(pool_), threads_count(std::max<size_t>(threads_count_, 1))
-    {
-    }
-
-    [[maybe_unused]] std::size_t size() const noexcept { return threads_count; }
-
-    template <typename Function>
-    void fixed(std::size_t tasks, Function && function)
-    {
-        runRange(tasks, [&](std::size_t thread_idx, std::size_t task_idx) { function(thread_idx, task_idx); return true; });
-    }
-
-    template <typename Function>
-    void dynamic(std::size_t tasks, Function && function)
-    {
-        runRange(tasks, std::forward<Function>(function));
-    }
-
-private:
-    /// Splits [0, tasks) into `min(threads_count, tasks)` contiguous chunks scheduled on the pool. `function`
-    /// returns false to request early stop (used by `exact_search_t` for progress/cancellation).
-    template <typename Function>
-    void runRange(std::size_t tasks, Function && function)
-    {
-        if (tasks == 0)
-            return;
-
-        const std::size_t num_threads = std::min(threads_count, tasks);
-        if (num_threads <= 1)
-        {
-            for (std::size_t task_idx = 0; task_idx < tasks; ++task_idx)
-                if (!function(0, task_idx))
-                    break;
-            return;
-        }
-
-        const std::size_t per_thread = (tasks + num_threads - 1) / num_threads;
-        std::atomic_bool stop{false};
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-        for (std::size_t t = 0; t < num_threads; ++t)
-        {
-            const std::size_t begin = t * per_thread;
-            if (begin >= tasks)
-                break;
-            const std::size_t end = std::min(tasks, begin + per_thread);
-            runner.enqueueAndKeepTrack([&function, &stop, t, begin, end]
-            {
-                for (std::size_t task_idx = begin; task_idx < end && !stop.load(std::memory_order_relaxed); ++task_idx)
-                    if (!function(t, task_idx))
-                        stop.store(true, std::memory_order_relaxed);
-            });
-        }
-        runner.waitForAllToFinishAndRethrowFirstError();
-    }
-
-    ThreadPool & pool;
-    std::size_t threads_count;
-};
-
-}
-
 MergeTreeIndexConditionVectorSimilarityFlat::MergeTreeIndexConditionVectorSimilarityFlat(
     const std::optional<VectorSearchParameters> & parameters_,
     const String & index_column_,
@@ -893,42 +821,73 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarityFlat::calculateApproxim
     /// usearch's punned metric computes Hamming over b1x8 codes using AVX popcount.
     unum::usearch::metric_punned_t metric(granule->dimensions, granule->metric_kind, granule->scalar_kind);
 
-    /// Parallelize the exhaustive scan over a bounded, shared pool. Unlike HNSW search (O(log N) per query, fine
-    /// single-threaded), a flat scan is O(N) and the index-analysis phase only parallelizes across parts, so a single
-    /// large part would otherwise scan single-threaded. `exact_search_t` computes all distances via the executor,
-    /// transposes, and partial-sorts to the top `limit`.
-    size_t threads_count = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
-    if (threads_count == 0)
-        threads_count = getNumberOfCPUCoresToUse();
-    auto & pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
-    VectorSimilarityPoolExecutor executor(pool, threads_count);
+    const char * base = reinterpret_cast<const char *>(granule->codes.data());
+    const char * query = reinterpret_cast<const char *>(query_code.data());
 
-    /// Abort the scan promptly on KILL QUERY (usearch does not check for cancellation internally).
-    auto progress = [](std::size_t, std::size_t) -> bool
+    /// Exhaustive scan. Unlike HNSW search (O(log N) per query, fine single-threaded), a flat scan is O(N) and the
+    /// index-analysis phase only parallelizes across parts, so a single large part would otherwise scan single-threaded.
+    /// We compute distances in parallel into disjoint slices of `scored` and then partial-sort to the top `limit`.
+    /// Note: we deliberately do NOT use usearch's `exact_search_t` here - it increments a single shared atomic counter
+    /// once per vector, and for the single-query case that contention dominates (~99% of runtime) over the tiny Hamming.
+    std::vector<std::pair<float, UInt32>> scored(num_vectors);
+
+    auto throw_if_killed = []
     {
         if (auto query_context = CurrentThread::tryGetQueryContext())
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->throwIfKilled();
-        return true;
     };
 
-    unum::usearch::exact_search_t searcher;
-    auto search_result = searcher(
-        reinterpret_cast<const char *>(granule->codes.data()), num_vectors, bytes_per_vector,
-        reinterpret_cast<const char *>(query_code.data()), /*queries_count=*/ 1, bytes_per_vector,
-        limit, metric, executor, progress);
+    auto scan_range = [&](size_t begin, size_t end)
+    {
+        for (size_t i = begin; i < end; ++i)
+        {
+            /// Check cancellation periodically (not per vector - that lookup would itself dominate the cheap Hamming).
+            if ((i & 0xFFFFu) == 0)
+                throw_if_killed();
+            scored[i] = {static_cast<float>(metric(base + i * bytes_per_vector, query)), static_cast<UInt32>(i)};
+        }
+    };
+
+    size_t threads_count = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (threads_count == 0)
+        threads_count = getNumberOfCPUCoresToUse();
+    const size_t num_threads = std::min(threads_count, num_vectors);
+
+    if (num_threads <= 1)
+    {
+        scan_range(0, num_vectors);
+    }
+    else
+    {
+        const size_t per_thread = (num_vectors + num_threads - 1) / num_threads;
+        auto & pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            const size_t begin = t * per_thread;
+            if (begin >= num_vectors)
+                break;
+            const size_t end = std::min(num_vectors, begin + per_thread);
+            runner.enqueueAndKeepTrack([&scan_range, begin, end] { scan_range(begin, end); });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    if (limit < num_vectors)
+        std::partial_sort(scored.begin(), scored.begin() + limit, scored.end());
+    else
+        std::sort(scored.begin(), scored.end());
 
     NearestNeighbours result;
     result.rows.resize(limit);
     if (parameters->return_distances)
         result.distances = std::vector<float>(limit);
-
-    const auto * neighbours = search_result.at(0);
     for (size_t i = 0; i < limit; ++i)
     {
-        result.rows[i] = neighbours[i].offset;
+        result.rows[i] = scored[i].second;
         if (parameters->return_distances)
-            result.distances.value()[i] = neighbours[i].distance;
+            result.distances.value()[i] = scored[i].first;
     }
 
     return result;
