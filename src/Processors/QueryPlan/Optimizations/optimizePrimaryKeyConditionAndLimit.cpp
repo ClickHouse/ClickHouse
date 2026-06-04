@@ -66,38 +66,37 @@ void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name
         return &dag.addFunction(ne_resolver, {bare_node, &zero_node}, {});
     };
 
-    auto & outputs = dag.getOutputs();
-    for (size_t i = 0; i < outputs.size(); ++i)
+    for (auto *& output : dag.getOutputs())
     {
-        if (outputs[i]->result_name != filter_column_name)
+        if (output->result_name != filter_column_name)
             continue;
 
         /// Direct bare column as the filter predicate (e.g. `WHERE id`).
-        if (const auto * replacement = rewrite_node(outputs[i]))
+        if (const auto * replacement = rewrite_node(output))
         {
             filter_column_name = replacement->result_name;
-            outputs[i] = replacement;
+            output = replacement;
             break;
         }
 
         /// Bare-column children of a top-level logical operator
         /// (e.g. `WHERE NOT id` or `WHERE id AND other`).
-        if (is_logical(outputs[i]))
+        if (is_logical(output))
         {
             bool any_changed = false;
-            ActionsDAG::NodeRawConstPtrs new_children = outputs[i]->children;
-            for (size_t j = 0; j < new_children.size(); ++j)
+            ActionsDAG::NodeRawConstPtrs new_children = output->children;
+            for (auto *& child : new_children)
             {
-                if (const auto * r = rewrite_node(new_children[j]))
+                if (const auto * r = rewrite_node(child))
                 {
-                    new_children[j] = r;
+                    child = r;
                     any_changed = true;
                 }
             }
             if (any_changed)
             {
-                outputs[i] = &dag.addFunction(outputs[i]->function_base, std::move(new_children), {});
-                filter_column_name = outputs[i]->result_name;
+                output = &dag.addFunction(output->function_base, std::move(new_children), {});
+                filter_column_name = output->result_name;
             }
         }
 
