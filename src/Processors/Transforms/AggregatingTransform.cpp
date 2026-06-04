@@ -43,6 +43,22 @@ extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+size_t partialAggregateArenaBytesFromVariants(const AggregatedDataVariants & variants)
+{
+    size_t arena_allocated = 0;
+    for (const auto & pool_ptr : variants.aggregates_pools)
+    {
+        if (pool_ptr)
+            arena_allocated += pool_ptr->allocatedBytes();
+    }
+    return arena_allocated;
+}
+
+}
+
 ManyAggregatedData::~ManyAggregatedData()
 {
     try
@@ -1125,7 +1141,11 @@ void AggregatingTransform::flushPartialAggregateMissBuffers(bool allow_cache_put
             partial_aggregate_skip_cache_put_keys.insert(key);
         }
         if (allow_cache_put && !isCancelled() && !partial_aggregate_skip_cache_put_keys.contains(key))
-            params->partial_aggregate_cache->put(key, Block(materialized));
+        {
+            /// `Block::allocatedBytes()` omits `ColumnAggregateFunction::foreign_arenas`; count arenas while `local_variants` still holds the pools.
+            const size_t arena_weight = partialAggregateArenaBytesFromVariants(buf.local_variants);
+            params->partial_aggregate_cache->put(key, Block(materialized), arena_weight);
+        }
         if (!params->aggregator.mergeOnBlock(materialized.getColumns(), materialized.rows(), false, variants, no_more_keys, is_cancelled))
             is_consume_finished = true;
     }

@@ -26,8 +26,7 @@ size_t estimateBlockWeightBytes(const Block & block)
 {
     /// `allocatedBytes` is a cheap deep-size approximation for LRU eviction weight.
     /// Fall back to `bytes` for column implementations that do not report allocation.
-    /// Note: block.allocatedBytes() does not account for aggregate-state foreign arenas in ColumnAggregateFunction.
-    /// LRU weight may be underestimated; accurate arena accounting is a follow-up.
+    /// Note: `Block::allocatedBytes()` does not include `ColumnAggregateFunction::foreign_arenas`; callers may pass arena bytes via `put`'s `additional_weight_in_bytes`.
     const size_t allocated = block.allocatedBytes();
     return allocated ? allocated : block.bytes();
 }
@@ -87,14 +86,14 @@ std::optional<Block> PartialAggregateCache::get(const Key & key)
     return std::nullopt;
 }
 
-void PartialAggregateCache::put(const Key & key, Block partial_aggregate)
+void PartialAggregateCache::put(const Key & key, Block partial_aggregate, size_t additional_weight_in_bytes)
 {
     if (key.table_uuid == UUIDHelpers::Nil)
         return; /// Same invariant as QueryConditionCache: non-UUID tables do not participate.
 
     auto entry = std::make_shared<Entry>();
     entry->partial_aggregate = std::move(partial_aggregate);
-    entry->weight_in_bytes = estimateBlockWeightBytes(entry->partial_aggregate);
+    entry->weight_in_bytes = estimateBlockWeightBytes(entry->partial_aggregate) + additional_weight_in_bytes;
     entry->created_at = std::chrono::system_clock::now();
 
     cache.set(key, entry);

@@ -4139,6 +4139,8 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto with_expr = select.with())
+        hash.update(with_expr->getTreeHash(/*ignore_aliases=*/true));
     try
     {
         if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
@@ -4244,6 +4246,10 @@ UInt64 partialAggregateCacheSemanticKey(
         return 0;
 
     const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    if (select.with())
+        return 0;
+
     /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
     if (hasJoinOrMutableTableInputs(select))
         return 0;

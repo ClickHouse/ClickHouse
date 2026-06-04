@@ -66,7 +66,8 @@ public:
     std::optional<Block> get(const Key & key);
 
     /// Store intermediate aggregate states for a part key.
-    void put(const Key & key, Block partial_aggregate);
+    /// `additional_weight_in_bytes` accounts for aggregate-function arena memory held outside `Block::allocatedBytes()` (e.g. `foreign_arenas`).
+    void put(const Key & key, Block partial_aggregate, size_t additional_weight_in_bytes = 0);
 
     /// Clear all entries
     void clear();
