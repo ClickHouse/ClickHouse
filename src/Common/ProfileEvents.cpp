@@ -539,6 +539,7 @@
     \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
+    M(FileProgressCallbackInvocations, "Number of times the per-query `FileProgressCallback` was invoked (counts each per-file `FileProgress` event delivered to the client over native TCP or via `clickhouse-local`).", ValueType::Number) \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.", ValueType::Number) \
     M(StorageBufferErrorOnFlush, "Number of times a buffer in the 'Buffer' table has not been able to flush due to error writing in the destination table.", ValueType::Number) \
@@ -1365,13 +1366,14 @@ The server successfully detected this situation and will download merged part fr
     M(WasmModuleInstatiate, "Number of WebAssembly compartments created", ValueType::Number) \
     M(WasmMemoryAllocated, "Total memory allocated for WebAssembly compartments", ValueType::Bytes) \
     \
-    M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable pool user-defined function invocations.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable pool user-defined functions, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
-    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
-    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionInvocations, "Number of executable_pool user-defined function invocations.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable_pool user-defined functions, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable_pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable_pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable_pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
