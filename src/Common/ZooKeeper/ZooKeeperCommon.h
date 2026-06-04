@@ -245,7 +245,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override
     {
-        /// include_stats and include_ttl are mutually exclusive
         if (include_ttl)
             return OpNum::CreateTTL;
         if (include_stats)
