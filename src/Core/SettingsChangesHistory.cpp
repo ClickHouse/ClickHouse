@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"query_plan_push_down_volume_reducing_functions", false, false, "New setting. Add optimization to push down volume-reducing functions in query plan."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -278,7 +279,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_files_processing_in_cluster_functions", 0, 0, "Add a new setting that allows to limit number of streams for files processing in *Cluster table functions"},
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
-            {"query_plan_push_down_volume_reducing_functions", false, false, "New setting. Add optimization to push down volume-reducing functions in query plan."},
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
