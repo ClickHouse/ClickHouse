@@ -662,22 +662,29 @@ Strings getPathsListOnDisk(
     size_t & total_bytes_to_read)
 {
     const Disks disks = volume->getDisks();
-    const bool is_absolute = !path_with_globs.empty() && path_with_globs[0] == '/';
     const bool has_globs = path_with_globs.find_first_of("*?{") != std::string::npos;
+
+    /// A path is "disk-qualified" when it already carries a configured disk's root
+    /// prefix (e.g. produced by `DatabaseFilesystem` or by passing an absolute path).
+    /// For local disks that prefix is host-absolute (starts with '/'), but for
+    /// object-storage disks (e.g. `s3_plain`) `disk->getPath()` is a relative
+    /// object-key prefix, so a leading-slash test is insufficient. Probe the disks
+    /// directly so a disk-qualified path is not mistaken for a relative one and
+    /// re-prefixed (which would double the disk root, e.g. `<root>/<root>/file`).
+    auto [qualified_disk, qualified_relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
 
     DiskPtr assigned_disk;
     String relative_pattern;
-    if (is_absolute)
+    if (qualified_disk)
     {
-        auto [disk, relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
-        if (!disk)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                "Path `{}` is not inside any user files disk", path_with_globs);
-        assigned_disk = disk;
-        relative_pattern = normalizeDiskRelativePath(relative);
+        assigned_disk = qualified_disk;
+        relative_pattern = normalizeDiskRelativePath(qualified_relative);
     }
     else
     {
+        /// Not under any disk root. A host-absolute path here is necessarily outside
+        /// every user-files disk, so reject it; `normalizeDiskRelativePath` throws on
+        /// a leading '/'. Relative paths are resolved against the disk root below.
         relative_pattern = normalizeDiskRelativePath(path_with_globs);
     }
 
