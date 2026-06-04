@@ -268,6 +268,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -4754,6 +4755,21 @@ namespace
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// Serialization does not yet carry read-in-order, deferred FINAL filters, or a selected
+    /// projection; refuse to distribute reads relying on them rather than read with wrong semantics.
+    if (distributed_read_bucket_count > 0)
+    {
+        if (query_info.input_order_info)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a read-in-order distributed read");
+        if (deferred_row_level_filter || deferred_prewhere_info)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a distributed read with deferred FINAL filters");
+        if (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support a distributed read from a projection");
+    }
+
     StorageID table_id = data.getStorageID();
     writeStringBinary(table_id.getDatabaseName(), ctx.out);
     writeStringBinary(table_id.getTableName(), ctx.out);
