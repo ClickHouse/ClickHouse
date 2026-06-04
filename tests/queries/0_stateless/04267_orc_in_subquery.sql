@@ -16,11 +16,13 @@ SELECT count() FROM file(current_database() || '_100743.orc', ORC)
 WHERE id IN (50, 5000, 9950)
 SETTINGS enable_filesystem_cache = 0, log_comment = '100743_orc_literal';
 
+-- ORC lacks native unsigned integers; UInt64 is stored as signed int64, so
+-- without explicit schema ClickHouse infers Nullable(Int64)
 SELECT count() FROM file(current_database() || '_100743.orc', ORC)
-WHERE id IN (SELECT arrayJoin([50, 5000, 9950])::UInt64)
+WHERE id IN (SELECT arrayJoin([50, 5000, 9950])::Int64)
 SETTINGS enable_filesystem_cache = 0, log_comment = '100743_orc_subquery';
 
-WITH keys AS (SELECT arrayJoin([50::UInt64, 5000::UInt64, 9950::UInt64]) AS id)
+WITH keys AS (SELECT arrayJoin([50::Int64, 5000::Int64, 9950::Int64]) AS id)
 SELECT count() FROM file(current_database() || '_100743.orc', ORC)
 WHERE id IN (SELECT id FROM keys)
 SETTINGS enable_filesystem_cache = 0, log_comment = '100743_orc_cte';
