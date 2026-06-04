@@ -283,7 +283,7 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     if (num_columns != 0)
     {
         auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
-        auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
+        auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
         Block block = reader->read();
 
         result = Chunk(block.getColumns(), num_rows);
@@ -292,6 +292,7 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
             auto info = std::make_shared<AggregatedChunkInfo>();
             info->bucket_num = block.info.bucket_num;
             info->is_overflows = block.info.is_overflows;
+            info->out_of_order_buckets = block.info.out_of_order_buckets;
             result->getChunkInfos().add(std::move(info));
         }
         rows_read += num_rows;

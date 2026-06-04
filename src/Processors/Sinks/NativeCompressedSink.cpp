@@ -32,7 +32,7 @@ void NativeCompressedSink::initWriterOnce(const Chunk & chunk)
         writeVarUInt(stream_flags, out);
 
         compressed_buf = std::make_unique<CompressedWriteBuffer>(out);
-        writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, input.getSharedHeader());
+        writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_TCP_PROTOCOL_VERSION, input.getSharedHeader());
     }
 }
 
@@ -48,6 +48,13 @@ void NativeCompressedSink::consume(Chunk chunk)
     LOG_TEST(log, "Writing chunk with {} rows to stream {}", chunk.getNumRows(), stream_name);
 
     Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
+    /// Carry aggregation metadata in block.info so the reader can reconstruct AggregatedChunkInfo.
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
+    {
+        block.info.bucket_num = agg_info->bucket_num;
+        block.info.is_overflows = agg_info->is_overflows;
+        block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
+    }
     writer->write(block);
 }
 

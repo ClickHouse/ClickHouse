@@ -26,7 +26,7 @@ Chunk NativeCompressedSource::generate()
         {
             readVarUInt(stream_flags, *in);
             compressed_buf = std::make_unique<CompressedReadBuffer>(*in);
-            reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS);
+            reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
         }
 
         Block block = reader->read();
@@ -40,6 +40,7 @@ Chunk NativeCompressedSource::generate()
             auto info = std::make_shared<AggregatedChunkInfo>();
             info->bucket_num = block.info.bucket_num;
             info->is_overflows = block.info.is_overflows;
+            info->out_of_order_buckets = block.info.out_of_order_buckets;
             result.getChunkInfos().add(std::move(info));
         }
         return result;
