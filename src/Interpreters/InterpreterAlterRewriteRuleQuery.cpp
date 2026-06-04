@@ -25,6 +25,7 @@ BlockIO InterpreterAlterRewriteRuleQuery::execute()
     return {};
 }
 
+void registerInterpreterAlterRewriteRuleQuery(InterpreterFactory & factory);
 void registerInterpreterAlterRewriteRuleQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
