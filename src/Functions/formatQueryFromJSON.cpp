@@ -79,61 +79,25 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     auto orig_sig = extractSignificant(orig_tokens);
     auto canon_sig = extractSignificant(canon_tokens);
 
-    /// Get the inter-token material (whitespace + comments) between token at full_index
-    /// and the previous significant token (or start of string).
-    auto getInterTokenMaterial = [](const std::vector<Token> & tokens, size_t sig_idx, const String & source) -> std::string_view /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    /// Get the inter-token material (whitespace + comments) between the significant token
+    /// at `sig_idx` and the previous significant token (or start of string).
+    ///
+    /// This is O(1): `SignificantToken::index` already stores the position of each
+    /// significant token in the full token array, so there is no need to rescan it.
+    auto getInterTokenMaterial = [](const std::vector<Token> & tokens, const std::vector<SignificantToken> & sig, size_t sig_idx, const String & source) -> std::string_view /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         if (sig_idx == 0)
         {
-            /// Material before the first significant token.
+            /// Material before the first significant token: from the start of the source
+            /// up to the begin of the first significant token (or the whole source if none).
             const char * start = source.data();
-            const char * end = tokens.empty() ? source.data() : tokens[0].begin;
-            /// Find the actual first significant token's begin.
-            for (const auto & token : tokens)
-            {
-                if (token.isSignificant() && !token.isEnd())
-                {
-                    end = token.begin;
-                    break;
-                }
-            }
+            const char * end = sig.empty() ? source.data() + source.size() : tokens[sig[0].index].begin;
             return {start, static_cast<size_t>(end - start)};
         }
 
-        /// Find the full-array index of the previous significant token.
-        size_t prev_full_idx = 0;
-        size_t count = 0;
-        for (size_t i = 0; i < tokens.size(); ++i)
-        {
-            if (tokens[i].isSignificant() && !tokens[i].isEnd())
-            {
-                if (count == sig_idx - 1)
-                {
-                    prev_full_idx = i;
-                    break;
-                }
-                ++count;
-            }
-        }
-
-        /// Find the full-array index of the current significant token.
-        size_t cur_full_idx = 0;
-        count = 0;
-        for (size_t i = 0; i < tokens.size(); ++i)
-        {
-            if (tokens[i].isSignificant() && !tokens[i].isEnd())
-            {
-                if (count == sig_idx)
-                {
-                    cur_full_idx = i;
-                    break;
-                }
-                ++count;
-            }
-        }
-
-        const char * start = tokens[prev_full_idx].end;
-        const char * end = tokens[cur_full_idx].begin;
+        /// Material between the previous significant token's end and this one's begin.
+        const char * start = tokens[sig[sig_idx - 1].index].end;
+        const char * end = tokens[sig[sig_idx].index].begin;
         return {start, static_cast<size_t>(end - start)};
     };
 
@@ -185,7 +149,7 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
         if (oi < orig_sig.size() && tokensMatch(canon_sig[ci], orig_sig[oi]))
         {
             /// Tokens match — use original inter-token material and original token text.
-            result += getInterTokenMaterial(orig_tokens, oi, original);
+            result += getInterTokenMaterial(orig_tokens, orig_sig, oi, original);
             result += orig_sig[oi].text;
             ++ci;
             ++oi;
@@ -238,7 +202,14 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
     }
 
     /// Append any trailing material from the original (trailing comments/whitespace).
-    if (oi > 0 && oi <= orig_sig.size())
+    ///
+    /// Only do this when the suffix after the last matched token contains no significant
+    /// SQL tokens. Otherwise we would reintroduce clauses that the JSON AST removed —
+    /// e.g. for JSON of `SELECT 1` with original `SELECT 1 FORMAT JSON`, the `FORMAT JSON`
+    /// suffix must not be appended. All original significant tokens are consumed exactly
+    /// when `oi == orig_sig.size()`, in which case the remaining suffix is by definition
+    /// only whitespace and comments.
+    if (oi > 0 && oi == orig_sig.size())
     {
         auto last_orig = orig_sig[oi - 1];
         const char * after_last = last_orig.text.data() + last_orig.text.size();

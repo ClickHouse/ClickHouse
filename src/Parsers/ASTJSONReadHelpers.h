@@ -204,6 +204,12 @@ public:
     static Field readFieldFromObject(const Poco::JSON::Object & field_obj);
 
 private:
+    /// Recursive worker for `readFieldFromObject`. `depth` tracks the nesting level of
+    /// structured `Field` values (Array/Tuple/Map). A hostile `Literal` node can embed
+    /// deeply nested `{"field_type":"Array","value":[...]}` levels that add no AST nodes,
+    /// so the AST depth/element limits and `checkDepth` do not bound this recursion.
+    static Field readFieldFromObjectImpl(const Poco::JSON::Object & field_obj, size_t depth);
+
     const Poco::JSON::Object & obj;
 };
 

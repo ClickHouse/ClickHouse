@@ -12,11 +12,13 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
@@ -51,6 +53,7 @@
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -63,6 +66,9 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/Lexer.h>
 
 #include <Common/Exception.h>
 
@@ -159,6 +165,8 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Columns definition", [] { return make_intrusive<ASTColumns>(); }},
         {"Storage", [] { return make_intrusive<ASTStorage>(); }},
         {"CreateQuery", [] { return make_intrusive<ASTCreateQuery>(); }},
+        {"CreateIndexQuery", [] { return make_intrusive<ASTCreateIndexQuery>(); }},
+        {"DropIndexQuery", [] { return make_intrusive<ASTDropIndexQuery>(); }},
         {"CreateSQLFunctionQuery", [] { return make_intrusive<ASTCreateSQLFunctionQuery>(); }},
         {"CreateWasmFunctionQuery", [] { return make_intrusive<ASTCreateWasmFunctionQuery>(); }},
         {"DropQuery", [] { return make_intrusive<ASTDropQuery>(); }},
@@ -198,6 +206,9 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"BackupQuery", [] { return make_intrusive<ASTBackupQuery>(); }},
         {"ViewTargets", [] { return make_intrusive<ASTViewTargets>(); }},
         {"SQLSecurity", [] { return make_intrusive<ASTSQLSecurity>(); }},
+        {"UserNameWithHost", [] { return make_intrusive<ASTUserNameWithHost>(); }},
+        {"UserNamesWithHost", [] { return make_intrusive<ASTUserNamesWithHost>(); }},
+        {"StreamSettings", [] { return make_intrusive<ASTStreamSettings>(); }},
         {"RefreshStrategy", [] { return make_intrusive<ASTRefreshStrategy>(); }},
         {"TimeInterval", [] { return make_intrusive<ASTTimeInterval>(); }},
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
@@ -320,18 +331,24 @@ size_t getJSONDeserializationMaxDepth()
 
 bool isClickHouseJSONSetEscape(const char * begin, const char * end)
 {
-    std::string_view query_view(begin, end - begin);
-    size_t pos = query_view.find_first_not_of(" \t\r\n");
-    if (pos == std::string_view::npos || query_view.size() - pos < 3)
+    /// In the `clickhouse_json` dialect, a leading `SET` query is an escape hatch back to a
+    /// SQL dialect. Detect it via the lexer so that leading SQL comments and whitespace are
+    /// skipped exactly as normal parsing would (e.g. `-- switch back\nSET dialect = 'clickhouse'`
+    /// or `/* */ SET ...`), rather than only stripping ASCII whitespace.
+    Lexer lexer(begin, end);
+    Token token = lexer.nextToken();
+    while (!token.isEnd() && !token.isError() && !token.isSignificant())
+        token = lexer.nextToken();
+
+    if (token.type != TokenType::BareWord)
         return false;
-    if ((query_view[pos] != 'S' && query_view[pos] != 's')
-        || (query_view[pos + 1] != 'E' && query_view[pos + 1] != 'e')
-        || (query_view[pos + 2] != 'T' && query_view[pos + 2] != 't'))
+
+    std::string_view text(token.begin, token.size());
+    if (text.size() != 3)
         return false;
-    if (query_view.size() - pos == 3)
-        return true;
-    char next = query_view[pos + 3];
-    return next == ' ' || next == '\t' || next == '\r' || next == '\n';
+    return (text[0] == 'S' || text[0] == 's')
+        && (text[1] == 'E' || text[1] == 'e')
+        && (text[2] == 'T' || text[2] == 't');
 }
 
 }

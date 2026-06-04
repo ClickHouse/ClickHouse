@@ -368,31 +368,16 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
-void IAST::writeJSON(WriteBuffer & out) const
+void IAST::writeJSON(WriteBuffer &) const
 {
-    DB::FormatSettings fs;
-
-    out << "{\"type\":";
-    writeJSONString(getID(), out, fs);
-
-    auto alias = tryGetAlias();
-    if (!alias.empty())
-    {
-        out << ",\"alias\":";
-        writeJSONString(alias, out, fs);
-    }
-
-    if (!children.empty())
-    {
-        out << ",\"children\":[";
-        for (size_t i = 0; i < children.size(); ++i)
-        {
-            if (i > 0) out << ',';
-            children[i]->writeJSON(out);
-        }
-        out << ']';
-    }
-    out << '}';
+    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
+    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
+    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
+    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
+    /// read back. Reject such queries here instead of emitting lossy JSON.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
+        getID());
 }
 
 void IAST::readJSON(const Poco::JSON::Object & json)

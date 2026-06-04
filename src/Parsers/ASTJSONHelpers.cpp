@@ -4,6 +4,8 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitorDump.h>
 
+#include <cmath>
+
 namespace DB
 {
 
@@ -50,9 +52,22 @@ static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const F
             out << ",\"value\":" << field.safeGet<Int64>();
             break;
         case Field::Types::Float64:
+        {
+            const Float64 x = field.safeGet<Float64>();
             out << ",\"value\":";
-            writeFloatText(field.safeGet<Float64>(), out);
+            /// Non-finite values (`nan`, `inf`, `-inf`) are not valid JSON numbers.
+            /// `ParserNumber` accepts bare `nan`/`inf` as `Float64` literals, so we must be
+            /// able to round-trip them. Encode them as string sentinels and restore them
+            /// in `readFieldFromObject`. Finite values keep the bare-number encoding for
+            /// backward compatibility.
+            if (std::isnan(x))
+                writeJSONString("nan", out, fs);
+            else if (std::isinf(x))
+                writeJSONString(x > 0 ? "+Inf" : "-Inf", out, fs);
+            else
+                writeFloatText(x, out);
             break;
+        }
         case Field::Types::Bool:
             out << ",\"value\":" << (field.safeGet<UInt64>() != 0 ? "true" : "false");
             break;

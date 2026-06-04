@@ -484,10 +484,77 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         try
         {
-            res = IAST::createFromJSON(String(pos, end),
+            /// In multiquery mode `end` points to the end of the whole script, not the end of
+            /// the current statement, so we must not feed the entire remainder to the JSON parser
+            /// (it would choke on the trailing `;` and subsequent statements with "excess input").
+            /// Scan for exactly one balanced top-level JSON object starting at `pos`, parse only
+            /// that substring, and advance `pos` to just past it so the usual `;` handling and the
+            /// following statements are processed normally.
+            const char * json_end = end;
+            if (allow_multi_statements)
+            {
+                const char * p = pos;
+
+                /// Skip leading whitespace before the JSON value.
+                while (p < end && isWhitespaceASCII(*p))
+                    ++p;
+
+                if (p < end && *p == '{')
+                {
+                    size_t depth = 0;
+                    bool in_string = false;
+                    bool escaped = false;
+                    const char * q = p;
+                    for (; q < end; ++q)
+                    {
+                        const char c = *q;
+                        if (in_string)
+                        {
+                            if (escaped)
+                                escaped = false;
+                            else if (c == '\\')
+                                escaped = true;
+                            else if (c == '"')
+                                in_string = false;
+                        }
+                        else if (c == '"')
+                        {
+                            in_string = true;
+                        }
+                        else if (c == '{')
+                        {
+                            ++depth;
+                        }
+                        else if (c == '}')
+                        {
+                            --depth;
+                            if (depth == 0)
+                            {
+                                ++q;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (depth == 0)
+                        json_end = q;
+                }
+            }
+
+            res = IAST::createFromJSON(String(pos, json_end),
                 settings[Setting::max_ast_depth],
                 settings[Setting::max_ast_elements]);
-            pos = end;
+
+            /// `createFromJSON` enforces depth/element limits via counters during construction,
+            /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
+            /// children from strings) that bypass those counters. Re-check the assembled AST,
+            /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
+            if (settings[Setting::max_ast_depth])
+                res->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                res->checkSize(settings[Setting::max_ast_elements]);
+
+            pos = json_end;
         }
         catch (const Exception & e)
         {

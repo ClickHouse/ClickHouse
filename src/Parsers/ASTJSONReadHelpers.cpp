@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -56,6 +57,19 @@ size_t computeFieldDumpNestingDepth(std::string_view dump)
 
 Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
 {
+    return readFieldFromObjectImpl(obj, 0);
+}
+
+Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, size_t depth)
+{
+    /// Bound the recursion over structured `Field` values (Array/Tuple/Map). These nested
+    /// JSON levels live inside a single `Literal` AST node and add no AST nodes, so the
+    /// AST depth/element limits do not stop them.
+    if (size_t max_depth = getJSONDeserializationMaxDepth(); max_depth > 0 && depth > max_depth)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
+            max_depth);
+
     String field_type = obj.getValue<String>("field_type");
 
     if (field_type == "Null")
@@ -74,7 +88,24 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
     if (field_type == "Int64")
         return Field(static_cast<Int64>(obj.getValue<Poco::Int64>("value")));
     if (field_type == "Float64")
+    {
+        /// Non-finite values (`nan`, `inf`, `-inf`) are encoded as string sentinels by the
+        /// writer because they are not valid JSON numbers. Finite values are bare numbers.
+        auto value_var = obj.get("value");
+        if (value_var.isString())
+        {
+            String val = value_var.extract<String>();
+            if (val == "nan")
+                return Field(std::numeric_limits<double>::quiet_NaN());
+            if (val == "+Inf")
+                return Field(std::numeric_limits<double>::infinity());
+            if (val == "-Inf")
+                return Field(-std::numeric_limits<double>::infinity());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected string sentinel '{}' for Float64 `value` during AST JSON deserialization", val);
+        }
         return Field(obj.getValue<double>("value"));
+    }
     if (field_type == "Bool")
         return Field(obj.getValue<bool>("value"));
     if (field_type == "String")
@@ -92,7 +123,7 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
             auto elem = json_arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Array field during AST JSON deserialization", i);
-            arr.push_back(readFieldFromObject(*elem));
+            arr.push_back(readFieldFromObjectImpl(*elem, depth + 1));
         }
         return Field(std::move(arr));
     }
@@ -108,7 +139,7 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
             auto elem = json_arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Tuple field during AST JSON deserialization", i);
-            tup.push_back(readFieldFromObject(*elem));
+            tup.push_back(readFieldFromObjectImpl(*elem, depth + 1));
         }
         return Field(std::move(tup));
     }
@@ -124,7 +155,7 @@ Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
             auto elem = json_arr->getObject(i);
             if (!elem)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
-            map.push_back(readFieldFromObject(*elem));
+            map.push_back(readFieldFromObjectImpl(*elem, depth + 1));
         }
         return Field(std::move(map));
     }

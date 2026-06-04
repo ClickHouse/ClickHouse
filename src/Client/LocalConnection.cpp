@@ -256,6 +256,15 @@ void LocalConnection::sendQuery(
             parsed_query = IAST::createFromJSON(String(begin, end),
                 settings[Setting::max_ast_depth],
                 settings[Setting::max_ast_elements]);
+
+            /// `createFromJSON` enforces depth/element limits via counters during construction,
+            /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
+            /// children from strings) that bypass those counters. Re-check the assembled AST,
+            /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
+            if (settings[Setting::max_ast_depth])
+                parsed_query->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                parsed_query->checkSize(settings[Setting::max_ast_elements]);
         }
         else
         {

@@ -5,6 +5,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTToJSON.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -16,6 +17,8 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool implicit_select;
 }
@@ -44,6 +47,8 @@ public:
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
         max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        max_ast_depth = settings[Setting::max_ast_depth];
+        max_ast_elements = settings[Setting::max_ast_elements];
         allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
         implicit_select = settings[Setting::implicit_select];
     }
@@ -76,6 +81,12 @@ public:
             auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",
                 max_query_size, max_parser_depth, max_parser_backtracks);
 
+            /// Apply the same AST limits that core query execution enforces after parsing.
+            if (max_ast_depth)
+                ast->checkDepth(max_ast_depth);
+            if (max_ast_elements)
+                ast->checkSize(max_ast_elements);
+
             result->insert(serializeASTToJSON(*ast));
         }
 
@@ -86,6 +97,8 @@ private:
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
+    size_t max_ast_depth;
+    size_t max_ast_elements;
     bool allow_settings_after_format_in_insert;
     bool implicit_select;
 };
