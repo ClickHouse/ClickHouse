@@ -26,6 +26,7 @@
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -214,7 +215,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -393,7 +394,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         if (renamed)
         {
-            assert(default_db_disk->existsFile(metadata_file_path));
+            chassert(default_db_disk->existsFile(metadata_file_path));
             default_db_disk->removeFileIfExists(metadata_file_path);
         }
         if (added)
@@ -566,7 +567,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         if (column_type->lowCardinality())
         {
             const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-            assert(low_cardinality_type);
+            chassert(low_cardinality_type);
             column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
         }
         else
@@ -758,7 +759,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes and constraints are not supported for table functions");
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
-        assert(!create.is_dictionary);
+        chassert(!create.is_dictionary);
 
         if (create.columns_list->columns)
         {
@@ -1027,7 +1028,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     validateTableStructure(create, properties);
 
-    assert(as_database_saved.empty() && as_table_saved.empty());
+    chassert(as_database_saved.empty() && as_table_saved.empty());
     std::swap(create.as_database, as_database_saved);
     std::swap(create.as_table, as_table_saved);
     if (!as_table_saved.empty())
@@ -2161,7 +2162,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
-        std::bernoulli_distribution fault(probability);
+        std::bernoulli_distribution fault(static_cast<double>(probability));
         if (fault(thread_local_rng))
         {
             /// We emulate the case when the exception was thrown in StorageReplicatedMergeTree constructor
@@ -2296,7 +2297,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         DDLGuardPtr ddl_guard;
         [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
         ddl_guard.reset();
-        assert(done);
+        chassert(done);
         created = true;
 
         /// If table has dependencies - add them to the graph
@@ -2664,7 +2665,7 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     /// If no SQL security is specified, apply default from default_*_view_sql_security setting.
     if (!sql_security.type)
     {
-        SQLSecurityType default_security;
+        SQLSecurityType default_security = {};
 
         if (is_materialized_view)
             default_security = context_->getSettingsRef()[Setting::default_materialized_view_sql_security];
@@ -2836,6 +2837,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
     LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
+void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

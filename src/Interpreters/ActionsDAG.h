@@ -331,7 +331,8 @@ public:
     );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
-    void decorrelate() noexcept;
+    /// Not noexcept: appends to the inputs vector, which can throw on allocation.
+    void decorrelate();
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
@@ -343,7 +344,7 @@ public:
     const Node & materializeNode(const Node & node, bool materialize_sparse = true);
 
     /// Remove materialize() and identity() wrapper functions from the DAG.
-    /// These are transparent wrappers that don't change values. Removing them projection matching for queries through views.
+    /// These are transparent wrappers that don't change values. Removing them helps projection matching for queries through views.
     void removeTrivialWrappers();
 
     enum class MatchColumnsMode : uint8_t

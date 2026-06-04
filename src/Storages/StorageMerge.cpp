@@ -301,6 +301,14 @@ bool StorageMerge::isRemote() const
     return first_remote_table != nullptr;
 }
 
+bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predicate) const
+{
+    return traverseTablesUntil([&predicate](const StoragePtr & table)
+    {
+        return table && predicate(table);
+    }) != nullptr;
+}
+
 bool StorageMerge::supportsPrewhere() const
 {
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
@@ -563,7 +571,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     QueryPlanResourceHolder resources;
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
     auto modified_context = Context::createCopy(context);
@@ -1184,7 +1192,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
     for (auto * child : node->children)
@@ -1495,7 +1503,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1829,6 +1837,7 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
