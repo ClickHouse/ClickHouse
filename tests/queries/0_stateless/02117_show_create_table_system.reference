@@ -112,17 +112,6 @@ CREATE TABLE system.current_roles
 )
 ENGINE = SystemCurrentRoles
 COMMENT 'Contains active roles of a current user. SET ROLE changes the contents of this table.'
-CREATE TABLE system.data_skipping_index_types
-(
-    `name` String,
-    `description` String,
-    `syntax` String,
-    `examples` String,
-    `introduced_in` String,
-    `related` Array(String)
-)
-ENGINE = SystemDataSkippingIndexTypes
-COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -322,7 +311,7 @@ CREATE TABLE system.functions
     `case_insensitive` UInt8,
     `alias_to` String,
     `create_query` String,
-    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2, 'WasmUserDefined' = 3),
+    `origin` Enum8('System' = 0, 'SQLUserDefined' = 1, 'ExecutableUserDefined' = 2),
     `description` String,
     `syntax` String,
     `arguments` String,
@@ -330,9 +319,7 @@ CREATE TABLE system.functions
     `returned_value` String,
     `examples` String,
     `introduced_in` String,
-    `categories` String,
-    `deterministic` Nullable(UInt8),
-    `higher_order` Nullable(UInt8)
+    `categories` String
 )
 ENGINE = SystemFunctions
 COMMENT 'Contains a list of all available ordinary and aggregate functions with their descriptions.'
@@ -409,13 +396,7 @@ CREATE TABLE system.merges
     `memory_usage` UInt64,
     `thread_id` UInt64,
     `merge_type` String,
-    `merge_algorithm` String,
-    `current_projection` String,
-    `current_projection_progress` Float64,
-    `current_projection_parts_merging` UInt64,
-    `current_projection_parts_remaining` UInt64,
-    `projections_completed` Array(String),
-    `projections_remaining` Array(String)
+    `merge_algorithm` String
 )
 ENGINE = SystemMerges
 COMMENT 'Contains a list of merges currently executing merges of MergeTree tables and their progress. Each merge operation is represented by a single row.'
@@ -625,8 +606,8 @@ CREATE TABLE system.parts_columns
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
     `statistics` Array(String),
-    `estimates.min` Nullable(String),
-    `estimates.max` Nullable(String),
+    `estimates.min` Nullable(Float64),
+    `estimates.max` Nullable(Float64),
     `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
@@ -834,8 +815,7 @@ CREATE TABLE system.quota_limits
     `max_read_bytes` Nullable(UInt64),
     `max_execution_time` Nullable(Float64),
     `max_written_bytes` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaLimits
 COMMENT 'Contains information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to specific quota.'
@@ -867,9 +847,7 @@ CREATE TABLE system.quota_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64),
-    `queries_per_normalized_hash` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotaUsage
 COMMENT 'Contains quota usage by the current user: how much is used and how much is left.'
@@ -878,7 +856,7 @@ CREATE TABLE system.quotas
     `name` String,
     `id` UUID,
     `storage` String,
-    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4, 'normalized_query_hash' = 7)),
+    `keys` Array(Enum8('user_name' = 1, 'ip_address' = 2, 'forwarded_ip_address' = 3, 'client_key' = 4)),
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
@@ -915,9 +893,7 @@ CREATE TABLE system.quotas_usage
     `written_bytes` Nullable(UInt64),
     `max_written_bytes` Nullable(UInt64),
     `failed_sequential_authentications` Nullable(UInt64),
-    `max_failed_sequential_authentications` Nullable(UInt64),
-    `queries_per_normalized_hash` Nullable(UInt64),
-    `max_queries_per_normalized_hash` Nullable(UInt64)
+    `max_failed_sequential_authentications` Nullable(UInt64)
 )
 ENGINE = SystemQuotasUsage
 COMMENT 'Contains quota usage by all users.'
@@ -1178,7 +1154,6 @@ CREATE TABLE system.tables
     `sorting_key` String,
     `primary_key` String,
     `sampling_key` String,
-    `unique_key` String,
     `storage_policy` String,
     `total_rows` Nullable(UInt64),
     `total_bytes` Nullable(UInt64),
@@ -1198,8 +1173,6 @@ CREATE TABLE system.tables
     `loading_dependencies_table` Array(String),
     `loading_dependent_database` Array(String),
     `loading_dependent_table` Array(String),
-    `target_database` String,
-    `target_table` String,
     `definer` String,
     `table` String ALIAS name
 )

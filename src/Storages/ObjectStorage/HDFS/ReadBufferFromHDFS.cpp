@@ -4,8 +4,6 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Common/Scheduler/ResourceGuard.h>
-#include <Common/BlobStorageLogWriter.h>
-#include <Common/Stopwatch.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
@@ -50,13 +48,13 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         size_t read_until_position_,
         bool use_external_buffer_,
         std::optional<size_t> file_size_)
-        : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_settings.buffer_size)
+        : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
         , HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
-        , enable_pread(read_settings_.remote_fs_settings.enable_hdfs_pread)
+        , enable_pread(read_settings_.enable_hdfs_pread)
     {
         fs = createHDFSFS(builder.get());
         fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
@@ -95,7 +93,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
-        size_t num_bytes_to_read = 0;
+        size_t num_bytes_to_read;
         if (read_until_position)
         {
             if (read_until_position == file_offset)
@@ -194,43 +192,15 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const ReadSettings & read_settings_,
         size_t read_until_position_,
         bool use_external_buffer_,
-        std::optional<size_t> file_size_,
-        BlobStorageLogWriterPtr blob_storage_log_)
+        std::optional<size_t> file_size_)
     : ReadBufferFromFileBase()
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
                hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_, file_size_))
     , use_external_buffer(use_external_buffer_)
-    , hdfs_uri(hdfs_uri_)
-    , hdfs_file_path(hdfs_file_path_)
-    , blob_storage_log(std::move(blob_storage_log_))
 {
 }
 
-ReadBufferFromHDFS::~ReadBufferFromHDFS()
-{
-    /// Emit a successful `Read` event whenever a read was attempted, even if zero bytes
-    /// were returned (empty objects). This keeps HDFS behavior consistent with S3/Azure,
-    /// which log every successful API call regardless of payload length.
-    /// The destructor is implicitly `noexcept`, so wrap the potentially-throwing
-    /// `addEvent` (allocations inside `SystemLogQueue::push`) in `try/catch` to avoid
-    /// `std::terminate` if it throws during stack unwinding.
-    if (blob_storage_log && read_attempted && !read_failed)
-    {
-        try
-        {
-            blob_storage_log->addEvent(
-                BlobStorageLogElement::EventType::Read,
-                /* bucket */ hdfs_uri, /* remote_path */ hdfs_file_path, /* local_path */ {},
-                total_bytes_read,
-                total_read_microseconds,
-                /* error_code */ 0, /* error_message */ {});
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
+ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
 
 std::optional<size_t> ReadBufferFromHDFS::tryGetFileSize()
 {
@@ -242,35 +212,21 @@ bool ReadBufferFromHDFS::nextImpl()
     if (use_external_buffer)
     {
         impl->set(internal_buffer.begin(), internal_buffer.size());
-        chassert(working_buffer.begin() != nullptr);
-        chassert(!internal_buffer.empty());
+        assert(working_buffer.begin() != nullptr);
+        assert(!internal_buffer.empty());
     }
     else
     {
         impl->position() = impl->buffer().begin() + offset();
-        chassert(!impl->hasPendingData());
+        assert(!impl->hasPendingData());
     }
 
-    Stopwatch watch;
-    read_attempted = true;
-    try
-    {
-        auto result = impl->next();
+    auto result = impl->next();
 
-        if (result)
-        {
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
-            total_bytes_read.fetch_add(working_buffer.size(), std::memory_order_relaxed);
-        }
+    if (result)
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-        total_read_microseconds.fetch_add(watch.elapsedMicroseconds(), std::memory_order_relaxed);
-        return result;
-    }
-    catch (...)
-    {
-        read_failed = true;
-        throw;
-    }
+    return result;
 }
 
 
@@ -287,8 +243,8 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
         && offset_ < impl->getPosition())
     {
         pos = working_buffer.end() - (impl->getPosition() - offset_);
-        chassert(pos >= working_buffer.begin());
-        chassert(pos <= working_buffer.end());
+        assert(pos >= working_buffer.begin());
+        assert(pos <= working_buffer.end());
 
         return getPosition();
     }
@@ -316,20 +272,7 @@ String ReadBufferFromHDFS::getFileName() const
 
 size_t ReadBufferFromHDFS::readBigAt(char * buffer, size_t size, size_t offset, const std::function<bool(size_t)> &) const
 {
-    Stopwatch watch;
-    read_attempted = true;
-    try
-    {
-        size_t bytes_read = impl->pread(buffer, size, offset);
-        total_bytes_read += bytes_read;
-        total_read_microseconds += watch.elapsedMicroseconds();
-        return bytes_read;
-    }
-    catch (...)
-    {
-        read_failed = true;
-        throw;
-    }
+    return impl->pread(buffer, size, offset);
 }
 
 bool ReadBufferFromHDFS::supportsReadAt()

@@ -1,5 +1,4 @@
 #include <Dictionaries/IPAddressDictionary.h>
-#include <Columns/ColumnFixedString.h>
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
@@ -237,7 +236,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     validateKeyTypes(key_types);
 
@@ -267,20 +266,6 @@ ColumnPtr IPAddressDictionary::getColumn(
 
                 getItemsShortCircuitImpl<ValueType>(
                     attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Map & value) { out->insert(value); }, default_mask);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsShortCircuitImpl<ValueType>(
-                    attribute, key_columns, [&](const size_t, const Object & value) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -315,26 +300,6 @@ ColumnPtr IPAddressDictionary::getColumn(
                     attribute,
                     key_columns,
                     [&](const size_t, const Array & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Map & value) { out->insert(value); },
-                    default_value_extractor);
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                auto * out = column.get();
-
-                getItemsImpl<ValueType>(
-                    attribute,
-                    key_columns,
-                    [&](const size_t, const Object & value) { out->insert(value); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -1092,7 +1057,7 @@ static auto keyViewGetter()
         for (size_t row : collections::range(0, key_ip_column.size()))
         {
             UInt8 mask = key_mask_column.getElement(row);
-            size_t str_len = 0;
+            size_t str_len;
             if constexpr (IsIPv4)
                 str_len = formatIPWithPrefix(reinterpret_cast<const unsigned char *>(&key_ip_column.getElement(row)), mask, true, buffer);
             else
@@ -1222,7 +1187,6 @@ IPAddressDictionary::RowIdxConstIter IPAddressDictionary::lookupIP(IPValueType t
     return ipNotFound();
 }
 
-void registerDictionaryTrie(DictionaryFactory & factory);
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string &,

@@ -10,8 +10,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
-#include <numeric>
-
 namespace DB
 {
 
@@ -47,7 +45,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         Float64 now_s = 0;
         UInt64 pos_x = 0;
         UInt64 pos_y = 0;
-        UInt64 pos_tmp = 0;
+        UInt64 pos_tmp;
         UInt64 n1 = x.size();
         UInt64 n2 = y.size();
 
@@ -99,7 +97,7 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             d = max_s;
 
-        UInt64 g = std::gcd(n1, n2);
+        UInt64 g = std::__gcd(n1, n2);
         UInt64 nx_g = n1 / g;
         UInt64 ny_g = n2 / g;
 
@@ -168,11 +166,11 @@ struct KolmogorovSmirnov : public StatisticalSample<Float64, Float64>
                  * J.DURBIN
                  * Distribution theory for tests based on the sample distribution function
                  */
-                Float64 new_val = 0;
-                Float64 old_val = 0;
-                Float64 s = 0;
-                Float64 w = 0;
-                Float64 z = 0;
+                Float64 new_val;
+                Float64 old_val;
+                Float64 s;
+                Float64 w;
+                Float64 z;
                 UInt64 k_max = static_cast<UInt64>(sqrt(2 - log(tol)));
 
                 if (p < 1)
@@ -229,7 +227,6 @@ private:
     String method = "auto";
 
 public:
-    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionKolmogorovSmirnov(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<KolmogorovSmirnov, AggregateFunctionKolmogorovSmirnov> ({arguments}, {}, createResultType())
     {
@@ -352,7 +349,6 @@ AggregateFunctionPtr createAggregateFunctionKolmogorovSmirnovTest(
 
 }
 
-void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionKolmogorovSmirnovTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
