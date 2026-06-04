@@ -75,7 +75,12 @@ DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.test_repl_multi, {CLICKHOUSE_DATABAS
 USE {CLICKHOUSE_DATABASE:Identifier};
 SYSTEM FLUSH LOGS query_log;
 SELECT 'Test 5 verification: multi-table DROP does NOT contain ON CLUSTER';
+-- The multi-table DROP runs while the current database is `{CLICKHOUSE_DATABASE_1}`, so scope the
+-- lookup to it. Without this, the verification SELECT itself contains the literals `DROP TABLE`,
+-- `test_repl_multi` and `ON CLUSTER`, and on a repeated run (e.g. the flaky check) the previous
+-- run's already-logged verification SELECT would match and make the count non-zero.
 SELECT count() = 0 FROM system.query_log WHERE type = 'QueryFinish'
+  AND current_database = {CLICKHOUSE_DATABASE_1:String}
   AND query LIKE '%DROP TABLE%test_repl_multi%'
   AND query LIKE '%ON CLUSTER%';
 
