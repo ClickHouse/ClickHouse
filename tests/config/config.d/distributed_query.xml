@@ -13,6 +13,8 @@
 
     <distributed_query>
         <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
+        <streaming_exchange_listen_host>::</streaming_exchange_listen_host>
         <temporary_files_storage>
             <!-- Using local object storage  -->
             <type>local</type>
