@@ -2,8 +2,6 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
 #    include <DataTypes/Native.h>
@@ -1499,11 +1497,13 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         variant_wrappers.push_back(wrapper);
     }
 
-    return [variant_wrappers, variant_types, to_type]
+    bool keep_nullable = settings.cast_keep_nullable;
+    return [variant_wrappers, variant_types, to_type, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
-        bool throw_on_null = !col_nullable && !canContainNull(*result_type);
+        bool throw_on_null = !col_nullable
+            && ConvertImplFromDynamicToColumn::shouldThrowOnNull(keep_nullable, result_type);
 
         /// First, cast each variant to the result type.
         VectorWithMemoryTracking<ColumnPtr> cast_variant_columns;
@@ -1755,12 +1755,12 @@ FunctionCast::WrapperType FunctionCast::createDynamicToColumnWrapper(const DataT
         return wrapper(args, result_type, nullptr, args[0].column->size());
     };
 
-    return [nested_convert]
+    bool keep_nullable = settings.cast_keep_nullable;
+    return [nested_convert, keep_nullable]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * col_nullable, size_t input_rows_count) -> ColumnPtr
     {
-        /// If col_nullable is set, the caller already handles NULLs, so don't throw.
-        /// Otherwise, throw when the result type cannot represent NULL.
-        bool throw_on_null = !col_nullable && !canContainNull(*result_type);
+        bool throw_on_null = !col_nullable
+            && ConvertImplFromDynamicToColumn::shouldThrowOnNull(keep_nullable, result_type);
         return ConvertImplFromDynamicToColumn::execute(
             arguments, result_type, input_rows_count, nested_convert, throw_on_null);
     };

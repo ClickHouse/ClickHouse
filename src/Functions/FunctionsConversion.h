@@ -2843,6 +2843,15 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
+    /// Returns true when a NULL in Dynamic/Variant must cause an exception
+    /// rather than being silently replaced with a default value.
+    /// This only fires when cast_keep_nullable is on AND the result type
+    /// is neither nullable-like nor wrappable in Nullable (e.g. Array).
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type)
+    {
+        return keep_nullable && !canContainNull(*result_type) && !result_type->canBeInsideNullable();
+    }
+
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -3007,14 +3016,17 @@ public:
     {
         NullPresence null_presence = getNullPresense(arguments);
 
-        /// Dynamic and Variant can contain NULLs just like Nullable,
-        /// so we treat them the same way: always wrap the result in Nullable.
-        for (const auto & arg : arguments)
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        if (settings.cast_keep_nullable)
         {
-            if (isDynamic(*arg.type) || isVariant(*arg.type))
+            for (const auto & arg : arguments)
             {
-                null_presence.has_nullable = true;
-                break;
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    break;
+                }
             }
         }
 
@@ -3154,12 +3166,19 @@ public:
         /// For now, here's a workaround.
         DataTypePtr result_type = weird_result_type;
         auto null_presence = getNullPresense(arguments);
-        for (const auto & arg : arguments)
+        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+        /// as Nullable because they can contain nulls.
+        bool has_dynamic_or_variant = false;
+        if (settings.cast_keep_nullable)
         {
-            if (isDynamic(*arg.type) || isVariant(*arg.type))
+            for (const auto & arg : arguments)
             {
-                null_presence.has_nullable = true;
-                break;
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                {
+                    null_presence.has_nullable = true;
+                    has_dynamic_or_variant = true;
+                    break;
+                }
             }
         }
         if (null_presence.has_nullable && !isNullableOrLowCardinalityNullable(result_type))
@@ -3170,7 +3189,10 @@ public:
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable())
+            /// For DataTypeString we normally skip this branch (toString handles nullable
+            /// arguments itself, e.g. nullable timezone), but for Dynamic/Variant we must
+            /// enter it to extract their null map.
+            if (result_type->isNullable() && (!std::is_same_v<ToDataType, DataTypeString> || has_dynamic_or_variant))
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -3330,12 +3352,6 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        /// When to_nullable is true, the caller (executeImpl's nullable branch) already
-        /// extracted the null map and will wrap the result in Nullable, so we should not
-        /// throw on NULL — just insertDefault and let the null map handle it.
-        /// When to_nullable is false and the result type cannot contain NULL, we must throw.
-        bool throw_on_null = !to_nullable && !canContainNull(*result_type);
-
         if (isDynamic(from_type))
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
@@ -3344,7 +3360,8 @@ private:
             };
 
             return ConvertImplFromDynamicToColumn::execute(
-                arguments, result_type, input_rows_count, nested_convert, throw_on_null);
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
 
         if (isVariant(from_type))
@@ -3355,7 +3372,8 @@ private:
             };
 
             return ConvertImplFromVariantToColumn::execute(
-                arguments, result_type, input_rows_count, nested_convert, throw_on_null);
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool

@@ -57,19 +57,19 @@ SELECT toString(v) AS r, toTypeName(r) FROM t_variant_all_null;
 
 DROP TABLE t_variant_all_null;
 
-SELECT '-- Variant without cast_keep_nullable:';
+SELECT '-- Variant without cast_keep_nullable (backward compatible):';
 SET cast_keep_nullable = 0;
 
 DROP TABLE IF EXISTS t_variant_no_keep;
 CREATE TABLE t_variant_no_keep (v Variant(UInt64, String)) ENGINE = Memory;
 INSERT INTO t_variant_no_keep VALUES (1), (NULL), (3);
 
-SELECT '-- toFloat64/toString always wrap in Nullable:';
-SELECT toFloat64(v) AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1 NULLS LAST;
-SELECT toString(v) AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1 NULLS LAST;
+SELECT '-- toFloat64/toString return non-Nullable with defaults for NULL:';
+SELECT toFloat64(v) AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1;
+SELECT toString(v) AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1;
 
-SELECT '-- CAST throws on NULL without cast_keep_nullable:';
-SELECT v::Float64 AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1 NULLS LAST; -- {serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN}
-SELECT v::String AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1 NULLS LAST; -- {serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN}
+SELECT '-- CAST returns non-Nullable with defaults for NULL:';
+SELECT v::Float64 AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1;
+SELECT v::String AS r, toTypeName(r) FROM t_variant_no_keep ORDER BY 1;
 
 DROP TABLE t_variant_no_keep;
