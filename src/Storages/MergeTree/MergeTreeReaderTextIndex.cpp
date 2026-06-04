@@ -813,16 +813,15 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
     if (cache_it == cached_phrase_results.end())
     {
         /// Cache miss: read position data and compute phrase intersection.
-        const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
-        const auto & remaining_tokens = granule_text.getRemainingTokens();
+        const auto & token_infos = granule->getAnalyzer().getAllTokenInfos();
 
         std::vector<std::vector<RoaringishEntry>> position_lists;
         position_lists.reserve(search_query->ordered_tokens.size());
 
         for (const auto & token : search_query->ordered_tokens)
         {
-            auto it = remaining_tokens.find(token);
-            if (it == remaining_tokens.end())
+            auto it = token_infos.find(token);
+            if (it == token_infos.end())
             {
                 cached_phrase_results.emplace(cache_key, std::vector<UInt32>{});
                 cache_it = cached_phrase_results.find(cache_key);
