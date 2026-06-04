@@ -1,0 +1,8 @@
+1	hello
+2	world
+d1 not visible OK
+no orphaned mutation after DETACH/ATTACH OK
+1	hello
+2	world
+1	hello
+2	world

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -198,11 +199,15 @@ MergeTreeMutationEntry::~MergeTreeMutationEntry()
 
     /// Committed to disk but never registered in `current_mutations_by_version`.
     /// Remove the orphaned `mutation_*.txt` so it is not replayed on restart.
-    /// See #80648.
+    /// Mirrors the visibility of `killMutation` and `clearOldMutations`, which
+    /// log permanent mutation-file removals from their callers. See #80648.
     if (!is_temp && !is_registered)
     {
         try
         {
+            LOG_INFO(getLogger("MergeTreeMutationEntry"),
+                "Removing orphaned mutation file {} (block number {}); registration was not completed",
+                path_prefix + file_name, block_number);
             removeFile();
         }
         catch (...)

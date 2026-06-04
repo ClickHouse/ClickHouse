@@ -83,6 +83,7 @@ namespace FailPoints
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
     extern const char mt_alter_throw_in_start_mutation[];
+    extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
 }
 
@@ -551,50 +552,39 @@ void StorageMergeTree::alter(
                 throw;
             }
 
-            /// Atomic in-memory commit of metadata + rename mutation. Pairs with
-            /// `scheduleDataProcessingJob`, which reads in-memory metadata under the
-            /// same mutex, so merge selection cannot observe new metadata without
-            /// also seeing the pending rename mutation. See #80648.
-            ///
-            /// The lock is declared outside the try so it stays held through the catch
-            /// handler. A `lock_guard` would be destroyed during stack unwinding before
-            /// the catch runs, leaving a race window where another thread could observe
-            /// `new_metadata` without the pending rename mutation.
+            /// Durable metadata is committed. Bind the file to the commit so any subsequent
+            /// throw preserves `mutation_*.txt`; the non-replicated rollback below clears
+            /// the flag again before re-throwing when it rolls durable metadata back.
+            if (prepared)
+                prepared->entry.is_registered = true;
+
+            /// Lock declared outside the try so it stays held through the catch handler;
+            /// a `lock_guard` would be destroyed during unwinding and leak a race window
+            /// where another thread observes `new_metadata` without the pending mutation.
             std::unique_lock background_lock(currently_processing_in_background_mutex);
+            bool mutation_registered = false;
             try
             {
-                /// Failpoint fires BEFORE `addPreparedMutationEntry` so the orphan-cleanup
-                /// path (`~prepared` removes the unregistered `mutation_*.txt`) is exercised
-                /// while in-memory metadata is still at `old_metadata` (because
-                /// `setProperties` has not run yet). See #80648.
                 fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
                 {
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in startMutation");
                 });
 
-                /// Register the rename mutation FIRST under the same lock as `setProperties`.
-                /// Pairs with `scheduleDataProcessingJob`, which reads in-memory metadata and
-                /// `current_mutations_by_version` together: merge selection cannot observe
-                /// `new_metadata` without also seeing the matching rename mutation. After this
-                /// call `is_registered == true`, so the `mutation_*.txt` file is preserved by
-                /// `~MergeTreeMutationEntry` regardless of any later unwinding. Combined with
-                /// the pre-write of the file above, this guarantees the durable invariant the
-                /// bot review on #104822 asked for: once the durable metadata commit succeeds
-                /// AND the mutation registers, the matching rename mutation is always present
-                /// (in `current_mutations_by_version` and on disk). See #80648.
+                /// Register first under the same lock as `setProperties`: merge selection
+                /// reads metadata and `current_mutations_by_version` together, so it cannot
+                /// observe `new_metadata` without the matching rename mutation.
                 if (prepared)
                 {
                     mutation_version = prepared->version;
                     addPreparedMutationEntry(std::move(*prepared));
+                    mutation_registered = true;
                 }
 
-                /// Reinitialize primary key because primary key column types might have changed.
-                /// If `setProperties` (via `checkProperties`) throws after the mutation is
-                /// already registered, the catch handler reverts in-memory metadata; the
-                /// registered mutation is intentionally NOT unregistered so that the durable
-                /// schema and the rename mutation stay matched. On the next reload
-                /// `loadMutations` finds the file and the rename runs against old parts,
-                /// restoring consistency.
+                fiu_do_on(FailPoints::mt_alter_throw_after_mutation_registered,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
+                });
+
                 setProperties(new_metadata, old_metadata, false, local_context);
 
                 {
@@ -604,10 +594,6 @@ void StorageMergeTree::alter(
             }
             catch (...)
             {
-                /// `background_lock` is still held here, so the in-memory rollback is
-                /// atomic with the publish above: merge selection cannot observe the
-                /// partial state. The on-disk rollback must run with the lock released
-                /// to keep the M1->M2 edge broken (see comment on `alterTable` above).
                 LOG_ERROR(log, "In-memory metadata commit failed, rolling back");
                 try
                 {
@@ -617,22 +603,41 @@ void StorageMergeTree::alter(
                 {
                     tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
                 }
-                background_lock.unlock();
-                /// On-disk rollback is only meaningful for non-replicated databases.
-                /// `Replicated` databases drive metadata via a single-shot
-                /// `ZooKeeperMetadataTransaction` that was already committed by the
-                /// `alterTable(new_metadata)` call above; a second `alterTable` would
-                /// attempt to add ops to that executed transaction and abort the server
-                /// with a `LOGICAL_ERROR`. Under `Replicated` the durable state stays at
-                /// `new_metadata`; the rename mutation file was registered above and is
-                /// preserved on disk, so `loadMutations` on the next reload finds it and
-                /// the rename converts old parts to the new schema. Either way, the
-                /// durable invariant the bot review on #104822 asked for is preserved:
-                /// the rename mutation file is present iff the durable metadata is at
-                /// `new_metadata`.
+
                 auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-                if (!database->hasReplicationThread())
+
+                /// Replicated: durable commit is in ZK and cannot be rolled back, so the
+                /// rename mutation file MUST stay on disk and the entry stays registered;
+                /// `loadMutations` will re-register it on reload to match `new_metadata`.
+                /// Non-replicated: roll durable back to `old_metadata`; unregister the
+                /// rename mutation and remove its file under the lock so `loadMutations`
+                /// cannot replay a rename against rolled-back metadata after restart.
+                if (database->hasReplicationThread())
                 {
+                    background_lock.unlock();
+                }
+                else
+                {
+                    if (mutation_registered)
+                    {
+                        auto it = current_mutations_by_version.find(mutation_version);
+                        if (it != current_mutations_by_version.end())
+                        {
+                            decrementMutationsCounters(mutation_counters, *it->second.commands);
+                            /// Transfer file ownership back to the destructor on erase.
+                            it->second.is_registered = false;
+                            current_mutations_by_version.erase(it);
+                        }
+                    }
+                    else if (prepared)
+                    {
+                        /// File still owned by `prepared`; clear the durable-commit flag
+                        /// set after `alterTable` so `~prepared` removes it.
+                        prepared->entry.is_registered = false;
+                    }
+
+                    background_lock.unlock();
+
                     try
                     {
                         database->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
