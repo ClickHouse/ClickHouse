@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
 
@@ -290,6 +291,9 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
 {
+    previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
+    for (size_t position : grouping_key_positions)
+        previous_chunk_last_grouping_key_columns.push_back(header->getByPosition(position).type->createColumn());
 }
 
 bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Columns & chunk_columns) const
@@ -315,22 +319,12 @@ bool LimitBySortedStreamTransform::hasSameGroupingKeyAsPreviousRow(const Columns
 
 void LimitBySortedStreamTransform::rememberLastGroupingKey(const Columns & chunk_columns, UInt64 row_idx)
 {
-    if (grouping_key_positions.empty())
-        return;
-
-    if (previous_chunk_last_grouping_key_columns.empty())
-    {
-        previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
-        for (size_t position : grouping_key_positions)
-            previous_chunk_last_grouping_key_columns.emplace_back(chunk_columns[position]->cloneEmpty());
-    }
-
-    for (size_t key_idx = 0; key_idx < grouping_key_positions.size(); ++key_idx)
+    for (size_t key_idx = 0; key_idx < chunk_columns.size(); ++key_idx)
     {
         auto & previous_chunk_last_grouping_key_column = previous_chunk_last_grouping_key_columns[key_idx];
         if (!previous_chunk_last_grouping_key_column->empty())
             previous_chunk_last_grouping_key_column->popBack(1);
-        previous_chunk_last_grouping_key_column->insertFrom(*chunk_columns[grouping_key_positions[key_idx]], row_idx);
+        previous_chunk_last_grouping_key_column->insertFrom(*chunk_columns[key_idx], row_idx);
     }
 }
 
@@ -356,15 +350,24 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
     auto chunk_columns = chunk.detachColumns();
 
+    Columns normalized_grouping_key_columns;
+    normalized_grouping_key_columns.reserve(grouping_key_positions.size());
+    for (size_t position : grouping_key_positions)
+        normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position]));
+
     /// Row 0 can continue a group from the previous chunk. If its grouping
     /// key changed across the chunk boundary, start a fresh count for this group.
-    if (!previous_chunk_last_grouping_key_columns.empty() && !firstRowContinuesPreviousChunkGroup(chunk_columns))
+    /// The holder is empty before the first chunk (and when there are no non-constant
+    /// grouping keys), in which case there is no previous key to compare against.
+    const bool have_previous_chunk_key
+        = !previous_chunk_last_grouping_key_columns.empty() && !previous_chunk_last_grouping_key_columns.front()->empty();
+    if (have_previous_chunk_key && !firstRowContinuesPreviousChunkGroup(normalized_grouping_key_columns))
         current_group_rows_seen = 0;
 
     UInt64 current_run_start_row = 0;
     for (UInt64 row_idx = 1; row_idx < row_count; ++row_idx)
     {
-        if (hasSameGroupingKeyAsPreviousRow(chunk_columns, row_idx))
+        if (hasSameGroupingKeyAsPreviousRow(normalized_grouping_key_columns, row_idx))
             continue;
 
         /// The grouping key changed within the chunk, so finish the current run
@@ -378,8 +381,9 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     processRun(current_run_start_row, row_count - current_run_start_row);
 
     /// Save the last grouping key so the next chunk can detect whether its first
-    /// row continues the same group or starts a new one.
-    rememberLastGroupingKey(chunk_columns, row_count - 1);
+    /// row continues the same group or starts a new one. With no non-constant grouping
+    /// keys this is a no-op (nothing to remember).
+    rememberLastGroupingKey(normalized_grouping_key_columns, row_count - 1);
 
     /// No row from this chunk survived.
     if (output_slices.empty())
