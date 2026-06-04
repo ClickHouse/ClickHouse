@@ -43,7 +43,7 @@ Expression
 2	two
 --- Test 4: Bool column used as boolean condition in WHERE
 Expression
-  Expression
+  Filter
     ReadFromMergeTree
     Indexes:
       PrimaryKey
