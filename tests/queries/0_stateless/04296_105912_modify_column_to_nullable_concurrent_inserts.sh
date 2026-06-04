@@ -34,13 +34,15 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_105912_conc SELECT number, number % 25
 # Only column x is sent. y is omitted to dodge a benign TYPE_MISMATCH race
 # where an in-flight INSERT block built with y: UInt8 is checked against the
 # post-ALTER metadata that already says Nullable(UInt8).
+pids=()
 for i in 1 2 3 4; do
     (
         for j in $(seq 1 20); do
             $CLICKHOUSE_CLIENT --query \
-                "INSERT INTO t_105912_conc (x) SELECT number + $i * 100000 + $j * 1000 FROM numbers(100)"
+                "INSERT INTO t_105912_conc (x) SELECT number + $i * 100000 + $j * 1000 FROM numbers(100)" || exit 1
         done
     ) &
+    pids+=($!)
 done
 
 # Run the mutation that goes through `canSkipConversionToNullable` for column
@@ -50,8 +52,13 @@ done
 $CLICKHOUSE_CLIENT --query \
     "ALTER TABLE t_105912_conc MODIFY COLUMN y Nullable(UInt8) SETTINGS mutations_sync = 2"
 
-# Drain the background inserts before final checks.
-wait
+# Per-PID wait propagates background subshell failures. Bare `wait` returns 0
+# once all children are reaped regardless of their exit status.
+fail=0
+for pid in "${pids[@]}"; do
+    wait "$pid" || fail=1
+done
+[[ $fail -eq 0 ]] || { echo "background INSERT subshell failed" >&2; exit 1; }
 
 # Mutation succeeded and the new column type is in effect.
 $CLICKHOUSE_CLIENT --query \
