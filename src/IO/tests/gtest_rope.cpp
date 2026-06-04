@@ -388,6 +388,29 @@ TEST(Rope, TryRewindOutOfRangeFails)
     EXPECT_EQ(rope.range().size, 100u);
 }
 
+TEST(Rope, TryRewindIntoGapFails)
+{
+    /// Disjoint nodes [0, 10) and [20, 30) with a gap [10, 20). A position in
+    /// the gap is covered by no held node, so tryRewind must fail (the caller
+    /// re-reads) rather than skip the gap and land the cursor at a later byte.
+    /// A position inside the second node must land `peek` exactly there.
+    auto buf = std::make_shared<OwnedRopeBuffer>(30);
+    for (size_t i = 0; i < 30; ++i)
+        buf->data()[i] = static_cast<char>('A' + i);
+    Rope rope;
+    rope.append(RopeNode{buf, 0, 10, 0});    /// covers [0, 10)
+    rope.append(RopeNode{buf, 20, 10, 20});  /// covers [20, 30)
+
+    EXPECT_FALSE(rope.tryRewind(15));
+    EXPECT_EQ(rope.peek().logical_offset, 0u);
+
+    ASSERT_TRUE(rope.tryRewind(25));
+    auto s = rope.peek();
+    EXPECT_EQ(s.logical_offset, 25u);
+    EXPECT_EQ(s.size, 5u);
+    EXPECT_EQ(s.data[0], static_cast<char>('A' + 25));
+}
+
 namespace
 {
     /// Build a Rope of `count` adjacent nodes, each `node_size` bytes, starting

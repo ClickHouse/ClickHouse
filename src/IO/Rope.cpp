@@ -141,9 +141,26 @@ bool Rope::tryRewind(size_t new_position)
         return true;
     }
 
-    /// new_position is in a later node — advance through the front
-    /// node and any intermediate nodes.
-    advance(new_position - (front.logical_offset + front_offset));
+    /// new_position is past the front node. Walk later nodes by physical size
+    /// (advance() pops whole nodes, so a logical gap contributes no bytes).
+    /// Reject positions that land in a gap - no held node covers them, and a
+    /// successful tryRewind must leave the cursor exactly on new_position.
+    size_t phys = front.size - front_offset;
+    for (size_t i = 1; i < nodes.size(); ++i)
+    {
+        const RopeNode & node = nodes[i];
+        if (new_position < node.logical_offset)
+            return false;
+        if (new_position < node.logical_offset + node.size)
+        {
+            advance(phys + (new_position - node.logical_offset));
+            return true;
+        }
+        phys += node.size;
+    }
+
+    /// new_position == reachable_hi (exclusive end of the last node): EOF.
+    advance(phys);
     return true;
 }
 
