@@ -10,7 +10,6 @@
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include "dpTable.h"
 
 namespace DB
 {
@@ -29,7 +28,7 @@ template <std::unsigned_integral T>
 inline String toBinaryString(T value)
 {
     // return std::bitset<sizeof(T) * 8>(value).to_string();
-    return std::bitset<8>(value).to_string(); // TODO:  remove this like and uncomment the above line 
+    return std::bitset<4>(value).to_string(); // TODO:  remove this like and uncomment the above line 
 }
 
 struct DPJoinEntry
@@ -65,27 +64,6 @@ struct DPJoinEntry
 
     String dump() const;
 };
-
-template <class Tuint, class Tdptable>
-class EnumeratorChecker
-{
-    using dptable_t = Tdptable;
-    using consumser_t = EnumeratorChecker;
-public:
-    using acceptor_fn = void (EnumeratorChecker::*)(Tuint, Tuint, Tuint);
-
-    EnumeratorChecker(const size_t nr_relations_) : nr_relations(nr_relations_), dptab(nr_relations_) {}
-    void accept(Tuint S, Tuint S1, Tuint S2) { dptab.insert(S, S1, S2); }
-    inline size_t n() const { return nr_relations; }
-    inline dptable_t & dptable() { return dptab; }  
-    inline const dptable_t & dptable() const { return dptab; }
-    inline dptable_t * dptablePtr() { return (&dptab); }
-private:
-    const size_t nr_relations;
-    dptable_t dptab;
-};
-
-
 
 struct RelationStats
 {
