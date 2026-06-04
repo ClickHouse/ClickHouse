@@ -569,6 +569,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// in CREATE query (e.g. in `args`).
     /// Vended credentials can be disabled in catalog itself,
     /// so we have a separate setting to know whether we should even try to fetch them.
+    bool static_credentials_applied = false;
     if (args.size() == 1)
     {
         std::array<DatabaseDataLakeCatalogType, 3> vended_credentials_catalogs = {DatabaseDataLakeCatalogType::ICEBERG_ONELAKE, DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE, DatabaseDataLakeCatalogType::PAIMON_REST};
@@ -590,6 +591,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         {
             LOG_TRACE(log, "Using static credentials from database settings");
             static_credentials->addCredentialsToEngineArgs(args);
+            static_credentials_applied = true;
         }
         else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
         {
@@ -675,11 +677,14 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    /// If the user explicitly disabled vended credentials, do not let the catalog refresh callback
-    /// silently re-fetch them and override the static credentials we configured above.
+    /// When we applied static credentials from database settings, they are authoritative:
+    /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)
+    /// silently re-fetch credentials and override them. Provider-chain refresh callbacks
+    /// (e.g. Glue STS/role) remain active when no static credentials were applied, so they
+    /// keep refreshing temporary credentials regardless of the `vended_credentials` setting.
     auto get_credentials_refresh_callback = [&](const StorageID & storage_id) -> DataLake::ICatalog::CredentialsRefreshCallback
     {
-        if (!with_vended_credentials)
+        if (static_credentials_applied)
             return std::nullopt;
         return catalog->getCredentialsConfigurationCallback(storage_id);
     };
