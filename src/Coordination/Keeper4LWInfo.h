@@ -83,12 +83,12 @@ struct KeeperLogInfo
 
 struct KeeperClusterMemberInfo
 {
-    int32_t server_id;
+    int32_t server_id{};
     String endpoint;
-    bool is_observer;
-    int32_t priority;
-    bool is_leader;
-    bool is_self;
+    bool is_observer{};
+    int32_t priority{};
+    bool is_leader{};
+    bool is_self{};
     std::optional<uint64_t> last_log_index;
 };
 
