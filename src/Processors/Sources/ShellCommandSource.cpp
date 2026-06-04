@@ -561,6 +561,40 @@ namespace
                 }
             }
 
+            /// Executable (non-pool) path: `wait4` populated the child rusage when it
+            /// exited (see `ShellCommand::tryWaitImpl`). With `check_exit_code=true`,
+            /// `prepare` already reaped via `command->wait`, so `isWaitCalled()` is true
+            /// and we just read the captured usage. With `check_exit_code=false` the source
+            /// deliberately does NOT wait for the child, so this reap stays NON-BLOCKING:
+            /// a WNOHANG reap harvests rusage when the child has already exited, otherwise
+            /// we skip accounting and let `~ShellCommand` apply its bounded
+            /// command_termination_timeout + SIGTERM teardown. Blocking here would turn a
+            /// bounded cleanup into a query hang for a UDF that closes stdout but lingers.
+            ///
+            /// `tryWaitImpl` sets `last_resource_usage` on the `wait4` success branch BEFORE
+            /// any throw for `WIFSIGNALED`/`WIFSTOPPED`/non-zero exit, so `wasChildReaped`
+            /// is reliable regardless of whether the inner call threw.
+            if (configuration.sampler && command && !process_pool)
+            {
+                if (!command->isWaitCalled())
+                {
+                    try
+                    {
+                        command->waitIfProccesTerminated();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException("ShellCommandSource");
+                    }
+                }
+
+                if (command->wasChildReaped())
+                    configuration.sampler->recordExecutableFinished(
+                        command->getLastChildUserTimeMicroseconds(),
+                        command->getLastChildSystemTimeMicroseconds(),
+                        command->getLastChildPeakRssBytes());
+            }
+
             if (command_is_invalid)
                 command = nullptr;
 

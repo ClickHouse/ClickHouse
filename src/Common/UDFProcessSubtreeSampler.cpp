@@ -410,4 +410,29 @@ void UDFProcessSubtreeSampler::recordReleased()
         peak_memory_byte_seconds = product / 1000000ULL;
 }
 
+
+void UDFProcessSubtreeSampler::recordExecutableFinished(
+    UInt64 user_time_us_, UInt64 system_time_us_, UInt64 peak_rss_bytes_) noexcept
+{
+    /// Guard against a duplicate call: the contract is "at most once"; a doubled
+    /// call from a future call-site bug must not overwrite the first measurement.
+    if (executable_finished)
+        return;
+
+    /// Wall time from sampler construction to child exit. The executable path spawns
+    /// a fresh child per invocation, so there is no pool-wait interval to subtract.
+    elapsed_us = entry_watch.elapsedMicroseconds();
+
+    user_time_us = user_time_us_;
+    system_time_us = system_time_us_;
+
+    UInt64 product = 0;
+    if (common::mulOverflow(peak_rss_bytes_, elapsed_us, product))
+        peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
+    else
+        peak_memory_byte_seconds = product / 1000000ULL;
+
+    executable_finished = true;
+}
+
 }

@@ -49,11 +49,17 @@ public:
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
 
+    /// Executable (non-pool) path: fill elapsed_us, user_time_us, system_time_us,
+    /// and peak_memory_byte_seconds from the scalars returned by ShellCommand::getLastChild*.
+    /// Must be called at most once per sampler lifetime.
+    void recordExecutableFinished(UInt64 user_time_us, UInt64 system_time_us, UInt64 peak_rss_bytes) noexcept;
+
     /// Pool wait = entry → borrow acquired.
     /// Zero if the borrow never happened (caller should still report 0).
     UInt64 getPoolWaitMicroseconds() const noexcept { return pool_wait_us; }
 
-    /// Borrow-internal wall = borrow acquired → released.
+    /// Pool mode: borrow acquired → released (excludes the pool-wait interval).
+    /// Executable mode: ctor → ShellCommandSource cleanup (includes spawn, output parsing and IO).
     UInt64 getElapsedMicroseconds() const noexcept { return elapsed_us; }
 
     UInt64 getUserTimeMicroseconds() const noexcept { return user_time_us; }
@@ -64,6 +70,7 @@ public:
 
     bool poolWaitDone() const noexcept { return pool_wait_done; }
     bool borrowAcquired() const noexcept { return borrow_acquired; }
+    bool executableFinished() const noexcept { return executable_finished; }
 
     /// Whether at least one pid in this borrow's subtree saw the
     /// corresponding procfs operation fail. Caller-side state can use these
@@ -86,6 +93,7 @@ private:
     pid_t root_pid = -1;
     bool pool_wait_done = false;
     bool borrow_acquired = false;
+    bool executable_finished = false;
 
     UInt64 pool_wait_us = 0;
     UInt64 elapsed_us = 0;

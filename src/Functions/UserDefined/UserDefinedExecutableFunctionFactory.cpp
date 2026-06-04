@@ -250,28 +250,27 @@ public:
 
             ShellCommandSourceConfiguration shell_command_source_configuration;
 
-            std::shared_ptr<UDFProcessSubtreeSampler> sampler;
+            /// Count every executeImpl call — both pool and executable paths — even those
+            /// that fail before the child is ready. Resource counters below only fire when
+            /// the child actually ran and was observed.
+            ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
+
+            std::shared_ptr<UDFProcessSubtreeSampler> sampler = std::make_shared<UDFProcessSubtreeSampler>();
+            shell_command_source_configuration.sampler = sampler;
+
             if (coordinator_configuration.is_executable_pool)
             {
                 shell_command_source_configuration.read_fixed_number_of_rows = true;
                 shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
-
-                /// Count every executeImpl call against the pool path, even those
-                /// that fail before/inside the borrow. Resource counters below
-                /// only fire when the borrow actually completed.
-                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
-
-                sampler = std::make_shared<UDFProcessSubtreeSampler>();
-                shell_command_source_configuration.sampler = sampler;
             }
 
             /// Flush resource accumulators into ProfileEvents on every exit
             /// path — successful return AND exception thrown from the
             /// pipeline. The pipeline / executor below are declared after
             /// this `SCOPE_EXIT`, so by the C++ stack unwinding rules they
-            /// destruct first; `recordReleased` fires from
-            /// `~ShellCommandSource` during that destruction and the
-            /// sampler holds the final counters by the time this guard runs.
+            /// destruct first; `recordReleased` (pool) or `recordExecutableFinished`
+            /// (executable) fires from `~ShellCommandSource` during that destruction
+            /// and the sampler holds the final counters by the time this guard runs.
             SCOPE_EXIT_SAFE({
                 if (!sampler)
                     return;
@@ -283,9 +282,10 @@ public:
                 if (sampler->poolWaitDone())
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
 
-                /// The remaining counters depend on the worker actually being
-                /// borrowed and observable via `/proc/<pid>`.
-                if (sampler->borrowAcquired())
+                /// The remaining counters depend on the child actually having run:
+                ///   pool path      → borrowAcquired (procfs snapshot taken)
+                ///   executable path → executableFinished (wait4 rusage captured)
+                if (sampler->borrowAcquired() || sampler->executableFinished())
                 {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());
