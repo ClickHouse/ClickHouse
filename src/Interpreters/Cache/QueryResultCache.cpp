@@ -698,13 +698,13 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
 
     assertChar('\n', buf);
     assertString(token_created_at, buf);
-    std::time_t created_timestamp;
+    std::time_t created_timestamp = 0;
     readVarUInt(created_timestamp, buf);
     created_at = std::chrono::system_clock::from_time_t(created_timestamp);
 
     assertChar('\n', buf);
     assertString(token_expires_at, buf);
-    std::time_t timestamp;
+    std::time_t timestamp = 0;
     readVarUInt(timestamp, buf);
     expires_at = std::chrono::system_clock::from_time_t(timestamp);
 
