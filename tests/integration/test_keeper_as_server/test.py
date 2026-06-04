@@ -96,4 +96,4 @@ def test_system_keeper_changelogs(start_cluster):
     assert disk_name != ""
     assert int(size_bytes) > 0
     assert int(modification_time) > 0
-    assert int(is_broken) == 0
+    assert is_broken == "false"
