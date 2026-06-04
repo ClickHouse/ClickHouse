@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -514,7 +515,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
         // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
         /// supported only this direction, other cases are represented as nulls_direction==-1
         /// Also actual for floating point values NaN.
-        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
+        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])
+            || isFloat(*removeLowCardinality(sorting_key.data_types[next_sort_key]));
         if (column_is_nullable && sort_column_description.nulls_direction == -1)
             break;
 
