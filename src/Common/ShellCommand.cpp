@@ -356,6 +356,11 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
         waitpid_retcode = wait4(pid, &status, options, &local_rusage);
         if (waitpid_retcode > 0)
         {
+            /// The child is reaped. Record that before any throwing work (the
+            /// allocation below): if it threw with `wait_called` still false, the
+            /// destructor would route this already-reaped — and possibly pid-reused —
+            /// child through `waitForPid` and SIGTERM.
+            wait_called = true;
             last_resource_usage = std::make_unique<LastChildResourceUsage>();
             last_resource_usage->rusage = local_rusage;
             break;
@@ -370,8 +375,6 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking)
     }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
-
-    wait_called = true;
 
     result.is_process_terminated = true;
     in.close();
