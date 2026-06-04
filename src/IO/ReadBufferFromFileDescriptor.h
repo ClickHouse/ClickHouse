@@ -51,6 +51,8 @@ public:
     {
     }
 
+    bool poll(size_t timeout_microseconds) override;
+
     int getFD() const
     {
         return fd;
