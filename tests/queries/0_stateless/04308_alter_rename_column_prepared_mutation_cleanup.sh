@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database
 # Tag no-parallel: uses fail points which affect the whole server.
-# Tag no-replicated-database: the test asserts the renamed-from column is still
-# queryable after the failed ALTER, which requires the on-disk metadata to be
-# rolled back to the pre-ALTER state. Under `Replicated` databases the metadata
-# update goes through a single-shot `ZooKeeperMetadataTransaction` that is
-# already committed by the time the failure inside `prepareMutationEntry`
-# fires, so the local on-disk file cannot be reverted and the assertion at
-# `SELECT id, d` would not hold. The orphan-mutation-file cleanup that this
-# test exercises is engine-agnostic and is covered for the non-replicated path
-# here.
+# Tag no-replicated-database: the test uses `DETACH TABLE` + `ATTACH TABLE` to
+# force `loadMutations` to re-run, but `DETACH TABLE` is rejected with
+# `INCORRECT_QUERY` under `Replicated` databases. The underlying durable
+# consistency invariant exercised by this test (after a failed ALTER, the
+# durable metadata and the on-disk rename mutation are either both present
+# or both absent) holds under `Replicated` too: the failure point fires
+# inside `prepareMutationEntry`, before the durable metadata commit, so the
+# `mutation_*.txt` orphan is cleaned by `~MergeTreeMutationEntry` and the
+# durable metadata is unchanged. We simply cannot probe the post-failure
+# state via `DETACH/ATTACH` from this test.
 #
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/104822
 # inline review on src/Storages/StorageMergeTree.cpp:784.

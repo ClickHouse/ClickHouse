@@ -523,6 +523,18 @@ void StorageMergeTree::alter(
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
 
+            /// Write the rename `mutation_*.txt` to disk BEFORE committing the durable metadata.
+            /// `prepareMutationEntry` allocates a block number and commits the file, but does NOT
+            /// register the entry in `current_mutations_by_version`. Any throw between here and
+            /// `addPreparedMutationEntry` below unwinds `~MergeTreeMutationEntry`, which removes
+            /// the file because `is_registered == false` (see #80648). Doing this before the
+            /// durable metadata commit guarantees that we never expose a state where the durable
+            /// metadata has the renamed column but the matching rename mutation file is gone:
+            /// either both are present after a successful `alter`, or neither is.
+            std::optional<PreparedMutationEntry> prepared;
+            if (!maybe_mutation_commands.empty())
+                prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
+
             /// `alterTable` calls `waitDatabaseStarted` which takes `DatabaseAtomic::mutex`;
             /// holding `currently_processing_in_background_mutex` across it forms a lock-order
             /// cycle with the scheduler/`RENAME`/`DROP` paths. `validate_new_create_query=false`
@@ -535,6 +547,7 @@ void StorageMergeTree::alter(
             {
                 LOG_ERROR(log, "Failed to alter table in database, reverting changes");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
+                /// `prepared` destructor will remove the orphan `mutation_*.txt`.
                 throw;
             }
 
@@ -550,16 +563,44 @@ void StorageMergeTree::alter(
             std::unique_lock background_lock(currently_processing_in_background_mutex);
             try
             {
+                /// Failpoint fires BEFORE `addPreparedMutationEntry` so the orphan-cleanup
+                /// path (`~prepared` removes the unregistered `mutation_*.txt`) is exercised
+                /// while in-memory metadata is still at `old_metadata` (because
+                /// `setProperties` has not run yet). See #80648.
+                fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in startMutation");
+                });
+
+                /// Register the rename mutation FIRST under the same lock as `setProperties`.
+                /// Pairs with `scheduleDataProcessingJob`, which reads in-memory metadata and
+                /// `current_mutations_by_version` together: merge selection cannot observe
+                /// `new_metadata` without also seeing the matching rename mutation. After this
+                /// call `is_registered == true`, so the `mutation_*.txt` file is preserved by
+                /// `~MergeTreeMutationEntry` regardless of any later unwinding. Combined with
+                /// the pre-write of the file above, this guarantees the durable invariant the
+                /// bot review on #104822 asked for: once the durable metadata commit succeeds
+                /// AND the mutation registers, the matching rename mutation is always present
+                /// (in `current_mutations_by_version` and on disk). See #80648.
+                if (prepared)
+                {
+                    mutation_version = prepared->version;
+                    addPreparedMutationEntry(std::move(*prepared));
+                }
+
                 /// Reinitialize primary key because primary key column types might have changed.
+                /// If `setProperties` (via `checkProperties`) throws after the mutation is
+                /// already registered, the catch handler reverts in-memory metadata; the
+                /// registered mutation is intentionally NOT unregistered so that the durable
+                /// schema and the rename mutation stay matched. On the next reload
+                /// `loadMutations` finds the file and the rename runs against old parts,
+                /// restoring consistency.
                 setProperties(new_metadata, old_metadata, false, local_context);
 
                 {
                     auto parts_lock = lockParts();
                     resetSerializationHints(parts_lock);
                 }
-
-                if (!maybe_mutation_commands.empty())
-                    mutation_version = startMutation(maybe_mutation_commands, local_context, background_lock);
             }
             catch (...)
             {
@@ -582,9 +623,13 @@ void StorageMergeTree::alter(
                 /// `ZooKeeperMetadataTransaction` that was already committed by the
                 /// `alterTable(new_metadata)` call above; a second `alterTable` would
                 /// attempt to add ops to that executed transaction and abort the server
-                /// with a `LOGICAL_ERROR`. The local on-disk file is then left ahead of
-                /// in-memory state, but that is the existing behaviour for any failure
-                /// after the ZK commit point under `Replicated`.
+                /// with a `LOGICAL_ERROR`. Under `Replicated` the durable state stays at
+                /// `new_metadata`; the rename mutation file was registered above and is
+                /// preserved on disk, so `loadMutations` on the next reload finds it and
+                /// the rename converts old parts to the new schema. Either way, the
+                /// durable invariant the bot review on #104822 asked for is preserved:
+                /// the rename mutation file is present iff the durable metadata is at
+                /// `new_metadata`.
                 auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
                 if (!database->hasReplicationThread())
                 {
@@ -795,26 +840,6 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     }
     return version;
 }
-
-Int64 StorageMergeTree::startMutation(
-    const MutationCommands & commands,
-    ContextPtr query_context,
-    const std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
-{
-    /// Caller (`alter`) already holds `currently_processing_in_background_mutex` so
-    /// that `(setProperties + current_mutations_by_version insert)` is atomic against
-    /// background merge selection. File I/O happens under that lock here; acceptable
-    /// because `alter` is rare and the atomicity is required (see #80648).
-    fiu_do_on(FailPoints::mt_alter_throw_in_start_mutation,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in startMutation");
-    });
-    auto prepared = prepareMutationEntry(commands, query_context);
-    Int64 version = prepared.version;
-    addPreparedMutationEntry(std::move(prepared));
-    return version;
-}
-
 
 void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name)
 {

@@ -218,15 +218,6 @@ private:
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
     Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
-    /// Same as above, but requires the caller to already hold `currently_processing_in_background_mutex`.
-    /// Used by `alter` to atomically transition (in-memory metadata, current_mutations_by_version)
-    /// from the old state to the new state: see comment at the call site in `alter` for details.
-    /// The lock parameter is a `unique_lock` so the caller can keep it alive across a try/catch
-    /// and roll back in-memory metadata atomically with the publish on the failure path.
-    Int64 startMutation(
-        const MutationCommands & commands,
-        ContextPtr query_context,
-        const std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// Result of `prepareMutationEntry`. Holds the block-number reservation
     /// that must outlive the call to `addPreparedMutationEntry`.
