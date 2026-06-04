@@ -46,6 +46,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -794,52 +795,32 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 if (state.bytes_to_predownload)
                 {
                     /// The remote object may have been overwritten with shorter content
-                    /// between listing and reading. Check the actual remote file size
-                    /// before throwing an error (same logic as in readFromFileSegment).
+                    /// between listing and reading. Check the actual remote file size to
+                    /// distinguish that from a genuine logic error.
                     auto object_size = state.buf->getRemoteFileSize();
                     if (object_size.has_value()
                         && *object_size == file_segment.getCurrentWriteOffset())
                     {
-                        LOG_WARNING(
-                            log,
-                            "Remote object is smaller than expected during predownload. "
-                            "Remaining bytes to predownload: {}, current write offset: {}, "
-                            "actual object size: {}, file segment: {}. Treating as truncated object.",
-                            state.bytes_to_predownload,
-                            file_segment.getCurrentWriteOffset(),
+                        /// We reached the real end of the (now shorter) object while
+                        /// predownloading, before reaching the bytes the reader actually
+                        /// needs: those lie beyond the truncated object, because
+                        /// offset == current_write_offset + bytes_to_predownload > *object_size.
+                        ///
+                        /// There is no valid data to return for `offset`. We must NOT treat
+                        /// this as EOF (return a short/zero read): the caller would then
+                        /// consume buffer bytes that were never written -- a
+                        /// use-of-uninitialized-value under MSan, and silent garbage in
+                        /// release. Fail with a regular CANNOT_READ_ALL_DATA instead of a
+                        /// LOGICAL_ERROR: it does not alert as a server bug and is retryable
+                        /// while the object is being concurrently replaced.
+                        throw Exception(
+                            ErrorCodes::CANNOT_READ_ALL_DATA,
+                            "Remote object was truncated between listing and reading: "
+                            "actual object size {}, but need to read until offset {}. "
+                            "Current file segment: {}",
                             *object_size,
+                            offset,
                             file_segment.getInfoForLog());
-
-                        state.bytes_to_predownload = 0;
-
-                        /// Mark the segment as not-to-be-continued before resetting the
-                        /// downloader, matching the readFromFileSegment EOF handling. Otherwise
-                        /// completePartAndResetDownloader leaves the segment PARTIALLY_DOWNLOADED
-                        /// (downloaded size is the real, truncated object size, which is less than
-                        /// the stale range size). On completion that would enqueue a background
-                        /// download (filesystem_cache_allow_background_download is on by default)
-                        /// or let a later reader become downloader and retry past the real EOF.
-                        /// PARTIALLY_DOWNLOADED_NO_CONTINUATION instead shrinks the segment to the
-                        /// downloaded size and never continues. completePartAndResetDownloader
-                        /// accepts this state and only resets the downloader, preserving it.
-                        file_segment.setDownloadFinishedWithoutContinuation();
-                        file_segment.completePartAndResetDownloader();
-                        state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-
-                        /// Move the read boundary down to the current offset so the
-                        /// caller treats this position as EOF (the `offset >=
-                        /// read_until_position` guards below and in readBigAt then fire).
-                        /// Set it to `offset`, NOT to `*object_size`: `offset` equals
-                        /// `file_offset_of_buffer_end` here and `*object_size < offset`
-                        /// by construction, so using `*object_size` would push the
-                        /// boundary behind the buffer end and violate the
-                        /// `file_offset_of_buffer_end <= read_until_position` invariant
-                        /// (chassert in nextImplStep / throw in getRemainingSizeToRead).
-                        /// This matches the readFromFileSegment EOF path, which likewise
-                        /// sets `info.read_until_position = offset`.
-                        info.read_until_position = offset;
-
-                        return false;
                     }
 
                     throw Exception(
@@ -1243,13 +1224,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         {
             chassert(!state.buf->available());
             chassert(state.read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE);
-
-            /// If predownload detected a truncated remote object, it adjusts
-            /// info.read_until_position to the actual object size, which may be
-            /// less than our current offset. In that case there is nothing left
-            /// to read — return 0 so the caller treats it as EOF.
-            if (offset >= info.read_until_position)
-                return 0;
 
             auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
             buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]

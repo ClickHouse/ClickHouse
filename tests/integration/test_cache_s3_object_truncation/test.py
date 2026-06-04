@@ -2,10 +2,12 @@
 Regression test for graceful handling of truncated S3 objects during cached reads.
 
 When an S3 object is overwritten with shorter content between listing and
-reading, the cache layer must NOT throw LOGICAL_ERROR. Instead it should detect
-the truncation and treat it as a legitimate EOF / bypass-cache, in:
-  - predownloadForFileSegment (catch-up download before a mid-segment read), and
-  - readFromFileSegment (the sibling EOF path).
+reading, the cache layer must NOT throw LOGICAL_ERROR and must NOT crash the
+server. In predownloadForFileSegment, when the bytes the reader needs lie beyond
+the truncated object there is no valid data to return, so the read fails with a
+regular CANNOT_READ_ALL_DATA error -- not a LOGICAL_ERROR, and not a fabricated
+EOF (a short/zero read there makes the caller consume uninitialized memory,
+which aborts under MemorySanitizer and returns silent garbage in release).
 
 Two conditions are required to actually exercise the predownload path, both
 discovered empirically (a naive test passes on the buggy code too):
@@ -118,8 +120,10 @@ def test_truncated_object_predownload_no_logical_error(started_cluster):
     Truncate the column data object to a valid prefix, then seek (via a point
     query on the primary key) to a granule located beyond the truncation. On the
     unpatched code this throws `Failed to predownload remaining ... bytes`
-    (LOGICAL_ERROR); the fix treats it as EOF and returns no/partial data.
-    Any non-LOGICAL_ERROR (e.g. CANNOT_READ_ALL_DATA, broken part) is acceptable.
+    (LOGICAL_ERROR); the fix fails with a regular CANNOT_READ_ALL_DATA and the
+    server stays up. Any non-LOGICAL_ERROR (CANNOT_READ_ALL_DATA, broken part,
+    etc.) is acceptable; what matters is no forbidden LOGICAL_ERROR and that the
+    server survives (no use-of-uninitialized-value crash).
     """
     minio = started_cluster.minio_client
     node.query("DROP TABLE IF EXISTS t_trunc SYNC")
