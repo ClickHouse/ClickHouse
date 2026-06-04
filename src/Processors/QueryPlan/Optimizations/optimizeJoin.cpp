@@ -880,7 +880,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             {
                 if (!graph_edge)
                     continue;
-                auto edge_sources = graph_edge.getSourceRelations();
+                const auto & edge_sources = graph_edge.getSourceRelations();
                 if (edge_sources.test(tainted_rel) && !edge_sources.test(null_rel))
                     query_graph.pinned[graph_edge].set(null_rel);
             }
