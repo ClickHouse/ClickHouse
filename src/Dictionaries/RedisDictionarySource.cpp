@@ -86,6 +86,24 @@ namespace DB
                         key.name,
                         key.type->getName());
         }
+        else if (dict_struct.key)
+        {
+            /// Complex-key layouts (e.g. 'complex_key_cache', 'complex_key_direct') load keys via loadKeys.
+            /// 'simple' storage is a flat Redis key-value map, so it can only encode a single key column.
+            /// Composite keys have no canonical mapping to a single Redis key - use 'hash_map' storage for them.
+            if (dict_struct.key->size() != 1)
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Redis source with storage type 'simple' supports only a single key column, but {} were given; "
+                    "use storage type 'hash_map' for composite keys",
+                    dict_struct.key->size());
+
+            const auto & key = dict_struct.key->front();
+            if (!isInteger(key.type) && !isString(key.type))
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Redis source supports only integer or string key, but key '{}' of type {} given",
+                    key.name,
+                    key.type->getName());
+        }
     }
 
     RedisDictionarySource::RedisDictionarySource(const RedisDictionarySource & other)
@@ -159,22 +177,35 @@ namespace DB
         if (key_columns.size() != dict_struct.key->size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
+        const auto serialize_key = [&](RedisArray & out, size_t column, size_t row)
+        {
+            const auto & type = dict_struct.key->at(column).type;
+            if (isInteger(type))
+                out << DB::toString(key_columns[column]->get64(row));
+            else if (isString(type))
+                out << (*key_columns[column])[row].safeGet<String>();
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
+        };
+
         RedisArray keys;
         for (auto row : requested_rows)
         {
-            RedisArray key;
-            for (size_t i = 0; i < key_columns.size(); ++i)
+            if (configuration.storage_type == RedisStorageType::SIMPLE)
             {
-                const auto & type = dict_struct.key->at(i).type;
-                if (isInteger(type))
-                    key << DB::toString(key_columns[i]->get64(row));
-                else if (isString(type))
-                    key << (*key_columns[i])[row].safeGet<String>();
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
+                /// 'simple' storage is read with MGET, which expects a flat list of keys (one per row).
+                if (key_columns.size() != 1)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected exactly one key column for 'simple' storage type");
+                serialize_key(keys, 0, row);
             }
-
-            keys.add(key);
+            else
+            {
+                /// 'hash_map' storage is read with HMGET, which expects a nested array per row.
+                RedisArray key;
+                for (size_t i = 0; i < key_columns.size(); ++i)
+                    serialize_key(key, i, row);
+                keys.add(key);
+            }
         }
 
         BlockIO io;
