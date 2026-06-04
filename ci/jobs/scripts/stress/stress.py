@@ -188,6 +188,15 @@ class RandomServerRestarter(RandomRestarter):
     NAME = "RandomServerRestarter"
     INTENTIONAL_KILLS_FILE = "/test_output/stress_intentional_server_kills.log"
 
+    def __init__(
+        self,
+        min_interval: float = 120.0,
+        max_interval: float = 300.0,
+        server_start_timeout: float = 120.0,
+    ):
+        super().__init__(min_interval, max_interval)
+        self._server_start_timeout = server_start_timeout
+
     def _read_pid(self) -> Optional[int]:
         try:
             with open(CLICKHOUSE_PID_FILE, "r") as f:
@@ -195,8 +204,8 @@ class RandomServerRestarter(RandomRestarter):
         except (FileNotFoundError, ValueError):
             return None
 
-    def _wait_server_up(self, timeout: float = 120.0) -> bool:
-        deadline = time.monotonic() + timeout
+    def _wait_server_up(self) -> bool:
+        deadline = time.monotonic() + self._server_start_timeout
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
@@ -263,7 +272,11 @@ class RandomServerRestarter(RandomRestarter):
         self._wait_port_free(9009)
         self._wait_port_free(9181)
 
-        logging.info("%s: starting server", self.NAME)
+        logging.info(
+            "%s: starting server (start timeout: %.0fs)",
+            self.NAME,
+            self._server_start_timeout,
+        )
         subprocess.run(
             "clickhouse start --user root "
             ">>/var/log/clickhouse-server/stdout.log "
@@ -275,7 +288,11 @@ class RandomServerRestarter(RandomRestarter):
         if self._wait_server_up():
             logging.info("%s: server back up", self.NAME)
         else:
-            logging.error("%s: server did not come back within timeout", self.NAME)
+            logging.error(
+                "%s: server did not come back within %.0fs timeout",
+                self.NAME,
+                self._server_start_timeout,
+            )
             self._recovery_failures += 1
 
 
@@ -1083,6 +1100,10 @@ def main():
 
     call_with_retry(make_query_command("SELECT 1"), timeout=0.5, retry_count=20)
 
+    is_sanitizer = os.environ.get("IS_SANITIZER_BUILD") == "1"
+    min_server_start_interval = 300.0 if is_sanitizer else 120.0
+    max_server_start_interval = 600.0 if is_sanitizer else 360.0
+    server_start_timeout = 180.0 if is_sanitizer else 120.0
     # Build chaos threads list — started inside run_func_test after smoke check.
     # Order matters: stop runs in reverse so services come down before the
     # query killer, and the server stops last (hung check needs it alive).
@@ -1097,11 +1118,11 @@ def main():
     if not args.no_random_azurite_restart and not args.upgrade_check:
         logging.info("Skipping RandomAzuriteRestarter: Azurite --in-memory restart wipes all blobs")
     if not args.no_random_minio_restart and not args.upgrade_check and args.minio_data_dir:
-        chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=120.0, max_interval=300.0))
+        chaos_threads.append(RandomMinIORestarter(args.minio_data_dir, min_interval=min_server_start_interval, max_interval=max_server_start_interval))
     if not args.no_random_redpanda_restart and not args.upgrade_check:
-        chaos_threads.append(RandomRedpandaRestarter(min_interval=120.0, max_interval=300.0))
+        chaos_threads.append(RandomRedpandaRestarter(min_interval=min_server_start_interval, max_interval=max_server_start_interval))
     if not args.no_random_server_restart and not args.upgrade_check:
-        chaos_threads.append(RandomServerRestarter(min_interval=120.0, max_interval=300.0))
+        chaos_threads.append(RandomServerRestarter(min_interval=min_server_start_interval, max_interval=max_server_start_interval, server_start_timeout=server_start_timeout))
 
     try:
         func_pipes = run_func_test(

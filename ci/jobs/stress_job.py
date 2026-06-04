@@ -138,6 +138,9 @@ def get_additional_envs(info, check_name: str) -> List[str]:
     if "s3" in check_name:
         result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
+    if any(san in check_name for san in ("asan", "msan", "tsan", "ubsan")):
+        result.append("IS_SANITIZER_BUILD=1")
+
     if "serverfuzz" in info.job_name:
         result.append("ENABLE_SERVER_FUZZER=1")
 
