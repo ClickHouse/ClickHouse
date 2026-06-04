@@ -383,8 +383,11 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromChunk(
 
     size_t num_pk_columns = pk_block_header.columns();
 
-    /// PK columns must be present in `result_header` (i.e. the query selects them or they
-    /// were pulled in for sorting). Without them we cannot extract a tight boundary key.
+    /// `pk_block_header` carries the AST identifiers of the PK expression
+    /// (`primary_key.column_names[j]`). For an identity PK column this is the source column
+    /// name and `result_header.has` succeeds; for an expression PK like
+    /// `toStartOfMonth(date)` the chunk has only `date`, so the lookup fails and we fall
+    /// back to `buildVirtualRowFromIndex` (the index file stores the *evaluated* PK).
     std::vector<size_t> pk_positions;
     pk_positions.reserve(num_pk_columns);
     for (size_t j = 0; j < num_pk_columns; ++j)
@@ -409,10 +412,8 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromChunk(
     {
         const auto & header_col = pk_block_header.getByPosition(j);
         auto column = header_col.column->cloneEmpty();
-        /// Round-trip through `Field` so insertion works for any column representation on
-        /// either side (sparse / const / `LowCardinality` / replicated source, and the
-        /// destination is `ColumnLowCardinality` when the PK type is `LowCardinality(...)`).
-        /// Called once per chunk, so the `Field` cost is negligible.
+        /// Round-trip through `Field`: type-agnostic at the `IColumn` API and handles every
+        /// column kind (sparse / const / `LowCardinality`) on both sides. One call per chunk.
         Field field;
         data_columns[pk_positions[j]]->get(source_row, field);
         column->insert(field);
