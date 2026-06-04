@@ -24,21 +24,23 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
     extern const int ROCKSDB_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 #if USE_ROCKSDB
 namespace
 {
     /// Decode the 4-byte big-endian row number written by `SSTIndexWriter`
-    /// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`).
+    /// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`). The writer
+    /// always emits exactly 4 bytes; any other size is a corrupt or
+    /// incompatible sidecar, so fail closed rather than decode a prefix.
     UInt64 decodeRowNumberBE(const char * data, size_t size)
     {
-        if (size < sizeof(UInt32))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "SSTProbeTargetPart: SST value has {} bytes, expected >= 4", size);
+        if (size != sizeof(UInt32))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "UNIQUE KEY SST value has {} bytes, expected exactly 4", size);
         return unalignedLoadBigEndian<UInt32>(data);
     }
 }
@@ -71,17 +73,6 @@ SSTReaderHandle openSSTReaderFromPath(const String & sst_path)
     return out;
 }
 
-#if USE_ROCKSDB
-struct SSTProbeTargetPart::Impl
-{
-    std::unique_ptr<rocksdb::Iterator> cached_iter;
-};
-#else
-struct SSTProbeTargetPart::Impl
-{
-};
-#endif
-
 SSTProbeTargetPart::SSTProbeTargetPart(
     const IMergeTreeDataPart * part_,
     std::shared_ptr<const DeleteBitmap> pinned_bitmap_,
@@ -89,23 +80,7 @@ SSTProbeTargetPart::SSTProbeTargetPart(
     : part(part_)
     , pinned_bitmap(std::move(pinned_bitmap_))
     , handle(std::move(handle_))
-    , impl(std::make_unique<Impl>())
 {
-}
-
-SSTProbeTargetPart::~SSTProbeTargetPart() = default;
-
-void SSTProbeTargetPart::ensureIterInited() const
-{
-#if USE_ROCKSDB
-    std::call_once(iter_inited, [this]()
-    {
-        if (!handle.valid || !handle.reader)
-            return;
-        rocksdb::ReadOptions read_opts;
-        impl->cached_iter.reset(handle.reader->NewIterator(read_opts));
-    });
-#endif
 }
 
 void SSTProbeTargetPart::findRowIndexBatch(
@@ -125,15 +100,15 @@ void SSTProbeTargetPart::findRowIndexBatch(
             "UNIQUE KEY SST probe target has no readable index (invalid reader handle)");
 
 #if USE_ROCKSDB
-    ensureIterInited();
-    auto * it = impl->cached_iter.get();
-    if (!it)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "SSTProbeTargetPart::findRowIndexBatch: iterator not initialized for a valid handle");
+    /// A fresh iterator per call: `SSTProbeTargetPart` is shared as a
+    /// `shared_ptr<const>`, so a cached/mutable iterator would race across
+    /// concurrent probes on the same target. A per-call iterator keeps the
+    /// target thread-safe by construction (the perf layer can revisit this).
+    /// The SST's embedded bloom filter short-circuits absent keys inside
+    /// RocksDB; `Seek` lands at >= key, so the exact-equality compare is required.
+    rocksdb::ReadOptions read_opts;
+    std::unique_ptr<rocksdb::Iterator> it(handle.reader->NewIterator(read_opts));
 
-    /// Reused, re-seekable iterator. The SST's embedded bloom filter
-    /// short-circuits absent keys inside RocksDB. `Seek` lands at >= key, so
-    /// the exact-equality compare is required.
     for (size_t i = 0; i < encoded_keys.size(); ++i)
     {
         rocksdb::Slice key_slice(encoded_keys[i].data(), encoded_keys[i].size());

@@ -23,10 +23,16 @@
 #include <Interpreters/Context.h>
 #include <Common/tests/gtest_global_context.h>
 
+#include <rocksdb/env.h>
+#include <rocksdb/filter_policy.h>
+#include <rocksdb/options.h>
+#include <rocksdb/slice.h>
+#include <rocksdb/sst_file_writer.h>
+#include <rocksdb/table.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -59,6 +65,24 @@ namespace
         UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, MAX_ENC, out);
         return out.at(0);
     }
+
+    /// Write a single (encoded_key -> raw value) SST entry, bypassing
+    /// `SSTIndexWriter` — used only to inject a malformed (non-4-byte) value the
+    /// real writer cannot produce, for the corrupt-sidecar test.
+    bool writeSSTRawValue(const String & path, const String & encoded_key, const String & value)
+    {
+        rocksdb::Options options;
+        rocksdb::BlockBasedTableOptions tbl;
+        tbl.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10.0));
+        options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(tbl));
+        rocksdb::SstFileWriter writer(rocksdb::EnvOptions(), options);
+        if (!writer.Open(path).ok())
+            return false;
+        if (!writer.Put(rocksdb::Slice(encoded_key.data(), encoded_key.size()),
+                        rocksdb::Slice(value.data(), value.size())).ok())
+            return false;
+        return writer.Finish().ok();
+    }
 }
 
 /// Fixture: owns a temp disk for the test's SST sidecars (kept alive for the
@@ -82,15 +106,16 @@ protected:
         disk = std::make_shared<DiskLocal>("test_disk", base.string());
         volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
 
-        /// `setTemporaryStoragePath` throws if called twice, so configure it
-        /// once per binary lifetime (the SST writer streams through a temp dir).
-        static std::once_flag tmp_storage_once;
-        std::call_once(tmp_storage_once, []
+        /// The SST writer streams through the context's temporary storage. Set
+        /// it only if no other fixture in this binary already did —
+        /// `setTemporaryStoragePath` throws (LOGICAL_ERROR, aborts in Debug) if
+        /// called twice, so two SST-using suites must guard on the shared state.
+        if (!getContext().context->getSharedTempDataOnDisk())
         {
             auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_probe_gtest_tmp";
             std::filesystem::create_directories(shared_tmp);
             getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
-        });
+        }
     }
 
     void TearDown() override
@@ -273,6 +298,24 @@ TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)
 
     auto probe = probeOver({target});
     EXPECT_ANY_THROW(probe.probeBatch(makeKeyBlock({1}), "p0"));
+}
+
+TEST_F(UniqueKeyProbeTest, CorruptValueSizeFailsClosed)
+{
+    /// A value whose size isn't exactly 4 bytes is a corrupt/incompatible
+    /// sidecar — decoding a prefix could point at the wrong row, so the probe
+    /// must throw rather than return a (wrong) hit or a miss.
+    const String path = (base / "corrupt.sst").string();
+    ASSERT_TRUE(writeSSTRawValue(path, encodeKey(1), String(5, '\0'))); /// 5-byte value
+
+    auto handle = openSSTReaderFromPath(path);
+    ASSERT_TRUE(handle.valid);
+    SSTProbeTargetPart target(/*part=*/nullptr, std::make_shared<DeleteBitmap>(), std::move(handle));
+
+    const String e = encodeKey(1);
+    std::vector<std::string_view> views{{e.data(), e.size()}};
+    std::vector<std::optional<UInt64>> out;
+    EXPECT_ANY_THROW(target.findRowIndexBatch(views, out));
 }
 
 /// ---------- factory switch ----------

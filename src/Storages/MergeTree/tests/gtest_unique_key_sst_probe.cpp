@@ -63,15 +63,15 @@ namespace
             volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
             storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
 
-            /// `Context::setTemporaryStoragePath` throws if called twice, so
-            /// configure once per binary lifetime to a shared dir. The
-            /// per-test fixture tmp_path stays for the actual part storage.
-            static std::once_flag tmp_storage_once;
-            std::call_once(tmp_storage_once, [] {
+            /// `Context::setTemporaryStoragePath` throws if called twice, so set
+            /// it only if no other fixture in this binary already configured the
+            /// shared temporary storage (e.g. the UNIQUE KEY probe suite).
+            if (!getContext().context->getSharedTempDataOnDisk())
+            {
                 auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_gtest_tmp";
                 std::filesystem::create_directories(shared_tmp);
                 getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
-            });
+            }
         }
 
         void TearDown() override

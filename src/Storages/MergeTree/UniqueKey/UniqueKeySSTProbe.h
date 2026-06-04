@@ -7,7 +7,6 @@
 #include <base/types.h>
 
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -70,8 +69,6 @@ public:
         std::shared_ptr<const DeleteBitmap> pinned_bitmap_,
         SSTReaderHandle handle_);
 
-    ~SSTProbeTargetPart() override;
-
     void findRowIndexBatch(
         const std::vector<std::string_view> & encoded_keys,
         std::vector<std::optional<UInt64>> & out) const override;
@@ -86,13 +83,6 @@ private:
     const IMergeTreeDataPart * part;
     std::shared_ptr<const DeleteBitmap> pinned_bitmap;
     SSTReaderHandle handle;
-
-    /// Cached RocksDB iterator, lazily built once and reused across the keys of
-    /// one `findRowIndexBatch` call (and across calls on the same target).
-    struct Impl;
-    mutable std::once_flag iter_inited;
-    mutable std::unique_ptr<Impl> impl;
-    void ensureIterInited() const;
 };
 
 }
