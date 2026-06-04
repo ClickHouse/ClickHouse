@@ -114,14 +114,22 @@ void SSTProbeTargetPart::findRowIndexBatch(
 {
     out.assign(encoded_keys.size(), std::nullopt);
 
-#if USE_ROCKSDB
-    if (!handle.valid || !handle.reader)
-        return;
+    /// Fail closed: a target that cannot read its index must not report misses.
+    /// `NOT_FOUND` must mean "no active part holds the key", never "could not
+    /// read this part" — a silent miss here could let a duplicate key through
+    /// once INSERT enforcement is wired. (A catchable error, not a
+    /// `LOGICAL_ERROR` abort: it surfaces an unreadable index, and on a build
+    /// without RocksDB the handle is always invalid.)
+    if (!handle.valid)
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+            "UNIQUE KEY SST probe target has no readable index (invalid reader handle)");
 
+#if USE_ROCKSDB
     ensureIterInited();
     auto * it = impl->cached_iter.get();
     if (!it)
-        return;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SSTProbeTargetPart::findRowIndexBatch: iterator not initialized for a valid handle");
 
     /// Reused, re-seekable iterator. The SST's embedded bloom filter
     /// short-circuits absent keys inside RocksDB. `Seek` lands at >= key, so

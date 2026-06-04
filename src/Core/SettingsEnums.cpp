@@ -227,7 +227,7 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
 
 IMPLEMENT_SETTING_ENUM(UniqueKeyProbeImplementation, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", UniqueKeyProbeImplementation::Auto},
-     {"sequential", UniqueKeyProbeImplementation::Sequential}})
+     {"simple", UniqueKeyProbeImplementation::Simple}})
 
 IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", AlterColumnSecondaryIndexMode::THROW},

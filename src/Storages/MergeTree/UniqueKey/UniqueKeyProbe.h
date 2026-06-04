@@ -105,7 +105,7 @@ using UniqueKeyProbePtr = std::unique_ptr<IUniqueKeyProbe>;
 
 /// Construct the `IUniqueKeyProbe` selected by the `unique_key_probe_implementation`
 /// setting. Today only the simple (single-threaded) implementation exists, so
-/// `Auto` and `Sequential` both build a `UniqueKeyProbeSimple`. The switch is the
+/// `Auto` and `Simple` both build a `UniqueKeyProbeSimple`. The switch is the
 /// seam a future parallel implementation plugs into without changing call sites.
 UniqueKeyProbePtr makeUniqueKeyProbe(
     UniqueKeyProbeImplementation impl,

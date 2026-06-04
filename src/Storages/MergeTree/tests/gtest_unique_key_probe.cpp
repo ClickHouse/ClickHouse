@@ -258,6 +258,23 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
     EXPECT_EQ(out[1], std::optional<UInt64>(2));
 }
 
+TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)
+{
+    /// A target whose SST cannot be read must fail closed: `findRowIndexBatch`
+    /// throws rather than reporting misses, and the driver propagates the throw
+    /// instead of reducing it to NOT_FOUND (which would risk a duplicate key).
+    auto target = std::make_shared<SSTProbeTargetPart>(
+        /*part=*/nullptr, std::make_shared<DeleteBitmap>(), SSTReaderHandle{});
+
+    const String e = encodeKey(1);
+    std::vector<std::string_view> views{{e.data(), e.size()}};
+    std::vector<std::optional<UInt64>> out;
+    EXPECT_ANY_THROW(target->findRowIndexBatch(views, out));
+
+    auto probe = probeOver({target});
+    EXPECT_ANY_THROW(probe.probeBatch(makeKeyBlock({1}), "p0"));
+}
+
 /// ---------- factory switch ----------
 
 TEST_F(UniqueKeyProbeTest, FactoryBuildsWorkingProbe)
@@ -267,7 +284,7 @@ TEST_F(UniqueKeyProbeTest, FactoryBuildsWorkingProbe)
     ProbeTargetsSnapshot snapshot{t};
     auto supplier = [snapshot](const String &) { return snapshot; };
 
-    for (auto impl : {UniqueKeyProbeImplementation::Auto, UniqueKeyProbeImplementation::Sequential})
+    for (auto impl : {UniqueKeyProbeImplementation::Auto, UniqueKeyProbeImplementation::Simple})
     {
         auto probe = makeUniqueKeyProbe(impl, supplier, Names{"key"}, MAX_ENC);
         ASSERT_NE(probe, nullptr);

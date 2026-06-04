@@ -7899,7 +7899,7 @@ Maximum size (in bytes) of the order-preserving binary encoding of a single `UNI
 )", EXPERIMENTAL) \
     DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
 Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
-baseline exists, so `auto` and `sequential` both resolve to it.
+baseline exists, so `auto` and `simple` both resolve to it.
 
 Reserved: this setting has no effect yet. The INSERT write path that constructs the probe is
 not part of this slice, so the value is not read until UNIQUE KEY INSERT is wired in a later

@@ -23,7 +23,7 @@ UniqueKeyProbePtr makeUniqueKeyProbe(
     switch (impl)
     {
         case UniqueKeyProbeImplementation::Auto:
-        case UniqueKeyProbeImplementation::Sequential:
+        case UniqueKeyProbeImplementation::Simple:
             return std::make_unique<UniqueKeyProbeSimple>(
                 std::move(supplier), std::move(unique_key_column_names), max_encoded_size);
     }
