@@ -316,6 +316,22 @@ bool hasArrayJoinFunction(const ASTPtr & ast)
 /// different row numbers. The Subquery-wrap oracle's row-set comparison
 /// correctly detects this divergence but the divergence is allowed, so we
 /// must skip these queries (issue #105743).
+/// Scan every slot of an ASTSelectQuery that can host a window function:
+/// SELECT list, QUALIFY clause, and named WINDOW definitions. The bare
+/// `hasWindowFunctionWithoutOrderBy(select.select())` we used previously
+/// missed `QUALIFY row_number() OVER () = 1` and `WINDOW w AS (...)` cases.
+bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast);
+bool hasWindowFunctionWithoutOrderByAnywhere(const ASTSelectQuery & select)
+{
+    if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
+        return true;
+    if (select.qualify() && hasWindowFunctionWithoutOrderBy(select.qualify()))
+        return true;
+    if (select.window() && hasWindowFunctionWithoutOrderBy(select.window()))
+        return true;
+    return false;
+}
+
 bool hasWindowFunctionWithoutOrderBy(const ASTPtr & ast)
 {
     if (!ast)
@@ -1053,6 +1069,23 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (hasNonDeterministicFunctions(select.clone(), context))
         return false;
 
+    /// Every SELECT-list expression must be exactly a GROUP BY expression.
+    /// Otherwise a non-injective projection (e.g. `SELECT g % 2 ... GROUP BY g`)
+    /// can render two distinct groups to the same output row; the dedupe on
+    /// the partitioned side then hides a dropped group, masking a real
+    /// wrong-result regression. Hashing by `getTreeHash` (ignore_aliases) is
+    /// the same equality the AST oracle uses elsewhere.
+    {
+        std::unordered_set<UInt64> group_by_hashes;
+        for (const auto & g : select.groupBy()->children)
+            group_by_hashes.insert(g->getTreeHash(/*ignore_aliases=*/true).low64);
+        for (const auto & expr : select.select()->children)
+        {
+            if (!group_by_hashes.contains(expr->getTreeHash(/*ignore_aliases=*/true).low64))
+                return false;
+        }
+    }
+
     ASTPtr predicate = select.where()->clone();
 
     /// Reference: remove WHERE, keep GROUP BY.
@@ -1180,9 +1213,15 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     LOG_TRACE(logger, "TLP HAVING oracle: reference: {}", ref_sql);
     LOG_TRACE(logger, "TLP HAVING oracle: partitioned: {}", union_sql);
 
-    /// Compare as sets — HAVING partitions produce independent group sets.
-    auto ref_rows_opt = executeAndCollectSortedUniqueRows(ref_sql, context);
-    auto part_rows_opt = executeAndCollectSortedUniqueRows(union_sql, context);
+    /// Compare as a bag — TLP HAVING partitions complete groups by the
+    /// HAVING predicate, so the three branches are disjoint at the group
+    /// level and `UNION ALL` preserves bag multiplicity. Deduplicating
+    /// would let a wrong result pass when different groups produce
+    /// identical output rows (e.g. `SELECT count() FROM t GROUP BY g
+    /// HAVING count() > 0` returning `{10, 10}` — if the partitioned
+    /// rewrite drops one group, both sides become `{10}` after dedupe).
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto part_rows_opt = executeAndCollectSortedRows(union_sql, context);
     if (!ref_rows_opt || !part_rows_opt)
         return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
     auto & ref_rows = *ref_rows_opt;
@@ -1193,8 +1232,8 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP HAVING oracle mismatch!\n"
-            "Reference query ({} unique rows): {}\n"
-            "Partitioned query ({} unique rows): {}",
+            "Reference query ({} rows): {}\n"
+            "Partitioned query ({} rows): {}",
             ref_rows.size(), ref_sql,
             part_rows.size(), union_sql);
     }
@@ -1590,7 +1629,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// row numbers; rewriting the WHERE predicate is permitted to reorder rows
     /// seen by the window function, which legitimately changes the assignment.
     /// Use the same gate as `checkSubqueryWrap` (issue #105743).
-    if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
     /// LIMIT is unsafe even with ORDER BY: if the sort key is not unique the
@@ -1727,7 +1766,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     /// function, which legitimately changes the assignment. We can't tell that
     /// apart from a real mismatch without scope resolution. Conservatively
     /// skip any query that contains such a window function (issue #105743).
-    if (select.select() && hasWindowFunctionWithoutOrderBy(select.select()))
+    if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
     auto ref_ast = select.clone();
