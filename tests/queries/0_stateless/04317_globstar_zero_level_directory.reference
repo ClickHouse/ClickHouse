@@ -1,0 +1,9 @@
+all levels (zero, one, two), should include the top-level file:
+0	0
+1	1
+2	2
+3	3
+explicit suffix, zero level must match top.tsv:
+0	0
+directory name with braces is matched by **/:
+3	3

@@ -200,6 +200,15 @@ void listFilesWithRegexpMatchingImpl(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
+    /// `**/` matches zero or more directory components, so it must also match the current
+    /// directory (zero levels). Apply the remaining suffix to `prefix_without_globs` itself,
+    /// in addition to the recursive descent into subdirectories performed by the loop below.
+    /// The descent below covers one or more directory levels, so this call must not recurse
+    /// (`recursive` is `false`) to avoid producing the same results twice.
+    if (current_glob == "/**" && looking_for_directory)
+        listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
+                                        total_bytes_to_read, result, false);
+
     const fs::directory_iterator end;
     std::error_code ec;
     for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
