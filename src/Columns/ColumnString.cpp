@@ -1,6 +1,7 @@
 #include <Columns/ColumnString.h>
 
 #include <Columns/Collator.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
@@ -765,6 +766,20 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
     return collator.compare(
         reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n),
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
+}
+
+size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// Compare length first then bytes if needed.
+    const size_t ref_size = sizeAt(begin);
+    const UInt8 * ref_data = chars.data() + offsetAt(begin);
+    auto equals = [&](size_t i)
+    { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
+
+    return findEqualRangeEndAssumeSorted(begin, end, 8, equals);
 }
 
 void ColumnString::protect()
