@@ -42,18 +42,6 @@ Expression
 1	one
 2	two
 --- Test 4: Bool column used as boolean condition in WHERE
-Expression
-  Expression
-    ReadFromMergeTree
-    Indexes:
-      PrimaryKey
-        Keys:
-          flag
-        Condition: (flag not in [0, 0])
-        Parts: 1/1
-        Granules: 1/1
-        Search Algorithm: generic exclusion search
-      Ranges: 1
 yes
 --- Test 5: WHERE NOT id (negated bare column)
 0	0

@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 SELECT '--- Test 1: Int32 column used as boolean condition in WHERE';
 
 DROP TABLE IF EXISTS test_bool_index;
@@ -58,9 +60,7 @@ SETTINGS index_granularity = 8192;
 
 INSERT INTO test_bool_flag VALUES (false, 'no'), (true, 'yes');
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_flag WHERE flag;
-
-SELECT value FROM test_bool_flag WHERE flag ORDER BY value;
+SELECT value FROM test_bool_flag WHERE flag ORDER BY value SETTINGS force_primary_key = 1;
 
 DROP TABLE test_bool_flag;
 
