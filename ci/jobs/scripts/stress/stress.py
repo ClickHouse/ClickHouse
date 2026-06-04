@@ -405,17 +405,21 @@ class RandomMinIORestarter(RandomRestarter):
         logging.info("%s: starting MinIO via setup_minio.sh", self.NAME)
         env = os.environ.copy()
         env["TEMP_DIR"] = os.path.dirname(self._minio_data_dir)
-        ret = subprocess.run(
-            [self._SETUP_SCRIPT, "stateless"],
-            capture_output=True,
-            timeout=120,
-            env=env,
+        log_file = os.path.join(
+            os.path.dirname(self._minio_data_dir), "setup_minio_restart.log"
         )
+        with open(log_file, "a") as log:
+            ret = subprocess.run(
+                [self._SETUP_SCRIPT, "stateless"],
+                stdout=log,
+                stderr=log,
+                timeout=120,
+                env=env,
+            )
         if ret.returncode != 0:
             logging.error(
-                "%s: setup_minio.sh failed (rc=%d): %s",
-                self.NAME, ret.returncode,
-                ret.stderr.decode(errors="replace")[-500:],
+                "%s: setup_minio.sh failed (rc=%d), see %s",
+                self.NAME, ret.returncode, log_file,
             )
 
         if self._wait_minio_up():
