@@ -151,6 +151,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
+    extern const Event FileProgressCallbackInvocations;
 }
 
 namespace DB::ErrorCodes
@@ -1209,7 +1210,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
             {
-                bool empty_block;
+                bool empty_block = false;
                 if (state.skipping_data)
                     empty_block = !processUnexpectedData();
                 else
@@ -2074,7 +2075,7 @@ void TCPHandler::receiveAddendum()
 
 void TCPHandler::processUnexpectedHello()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in, MAX_HELLO_STRING_SIZE);
@@ -2468,6 +2469,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return;
+            ProfileEvents::increment(ProfileEvents::FileProgressCallbackInvocations);
             this->updateProgress(*current_state, Progress(value));
         });
 
@@ -2545,7 +2547,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
 void TCPHandler::processUnexpectedQuery()
 {
-    UInt64 skip_uint_64;
+    UInt64 skip_uint_64 = 0;
     String skip_string;
 
     readStringBinary(skip_string, *in);
