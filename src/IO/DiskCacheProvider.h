@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class FilesystemCacheLog;
-
 /// Holds a `FileSegmentsHolder` for the request's lifetime so the segments
 /// referenced by `status` / `get` stay pinned across the handle's calls.
 class DiskCacheHandle : public ICacheHandle
@@ -26,7 +24,6 @@ public:
         ByteRange requested,
         const FilesystemCacheSettings & cache_settings,
         ThrottlerPtr local_throttler,
-        std::shared_ptr<FilesystemCacheLog> cache_log,
         String source_file_path);
 
     ~DiskCacheHandle() override;
@@ -58,7 +55,6 @@ private:
     /// external-buffer mode), so there's nothing else worth forwarding
     /// from the caller's `ReadSettings`.
     ThrottlerPtr local_throttler;
-    std::shared_ptr<FilesystemCacheLog> cache_log;
     String source_file_path;
     ByteRange requested_range;
     FileSegmentsHolderPtr holder;
@@ -101,7 +97,6 @@ public:
         const FilesystemCacheSettings & cache_settings_,
         const String & query_id_ = {},
         ThrottlerPtr local_throttler_ = nullptr,
-        std::shared_ptr<FilesystemCacheLog> cache_log_ = nullptr,
         std::optional<FileCacheKey> custom_cache_key_ = std::nullopt,
         std::optional<FileCacheOriginInfo> custom_origin_ = std::nullopt);
 
@@ -118,7 +113,6 @@ private:
     /// Forwarded into each `DiskCacheHandle` so cache-file reads in `get`
     /// honour `max_local_read_bandwidth`.
     ThrottlerPtr local_throttler;
-    std::shared_ptr<FilesystemCacheLog> cache_log;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
     /// Per-query budget holder. Keeps the `FileCacheQueryLimit::QueryContext`

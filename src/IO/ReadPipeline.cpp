@@ -379,7 +379,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
         if (dc.cache)
         {
             executor_caches.push_back(std::make_shared<DiskCacheProvider>(
-                dc.cache, dc.cache_settings, query_id, settings.local_throttler, dc.cache_log,
+                dc.cache, dc.cache_settings, query_id, settings.local_throttler,
                 dc.custom_cache_key, dc.custom_origin));
         }
     }

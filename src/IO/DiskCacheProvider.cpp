@@ -2,15 +2,12 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/FileCache/FileSegment.h>
-#include <Interpreters/FilesystemCacheLog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <chrono>
 #include <cstring>
 
 namespace DB
@@ -24,44 +21,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-    void appendCacheLogEntry(
-        FilesystemCacheLog & cache_log,
-        const FileSegment & segment,
-        const FileCacheOriginInfo & origin,
-        FilesystemCacheLogElement::CacheType cache_type,
-        const String & source_file_path,
-        ByteRange requested_range,
-        size_t object_file_offset)
-    {
-        /// `seg_range` and `source_file_path` are object-local. The handle
-        /// keeps `requested_range` in file-level coordinates; translate it
-        /// so the whole log row sits in one frame (matches legacy
-        /// `CachedOnDiskReadBufferFromFile` per-object logging).
-        const size_t requested_local_offset = requested_range.offset >= object_file_offset
-            ? requested_range.offset - object_file_offset : 0;
-        const auto seg_range = segment.range();
-        FilesystemCacheLogElement elem
-        {
-            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-            .query_id = std::string(CurrentThread::getQueryId()),
-            .source_file_path = source_file_path,
-            .file_segment_range = { seg_range.left, seg_range.right },
-            .requested_range = { requested_local_offset, requested_local_offset + requested_range.size },
-            .cache_type = cache_type,
-            .file_segment_key = segment.key().toString(),
-            .file_segment_offset = segment.offset(),
-            .file_segment_size = seg_range.size(),
-            .read_from_cache_attempted = true,
-            .read_buffer_id = {},
-            .user_id = origin.user_id,
-        };
-        cache_log.add(std::move(elem));
-    }
-}
-
-
 DiskCacheHandle::DiskCacheHandle(
     FileCachePtr cache_,
     FileCacheKey cache_key_,
@@ -71,7 +30,6 @@ DiskCacheHandle::DiskCacheHandle(
     ByteRange requested,
     const FilesystemCacheSettings & cache_settings_,
     ThrottlerPtr local_throttler_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
     String source_file_path_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
@@ -80,7 +38,6 @@ DiskCacheHandle::DiskCacheHandle(
     , object_size(object_size_)
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
-    , cache_log(std::move(cache_log_))
     , source_file_path(std::move(source_file_path_))
     , requested_range(requested)
 {
@@ -356,19 +313,6 @@ Rope DiskCacheHandle::get(ByteRange range)
         /// Node's logical_offset is file-level — translate from object-local.
         result.append(RopeNode{
             std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
-
-        /// Only emit a cache_log entry for fully `DOWNLOADED` segments. For
-        /// `PARTIALLY_DOWNLOADED*`, the subsequent `put` that fills the tail
-        /// emits a `READ_FROM_FS_AND_DOWNLOADED_TO_CACHE` entry — emitting a
-        /// second `READ_FROM_CACHE` here would double-count under the same
-        /// `file_segment_range`, which `02242_system_filesystem_cache_log_table`
-        /// detects. Legacy `CachedOnDiskReadBufferFromFile` emits one entry
-        /// per segment with a single `ReadType`; we mirror that ordering.
-        if (cache_log && state == FileSegmentState::DOWNLOADED)
-            appendCacheLogEntry(
-                *cache_log, *segment, origin,
-                FilesystemCacheLogElement::CacheType::READ_FROM_CACHE,
-                source_file_path, requested_range, object_file_offset);
     }
     return result;
 }
@@ -437,24 +381,7 @@ size_t DiskCacheHandle::put(ByteRange range, Rope data)
         return 0;
 
     if (cache_settings.read_if_exists_otherwise_bypass)
-    {
-        if (cache_log)
-        {
-            chassert(range.offset >= object_file_offset);
-            const ByteRange range_in_object{range.offset - object_file_offset, range.size};
-            for (const auto & segment : *holder)
-            {
-                const auto & seg = segment->range();
-                if (seg.right + 1 <= range_in_object.offset || seg.left >= range_in_object.end())
-                    continue;
-                appendCacheLogEntry(
-                    *cache_log, *segment, origin,
-                    FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE,
-                    source_file_path, requested_range, object_file_offset);
-            }
-        }
         return 0;
-    }
 
     /// `FileSegment::range()` is object-local; translate `range` and shift
     /// `data` so `Rope::copyTo` sees matching coordinates.
@@ -559,11 +486,6 @@ size_t DiskCacheHandle::writeToSegment(FileSegment & segment, ByteRange range_in
 
     LOG_TRACE(log, "DiskCacheHandle::put: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
-    if (cache_log)
-        appendCacheLogEntry(
-            *cache_log, segment, origin,
-            FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE,
-            source_file_path, requested_range, object_file_offset);
     return contiguous;
 }
 
@@ -610,13 +532,11 @@ DiskCacheProvider::DiskCacheProvider(
     const FilesystemCacheSettings & cache_settings_,
     const String & query_id_,
     ThrottlerPtr local_throttler_,
-    std::shared_ptr<FilesystemCacheLog> cache_log_,
     std::optional<FileCacheKey> custom_cache_key_,
     std::optional<FileCacheOriginInfo> custom_origin_)
     : cache(std::move(cache_))
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
-    , cache_log(cache_settings_.enable_log ? std::move(cache_log_) : nullptr)
     , custom_cache_key(std::move(custom_cache_key_))
     , custom_origin(std::move(custom_origin_))
 {
@@ -643,7 +563,6 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         range_in_file,
         cache_settings,
         local_throttler,
-        cache_log,
         object.remote_path);
 }
 
