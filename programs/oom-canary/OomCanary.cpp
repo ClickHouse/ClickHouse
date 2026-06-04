@@ -21,15 +21,25 @@ int mainEntryClickHouseOomCanary(int argc, char ** argv);
 #include <cstddef>
 #include <cstdint>
 #include <cerrno>
+#include <string_view>
 
 
 namespace
 {
 
-/// Errors during setup are written directly to stderr via `fmt::print` rather
-/// than `LOG_*` macros: the canary is exec'd via `posix_spawn /proc/self/exe`
-/// and never initializes `BaseDaemon` / Poco logger. stderr is inherited from
-/// the server process, so messages reach the same destination the parent uses.
+/// Errors during setup are written directly to stderr rather than `LOG_*`
+/// macros: the canary is exec'd via `posix_spawn /proc/self/exe` and never
+/// initializes `BaseDaemon` / Poco logger. stderr is inherited from the server
+/// process, so messages reach the same destination the parent uses.
+///
+/// We write to fd 2 directly instead of the `stderr` macro: under musl `stderr`
+/// is the recursive macro `#define stderr (stderr)`, which trips
+/// `-Wdisabled-macro-expansion` when passed to `fmt::print`.
+void writeStderr(std::string_view message)
+{
+    (void)::write(STDERR_FILENO, message.data(), message.size());
+}
+
 [[noreturn]] void runCanary(size_t size_bytes, pid_t parent_pid)
 {
     /// Block all signals up-front so only SIGKILL (unblockable) can terminate
@@ -44,7 +54,7 @@ namespace
     /// cannot outlive the server.
     if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
     {
-        fmt::print(stderr, "OOM canary child: prctl(PR_SET_PDEATHSIG) failed: errno={}\n", errno);
+        writeStderr(fmt::format("OOM canary child: prctl(PR_SET_PDEATHSIG) failed: errno={}\n", errno));
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 
@@ -52,8 +62,8 @@ namespace
     /// getppid returns the new (subreaper) pid instead of the original.
     if (::getppid() != parent_pid)
     {
-        fmt::print(stderr, "OOM canary child: parent already exited (got ppid={}, expected {})\n",
-            ::getppid(), parent_pid);
+        writeStderr(fmt::format("OOM canary child: parent already exited (got ppid={}, expected {})\n",
+            ::getppid(), parent_pid));
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 
@@ -73,8 +83,8 @@ namespace
     }
     catch (...)
     {
-        fmt::print(stderr, "OOM canary child: writing /proc/self/oom_score_adj failed: {}\n",
-            DB::getCurrentExceptionMessage(true));
+        writeStderr(fmt::format("OOM canary child: writing /proc/self/oom_score_adj failed: {}\n",
+            DB::getCurrentExceptionMessage(true)));
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 

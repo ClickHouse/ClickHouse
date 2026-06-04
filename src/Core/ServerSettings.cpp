@@ -1517,8 +1517,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Default is 100 MB (104857600). Larger values make the canary a more attractive OOM target.
     )", 0) \
     DECLARE(Bool, oom_canary_relaunch, true, R"(
-    When true, the OOM canary is automatically relaunched after it is killed by the OOM killer
-    and the response sequence completes.
+    When true, the OOM canary is automatically relaunched after the canary process dies for any
+    reason other than a permanent setup failure or server shutdown — including OOM kills, other
+    signals, and transient exits — subject to `oom_canary_max_rapid_relaunches` and the backoff
+    settings. The OOM response sequence itself runs only when cgroup v2 `memory.events` provides
+    OOM-kill evidence.
     )", 0) \
     DECLARE(UInt64, oom_canary_max_rapid_relaunches, 10, R"(
     Maximum number of consecutive OOM canary relaunches that can happen before automatic relaunch
