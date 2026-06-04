@@ -588,9 +588,7 @@ def test_insert_quorum_with_keeper_fail_during_unknown_status(started_cluster):
         zero.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
         )
-        zero.query(
-            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
-        )
+        zero.query("SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause")
         zero.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
         )
