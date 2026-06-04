@@ -554,20 +554,20 @@ def test_backup_skips_rmv_target_when_view_storage_unresolved(started_cluster, c
     # Base tables on node2; let node1 catch up.
     node2.query(
         "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
-        "create table re.repro_tgt (x Int64) engine ReplicatedMergeTree order by x;"
-        "insert into re.repro_tgt values (1);"
+        "create table re.repro_tgt_view (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.repro_tgt_view values (1);"
     )
     node1.query("system sync database replica re")
-    node1.query_with_retry("system sync replica re.repro_tgt")
+    node1.query_with_retry("system sync replica re.repro_tgt_view")
 
     # Stall node1's DDL queue so it won't apply the CREATE below.
     node1.query("system enable failpoint database_replicated_stop_entry_execution")
 
     try:
         # Create the MV on node2 without waiting for node1. `EMPTY`+`EVERY 1 YEAR` avoid any refresh,
-        # so re.repro_tgt is never EXCHANGEd and stays resolvable on node1 while the MV does not.
+        # so re.repro_tgt_view is never EXCHANGEd and stays resolvable on node1 while the MV does not.
         node2.query(
-            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt empty as select x from re.src",
+            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt_view empty as select x from re.src",
             settings={"distributed_ddl_task_timeout": 0},
         )
         # The MV's metadata must be in ZooKeeper before backing up.
@@ -585,7 +585,7 @@ def test_backup_skips_rmv_target_when_view_storage_unresolved(started_cluster, c
 
     # The target's data must be skipped even though the MV's storage was unresolved.
     assert node1.contains_in_log(
-        "Skipping table data for re.repro_tgt (a target of a refreshable materialized view)"
+        "Skipping table data for re.repro_tgt_view (a target of a refreshable materialized view)"
     )
 
     for node in nodes:
@@ -633,29 +633,29 @@ def test_backup_skips_rmv_target_when_target_storage_unresolved(
     # Base tables on node2; let node1 catch up.
     node2.query(
         "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
-        "create table re.repro_tgt (x Int64) engine ReplicatedMergeTree order by x;"
-        "insert into re.repro_tgt values (1);"
+        "create table re.repro_tgt_storage (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.repro_tgt_storage values (1);"
     )
     node1.query("system sync database replica re")
-    node1.query_with_retry("system sync replica re.repro_tgt")
+    node1.query_with_retry("system sync replica re.repro_tgt_storage")
 
     tgt_uuid = node2.query(
-        "select uuid from system.tables where database = 're' and name = 'repro_tgt'"
+        "select uuid from system.tables where database = 're' and name = 'repro_tgt_storage'"
     ).strip()
 
     # Stall node1's DDL queue so it won't apply the CREATE/EXCHANGE below.
     node1.query("system enable failpoint database_replicated_stop_entry_execution")
 
     try:
-        # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt.
+        # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt_storage.
         node2.query(
-            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt as select x from re.src",
+            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt_storage as select x from re.src",
             settings={"distributed_ddl_task_timeout": 0},
         )
-        # Wait until the EXCHANGE landed (re.repro_tgt's UUID changes on node2).
+        # Wait until the EXCHANGE landed (re.repro_tgt_storage's UUID changes on node2).
         assert_eq_with_retry(
             node2,
-            f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt'",
+            f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt_storage'",
             "1",
             retry_count=60,
             sleep_time=1,
@@ -669,7 +669,7 @@ def test_backup_skips_rmv_target_when_target_storage_unresolved(
 
     # The target's data must be skipped even though its storage was unresolved on the backup replica.
     assert node1.contains_in_log(
-        "Skipping table data for re.repro_tgt (a target of a refreshable materialized view)"
+        "Skipping table data for re.repro_tgt_storage (a target of a refreshable materialized view)"
     )
 
     for node in nodes:
