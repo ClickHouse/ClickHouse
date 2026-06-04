@@ -607,6 +607,9 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
 
+        if (node.destroy_time.has_value())
+            storage.ttl_paths.insert(std::string{path});
+
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
 
@@ -614,15 +617,6 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
     {
         LOG_TRACE(getLogger("KeeperSnapshotManager"), "Update node stats");
         storage.container.finishLoading();
-    }
-
-    if (load_full_storage)
-    {
-        for (const auto & itr : storage.container)
-        {
-            if (itr.value.destroy_time.has_value())
-                storage.ttl_paths.insert(std::string{itr.key});
-        }
     }
 
     if constexpr (!use_rocksdb)

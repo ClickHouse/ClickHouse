@@ -264,7 +264,7 @@ size_t ZooKeeperCreateRequest::sizeImpl() const
     int32_t flags = 0;
     auto size = Coordination::size(path) + Coordination::size(data) + Coordination::size(acls) + Coordination::size(flags);
     if (include_ttl)
-        size += sizeof(ttl);
+        size += Coordination::size(ttl);
     return size;
 }
 
@@ -1444,10 +1444,10 @@ ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
-    if (include_stats)
-        return std::make_shared<ZooKeeperCreate2Response>();
     if (include_ttl)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
+    if (include_stats)
+        return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
@@ -1626,8 +1626,6 @@ void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) 
 void ZooKeeperCreateTTLResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperCreate2Response::fillLogElements(elems, idx);
-    auto & elem = elems[idx];
-    elem.stat = zstat;
 }
 
 

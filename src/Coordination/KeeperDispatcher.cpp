@@ -180,10 +180,11 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     const auto & feature_flags = keeper_context->getFeatureFlags();
-    size_t batch_size = std::max<size_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_batch_size], 1);
+    const auto & keeper_coordination_settings = keeper_context->getCoordinationSettings();
+    size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
     {
-        auto ttl_gc_period_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
+        auto ttl_gc_period_ms = keeper_coordination_settings[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
         if (ttl_gc_period_ms <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
