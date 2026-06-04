@@ -28,7 +28,7 @@ You cannot perform the following queries:
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password' | named_collection[, option=value [,..]])
 ```
 
 **Engine Parameters**
@@ -37,6 +37,16 @@ ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 - `database` — Remote database name.
 - `user` — MySQL user.
 - `password` — User password.
+
+Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+
+When using named collections, the following additional parameters are supported:
+
+- `ssl_ca` — Path to the SSL certificate authority file.
+- `ssl_cert` — Path to the SSL certificate file.
+- `ssl_key` — Path to the SSL key file.
+
+The following aliases are supported for named collection keys: `hostname` for `host`, `username` for `user`, `db` for `database`.
 
 ## Data types support {#data_types-support}
 

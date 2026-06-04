@@ -50,6 +50,14 @@ The table structure can differ from the original MySQL table structure:
 
 Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
+When using named collections, the following additional parameters are supported:
+
+- `ssl_ca` — Path to the SSL certificate authority file.
+- `ssl_cert` — Path to the SSL certificate file.
+- `ssl_key` — Path to the SSL key file.
+
+The following aliases are supported for named collection keys: `hostname` for `host`, `username` for `user`, `db` for `database`.
+
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
