@@ -43,7 +43,15 @@ uint32_t combineSurrogates(uint16_t high, uint16_t low)
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
     : ReadBuffer(nullptr, 0)
-    , impl(std::move(impl_))
+    , impl(impl_.get())
+    , owned_impl(std::move(impl_))
+{
+    detectBOM();
+}
+
+UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_)
+    : ReadBuffer(nullptr, 0)
+    , impl(&impl_)
 {
     detectBOM();
 }
@@ -414,15 +422,27 @@ bool UTFConvertingReadBuffer::nextImpl()
     {
         if (pending_bytes_count > 0)
         {
-            working_buffer = Buffer(pending_bytes, pending_bytes + pending_bytes_count);
+            size_t rest_of_impl_size = impl->buffer().end() - impl->position();
+            size_t total_size = pending_bytes_count + rest_of_impl_size;
+            memory.resize(total_size);
+
+            memcpy(memory.data(), pending_bytes, pending_bytes_count);
+            if (rest_of_impl_size > 0)
+            {
+                memcpy(memory.data() + pending_bytes_count, impl->position(), rest_of_impl_size);
+                impl->position() = impl->buffer().end();
+            }
+
+            working_buffer = Buffer(memory.data(), memory.data() + total_size);
             pos = working_buffer.begin();
+            nextimpl_working_buffer_offset = 0;
             pending_bytes_count = 0;
             return true;
         }
 
         /// If we were reading from impl's buffer directly, sync our position back to it
         /// so it knows how much data we consumed.
-        if (!working_buffer.empty() && working_buffer.begin() != pending_bytes)
+        if (!working_buffer.empty() && working_buffer.begin() != memory.data())
         {
             impl->position() = pos;
         }
@@ -430,7 +450,7 @@ bool UTFConvertingReadBuffer::nextImpl()
         if (impl->hasPendingData() || impl->next())
         {
             working_buffer = impl->buffer();
-            nextimpl_working_buffer_offset = impl->offset();
+            nextimpl_working_buffer_offset = 0;
             return true;
         }
 

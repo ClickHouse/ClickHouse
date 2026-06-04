@@ -26,6 +26,7 @@ public:
     };
 
     explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
+    explicit UTFConvertingReadBuffer(ReadBuffer & impl_);
     ~UTFConvertingReadBuffer() override;
 
     const ReadBuffer & getWrappedReadBuffer() const override { return *impl; }
@@ -54,7 +55,8 @@ private:
     /// Returns true if any bytes were written
     bool convertFromUTF32();
 
-    std::unique_ptr<ReadBuffer> impl;
+    ReadBuffer * impl;
+    std::unique_ptr<ReadBuffer> owned_impl;
     Encoding encoding = Encoding::UTF8;
 
     /// Fixed size array for holding bytes that were read during BOM detection

@@ -75,7 +75,7 @@
 #include <algorithm>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <IO/UTFConvertingReadBuffer.h>
+
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -595,8 +595,6 @@ namespace
             }
 
             auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
-            if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-                buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
             return {std::move(buffer), std::nullopt, format};
         }
 
@@ -640,8 +638,6 @@ namespace
             auto path = paths[current_index - 1];
             auto file_stat = getFileStat(path, false, -1, "File");
             auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
-            if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-                buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
             return buffer;
         }
 
@@ -848,9 +844,6 @@ namespace
                 break;
             }
 
-            if (read_buf && format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-                read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
-
             return {std::move(read_buf), std::nullopt, format};
         }
 
@@ -912,9 +905,6 @@ namespace
                 file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
                 buffer = archive_reader->readFile(std::move(file_enumerator));
             }
-
-            if (buffer && format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-                buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
 
             return buffer;
         }
@@ -1044,8 +1034,6 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
     read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
-    if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-        read_buffer_from_fd = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buffer_from_fd));
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));
@@ -1617,8 +1605,7 @@ Chunk StorageFileSource::generate()
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
             }
 
-            if (read_buf && FormatFactory::instance().shouldDetectUTFBOM(storage->format_name))
-                read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
+
 
             size_t file_num = 0;
             if (storage->archive_info)
