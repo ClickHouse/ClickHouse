@@ -36,7 +36,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Functions/UserDefined/ColumnarV1Wire.h>
+#include <Formats/ColumnarV1Wire.h>
 
 using namespace DB;
 using namespace DB::ColumnarV1;

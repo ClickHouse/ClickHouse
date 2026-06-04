@@ -1,5 +1,5 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
-#include <Functions/UserDefined/ColumnarV1Wire.h>
+#include <Formats/ColumnarV1Wire.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
