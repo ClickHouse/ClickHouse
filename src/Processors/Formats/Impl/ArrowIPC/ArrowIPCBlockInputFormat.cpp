@@ -149,26 +149,6 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
     const DataTypePtr target_no_null = removeNullable(to_type);
     const WhichDataType target(target_no_null);
 
-    /// Reading a nullable Arrow column into a non-nullable ClickHouse column: with input_format_null_as_default
-    /// replace nulls with the type's default (otherwise castColumn throws on the first null). Look through
-    /// LowCardinality, since LowCardinality(Nullable(T)) can hold nulls even though it is not itself Nullable.
-    if (null_as_default && column->isNullable() && !removeLowCardinality(to_type)->isNullable())
-    {
-        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
-        const auto & null_map = nullable.getNullMapData();
-        const IColumn & nested = nullable.getNestedColumn();
-        auto without_nulls = nested.cloneEmpty();
-        without_nulls->reserve(nested.size());
-        for (size_t i = 0; i < nested.size(); ++i)
-        {
-            if (null_map[i])
-                without_nulls->insertDefault();
-            else
-                without_nulls->insertFrom(nested, i);
-        }
-        return castColumn({std::move(without_nulls), removeNullable(from_type), name}, to_type);
-    }
-
     /// A fixed_size_binary(16) read into a UUID column (e.g. an external file without the arrow.uuid
     /// extension): reinterpret the 16 bytes with the same half-reversal the library import uses.
     if (target.isUUID())
@@ -236,6 +216,27 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
             }
         }
     }
+
+    /// Reading a nullable Arrow column into a non-nullable ClickHouse column: with input_format_null_as_default
+    /// replace nulls with the type's default (otherwise castColumn throws on the first null). Look through
+    /// LowCardinality, since LowCardinality(Nullable(T)) can hold nulls even though it is not itself Nullable.
+    if (null_as_default && column->isNullable() && !removeLowCardinality(to_type)->isNullable())
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+        const auto & null_map = nullable.getNullMapData();
+        const IColumn & nested = nullable.getNestedColumn();
+        auto without_nulls = nested.cloneEmpty();
+        without_nulls->reserve(nested.size());
+        for (size_t i = 0; i < nested.size(); ++i)
+        {
+            if (null_map[i])
+                without_nulls->insertDefault();
+            else
+                without_nulls->insertFrom(nested, i);
+        }
+        return castColumn({std::move(without_nulls), removeNullable(from_type), name}, to_type);
+    }
+
     return castColumn({column, from_type, name}, to_type);
 }
 
