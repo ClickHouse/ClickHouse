@@ -942,28 +942,57 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     /// The planner assigns action-node names by expression structure, so duplicates
     /// get the same name and downstream deduplication shrinks the column count,
     /// causing NUMBER_OF_COLUMNS_DOESNT_MATCH.  Wrap subsequent duplicates in
-    /// __actionName(expr, 'column_alias') which forces a unique action-node name.
+    /// __actionName(expr, 'column_name') which forces a unique action-node name.
+    /// Only wrap items that correspond to ALIAS columns (identified by checking
+    /// whether the column has a Default of kind Alias in the storage metadata).
     auto * query_node_ptr = query_tree_to_modify->as<QueryNode>();
     if (query_node_ptr)
     {
+        const auto & columns_description = distributed_storage_snapshot->metadata->getColumns();
         auto & projection_nodes = query_node_ptr->getProjection().getNodes();
+        const auto & projection_columns = query_node_ptr->getProjectionColumns();
         struct TreeHashHash { size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); } };
         std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
-        auto action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
+        bool has_duplicate = false;
 
-        for (auto & proj_node : projection_nodes)
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
         {
-            auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
+            auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
             if (!seen_hashes.emplace(tree_hash).second)
             {
-                auto alias = proj_node->getAlias();
-                auto name_node = std::make_shared<ConstantNode>(alias);
-                auto wrapper = std::make_shared<FunctionNode>("__actionName");
-                wrapper->getArguments().getNodes().push_back(std::move(proj_node));
-                wrapper->getArguments().getNodes().push_back(std::move(name_node));
-                wrapper->resolveAsFunction(action_name_resolver);
-                wrapper->setAlias(alias);
-                proj_node = std::move(wrapper);
+                const auto & col_default = columns_description.getDefault(projection_columns[i].name);
+                if (col_default && col_default->kind == ColumnDefaultKind::Alias)
+                {
+                    has_duplicate = true;
+                    break;
+                }
+            }
+        }
+
+        if (has_duplicate)
+        {
+            seen_hashes.clear();
+            auto action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
+
+            for (size_t i = 0; i < projection_nodes.size(); ++i)
+            {
+                auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
+                if (!seen_hashes.emplace(tree_hash).second)
+                {
+                    const auto & col_default = columns_description.getDefault(projection_columns[i].name);
+                    if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
+                        continue;
+
+                    const auto & col_name = projection_columns[i].name;
+                    projection_nodes[i]->removeAlias();
+                    auto name_node = std::make_shared<ConstantNode>(col_name);
+                    auto wrapper = std::make_shared<FunctionNode>("__actionName");
+                    wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
+                    wrapper->getArguments().getNodes().push_back(std::move(name_node));
+                    wrapper->resolveAsFunction(action_name_resolver);
+                    wrapper->setAlias(col_name);
+                    projection_nodes[i] = std::move(wrapper);
+                }
             }
         }
     }
