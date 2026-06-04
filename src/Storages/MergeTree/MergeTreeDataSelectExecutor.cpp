@@ -2015,20 +2015,21 @@ struct PartialPkVectorSearchHints
     bool skip_vector_distance_hints = false;
     std::unordered_set<size_t> merged_index_marks;
 
-    void tryMergeGranuleHintsOnce(
+    /// Returns false if this skip-index granule was already handled (e.g. second PK range in OR).
+    bool tryMergeGranuleHintsOnce(
         size_t index_mark,
         const NearestNeighbours & nn,
         const MergeTreeIndexGranularity & index_granularity,
         size_t skip_index_granularity)
     {
         if (!merged_index_marks.insert(index_mark).second)
-            return;
+            return false;
 
         if (nn.rows.empty())
         {
             /// Empty ANN result means no rows survived PK filter for this granule.
             /// Do not treat it as missing distances for the whole part.
-            return;
+            return true;
         }
 
         if (!nn.distances.has_value())
@@ -2037,11 +2038,11 @@ struct PartialPkVectorSearchHints
             /// drop accumulated hints for this part (conservative, matches legacy `read_hints = {}` intent).
             skip_vector_distance_hints = true;
             merged.reset();
-            return;
+            return true;
         }
 
         if (skip_vector_distance_hints)
-            return;
+            return true;
 
         if (!merged.has_value())
         {
@@ -2056,6 +2057,8 @@ struct PartialPkVectorSearchHints
             merged->rows.push_back(granule_base_row + nn.rows[j]);
             merged->distances->push_back((*nn.distances)[j]);
         }
+
+        return true;
     }
 
     void finalize(RangesInDataPartReadHints & read_hints)
@@ -2376,47 +2379,51 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Usearch returned duplicate row numbers");
 #endif
                     /// Same `index_mark` may come from several PK ranges. Merge hints once.
-                    vector_search_hints.tryMergeGranuleHintsOnce(
+                    const bool first_visit_to_index_mark = vector_search_hints.tryMergeGranuleHintsOnce(
                         index_mark, nn, *part->index_granularity, skip_index_granularity);
 
-                    /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
-                    /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
-                    const MarkRanges * pk_ranges_for_index_mark = nullptr;
-                    MarkRanges single_pk_range;
-                    if (use_vector_search_cache)
-                        pk_ranges_for_index_mark = &vector_search_cache.pk_ranges_by_index_mark.at(index_mark);
-                    else
+                    /// Cached ANN is shared across PK ranges for this index_mark; emit marks only on first visit.
+                    if (!use_vector_search_cache || first_visit_to_index_mark)
                     {
-                        single_pk_range.push_back(ranges[i]);
-                        pk_ranges_for_index_mark = &single_pk_range;
-                    }
-
-                    for (auto row : rows)
-                    {
-                        size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
-                        const size_t absolute_mark = (index_mark * skip_index_granularity) + num_marks;
-
-                        std::optional<MarkRange> data_range;
-                        for (const auto & pk_range : *pk_ranges_for_index_mark)
+                        /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
+                        /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
+                        const MarkRanges * pk_ranges_for_index_mark = nullptr;
+                        MarkRanges single_pk_range;
+                        if (use_vector_search_cache)
+                            pk_ranges_for_index_mark = &vector_search_cache.pk_ranges_by_index_mark.at(index_mark);
+                        else
                         {
-                            if (absolute_mark < pk_range.begin || absolute_mark >= pk_range.end)
-                                continue;
-
-                            data_range = MarkRange(absolute_mark, absolute_mark + 1);
-                            break;
+                            single_pk_range.push_back(ranges[i]);
+                            pk_ranges_for_index_mark = &single_pk_range;
                         }
 
-                        if (!data_range)
-                            continue;
+                        for (auto row : rows)
+                        {
+                            size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
+                            const size_t absolute_mark = (index_mark * skip_index_granularity) + num_marks;
 
-                        if (!res.empty() && data_range->end == res.back().end)
-                            /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
-                            continue;
+                            std::optional<MarkRange> data_range;
+                            for (const auto & pk_range : *pk_ranges_for_index_mark)
+                            {
+                                if (absolute_mark < pk_range.begin || absolute_mark >= pk_range.end)
+                                    continue;
 
-                        if (res.empty() || data_range->begin - res.back().end > min_marks_for_seek)
-                            res.push_back(*data_range);
-                        else
-                            res.back().end = data_range->end;
+                                data_range = MarkRange(absolute_mark, absolute_mark + 1);
+                                break;
+                            }
+
+                            if (!data_range)
+                                continue;
+
+                            if (!res.empty() && data_range->end == res.back().end)
+                                /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
+                                continue;
+
+                            if (res.empty() || data_range->begin - res.back().end > min_marks_for_seek)
+                                res.push_back(*data_range);
+                            else
+                                res.back().end = data_range->end;
+                        }
                     }
 
                     if (use_vector_search_cache)
