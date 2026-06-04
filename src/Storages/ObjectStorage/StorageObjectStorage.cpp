@@ -1,8 +1,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
+#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -57,14 +60,35 @@ namespace ErrorCodes
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
+    /// (not a path from the distributed task queue), so force distributed_processing to false.
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        local_distributed_processing = false;
+
+    /// For non-glob paths, return directly without any S3 API calls.
+    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
+        return path.path;
+
+    /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
+    /// we can expand the glob locally and return the first path without making any S3 API calls.
+    /// This avoids a redundant HeadObject request that would otherwise be issued by
+    /// creating a file iterator just to get a sample path string.
+    /// Archives are excluded because they need the file iterator to return paths from inside
+    /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
+    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    {
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front();
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
-
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -80,11 +104,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
-
-    const auto path = configuration->getRawPath();
-
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
+    /// This iterator is used only to get a sample path for hive partitioning,
+    /// not for actual data reading, so do not emit ProfileEvents.
+    file_iterator->setEmitProfileEvents(false);
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -118,6 +140,7 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
+    , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
@@ -133,7 +156,7 @@ StorageObjectStorage::StorageObjectStorage(
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
     if (!is_table_function && is_delta_lake_cdf)
     {
@@ -288,7 +311,7 @@ StorageObjectStorage::StorageObjectStorage(
     if (configuration->partition_strategy)
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+    metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
         metadata.columns,
         context,
         format_settings,
@@ -330,12 +353,35 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+}
+
+bool StorageObjectStorage::supportsDelete() const
+{
+    /// Defense in depth. `InterpreterDeleteQuery::execute` now calls
+    /// `updateExternalDynamicMetadataIfExists` before `supportsDelete`, so this lazy-init
+    /// is no longer the path preventing `assertInitialized` for the `DELETE FROM` shape.
+    /// Kept to mirror `supportsParallelInsert` below and to protect any other caller that
+    /// reaches `supportsDelete` with `current_metadata == nullptr`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsDelete();
+}
+
+bool StorageObjectStorage::supportsParallelInsert() const
+{
+    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
+    /// INSERT pipeline. Only the root insert table is pre-initialised by
+    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
+    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsParallelInsert();
 }
 
 IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
@@ -362,7 +408,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto new_metadata = *getInMemoryMetadataPtr();
+    auto new_metadata = *getInMemoryMetadataPtr(query_context, false);
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
     new_metadata.setDataLakeTableState(*state);
@@ -375,7 +421,11 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
             new_metadata = *metadata_snapshot;
     }
 
-    setInMemoryMetadata(new_metadata);
+    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        new_metadata.columns,
+        query_context,
+        format_settings,
+        configuration->partition_strategy_type)));
 }
 
 
@@ -466,7 +516,7 @@ void StorageObjectStorage::read(
                 return;
             }
         }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
                  end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
             throw DB::Exception(
@@ -502,10 +552,11 @@ void StorageObjectStorage::read(
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
+        storage_id,
         object_storage,
         configuration,
         column_names,
-        getVirtualsList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
@@ -590,7 +641,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(
@@ -755,14 +806,21 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
+    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
+    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
+    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
+    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
+    /// does not call it before invoking `mutate`.
+    updateExternalDynamicMetadataIfExists(context_);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    configuration->checkMutationIsPossible(commands);
+    configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
 }
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
@@ -775,10 +833,10 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
-    configuration->alter(params, context);
+    configuration->alter(object_storage, params, context);
 
     DatabaseCatalog::instance()
         .getDatabase(storage_id.database_name)
@@ -786,10 +844,29 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
     setInMemoryMetadata(new_metadata);
 }
 
-void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
+void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
-    configuration->checkAlterIsPossible(commands);
+    configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
+void StorageObjectStorage::startup()
+{
+    if (configuration->isBackgroundExecutable())
+        background_operations_assignee.start();
+}
+
+void StorageObjectStorage::shutdown(bool)
+{
+    if (configuration->isBackgroundExecutable())
+    {
+        configuration->finishAllBackgroundJobs();
+        background_operations_assignee.finish();
+    }
+}
+
+bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
+{
+    return configuration->scheduleDataProcessingJob(assignee, *this);
+}
 
 }

@@ -45,6 +45,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -133,7 +134,12 @@ void jsonElementToString(const typename JSONParser::Element & element, WriteBuff
 
 template <typename JSONParser, typename NumberType>
 bool tryGetNumericValueFromJSONElement(
-    NumberType & value, const typename JSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error)
+    NumberType & value,
+    const typename JSONParser::Element & element,
+    bool convert_bool_to_number,
+    bool allow_type_conversion,
+    bool no_int_truncation_from_double,
+    String & error)
 {
     switch (element.type())
     {
@@ -148,6 +154,14 @@ bool tryGetNumericValueFromJSONElement(
             else if (!allow_type_conversion || !accurate::convertNumeric<Float64, NumberType, false>(element.getDouble(), value))
             {
                 error = fmt::format("cannot convert double value {} to {}", element.getDouble(), TypeName<NumberType>);
+                return false;
+            }
+            else if (no_int_truncation_from_double && static_cast<Float64>(value) != element.getDouble())
+            {
+                /// The JSON double has a fractional part (or is otherwise not exactly representable as `NumberType`).
+                /// Refuse the conversion so that the caller (e.g. `VariantNode`) can fall through to a
+                /// floating-point or `Decimal` member that represents the value losslessly.
+                error = fmt::format("cannot convert non-integral double value {} to {} without truncation", element.getDouble(), TypeName<NumberType>);
                 return false;
             }
             break;
@@ -193,7 +207,7 @@ bool tryGetNumericValueFromJSONElement(
                     break;
 
                 /// Try to parse float and convert it to integer.
-                Float64 tmp_float;
+                Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
                 if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
                 {
@@ -204,6 +218,14 @@ bool tryGetNumericValueFromJSONElement(
                 if (!accurate::convertNumeric<Float64, NumberType, false>(tmp_float, value))
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
+                    return false;
+                }
+
+                if (no_int_truncation_from_double && static_cast<Float64>(value) != tmp_float)
+                {
+                    /// The JSON string parsed as a non-integral float. Refuse the truncating conversion so
+                    /// `VariantNode` can fall through to a floating-point or `Decimal` member.
+                    error = fmt::format("cannot parse {} value here: \"{}\" (non-integral)", TypeName<NumberType>, element.getString());
                     return false;
                 }
             }
@@ -260,8 +282,8 @@ public:
             return true;
         }
 
-        NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
+        NumberType value{};
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -318,7 +340,7 @@ public:
         }
 
         NumberType value;
-        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, error))
+        if (!tryGetNumericValueFromJSONElement<JSONParser, NumberType>(value, element, /*convert_bool_to_number=*/ true, insert_settings.allow_type_conversion, insert_settings.no_int_truncation_from_double, error))
         {
             if (error.empty())
                 error = fmt::format("cannot read {} value from JSON element: {}", TypeName<NumberType>, jsonElementToString<JSONParser>(element, format_settings));
@@ -682,7 +704,7 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -691,9 +713,15 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            if (element.isInt64() && (element.getInt64() < 0))
+            {
+                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                return false;
+            }
+
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
@@ -747,7 +775,7 @@ public:
             return true;
         }
 
-        time_t value;
+        time_t value = 0;
         if (element.isString())
         {
             if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
@@ -756,9 +784,9 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
@@ -1526,6 +1554,31 @@ public:
             return true;
         }
 
+        /// First pass: try variants without truncating fractional JSON numbers to integer types.
+        /// This ensures that for `Variant(IntT, FloatT)` the float member claims a fractional
+        /// value like `3.14` instead of an integer member silently truncating it to `3`.
+        ///
+        /// We only do the strict pass when the parent didn't already set the flag — otherwise
+        /// the second pass below would do duplicate work with identical semantics.
+        if (!insert_settings.no_int_truncation_from_double)
+        {
+            auto strict_settings = insert_settings;
+            strict_settings.no_int_truncation_from_double = true;
+            for (size_t i : order)
+            {
+                auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
+                if (variant_nodes[i]->insertResultToColumn(variant, element, strict_settings, format_settings, error))
+                {
+                    column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
+                    column_variant.getOffsets().push_back(variant.size() - 1);
+                    return true;
+                }
+            }
+        }
+
+        /// Fallback: legacy lenient pass. Reached when the strict pass found no match,
+        /// e.g. a `Variant(IntT)` with a fractional JSON number — the integer member
+        /// then accepts the value with truncation, preserving backward compatibility.
         for (size_t i : order)
         {
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
@@ -1537,7 +1590,7 @@ public:
             }
         }
 
-        error = fmt::format("cannot read Map value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
+        error = fmt::format("cannot read Variant value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
         return false;
     }
 
@@ -1763,7 +1816,7 @@ public:
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
-        , dynamic_serialization(std::make_shared<SerializationDynamic>())
+        , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
@@ -1775,7 +1828,12 @@ public:
     {
         if (element.isNull() && format_settings.null_as_default)
         {
-            column.insertDefault();
+            auto & column_object = assert_cast<ColumnObject &>(column);
+            for (auto & [typed_path, typed_column] : column_object.getTypedPaths())
+                typed_paths_types.at(typed_path)->insertDefaultInto(*typed_column);
+            for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+                dynamic_column->insertDefault();
+            column_object.getSharedDataColumn().insertDefault();
             return true;
         }
 
@@ -2110,7 +2168,7 @@ private:
 
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
@@ -2197,7 +2255,7 @@ private:
 
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
-                    time_t value;
+                    time_t value = 0;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);
@@ -2284,7 +2342,7 @@ private:
     std::vector<String> sorted_paths_to_skip;
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
-    std::shared_ptr<SerializationDynamic> dynamic_serialization;
+    SerializationPtr dynamic_serialization;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
@@ -2497,13 +2555,13 @@ template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTr
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
+template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, String & error);
 #endif
 
 }

@@ -50,9 +50,9 @@ private:
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
-    bool compare_explain;
+    bool compare_explain = false;
 
-    std::unordered_set<uint32_t> found_tables;
+    std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
@@ -60,6 +60,20 @@ private:
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
+
+    static void reattachSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
+    static void backupRestoreSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        FuzzConfig & fc,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
 
 public:
     explicit QueryOracle(FuzzConfig & ffc)
@@ -98,6 +112,15 @@ public:
     void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
+    /// Row policy correctness oracle.
+    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
+    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
+    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
+    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
+    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
+    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
     /// Dump and read table oracle
     void dumpTableContent(
         RandomGenerator & rg,
@@ -113,6 +136,18 @@ public:
         SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
+        std::vector<SQLQuery> & intermediate_queries);
+
+    /// Dump and read dictionary/view oracle (REATTACH / BACKUP_RESTORE)
+    void dumpDictionaryContent(
+        RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpObjectIntermediateSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        DumpOracleStrategy strategy,
         std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle

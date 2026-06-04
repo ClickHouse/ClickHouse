@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
@@ -23,7 +24,6 @@ using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataType;
 struct FormatSettings;
 
 class IColumn;
@@ -32,18 +32,7 @@ using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
 class Field;
 
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
 struct NameAndTypePair;
-
-struct DataTypeWithConstInfo
-{
-    DataTypePtr type;
-    bool is_const;
-};
-
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -336,6 +325,9 @@ public:
     virtual bool hasDynamicSubcolumns() const;
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
+
+    /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
+    virtual bool hasDynamicStructure() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);

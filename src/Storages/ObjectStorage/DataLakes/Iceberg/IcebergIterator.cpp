@@ -7,11 +7,12 @@
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 
 
 #include <Core/NamesAndTypes.h>
@@ -122,8 +123,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     if (beg_it != end_it)
     {
         auto previous_it = std::prev(end_it);
-        assert(*beg_it);
-        assert(*previous_it);
+        chassert(*beg_it);
+        chassert(*previous_it);
         LOG_DEBUG(
             logger,
             "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
@@ -131,7 +132,7 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
             "delete object info is {}",
             std::distance(beg_it, end_it),
             is_equality_delete ? "equality" : "position",
-            data_object_->file_path,
+            data_object_->parsed_entry->file_path_key,
             data_object_->dumpDeletesMatchingInfo(),
             (*beg_it)->dumpDeletesMatchingInfo(),
             (*previous_it)->dumpDeletesMatchingInfo());
@@ -142,7 +143,7 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
             logger,
             "No {} delete elements for data file {}, taken data file object info: {}",
             is_equality_delete ? "equality" : "position",
-            data_object_->file_path,
+            data_object_->parsed_entry->file_path_key,
             data_object_->dumpDeletesMatchingInfo());
     }
     return {beg_it, end_it};
@@ -173,8 +174,8 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         /// Find the next manifest file with matching content type.
         while (manifest_file_index < data_snapshot->manifest_list_entries.size())
         {
-            const auto & mle = data_snapshot->manifest_list_entries[manifest_file_index++];
-            if (mle.content_type != manifest_file_content_type)
+            const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_file_index++];
+            if (manifest_list_entry.content_type != manifest_file_content_type)
                 continue;
 
             auto manifest_file_cacheable_part = Iceberg::getManifestFile(
@@ -182,20 +183,18 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
                 persistent_components,
                 local_context,
                 log,
-                mle.manifest_file_path,
-                mle.manifest_file_byte_size);
+                manifest_list_entry.manifest_file_path,
+                manifest_list_entry.manifest_file_byte_size);
 
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 manifest_file_cacheable_part.deserializer,
-                mle.manifest_file_path,
+                manifest_list_entry.manifest_file_path,
                 persistent_components.format_version,
-                persistent_components.table_path,
+                persistent_components.path_resolver,
                 *persistent_components.schema_processor,
-                mle.added_sequence_number,
-                mle.added_snapshot_id,
-                persistent_components.table_location,
+                manifest_list_entry.added_sequence_number,
+                manifest_list_entry.added_snapshot_id,
                 local_context,
-                mle.manifest_file_path,
                 filter_dag,
                 table_snapshot->schema_id);
             break;
@@ -270,7 +269,6 @@ IcebergIterator::IcebergIterator(
           data_snapshot_,
           persistent_components_)
     , blocking_queue(100)
-    , producer_task(std::nullopt)
     , callback(std::move(callback_))
 {
     auto delete_file = deletes_iterator.next();
@@ -289,7 +287,7 @@ IcebergIterator::IcebergIterator(
     LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task.emplace(
+    producer_task = std::make_unique<ThreadFromGlobalPool>(
         [this, thread_group = CurrentThread::getGroup()]()
         {
             DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
@@ -331,7 +329,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     if (blocking_queue.pop(manifest_file_entry))
     {
         IcebergDataObjectInfoPtr object_info
-            = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
+            = std::make_shared<IcebergDataObjectInfo>(
+                manifest_file_entry,
+                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
+                table_state_snapshot->schema_id);
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
@@ -339,7 +340,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
             const auto & upper = position_delete->parsed_entry->upper_reference_data_file_path;
             bool can_contain_data_file_deletes
-                = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
+                = (!lower.has_value() || *lower <= data_file_path)
+                && (!upper.has_value() || *upper >= data_file_path);
             /// Skip position deletes that do not match the data file path.
             if (!can_contain_data_file_deletes)
             {
@@ -349,10 +351,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
                     "bounds: "
                     "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->file_path,
+                    position_delete->parsed_entry->file_path_key,
                     data_file_path,
-                    lower.value_or("[no lower bound]"),
-                    upper.value_or("[no upper bound]"));
+                    lower.has_value() ? lower->serialize() : "[no lower bound]",
+                    upper.has_value() ? upper->serialize() : "[no upper bound]");
             }
             else
             {
@@ -361,11 +363,12 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     logger,
                     "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
                     "(lower bound: `{}`, upper bound: `{}`)",
-                    position_delete->file_path,
+                    position_delete->parsed_entry->file_path_key,
                     data_file_path,
-                    lower.value_or("[no lower bound]"),
-                    upper.value_or("[no upper bound]"));
-                object_info->addPositionDeleteObject(position_delete);
+                    lower.has_value() ? lower->serialize() : "[no lower bound]",
+                    upper.has_value() ? upper->serialize() : "[no upper bound]");
+                object_info->addPositionDeleteObject(
+                    position_delete, persistent_components.path_resolver.resolve(position_delete->parsed_entry->file_path_key));
             }
         }
 
@@ -381,7 +384,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         for (const auto & equality_delete :
              defineDeletesSpan(manifest_file_entry, equality_deletes_files, /* is_equality_delete */ true, logger))
         {
-            object_info->addEqualityDeleteObject(equality_delete);
+            object_info->addEqualityDeleteObject(
+                equality_delete, persistent_components.path_resolver.resolve(equality_delete->parsed_entry->file_path_key));
         }
 
         if (!object_info->info.equality_deletes_objects.empty())

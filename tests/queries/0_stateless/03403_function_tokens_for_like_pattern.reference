@@ -53,3 +53,22 @@ SELECT tokens('%%%%'), tokensForLikePattern('%%%%');
 []	[]
 SELECT tokens('____'), tokensForLikePattern('____');
 []	[]
+-- asciiCJK tokenizer
+SELECT 'asciiCJK:';
+asciiCJK:
+SELECT tokens('hello', 'asciiCJK'), tokensForLikePattern('hello', 'asciiCJK');
+['hello']	['hello']
+SELECT tokens('你好世界', 'asciiCJK'), tokensForLikePattern('你好世界', 'asciiCJK');
+['你','好','世','界']	['你','好','世','界']
+SELECT tokens('hello', 'asciiCJK'), tokensForLikePattern('%hello%', 'asciiCJK');
+['hello']	[]
+SELECT tokens('hello_world', 'asciiCJK'), tokensForLikePattern('hello\_world%', 'asciiCJK');
+['hello_world']	[]
+SELECT tokens('你好世界', 'asciiCJK'), tokensForLikePattern('%你好%世界%', 'asciiCJK');
+['你','好','世','界']	['你','好','世','界']
+SELECT tokens('a:bc.d', 'asciiCJK'), tokensForLikePattern('a:b%c.d', 'asciiCJK');
+['a:bc.d']	[]
+SELECT tokens('测试数据', 'asciiCJK'), tokensForLikePattern('%测试，数据%', 'asciiCJK');
+['测','试','数','据']	['测','试','，','数','据']
+SELECT tokens('test_data', 'asciiCJK'), tokensForLikePattern('test\_%data', 'asciiCJK');
+['test_data']	[]
