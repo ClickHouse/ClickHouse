@@ -2382,21 +2382,35 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     for (auto row : rows)
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
+                        const size_t absolute_mark = (index_mark * skip_index_granularity) + num_marks;
 
-                        const size_t data_range_begin = std::max(ranges[i].begin, (index_mark * skip_index_granularity) + num_marks);
-                        const size_t data_range_end = std::min(ranges[i].end, (index_mark * skip_index_granularity) + num_marks + 1);
-                        if (data_range_begin >= data_range_end)
+                        /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
+                        /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
+                        const MarkRanges & pk_ranges_for_index_mark = use_vector_search_cache
+                            ? vector_search_cache.pk_ranges_by_index_mark.at(index_mark)
+                            : MarkRanges{ranges[i]};
+
+                        std::optional<MarkRange> data_range;
+                        for (const auto & pk_range : pk_ranges_for_index_mark)
+                        {
+                            if (absolute_mark < pk_range.begin || absolute_mark >= pk_range.end)
+                                continue;
+
+                            data_range = MarkRange(absolute_mark, absolute_mark + 1);
+                            break;
+                        }
+
+                        if (!data_range)
                             continue;
-                        MarkRange data_range(data_range_begin, data_range_end);
 
-                        if (!res.empty() && data_range.end == res.back().end)
+                        if (!res.empty() && data_range->end == res.back().end)
                             /// Vector search may return >1 hit within the same granule/mark. Don't add to the result twice.
                             continue;
 
-                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                            res.push_back(data_range);
+                        if (res.empty() || data_range->begin - res.back().end > min_marks_for_seek)
+                            res.push_back(*data_range);
                         else
-                            res.back().end = data_range.end;
+                            res.back().end = data_range->end;
                     }
 
                     if (use_vector_search_cache)
