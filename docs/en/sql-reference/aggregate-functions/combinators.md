@@ -323,6 +323,8 @@ Divides data into buckets by the first argument (the x-axis key) and applies an 
 
 - A `String` of up to `width` characters representing the relative magnitude of each bucket. Each character is one of the Unicode block characters `▁▂▃▄▅▆▇█`, or a space for empty/zero-valued buckets. If all buckets are empty or zero, an empty string is returned.
 
+Like the [`sparkbar`](/sql-reference/aggregate-functions/reference/sparkbar) function, only strictly positive nested results are rendered: a bucket whose nested aggregate result is `NaN` or less than or equal to zero is shown as a blank space. As a consequence, `-Sparkbar` is intended for non-negative magnitudes (such as `count`, `uniq`, or `sum` over non-negative values); aggregate functions that can produce negative results (such as `min` or `sum` over signed values) will render their non-positive buckets as blanks.
+
 **Example**
 
 ```sql

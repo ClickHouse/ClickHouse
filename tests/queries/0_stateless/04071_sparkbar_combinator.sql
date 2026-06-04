@@ -17,6 +17,15 @@ SELECT minSparkbar(5, 0, 4)(number, 10 - number) FROM numbers(5);
 SELECT 'maxSparkbar with range:';
 SELECT maxSparkbar(5, 0, 4)(number, number) FROM numbers(5);
 
+-- Non-positive nested results render as blank bars, matching the existing `sparkbar` function
+-- (which also treats values <= 0 as empty). The whole-negative case below produces a string of
+-- spaces, and the mixed case renders only the buckets whose nested result is strictly positive.
+SELECT 'sumSparkbar all-negative nested results (blank):';
+SELECT sumSparkbar(3, 0, 2)(number, -toInt64(number + 1)) FROM numbers(3);
+
+SELECT 'sumSparkbar mixed-sign nested results:';
+SELECT sumSparkbar(3, 0, 2)(number, toInt64(number) - 1) FROM numbers(3);
+
 -- Multiple rows per bucket
 SELECT 'sumSparkbar multiple rows per bucket:';
 SELECT sumSparkbar(5, 0, 4)(number % 5, 1) FROM numbers(20);

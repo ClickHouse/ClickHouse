@@ -8,6 +8,10 @@ minSparkbar with range:
 █▇▆▅▅
 maxSparkbar with range:
  ▂▄▆█
+sumSparkbar all-negative nested results (blank):
+
+sumSparkbar mixed-sign nested results:
+  █
 sumSparkbar multiple rows per bucket:
 █████
 sumSparkbar with Date:
