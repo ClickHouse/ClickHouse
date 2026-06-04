@@ -2,12 +2,21 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ProfileEvents.h>
+#include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -21,6 +30,19 @@
 #include <Interpreters/castColumn.h>
 
 #include <boost/algorithm/string/join.hpp>
+
+
+namespace ProfileEvents
+{
+    extern const Event ExecutableUserDefinedFunctionInvocations;
+    extern const Event ExecutableUserDefinedFunctionElapsedMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionPoolWaitMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionUserTimeMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionSystemTimeMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionPeakMemoryByteSeconds;
+    extern const Event ExecutableUserDefinedFunctionInputBytes;
+    extern const Event ExecutableUserDefinedFunctionOutputBytes;
+}
 
 // On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
 // Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
@@ -45,6 +67,33 @@ namespace Setting
 
 namespace
 {
+
+/// Per-UDF state for the first-time-per-procfs-op LOG_WARNING that
+/// `UDFProcessSubtreeSampler` raises when /proc reads fail. Keeps
+/// operators aware of a silent metric degradation (e.g. a seccomp
+/// profile that blocks /proc reads) without spamming the log on
+/// every borrow.
+struct UDFProcfsFailureLoggedFlags
+{
+    std::atomic<bool> clear_refs{false};
+    std::atomic<bool> read_stat{false};
+    std::atomic<bool> read_peak_rss{false};
+    std::atomic<bool> subtree_truncated{false};
+};
+
+UDFProcfsFailureLoggedFlags & getUDFProcfsFailureFlags(const String & udf_name)
+{
+    static std::mutex mutex;
+    /// Process-level state — keyed by UDF name, lives for the server's
+    /// lifetime, not query memory, so the regular MemoryTracker-backed
+    /// container alternatives do not apply here.
+    static std::unordered_map<String, std::unique_ptr<UDFProcfsFailureLoggedFlags>> flags_by_udf; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::lock_guard lock(mutex);
+    auto & ptr = flags_by_udf[udf_name];
+    if (!ptr)
+        ptr = std::make_unique<UDFProcfsFailureLoggedFlags>();
+    return *ptr;
+}
 
 class UserDefinedFunction final : public IFunction
 {
@@ -201,11 +250,88 @@ public:
 
             ShellCommandSourceConfiguration shell_command_source_configuration;
 
+            std::shared_ptr<UDFProcessSubtreeSampler> sampler;
             if (coordinator_configuration.is_executable_pool)
             {
                 shell_command_source_configuration.read_fixed_number_of_rows = true;
                 shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+
+                /// Count every executeImpl call against the pool path, even those
+                /// that fail before/inside the borrow. Resource counters below
+                /// only fire when the borrow actually completed.
+                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
+
+                sampler = std::make_shared<UDFProcessSubtreeSampler>();
+                shell_command_source_configuration.sampler = sampler;
             }
+
+            /// Flush resource accumulators into ProfileEvents on every exit
+            /// path — successful return AND exception thrown from the
+            /// pipeline. The pipeline / executor below are declared after
+            /// this `SCOPE_EXIT`, so by the C++ stack unwinding rules they
+            /// destruct first; `recordReleased` fires from
+            /// `~ShellCommandSource` during that destruction and the
+            /// sampler holds the final counters by the time this guard runs.
+            SCOPE_EXIT_SAFE({
+                if (!sampler)
+                    return;
+
+                /// `PoolWaitMicroseconds` fires whenever `tryBorrowObject`
+                /// returned (success OR timeout). On timeout the throw
+                /// short-circuits the borrow but pool contention still
+                /// happened and is worth reporting.
+                if (sampler->poolWaitDone())
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
+
+                /// The remaining counters depend on the worker actually being
+                /// borrowed and observable via `/proc/<pid>`.
+                if (sampler->borrowAcquired())
+                {
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getSystemTimeMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getPeakMemoryByteSeconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
+                }
+
+                /// If any of the three procfs reads silently failed during
+                /// this borrow, or the subtree walk hit the MAX_PIDS cap,
+                /// surface it once per UDF + op so an operator running under
+                /// a restrictive seccomp profile (or a UDF spawning more
+                /// descendants than the sampler can enumerate) has a visible
+                /// signal that the resource counters they see are degraded.
+                if (sampler->clearRefsFailedAnyPid() || sampler->readStatFailedAnyPid() || sampler->readPeakRssFailedAnyPid() || sampler->subtreeWalkTruncated())
+                {
+                    const auto & udf_name = getName();
+                    auto & failure_logged = getUDFProcfsFailureFlags(udf_name);
+                    if (sampler->clearRefsFailedAnyPid() && !failure_logged.clear_refs.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': writing to /proc/<pid>/clear_refs failed for at least one subtree pid. "
+                            "PeakMemoryByteSeconds will report the worker's lifetime peak instead of the per-borrow peak. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->readStatFailedAnyPid() && !failure_logged.read_stat.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': reading /proc/<pid>/stat failed for at least one subtree pid. "
+                            "UserTimeMicroseconds and SystemTimeMicroseconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->readPeakRssFailedAnyPid() && !failure_logged.read_peak_rss.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': reading /proc/<pid>/status failed for at least one subtree pid. "
+                            "PeakMemoryByteSeconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
+                    if (sampler->subtreeWalkTruncated() && !failure_logged.subtree_truncated.exchange(true))
+                        LOG_WARNING(getLogger("UDFProcessSubtreeSampler"),
+                            "UDF '{}': descendant count exceeded the per-borrow MAX_PIDS cap, "
+                            "the subtree walk was truncated and additional descendants were not enumerated. "
+                            "UserTimeMicroseconds, SystemTimeMicroseconds and PeakMemoryByteSeconds will under-count. "
+                            "Logged once per UDF.",
+                            udf_name);
+                }
+            });
 
             Pipes shell_input_pipes;
             shell_input_pipes.emplace_back(std::move(shell_input_pipe));
