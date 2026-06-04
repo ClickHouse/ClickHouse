@@ -2,6 +2,7 @@
 
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -538,6 +539,12 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(
 {
     VectorWithMemoryTracking<String> tokens;
     const String value = preprocessor->processConstant(field.safeGet<String>());
+
+    /// A needle that is not valid UTF-8 (allowed by byte-oriented `multiSearchAny`/`match`) would mis-tokenize
+    /// against the code-point-aligned index and wrongly prune a matching granule, so decline by returning no tokens.
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        return tokens;
+
     tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     return tokenizer->compactTokens(tokens);
 }
