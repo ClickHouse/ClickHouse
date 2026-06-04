@@ -56,7 +56,7 @@ TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
         "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
 
     DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query.data(), query.data() + query.size(), 0, 0, 0);
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
 
     /// formatForLogging always hides secrets.
     const String masked = ast->formatForLogging();
