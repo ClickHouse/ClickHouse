@@ -1,19 +1,31 @@
 """
-Regression tests for graceful handling of truncated S3 objects during cached reads.
+Regression test for graceful handling of truncated S3 objects during cached reads.
 
 When an S3 object is overwritten with shorter content between listing and
-reading, the cache layer must NOT throw LOGICAL_ERROR. Instead it should
-detect the truncation and either:
-  - switch to bypass-cache mode (predownloadForFileSegment path), or
-  - return a short read (readBigAt path), or
-  - treat it as legitimate EOF (readFromFileSegment path).
+reading, the cache layer must NOT throw LOGICAL_ERROR. Instead it should detect
+the truncation and treat it as a legitimate EOF / bypass-cache, in:
+  - predownloadForFileSegment (catch-up download before a mid-segment read), and
+  - readFromFileSegment (the sibling EOF path).
 
-NOTE: the MergeTree-based tests below exercise the sequential cached-read
-paths (predownloadForFileSegment / readFromFileSegment). `readBigAt` is the
-random-access path used by Parquet over object storage; it is NOT reached by
-a MergeTree SELECT and would need a separate test reading a Parquet file via
-the s3() table function. The `Cannot read all data` assertion below is kept
-as a guard but is not actually exercised by these queries.
+Two conditions are required to actually exercise the predownload path, both
+discovered empirically (a naive test passes on the buggy code too):
+
+1. The object must be truncated to a VALID PREFIX of its real content, not
+   overwritten with zeros. Zero-filled content fails decompression on the first
+   block (UNKNOWN_CODEC) before the predownload path is reached.
+
+2. The query must SEEK to a granule located beyond the truncation offset (a
+   point query on the primary key), so the cache must predownload past the real
+   EOF. A full-scan instead fails earlier in the compression layer
+   (CANNOT_READ_ALL_DATA) and never reaches the predownload path.
+
+NOTE on readBigAt: readBigAt is the random-access path used by the Parquet
+reader over object storage, and is not reached by a MergeTree SELECT. It cannot
+be exercised deterministically from a single-node query, because reading a
+truncated object via the s3() table function re-fetches the object size (a fresh
+HEAD returns the new, smaller size) and so never over-reads — it surfaces as a
+plain INCORRECT_DATA "Not a Parquet file" error instead. The readBigAt guard in
+the fix mirrors the readFromFileSegment EOF logic that this test does cover.
 """
 
 import io
@@ -35,7 +47,6 @@ node = cluster.add_instance(
 )
 
 BUCKET = "root"
-S3_PREFIX = "data/"
 
 
 @pytest.fixture(scope="module")
@@ -47,156 +58,115 @@ def started_cluster():
         cluster.shutdown()
 
 
-def _drop_cache(node):
-    node.query("SYSTEM DROP FILESYSTEM CACHE")
-
-
 def _get_data_objects(minio_client, prefix="data/"):
-    """Return list of (object_name, size) tuples for all S3 data objects."""
+    """Return list of (object_name, size) tuples for all non-empty S3 data objects."""
     objects = list(minio_client.list_objects(BUCKET, prefix=prefix, recursive=True))
     return [(obj.object_name, obj.size) for obj in objects if obj.size > 0]
 
 
-def _truncate_s3_object(minio_client, object_name, original_size, keep_fraction=0.5):
+def _read_s3_object(minio_client, object_name):
+    response = minio_client.get_object(BUCKET, object_name)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def _truncate_to_valid_prefix(minio_client, object_name, keep_fraction=0.5):
     """
-    Replace an S3 object with shorter content (zeros), simulating
-    the object being overwritten with a smaller version.
+    Replace an S3 object with a VALID PREFIX of its real content: the same
+    leading bytes, just shorter. This simulates the object being overwritten
+    with shorter content while the leading data is still readable — the
+    condition that makes the cache predownload run past the real EOF.
+
+    Replacing with zeros instead would fail decompression on the very first
+    block (UNKNOWN_CODEC) before the predownload path is ever reached.
     """
-    truncated_size = max(1, int(original_size * keep_fraction))
-    truncated_data = b"\x00" * truncated_size
-    buf = io.BytesIO(truncated_data)
-    minio_client.put_object(BUCKET, object_name, buf, len(truncated_data))
+    data = _read_s3_object(minio_client, object_name)
+    truncated = data[: max(1, int(len(data) * keep_fraction))]
+    minio_client.put_object(BUCKET, object_name, io.BytesIO(truncated), len(truncated))
     logger.info(
-        "Truncated %s from %d to %d bytes", object_name, original_size, truncated_size
+        "Truncated %s to a valid prefix: %d -> %d bytes",
+        object_name,
+        len(data),
+        len(truncated),
     )
-    return truncated_size
+    return len(data), len(truncated)
 
 
-def test_truncated_object_no_logical_error(started_cluster):
+# Substrings of the three LOGICAL_ERROR messages that the fix prevents. The
+# readBigAt message is matched on its specific "Offset:" phrasing so it is not
+# confused with the benign compression-layer "Cannot read all data. Bytes read:"
+# (CANNOT_READ_ALL_DATA), which is an acceptable error for a truncated object.
+FORBIDDEN_LOGICAL_ERRORS = [
+    "Failed to predownload remaining",  # predownloadForFileSegment
+    "Cannot read all data. Offset:",  # readBigAt
+    "Having zero bytes, but range is not finished",  # readFromFileSegment
+]
+
+
+def _assert_no_forbidden_logical_error(error_msg):
+    for needle in FORBIDDEN_LOGICAL_ERRORS:
+        assert needle not in error_msg, (
+            f"Bug: pre-fix LOGICAL_ERROR resurfaced ({needle!r}): {error_msg}"
+        )
+
+
+def test_truncated_object_predownload_no_logical_error(started_cluster):
     """
-    After truncating an S3 data object, a SELECT must NOT produce
-    LOGICAL_ERROR about failed predownload or readBigAt.
-    Any other error (checksum mismatch, broken part, etc.) is acceptable.
+    Truncate the column data object to a valid prefix, then seek (via a point
+    query on the primary key) to a granule located beyond the truncation. On the
+    unpatched code this throws `Failed to predownload remaining ... bytes`
+    (LOGICAL_ERROR); the fix treats it as EOF and returns no/partial data.
+    Any non-LOGICAL_ERROR (e.g. CANNOT_READ_ALL_DATA, broken part) is acceptable.
     """
     minio = started_cluster.minio_client
+    node.query("DROP TABLE IF EXISTS t_trunc SYNC")
     node.query(
         """
         CREATE TABLE t_trunc (x UInt64, s String)
         ENGINE = MergeTree ORDER BY x
         SETTINGS storage_policy = 's3_cache',
-                 min_bytes_for_wide_part = 0
+                 min_bytes_for_wide_part = 0,
+                 index_granularity = 8192
         """
     )
     try:
-        # Insert enough rows to produce non-trivial S3 objects
+        # A single INSERT well under max_insert_block_size produces one part, so
+        # the largest object is unambiguously that part's `s` column data.
         node.query(
             "INSERT INTO t_trunc SELECT number, repeat(toString(number), 100) "
-            "FROM numbers(10000)"
+            "FROM numbers(100000)"
         )
-        # Force data to be flushed to S3
-        node.query("OPTIMIZE TABLE t_trunc FINAL")
+        active_parts = node.query(
+            "SELECT count() FROM system.parts WHERE table = 't_trunc' AND active"
+        ).strip()
+        assert active_parts == "1", f"expected a single part, got {active_parts}"
 
-        # Find the largest data object. With wide parts (min_bytes_for_wide_part = 0)
-        # every column is a separate .bin object, and the largest one is the data
-        # for the `s` String column — by far bigger than the UInt64 `x` column.
         objects = _get_data_objects(minio)
-        assert len(objects) > 0, "No S3 objects found for the table"
-
         objects.sort(key=lambda x: x[1], reverse=True)
         target_name, target_size = objects[0]
-        logger.info(
-            "Target object for truncation: %s (%d bytes)", target_name, target_size
-        )
-        assert target_size > 100, f"Target object too small: {target_size}"
+        logger.info("Truncating largest object %s (%d bytes)", target_name, target_size)
+        # Must be large enough that a late granule sits beyond the 50% cut.
+        assert target_size > 100000, f"target object too small: {target_size}"
 
-        # Drop filesystem cache so the next read must go through S3
-        _drop_cache(node)
+        node.query("SYSTEM DROP FILESYSTEM CACHE")
+        _truncate_to_valid_prefix(minio, target_name, keep_fraction=0.5)
 
-        # Truncate the S3 object to 50% of its original size
-        _truncate_s3_object(minio, target_name, target_size, keep_fraction=0.5)
-
-        # Read the data. The query MUST read the `s` column so it actually hits
-        # the truncated object (the largest one) — reading only `x`/count() would
-        # never touch it and the test would pass even on the unpatched code.
-        # This should NOT throw LOGICAL_ERROR about predownload. Other errors are
-        # acceptable (broken part, checksum mismatch, etc.).
+        # Point query on the PK seeks to a granule near the end of the column,
+        # forcing the cache to predownload past the real (truncated) EOF.
         try:
-            node.query("SELECT sum(cityHash64(s)), count() FROM t_trunc")
-            logger.info("Query succeeded despite truncated object (bypass-cache worked)")
+            node.query(
+                "SELECT s FROM t_trunc WHERE x = 99000 "
+                "SETTINGS enable_filesystem_cache = 1, max_threads = 1"
+            )
+            logger.info("Query returned without error (truncation handled as EOF)")
         except Exception as e:
-            error_msg = str(e)
-            # These are the specific LOGICAL_ERROR messages our fix prevents:
-            assert "Failed to predownload remaining" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from predownloadForFileSegment: {error_msg}"
-            )
-            assert "Cannot read all data" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from readBigAt: {error_msg}"
-            )
-            assert "Having zero bytes, but range is not finished" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from readFromFileSegment: {error_msg}"
-            )
-            # Any other error is fine — checksum failure, broken part, etc.
-            logger.info("Query raised non-LOGICAL_ERROR exception (expected): %s", error_msg[:200])
+            _assert_no_forbidden_logical_error(str(e))
+            logger.info("Query raised acceptable non-LOGICAL_ERROR: %s", str(e)[:200])
+
+        # Server must stay alive.
+        assert node.query("SELECT 1").strip() == "1"
     finally:
         node.query("DROP TABLE IF EXISTS t_trunc SYNC")
-
-
-def test_truncated_object_during_merge_read(started_cluster):
-    """
-    Truncating an S3 object during a merge-related read must not
-    produce a LOGICAL_ERROR. The merge may fail, but the server must
-    stay alive.
-    """
-    minio = started_cluster.minio_client
-    node.query(
-        """
-        CREATE TABLE t_trunc_merge (x UInt64, s String)
-        ENGINE = MergeTree ORDER BY x
-        SETTINGS storage_policy = 's3_cache',
-                 min_bytes_for_wide_part = 0
-        """
-    )
-    try:
-        # Insert multiple parts
-        for i in range(3):
-            node.query(
-                f"INSERT INTO t_trunc_merge SELECT number + {i * 5000}, "
-                f"repeat(toString(number + {i * 5000}), 50) "
-                "FROM numbers(5000)"
-            )
-
-        # Find objects before merge
-        objects_before = _get_data_objects(minio)
-        assert len(objects_before) > 0
-
-        # Drop cache
-        _drop_cache(node)
-
-        # Truncate the largest object (the `s` String column data).
-        objects_before.sort(key=lambda x: x[1], reverse=True)
-        target_name, target_size = objects_before[0]
-        _truncate_s3_object(minio, target_name, target_size, keep_fraction=0.3)
-
-        # Try reading the `s` column so the read actually touches the truncated
-        # object — a bare count() reads only metadata and would never hit it.
-        # Same assertion: no LOGICAL_ERROR from predownload.
-        try:
-            result = node.query("SELECT sum(cityHash64(s)) FROM t_trunc_merge")
-            logger.info("Read succeeded: %s", result.strip())
-        except Exception as e:
-            error_msg = str(e)
-            assert "Failed to predownload remaining" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from predownloadForFileSegment: {error_msg}"
-            )
-            assert "Cannot read all data" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from readBigAt: {error_msg}"
-            )
-            assert "Having zero bytes, but range is not finished" not in error_msg, (
-                f"Bug: LOGICAL_ERROR from readFromFileSegment: {error_msg}"
-            )
-            logger.info("Query raised acceptable exception: %s", error_msg[:200])
-
-        # Verify the server is still alive
-        assert node.query("SELECT 1").strip() == "1", "Server should be alive after truncated read"
-    finally:
-        node.query("DROP TABLE IF EXISTS t_trunc_merge SYNC")
