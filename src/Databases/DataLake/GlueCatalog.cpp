@@ -47,6 +47,7 @@
 #include <IO/S3Settings.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
@@ -57,6 +58,12 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DB::Setting
@@ -222,6 +229,11 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
     request.SetDatabaseName(db_name);
     if (limit != 0)
         request.SetMaxResults(static_cast<int>(limit));
+
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
+    });
 
     std::string next_token;
     do
@@ -424,6 +436,27 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Glue catalog support S3 backend for data storage only");
     }
+}
+
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+{
+    /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
+    /// web-identity, etc.) refreshes its cached credentials internally before
+    /// expiry. The bug we are fixing is that `setCredentials` captures the result
+    /// of `GetAWSCredentials` once at table-load time and embeds the access key,
+    /// secret, and session token as static literals in the storage args, so the
+    /// S3 client is pinned to a snapshot that goes stale on long reads. This
+    /// callback re-asks the same provider for current credentials each time
+    /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
+    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
+        auto credentials = credentials_provider->GetAWSCredentials();
+        return std::make_shared<S3Credentials>(
+            credentials.GetAWSAccessKeyId(),
+            credentials.GetAWSSecretKey(),
+            credentials.GetSessionToken());
+    };
 }
 
 bool GlueCatalog::empty() const
