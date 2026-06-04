@@ -1,0 +1,13 @@
+set: additional_table_filters id = 1
+1
+join: additional_table_filters id = 1
+1	a
+set: max_rows_in_set = 1
+join: nullable left key
+1	a
+2	b
+3	c
+join: mismatched left key type
+1	a
+2	b
+3	c
