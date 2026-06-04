@@ -83,13 +83,13 @@ void printRanges(const auto & segments)
         std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
-String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
+[[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
-void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
+static void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
 {
     const auto & key = file_segment.key();
     size_t size = file_segment.range().size();
@@ -116,7 +116,7 @@ std::string cache_base_path2 = caches_dir / "cache2" / "";
 std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 
-void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
@@ -147,7 +147,7 @@ void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & exp
     }
 }
 
-void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : file_segments)
@@ -178,7 +178,7 @@ void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ran
     }
 }
 
-void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
+static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -190,7 +190,7 @@ void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges 
     }
 }
 
-void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
+static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
     std::cerr << "\nFile segments: ";
     std::vector<Range> res;
@@ -221,19 +221,19 @@ void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_seg
     }
 }
 
-void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+static void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert protected";
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
-void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+static void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert probationary";
     assertProtectedOrProbationary(file_segments, expected, false);
 }
 
-void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+static void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -245,7 +245,7 @@ void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ran
     }
 }
 
-void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+static void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -257,7 +257,7 @@ void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const 
     }
 }
 
-FileSegmentPtr get(const HolderPtr & holder, int i)
+static FileSegmentPtr get(const HolderPtr & holder, int i)
 {
     auto it = std::next(holder->begin(), i);
     if (it == holder->end())
@@ -265,7 +265,7 @@ FileSegmentPtr get(const HolderPtr & holder, int i)
     return *it;
 }
 
-void download(FileSegmentPtr file_segment, bool complete = true)
+static void download(FileSegmentPtr file_segment, bool complete = true)
 {
     std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
 
@@ -285,7 +285,7 @@ void download(FileSegmentPtr file_segment, bool complete = true)
     }
 }
 
-void assertDownloadFails(FileSegmentPtr file_segment)
+static void assertDownloadFails(FileSegmentPtr file_segment)
 {
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
@@ -294,7 +294,7 @@ void assertDownloadFails(FileSegmentPtr file_segment)
     FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
-void download(const HolderPtr & holder)
+static void download(const HolderPtr & holder)
 {
     for (auto & it : *holder)
     {
@@ -302,13 +302,13 @@ void download(const HolderPtr & holder)
     }
 }
 
-void increasePriority(const HolderPtr & holder)
+static void increasePriority(const HolderPtr & holder)
 {
     for (auto & it : *holder)
         it->increasePriority();
 }
 
-void increasePriority(const HolderPtr & holder, size_t pos)
+[[maybe_unused]] static void increasePriority(const HolderPtr & holder, size_t pos)
 {
     FileSegments::iterator it = holder->begin();
     std::advance(it, pos);
@@ -1027,8 +1027,8 @@ try
     ASSERT_GT(size_used_before_temporary_data, 0);
     ASSERT_GT(segments_used_before_temporary_data, 0);
 
-    size_t size_used_with_temporary_data;
-    size_t segments_used_with_temporary_data;
+    size_t size_used_with_temporary_data = {};
+    size_t segments_used_with_temporary_data = {};
 
 
     {

@@ -185,7 +185,7 @@ std::string FileCacheReserveStat::Stat::toString() const
     return wb.str();
 }
 
-double normalizeProbability(double probability)
+static double normalizeProbability(double probability)
 {
     if (probability < 0.0)
         probability = .0;
@@ -663,7 +663,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     size_t processed_count = 0;
     auto segment_range = (*it)->range();
 
-    size_t current_pos;
+    size_t current_pos = 0;
     if (segment_range.left < range.left)
     {
         ///    [_______     -- requested range
@@ -2113,7 +2113,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
-        bool parsed;
+        bool parsed = false;
         UInt64 offset = 0;
 
         auto delim_pos = offset_with_suffix.find('_');
