@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 
 DROP SETTINGS PROFILE IF EXISTS s1_01294, s2_01294, s3_01294, s4_01294, s5_01294, s6_01294, s7_01294, s8_01294, s9_01294, s10_01294;
 DROP SETTINGS PROFILE IF EXISTS s2_01294_renamed;

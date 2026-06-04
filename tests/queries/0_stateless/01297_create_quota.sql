@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 
 DROP QUOTA IF EXISTS q1_01297, q2_01297, q3_01297, q4_01297, q5_01297, q6_01297, q7_01297, q8_01297, q9_01297,
 q10_01297, q11_01297, q12_01297, q13_01297, q14_01297, q15_01297, q16_01297, q17_01297,q18_01297;
