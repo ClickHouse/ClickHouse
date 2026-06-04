@@ -1019,7 +1019,10 @@ void AggregatingTransform::initGenerate()
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
-    if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
+    /// In the streaming `group_by_each_block_no_merge` mode the results were already finalized and flushed for every
+    /// block in `work`, so there is nothing to emit here (and no empty-aggregation row for an empty input).
+    if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set
+        && !params->params.group_by_each_block_no_merge)
     {
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
@@ -1065,7 +1068,12 @@ void AggregatingTransform::initGenerate()
     };
     if (!aggregator_has_temporary_data())
     {
-        if (!skip_merging && !params->params.group_by_each_block_no_merge)
+        if (params->params.group_by_each_block_no_merge)
+        {
+            /// In the streaming mode every block has already been finalized and flushed in `work`,
+            /// so there is nothing left to merge or convert here.
+        }
+        else if (!skip_merging)
         {
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
