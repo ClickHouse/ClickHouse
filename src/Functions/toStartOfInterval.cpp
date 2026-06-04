@@ -44,7 +44,7 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
-class FunctionToStartOfInterval : public IFunction
+class FunctionToStartOfInterval final : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
@@ -84,7 +84,7 @@ public:
         if (overload == ToStartOfIntervalOverload::Origin)
             origin_column = arguments[2];
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
 
         if (isDateTimeOrDateTime64(time_column.type) || isDateTimeOrDateTime64(result_type))
         {
@@ -298,7 +298,7 @@ private:
 };
 
 
-class FunctionToStartOfIntervalOverloadResolver : public IFunctionOverloadResolver
+class FunctionToStartOfIntervalOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toStartOfInterval";
@@ -338,8 +338,8 @@ public:
             DateTime64
         };
 
-        ResultType result_type;
-        ToStartOfIntervalOverload overload;
+        ResultType result_type = ResultType::Date;
+        ToStartOfIntervalOverload overload = ToStartOfIntervalOverload::Default;
         auto check_second_argument = [&]
         {
             const DataTypePtr & type_arg2 = arguments[1].type;

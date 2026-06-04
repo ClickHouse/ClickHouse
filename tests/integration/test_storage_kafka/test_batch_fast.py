@@ -18,7 +18,12 @@ import helpers.kafka.common as k
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/kafka.xml", "configs/named_collection.xml"],
+    main_configs=[
+        "configs/kafka.xml",
+        "configs/named_collection.xml",
+        "configs/dead_letter_queue.xml",
+        "configs/disable_insertion.xml"
+    ],
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
@@ -78,13 +83,13 @@ def kafka_setup_teardown():
 
 # Tests
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
-def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_column_types(kafka_cluster, create_query_generator):
     def assert_returned_exception(e):
         assert e.value.returncode == 36
         assert (
@@ -113,40 +118,39 @@ def test_kafka_column_types(kafka_cluster, create_query_generator, do_direct_rea
         """)
     assert_returned_exception(exception)
 
-    if do_direct_read:
-        # check ALIAS
-        instance.query(
-            create_query_generator(
-                kafka_table,
-                "a Int, b String Alias toString(a)",
-                settings={"kafka_commit_on_select": True},
-            )
+    # check ALIAS
+    instance.query(
+        create_query_generator(
+            kafka_table,
+            "a Int, b String Alias toString(a)",
+            settings={"kafka_commit_on_select": True},
         )
-        messages = []
-        for i in range(5):
-            messages.append(json.dumps({"a": i}))
-        k.kafka_produce(kafka_cluster, k.KAFKA_TOPIC_NEW, messages)
-        result = ""
-        expected = TSV(
-            """
-    0\t0
-    1\t1
-    2\t2
-    3\t3
-    4\t4
-                                """
-        )
-        retries = 50
-        while retries > 0:
-            result += instance.query(f"SELECT a, b FROM test.{kafka_table}", ignore_error=True)
-            if TSV(result) == expected:
-                break
-            retries -= 1
-            time.sleep(0.5)
+    )
+    messages = []
+    for i in range(5):
+        messages.append(json.dumps({"a": i}))
+    k.kafka_produce(kafka_cluster, k.KAFKA_TOPIC_NEW, messages)
+    result = ""
+    expected = TSV(
+        """
+0\t0
+1\t1
+2\t2
+3\t3
+4\t4
+                            """
+    )
+    retries = 50
+    while retries > 0:
+        result += instance.query(f"SELECT a, b FROM test.{kafka_table}", ignore_error=True)
+        if TSV(result) == expected:
+            break
+        retries -= 1
+        time.sleep(0.5)
 
-        assert TSV(result) == expected
+    assert TSV(result) == expected
 
-        instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
 
 
 def test_kafka_settings_old_syntax(kafka_cluster):
@@ -1767,14 +1771,14 @@ def test_kafka_virtual_columns2(kafka_cluster, create_query_generator, log_line)
 
 
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
 def test_kafka_producer_consumer_separate_settings(
-    kafka_cluster, create_query_generator, do_direct_read
+    kafka_cluster, create_query_generator
 ):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
@@ -2812,8 +2816,19 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.wait_for_log_line(f"{kafka_table}.*Committed offset 128")
 
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_data")) == TSV("64")
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_errors")) == TSV("64")
+        # `Committed offset 128` only tells us the Kafka consumer side committed
+        # the offset; the materialized-view INSERT into the destination
+        # `MergeTree` runs in a separate path and may not have flushed yet.
+        # Poll the destination row counts until they reach the expected values
+        # instead of asserting them once immediately.
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_errors",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
 
         instance.query(f"""
             DROP TABLE test.{kafka_table};
@@ -2879,10 +2894,21 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
     k.kafka_produce(kafka_cluster, topic_name, messages)
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.wait_for_log_line(f"{kafka_table}.*Committed offset 128")
+        # `Committed offset 128` only tells us the Kafka consumer side committed
+        # the offset; the materialized-view INSERT into the destination
+        # `MergeTree` runs in a separate path and may not have flushed yet.
+        # Poll the destination row counts until they reach the expected values
+        # instead of asserting them once immediately.
         # 64 good messages, each containing 10 rows
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_data")) == TSV("640")
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            check_callback=lambda x: int(x) == 640,
+        )) == 640
         # 64 bad messages, each containing some broken row
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_errors")) == TSV("64")
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_errors",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
 
         instance.query(f"""
             DROP TABLE test.{kafka_table};
@@ -3841,6 +3867,276 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
         },
     )
     instance.query(create_query)
+
+
+def test_message_queue_disable_insertion(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"message_queue_disable_insertion_{suffix}"
+    topic_name = f"disable_insertion_{suffix}"
+
+    # Verify the setting defaults to false
+    assert (
+        "false"
+        == instance.query(
+            "SELECT getServerSetting('message_queue_disable_insertion')"
+        ).strip()
+    )
+
+    try:
+        # Enable message_queue_disable_insertion via config replacement + reload
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "0",
+            "1",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Create Kafka table, destination MergeTree table, and MV
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 1000;
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+        """
+        )
+
+        # Produce messages while insertion is disabled
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
+
+        # Wait a bit — no rows should appear because insertion is disabled
+        time.sleep(10)
+        assert 0 == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+
+        assert instance.contains_in_log("Message queue insertion is disabled")
+
+        # Direct INSERT INTO the Kafka table (producer write) must still work
+        instance.query(
+            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        # Re-enable insertion
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+        assert (
+            "false"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        # Rows should now flow through (10 original + 1 from direct INSERT)
+        expected_rows = 11
+        for _ in range(100):
+            count = int(
+                instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+            )
+            if count == expected_rows:
+                break
+            time.sleep(1)
+
+        assert expected_rows == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "1",
+            "0",
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+        """
+        )
+def test_kafka2_commit_on_select_semantics(kafka_cluster):
+    """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
+
+    suffix = k.random_string(6)
+
+    # --- Test 1: kafka_commit_on_select = 1 (offsets committed, no re-read) ---
+    topic_commit = f"test_commit_on_select_{suffix}"
+    kafka_table_commit = f"kafka_commit_{suffix}"
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(5)]
+    k.kafka_produce(kafka_cluster, topic_commit, messages)
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table_commit,
+            "key UInt64, value UInt64",
+            topic_list=topic_commit,
+            consumer_group=f"cg_commit_{suffix}",
+            settings={"kafka_commit_on_select": 1},
+        )
+    )
+
+    # First SELECT should consume all 5 messages
+    result = ""
+    retries = 50
+    while retries > 0:
+        result += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_commit}"
+        )
+        if len(TSV(result).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result).lines) == 5
+
+    # Second SELECT should return nothing (offsets were committed)
+    time.sleep(1)
+    result2 = instance.query(
+        f"SELECT count() FROM test.{kafka_table_commit}"
+    )
+    assert int(result2.strip()) == 0
+
+    instance.query(f"DROP TABLE test.{kafka_table_commit} SYNC")
+
+    # --- Test 2: kafka_commit_on_select = 0 (offsets rolled back, re-read) ---
+    topic_rollback = f"test_rollback_on_select_{suffix}"
+    kafka_table_rollback = f"kafka_rollback_{suffix}"
+
+    messages = [json.dumps({"key": i, "value": i}) for i in range(5)]
+    k.kafka_produce(kafka_cluster, topic_rollback, messages)
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table_rollback,
+            "key UInt64, value UInt64",
+            topic_list=topic_rollback,
+            consumer_group=f"cg_rollback_{suffix}",
+            settings={"kafka_commit_on_select": 0},
+        )
+    )
+
+    # First SELECT should consume messages
+    result = ""
+    retries = 50
+    while retries > 0:
+        result += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_rollback}"
+        )
+        if len(TSV(result).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result).lines) == 5
+
+    # Second SELECT should re-read the same messages (offsets were rolled back)
+    result2 = ""
+    retries = 50
+    while retries > 0:
+        result2 += instance.query(
+            f"SELECT key, value FROM test.{kafka_table_rollback}"
+        )
+        if len(TSV(result2).lines) >= 5:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(result2).lines) == 5
+
+    instance.query(f"DROP TABLE test.{kafka_table_rollback} SYNC")
+
+
+def test_kafka2_dead_letter_queue_commit_on_select(kafka_cluster):
+    """Test that with kafka_handle_error_mode='dead_letter_queue' and kafka_commit_on_select=1,
+    a malformed message is committed (advances the offset) on direct SELECT and is not re-read
+    by subsequent direct SELECT queries. Without the zero-row commit fix, the bad message would
+    be re-consumed forever and re-inserted into system.dead_letter_queue on every SELECT."""
+
+    suffix = k.random_string(6)
+    topic = f"test_dlq_commit_{suffix}"
+    kafka_table = f"kafka_dlq_{suffix}"
+
+    # Produce a single bad message first so the next SELECT sees only an unparseable
+    # message (zero-row path that exercises the offset commit fix in pollConsumer).
+    k.kafka_produce(kafka_cluster, topic, ["this is not valid json"])
+
+    instance.query(
+        k.generate_new_create_table_query(
+            kafka_table,
+            "key UInt64, value UInt64",
+            topic_list=topic,
+            consumer_group=f"cg_dlq_commit_{suffix}",
+            settings={
+                "kafka_commit_on_select": 1,
+                "kafka_handle_error_mode": "dead_letter_queue",
+            },
+        )
+    )
+
+    # Drain the bad message via direct SELECT until it lands in the dead-letter queue.
+    retries = 50
+    dlq_count = 0
+    while retries > 0:
+        zero_rows = instance.query(f"SELECT key, value FROM test.{kafka_table}")
+        assert zero_rows == "", f"Bad message produced rows: {zero_rows!r}"
+        instance.query("SYSTEM FLUSH LOGS dead_letter_queue")
+        dlq_count = int(
+            instance.query(
+                f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic}'"
+            ).strip()
+        )
+        if dlq_count >= 1:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert dlq_count == 1
+
+    # Now produce good messages and ensure the bad-message offset has actually been
+    # committed: only the new good messages should be read, not the bad one again.
+    good_messages = [json.dumps({"key": i, "value": i}) for i in range(4)]
+    k.kafka_produce(kafka_cluster, topic, good_messages)
+
+    rows = ""
+    retries = 50
+    while retries > 0:
+        rows += instance.query(f"SELECT key, value FROM test.{kafka_table}")
+        if len(TSV(rows).lines) >= 4:
+            break
+        retries -= 1
+        time.sleep(0.5)
+    assert len(TSV(rows).lines) == 4
+
+    # Without the fix, every SELECT would re-process the bad message and add another
+    # row to the dead-letter queue. Verify that did not happen.
+    instance.query("SYSTEM FLUSH LOGS dead_letter_queue")
+    dlq_count_after = int(
+        instance.query(
+            f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic}'"
+        ).strip()
+    )
+    assert dlq_count_after == 1
+
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
 
 
 if __name__ == "__main__":
