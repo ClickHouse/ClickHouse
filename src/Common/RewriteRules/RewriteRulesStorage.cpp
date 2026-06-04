@@ -341,6 +341,13 @@ public:
                     file_name
                 );
             }
+
+            /// Require successful persistence. Any other code (e.g. ZNONODE if the
+            /// root znode disappeared) must not be ignored, otherwise the rule would
+            /// be added to local memory while missing in Keeper, diverging across
+            /// replicas and after reload.
+            if (code != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(code, getPath(file_name));
         }
     }
 
