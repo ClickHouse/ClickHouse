@@ -53,6 +53,8 @@ private:
     void prepareFileReader();
     void collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields);
     Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
+    static ColumnPtr convertToHeaderType(
+        const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name, bool null_as_default);
     Chunk readStream();
     Chunk readFile();
 

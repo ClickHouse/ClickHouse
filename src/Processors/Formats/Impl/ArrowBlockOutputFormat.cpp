@@ -8,6 +8,8 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/RecordBatchEncoder.h>
+#include <Core/Block.h>
 
 #include <arrow/ipc/writer.h>
 #include <arrow/table.h>
@@ -126,6 +128,24 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
+namespace
+{
+/// Whether the native Arrow IPC writer can handle every column of the header with the given settings.
+/// Falls back to the library writer for types it does not encode and for dictionary-encoded output of
+/// LowCardinality columns (the native writer always materializes LowCardinality to its full column).
+bool canNativelyEncodeBlock(const Block & header, const FormatSettings & format_settings)
+{
+    for (const auto & column : header)
+    {
+        if (!ArrowIPC::RecordBatchEncoder::canNativelyEncode(column.type))
+            return false;
+        if (format_settings.arrow.low_cardinality_as_dictionary && column.type->lowCardinality())
+            return false;
+    }
+    return true;
+}
+}
+
 void registerOutputFormatArrow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -136,7 +156,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
             auto header = std::make_shared<const Block>(sample);
-            if (format_settings.arrow.output_use_native_writer)
+            if (format_settings.arrow.output_use_native_writer && canNativelyEncodeBlock(sample, format_settings))
                 return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, false, format_settings);
             return std::make_shared<ArrowBlockOutputFormat>(buf, header, false, format_settings);
         });
@@ -152,7 +172,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
           FormatFilterInfoPtr /*format_filter_info*/) -> OutputFormatPtr
         {
             auto header = std::make_shared<const Block>(sample);
-            if (format_settings.arrow.output_use_native_writer)
+            if (format_settings.arrow.output_use_native_writer && canNativelyEncodeBlock(sample, format_settings))
                 return std::make_shared<ArrowIPCBlockOutputFormat>(buf, header, true, format_settings);
             return std::make_shared<ArrowBlockOutputFormat>(buf, header, true, format_settings);
         });

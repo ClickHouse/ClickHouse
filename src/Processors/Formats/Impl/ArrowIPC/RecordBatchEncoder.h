@@ -37,6 +37,10 @@ public:
 
     EncodedBatch encode(const Columns & columns, const DataTypes & types, size_t num_rows);
 
+    /// Whether the native writer can encode this type (recursively). Used to fall back to the Apache
+    /// Arrow library writer for types the native encoder does not support (e.g. Variant).
+    static bool canNativelyEncode(const DataTypePtr & type);
+
 private:
     void encodeField(const IColumn & column, const DataTypePtr & type, size_t num_rows);
     void encodeValues(const IColumn & column, const DataTypePtr & type, size_t num_rows);

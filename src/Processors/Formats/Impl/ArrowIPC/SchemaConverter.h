@@ -40,6 +40,8 @@ enum class TypeKind : uint8_t
     LargeUtf8,
     Binary,
     LargeBinary,
+    BinaryView,
+    Utf8View,
     FixedSizeBinary,
     List,
     LargeList,

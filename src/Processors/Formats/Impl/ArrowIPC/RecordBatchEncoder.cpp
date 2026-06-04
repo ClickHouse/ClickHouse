@@ -37,6 +37,29 @@ namespace ErrorCodes
 namespace DB::ArrowIPC
 {
 
+bool RecordBatchEncoder::canNativelyEncode(const DataTypePtr & type)
+{
+    const DataTypePtr t = removeNullable(removeLowCardinality(type));
+    const WhichDataType which(t);
+    if (which.isArray())
+        return canNativelyEncode(assert_cast<const DataTypeArray &>(*t).getNestedType());
+    if (which.isTuple())
+    {
+        for (const auto & e : assert_cast<const DataTypeTuple &>(*t).getElements())
+            if (!canNativelyEncode(e))
+                return false;
+        return true;
+    }
+    if (which.isMap())
+    {
+        const auto & m = assert_cast<const DataTypeMap &>(*t);
+        return canNativelyEncode(m.getKeyType()) && canNativelyEncode(m.getValueType());
+    }
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
+        || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isString()
+        || which.isFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6() || which.isInterval();
+}
+
 void RecordBatchEncoder::appendBuffer(const void * data, size_t length)
 {
     while (body.size() % 8 != 0)
@@ -154,6 +177,12 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
         case TypeIndex::DateTime: appendFixedWidth<ColumnUInt32>(*this, column, num_rows, buf); break;
         case TypeIndex::Date:
         {
+            if (settings.arrow.output_date_as_uint16)
+            {
+                /// Backwards-compatible mode: write Date as a plain uint16.
+                appendFixedWidth<ColumnUInt16>(*this, column, num_rows, buf);
+                break;
+            }
             /// Date is UInt16 days; widen to Int32 to match Arrow date32.
             const auto & data = assert_cast<const ColumnUInt16 &>(column).getData();
             PODArray<int32_t> widened(num_rows);

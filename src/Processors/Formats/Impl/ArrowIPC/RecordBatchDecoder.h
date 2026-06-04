@@ -84,6 +84,9 @@ private:
     PODArray<char> decompressed_body;
     size_t node_index = 0;
     size_t buffer_index = 0;
+    /// For BinaryView/Utf8View columns: the per-field count of variadic data buffers.
+    std::vector<int64_t> variadic_counts;
+    size_t variadic_index = 0;
 };
 
 }

@@ -285,6 +285,50 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             }
             break;
         }
+        case TypeKind::BinaryView:
+        case TypeKind::Utf8View:
+        {
+            /// Layout: validity (consumed), a 16-byte-per-row views buffer, then `variadic_counts` data
+            /// buffers. Each view is {int32 length; if length<=12 inline 12 bytes; else int32 prefix,
+            /// int32 buffer_index, int32 offset into that data buffer}.
+            const Slice views = nextBuffer();
+            checkBufferSize(views, rows * 16, "binary view");
+            const int64_t num_data = variadic_index < variadic_counts.size() ? variadic_counts[variadic_index] : 0;
+            ++variadic_index;
+            std::vector<Slice> data_buffers;
+            data_buffers.reserve(static_cast<size_t>(num_data));
+            for (int64_t i = 0; i < num_data; ++i)
+                data_buffers.push_back(nextBuffer());
+
+            auto & string_column = assert_cast<ColumnString &>(*column);
+            string_column.reserve(rows);
+            for (size_t i = 0; i < rows; ++i)
+            {
+                const char * v = views.ptr + i * 16;
+                int32_t length;
+                memcpy(&length, v, sizeof(int32_t));
+                if (length < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow view length {}", length);
+                if (length <= 12)
+                {
+                    string_column.insertData(v + 4, static_cast<size_t>(length));
+                }
+                else
+                {
+                    int32_t data_buffer_index;
+                    int32_t offset;
+                    memcpy(&data_buffer_index, v + 8, sizeof(int32_t));
+                    memcpy(&offset, v + 12, sizeof(int32_t));
+                    if (data_buffer_index < 0 || static_cast<size_t>(data_buffer_index) >= data_buffers.size())
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references invalid data buffer {}", data_buffer_index);
+                    const Slice & data = data_buffers[data_buffer_index];
+                    if (offset < 0 || static_cast<int64_t>(offset) + length > data.length)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow view references out-of-range data");
+                    string_column.insertData(data.ptr + offset, static_cast<size_t>(length));
+                }
+            }
+            break;
+        }
         case TypeKind::FixedSizeBinary:
         {
             const Slice values = nextBuffer();
@@ -331,6 +375,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
         }
         case TypeKind::Struct:
         {
+            if (type.children.empty())
+                return ColumnTuple::create(rows); /// empty Tuple() has no element columns
             Columns elements;
             elements.reserve(type.children.size());
             for (const ArrowField & child : type.children)
@@ -490,7 +536,9 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field)
 
     ColumnPtr inner = decodeInner(field, rows);
 
-    if (field.nullable)
+    /// Only wrap in Nullable when the type allows it; Array/Map/Tuple cannot be inside Nullable in
+    /// ClickHouse, so (matching the Apache Arrow library reader) their outer validity is dropped.
+    if (field.nullable && inner->canBeInsideNullable())
     {
         ColumnPtr null_map = buildNullMap(validity, rows, node.null_count());
         return ColumnNullable::create(inner, null_map);
@@ -504,6 +552,11 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     current_batch = &batch;
     node_index = 0;
     buffer_index = 0;
+    variadic_index = 0;
+    variadic_counts.clear();
+    if (const auto * counts = batch.variadicBufferCounts())
+        for (int64_t c : *counts)
+            variadic_counts.push_back(c);
     prepareBuffers(batch, body);
 
     std::vector<DecodedColumn> result;
@@ -534,6 +587,9 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     auto validate = [&](int64_t offset, int64_t length)
     {
+        /// Empty buffers may use a placeholder offset (e.g. -1); only non-empty buffers must be in range.
+        if (length == 0)
+            return;
         if (offset < 0 || length < 0 || offset > body_size || length > body_size - offset)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
@@ -547,7 +603,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         {
             const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
             validate(buffer->offset(), buffer->length());
-            buffer_slices.push_back(Slice{body.data() + buffer->offset(), buffer->length()});
+            const char * ptr = buffer->length() > 0 ? body.data() + buffer->offset() : nullptr;
+            buffer_slices.push_back(Slice{ptr, buffer->length()});
         }
         return;
     }

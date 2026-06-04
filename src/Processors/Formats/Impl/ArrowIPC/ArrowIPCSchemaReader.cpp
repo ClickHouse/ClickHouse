@@ -45,9 +45,12 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
         std::unique_ptr<ReadBuffer> memory_buffer;
         String file_data;
         size_t file_size = 0;
+        std::optional<size_t> known_size;
         if (seekable)
+            known_size = tryGetFileSizeFromReadBuffer(in);
+        if (seekable && known_size && *known_size > 0)
         {
-            file_size = getFileSizeFromReadBuffer(in);
+            file_size = *known_size;
         }
         else
         {

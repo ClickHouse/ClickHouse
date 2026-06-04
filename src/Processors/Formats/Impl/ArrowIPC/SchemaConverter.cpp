@@ -161,6 +161,12 @@ ArrowType parseType(const flatbuf::Field & field)
         case flatbuf::Type_LargeBinary:
             type.kind = TypeKind::LargeBinary;
             break;
+        case flatbuf::Type_BinaryView:
+            type.kind = TypeKind::BinaryView;
+            break;
+        case flatbuf::Type_Utf8View:
+            type.kind = TypeKind::Utf8View;
+            break;
         case flatbuf::Type_FixedSizeBinary:
             type.kind = TypeKind::FixedSizeBinary;
             type.byte_width = field.type_as_FixedSizeBinary()->byteWidth();
@@ -332,7 +338,18 @@ buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const D
                 type_type = flatbuf::Type_FloatingPoint;
                 type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_DOUBLE).Union();
                 break;
-            case TypeIndex::Date: case TypeIndex::Date32:
+            case TypeIndex::Date:
+                if (settings.arrow.output_date_as_uint16)
+                {
+                    make_int(16, false);
+                }
+                else
+                {
+                    type_type = flatbuf::Type_Date;
+                    type_offset = flatbuf::CreateDate(b, flatbuf::DateUnit_DAY).Union();
+                }
+                break;
+            case TypeIndex::Date32:
                 type_type = flatbuf::Type_Date;
                 type_offset = flatbuf::CreateDate(b, flatbuf::DateUnit_DAY).Union();
                 break;
@@ -653,6 +670,8 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
         case TypeKind::LargeUtf8:
         case TypeKind::Binary:
         case TypeKind::LargeBinary:
+        case TypeKind::BinaryView:
+        case TypeKind::Utf8View:
             result = std::make_shared<DataTypeString>();
             break;
         case TypeKind::FixedSizeBinary:
