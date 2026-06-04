@@ -198,6 +198,15 @@ public:
         has_data.notify_one();
     }
 
+    /// Wake any waiter so it stops instead of blocking forever for a chunk that will never arrive
+    /// (the producing task was cancelled before sending the end-of-data marker).
+    void cancel()
+    {
+        std::lock_guard lock(mutex);
+        cancelled = true;
+        has_data.notify_all();
+    }
+
     Chunk getChunk()
     {
         LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
@@ -205,7 +214,9 @@ public:
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            has_data.wait(lock, [this] { return !chunks.empty(); });
+            has_data.wait(lock, [this] { return !chunks.empty() || cancelled; });
+            if (chunks.empty())
+                return {};   /// Cancelled: report end of data.
             chunk = std::move(chunks.front());
             chunks.pop_front();
         }
@@ -221,6 +232,7 @@ private:
     std::mutex mutex;
     std::condition_variable has_data;
     DequeWithMemoryTracking<Chunk> chunks;
+    bool cancelled = false;
 };
 
 using InMemoryExchangePtr = std::shared_ptr<InMemoryExchange>;
@@ -237,6 +249,18 @@ public:
         if (!element)
             element = std::make_shared<InMemoryExchange>(exchange_id);
         return element;
+    }
+
+    /// Cancel every exchange of the query (so waiting tasks unblock) and drop them from the registry.
+    void cancelAndRemoveQuery(const String & query_id)
+    {
+        std::lock_guard lock(mutex);
+        auto it = exchanges_by_query_id.find(query_id);
+        if (it == exchanges_by_query_id.end())
+            return;
+        for (auto & [_, exchange] : it->second)
+            exchange->cancel();
+        exchanges_by_query_id.erase(it);
     }
 
     static std::shared_ptr<InMemoryExchanges> instance()
@@ -607,23 +631,28 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     }
 }
 
-std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
+/// Storage path (and thus the exchange query key) for a query's temporary files. Kept separate
+/// from object-storage creation so it can be recomputed cheaply (e.g. for cleanup).
+static String getTemporaryFilesPath(const String & unique_temp_file_path, ContextPtr context)
 {
     const auto & config = context->getConfigRef();
     String config_prefix = "distributed_query.temporary_files_storage";
     if (config.has(config_prefix))
+        return config.getString(config_prefix + ".endpoint_subpath") + unique_temp_file_path;
+    return unique_temp_file_path;
+}
+
+std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
+{
+    const auto & config = context->getConfigRef();
+    String config_prefix = "distributed_query.temporary_files_storage";
+    String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
+    if (config.has(config_prefix))
     {
         ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
-
-        String object_storage_path_prefix = config.getString("distributed_query.temporary_files_storage.endpoint_subpath");
-        String object_storage_path = object_storage_path_prefix + unique_temp_file_path;
-
         return {object_storage, object_storage_path};
     }
-    else
-    {
-        return {nullptr, unique_temp_file_path};
-    }
+    return {nullptr, object_storage_path};
 }
 
 static void executeTask(const UUID & unique_query_id, const DistributedQueryTaskDescription & task, ContextPtr context, std::shared_ptr<std::atomic<bool>> is_cancelled)
@@ -644,7 +673,15 @@ public:
 
     void cleanup() override
     {
-        /// TODO: cancel all remaining tasks
+        /// Cancel the query's in-memory exchanges before waiting for the detached task threads,
+        /// or a task stuck in InMemoryExchange::getChunk never returns. Also drops them from the registry.
+        InMemoryExchanges::instance()->cancelAndRemoveQuery(getTemporaryFilesPath(toString(unique_query_id), context));
+
+        for (auto & [_, tasks] : stage_tasks)
+            for (auto & task : tasks)
+                if (task.valid())
+                    task.wait();
+        stage_tasks.clear();
     }
 
 protected:
