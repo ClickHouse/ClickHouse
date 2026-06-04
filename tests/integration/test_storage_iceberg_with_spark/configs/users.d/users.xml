@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <use_iceberg_metadata_files_cache>1</use_iceberg_metadata_files_cache>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

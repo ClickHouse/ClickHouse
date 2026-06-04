@@ -41,9 +41,7 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
         additional_settings = [
             f"iceberg_metadata_async_prefetch_period_ms=0"
     ])
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
-                              "use_iceberg_metadata_files_cache":1
-                              })) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     # 1. Validating that SELECT will pull the latest metadata by default
     write_iceberg_from_df(
@@ -62,7 +60,6 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     # Now we will SELECT data with accepting a stale metadata - the expectation is that no call to remote catalog will occur and the cached metadata to be used
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
                               "iceberg_metadata_staleness_ms":600_000,
-                              "use_iceberg_metadata_files_cache":1,
                               "log_comment":f"{TABLE_NAME}_01"
                               })) == 100
 
@@ -93,7 +90,6 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
 
     # by default, SELECT will query remote catalog for the latest metadata
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
-                              "use_iceberg_metadata_files_cache":1,
                               "log_comment":f"{TABLE_NAME}_02"
                               })) == 200
 
@@ -139,7 +135,6 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     # then, we accept really stale metadata at SELECT - no call to remote catalog
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
                               "iceberg_metadata_staleness_ms":600_000,
-                              "use_iceberg_metadata_files_cache":1,
                               "log_comment":f"{TABLE_NAME}_03"
                               })) == 200
 
@@ -153,7 +148,6 @@ def test_selecting_with_stale_vs_latest_metadata(started_cluster_iceberg_with_sp
     # lastly, we SELECT with tiny tolerance to stale metadata - latest metadata will be fetched from s3
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
                               "iceberg_metadata_staleness_ms":4_000,
-                              "use_iceberg_metadata_files_cache":1,
                               "log_comment":f"{TABLE_NAME}_04"
                               })) == 300
     # latest metadata was fetched from s3
@@ -206,9 +200,7 @@ def test_default_async_metadata_refresh(started_cluster_iceberg_with_spark, stor
 
     # The expectation is that async metadata fetcher is disabled by default
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
-                              "use_iceberg_metadata_files_cache":1
-                              })) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_iceberg_from_df(
         spark,
@@ -224,11 +216,11 @@ def test_default_async_metadata_refresh(started_cluster_iceberg_with_spark, stor
     )
 
     # the fresh metadata won't get pulled at SELECT, so we see stale data
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000, use_iceberg_metadata_files_cache=1")) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
     # sleeping a little bit
     time.sleep(10)
     # the metadata is not updated after sleep
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000, use_iceberg_metadata_files_cache=1")) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -261,9 +253,7 @@ def test_async_metadata_refresh(started_cluster_iceberg_with_spark, storage_type
         additional_settings = [
             f"iceberg_metadata_async_prefetch_period_ms={ASYNC_METADATA_REFRESH_PERIOD_MS}"
     ])
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
-                              "use_iceberg_metadata_files_cache":1
-                              })) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     # In order to track background activity against S3, let's remember current metric
     s3_reads_before = int(instance.query(
@@ -283,7 +273,7 @@ def test_async_metadata_refresh(started_cluster_iceberg_with_spark, storage_type
         "",
     )
     # the fresh metadata won't get pulled at SELECT, so we see stale data
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000, use_iceberg_metadata_files_cache=1")) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 100
     # Wait for the background async refresher to pick up the new metadata (2 periods of ASYNC_METADATA_REFRESH_PERIOD_MS)
     time.sleep(ASYNC_METADATA_REFRESH_PERIOD_MS/1000 * 2)
 
@@ -293,7 +283,7 @@ def test_async_metadata_refresh(started_cluster_iceberg_with_spark, storage_type
     ))
     assert s3_reads_after > s3_reads_before
     # we don't pull fresh metadata at SELECT, but the data is up to date because of the async refresh
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000, use_iceberg_metadata_files_cache=1")) == 200
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS iceberg_metadata_staleness_ms=600000")) == 200
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -320,7 +310,6 @@ def test_insert_updates_metadata_cache(started_cluster_iceberg_with_spark, stora
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={
                               "iceberg_metadata_staleness_ms":600_000,
-                              "use_iceberg_metadata_files_cache":1,
                               "log_comment":f"{TABLE_NAME}_40"
                               })) == 100
 

@@ -88,7 +88,6 @@ def test_metadata_cache(started_cluster_iceberg_with_spark, storage_type):
     instance.query(
         f"SELECT * FROM {table_expr}",
         query_id=query_id,
-        settings={"use_iceberg_metadata_files_cache":"0"},
     )
 
     instance.query("SYSTEM FLUSH LOGS")
