@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/SipHash.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -165,6 +167,12 @@ void optimizeUsePartAggregationCache(
     if (params.max_rows_to_group_by != 0 || params.overflow_row)
         return;
 
+    /// Note: `params.max_bytes_before_external_group_by` cannot be used as a gate here. It defaults
+    /// to a non-zero threshold derived from `max_bytes_ratio_before_external_group_by` (a fraction
+    /// of available memory) for essentially every query, so gating on it would disable the
+    /// optimization entirely. Actual spilling is instead detected per part inside the populator
+    /// (see `populatePartAggregationCache`), which skips caching any part that spilled to disk.
+
     auto intermediate_actions = collectIntermediateActions(*node.children.front());
 
     /// If ReadFromMergeTree has a prewhere/where filter, convert it to an IntermediateStepAction
@@ -189,6 +197,36 @@ void optimizeUsePartAggregationCache(
     for (const auto & action : intermediate_actions)
         if (action.actions->getActionsDAG().hasNonDeterministic())
             return;
+
+    /// The populator reads each part's data directly from storage with the set of columns required
+    /// to feed the aggregator: the GROUP BY keys, the aggregate arguments, and the input columns of
+    /// the intermediate `ExpressionStep`/`FilterStep` actions. When a key or aggregate argument is
+    /// produced by an intermediate action (`GROUP BY toYear(d)`, `GROUP BY lower(s)`) its name is
+    /// not a storage column, so `createMergeTreeSequentialSource` would throw inside the populator,
+    /// which swallows the exception and silently never caches the part. Verify up-front that every
+    /// column the populator would read is present in the storage snapshot, and skip the
+    /// optimization otherwise (fail-closed), instead of relying on the populator's catch-all.
+    {
+        const auto & storage_snapshot = reading->getStorageSnapshot();
+        auto column_is_readable = [&](const String & name)
+        {
+            return storage_snapshot->tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name).has_value();
+        };
+
+        bool all_readable = true;
+        for (const auto & key : params.keys)
+            all_readable &= column_is_readable(key);
+        for (const auto & agg : params.aggregates)
+            for (const auto & arg : agg.argument_names)
+                all_readable &= column_is_readable(arg);
+        for (const auto & action : intermediate_actions)
+            for (const auto & col : action.actions->getRequiredColumnsWithTypes())
+                all_readable &= column_is_readable(col.name);
+
+        if (!all_readable)
+            return;
+    }
 
     /// The aggregator's input header carries the actual key and aggregate-argument column types.
     /// It is hashed into the cache key so that metadata-only `ALTER` (e.g. `MODIFY COLUMN`), which

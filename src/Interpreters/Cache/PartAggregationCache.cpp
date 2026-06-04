@@ -18,6 +18,18 @@ IASTHash PartAggregationCache::calculateQueryHash(
 {
     SipHash hash;
 
+    /// Every variable-length component below is length-prefixed before its bytes, and every
+    /// repeated component is preceded by its count. Without these boundaries the values would be
+    /// appended to one `SipHash` stream with no delimiters, so different inputs could produce the
+    /// same byte sequence and share a cache entry. For example, a fixed-arity aggregate with the
+    /// same argument types could make `corr(a, bc)` and `corr(ab, c)` hash the same argument stream
+    /// ("abc") and return states built for the wrong columns.
+    auto update_string = [&hash](const String & s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+
     /// Hash keys and aggregates in their original order. Canonicalizing the order
     /// (sorting) would alias cache entries whose column layout differs positionally,
     /// e.g. `GROUP BY k1, k2` vs `GROUP BY k2, k1`. The cached block layout is fixed
@@ -25,30 +37,36 @@ IASTHash PartAggregationCache::calculateQueryHash(
     hash.update(keys.size());
     for (const auto & key : keys)
     {
-        hash.update(key);
+        update_string(key);
 
         /// Include the key's data type. Existing parts keep the same `{table_id, part_name}`
         /// across metadata-only `ALTER` (e.g. `MODIFY COLUMN`), so without the type a state
-        /// cached for the previous type could be reused after the column type changed.
-        if (const auto * column = header.findByName(key))
-            hash.update(column->type->getName());
+        /// cached for the previous type could be reused after the column type changed. Hash a
+        /// presence flag so a key with a type cannot collide with one without.
+        const auto * column = header.findByName(key);
+        hash.update(column != nullptr);
+        if (column)
+            update_string(column->type->getName());
     }
 
     hash.update(aggregates.size());
     for (const auto & agg : aggregates)
     {
-        hash.update(agg.column_name);
-        hash.update(agg.function->getName());
+        update_string(agg.column_name);
+        update_string(agg.function->getName());
 
         /// Include the aggregate state type, which encodes the argument types and parameters.
         /// `AggregateFunction(sum, UInt32)` and `AggregateFunction(sum, UInt64)` must not alias,
         /// otherwise incompatible states could be merged after a metadata-only `ALTER`.
-        hash.update(agg.function->getStateType()->getName());
+        update_string(agg.function->getStateType()->getName());
 
+        hash.update(agg.argument_names.size());
         for (const auto & arg : agg.argument_names)
-            hash.update(arg);
+            update_string(arg);
+
+        hash.update(agg.parameters.size());
         for (const auto & param : agg.parameters)
-            hash.update(param.dump());
+            update_string(param.dump());
     }
 
     if (filter_dag)

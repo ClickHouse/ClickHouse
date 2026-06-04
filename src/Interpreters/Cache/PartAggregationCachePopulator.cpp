@@ -127,6 +127,19 @@ void populatePartAggregationCache(
                     data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
+            /// `executeOnBlock` flushes part of `data_variants` to temporary files once the part's
+            /// aggregation exceeds `max_bytes_before_external_group_by`. Unlike `AggregatingTransform`,
+            /// this populator does not merge that spilled data back, so `convertToChunks` below would
+            /// only return the in-memory remainder. Caching that would store partial aggregates for
+            /// the part. Skip the part entirely in that case (fail-closed); the main pipeline will
+            /// aggregate it normally.
+            if (aggregator.hasTemporaryData())
+            {
+                LOG_DEBUG(log, "Part {} spilled to temporary files during cache population; not caching it",
+                    part.data_part->name);
+                continue;
+            }
+
             auto chunks = aggregator.convertToChunks(data_variants, /* final = */ false);
 
             auto intermediate_header = Aggregator::Params::getHeader(
