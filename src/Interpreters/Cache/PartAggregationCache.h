@@ -71,8 +71,8 @@ public:
     struct DumpEntry
     {
         Key key;
-        size_t size_in_bytes;
-        size_t rows;
+        size_t size_in_bytes = 0;
+        size_t rows = 0;
     };
     std::vector<DumpEntry> dump() const;
 
