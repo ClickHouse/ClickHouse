@@ -826,13 +826,18 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         file_segment.completePartAndResetDownloader();
                         state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                        /// Adjust read_until_position to the actual object size so
-                        /// the caller knows the real data boundary. Without this,
-                        /// the caller would seek to `offset` (beyond the truncated
-                        /// object), get zero bytes, and the existing truncation guard
-                        /// (`object_size == offset`) would fail because
-                        /// object_size < offset by construction.
-                        info.read_until_position = *object_size;
+                        /// Move the read boundary down to the current offset so the
+                        /// caller treats this position as EOF (the `offset >=
+                        /// read_until_position` guards below and in readBigAt then fire).
+                        /// Set it to `offset`, NOT to `*object_size`: `offset` equals
+                        /// `file_offset_of_buffer_end` here and `*object_size < offset`
+                        /// by construction, so using `*object_size` would push the
+                        /// boundary behind the buffer end and violate the
+                        /// `file_offset_of_buffer_end <= read_until_position` invariant
+                        /// (chassert in nextImplStep / throw in getRemainingSizeToRead).
+                        /// This matches the readFromFileSegment EOF path, which likewise
+                        /// sets `info.read_until_position = offset`.
+                        info.read_until_position = offset;
 
                         return false;
                     }
