@@ -17,8 +17,17 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${TABLE} VALUES (1), (42)"
 
+# Determine the actual part name. The first allocated block number is not
+# necessarily 0 (e.g. under a Replicated database it comes from a Keeper
+# counter), so the name must not be hardcoded.
+PART=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT name FROM system.parts
+    WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}' AND active
+    LIMIT 1
+")
+
 # Detach the part
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} DETACH PART 'all_0_0_0'"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} DETACH PART '${PART}'"
 
 # Get the path to the detached directory (parent of the part directory)
 PART_PATH=$(${CLICKHOUSE_CLIENT} --query "
@@ -30,24 +39,24 @@ DETACHED_DIR=$(dirname "${PART_PATH}")
 
 # Create parts with _try1 suffix by copying the detached part
 for prefix in "" "covered-by-broken_"; do
-    cp -r "${DETACHED_DIR}/all_0_0_0" "${DETACHED_DIR}/${prefix}all_0_0_0_try1"
+    cp -r "${DETACHED_DIR}/${PART}" "${DETACHED_DIR}/${prefix}${PART}_try1"
 done
 
-# List detached parts - should see all three
+# List detached parts - should see all three (part name normalized for stable output)
 ${CLICKHOUSE_CLIENT} --query "
     SELECT name FROM system.detached_parts
     WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}'
     ORDER BY name
-"
+" | sed "s/${PART}/PART/g"
 
 # Drop the detached parts with _tryN suffix - this used to fail with BAD_DATA_PART_NAME
 ${CLICKHOUSE_CLIENT} --query "
-    ALTER TABLE ${TABLE} DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1'
+    ALTER TABLE ${TABLE} DROP DETACHED PART 'covered-by-broken_${PART}_try1'
     SETTINGS allow_drop_detached = 1
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-    ALTER TABLE ${TABLE} DROP DETACHED PART 'all_0_0_0_try1'
+    ALTER TABLE ${TABLE} DROP DETACHED PART '${PART}_try1'
     SETTINGS allow_drop_detached = 1
 "
 
@@ -56,10 +65,10 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT name FROM system.detached_parts
     WHERE table = '${TABLE}' AND database = '${CLICKHOUSE_DATABASE}'
     ORDER BY name
-"
+" | sed "s/${PART}/PART/g"
 
 # Re-attach and verify data
-${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} ATTACH PART 'all_0_0_0'"
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE ${TABLE} ATTACH PART '${PART}'"
 ${CLICKHOUSE_CLIENT} --query "SELECT n FROM ${TABLE} ORDER BY n"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
