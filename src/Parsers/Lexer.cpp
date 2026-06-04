@@ -590,6 +590,8 @@ const char * getErrorTokenDescription(TokenType type)
 
 #else
 
+#include <Parsers/clickhouse_lexer.h>
+
 extern "C"
 {
 
