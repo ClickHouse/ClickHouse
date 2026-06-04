@@ -24,7 +24,7 @@ namespace
 /// or children of `not` / `and` / `or` (the operators that `RPNBuilder` traverses).
 /// This is intentionally scoped to the second-pass filter-to-source attachment and
 /// never runs on projection candidate DAGs or join-marker filters. See #89222.
-void rewriteBareColumnFilters(ActionsDAG & dag)
+void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name)
 {
     auto is_bare_column = [](const ActionsDAG::Node * n) -> bool
     {
@@ -69,17 +69,21 @@ void rewriteBareColumnFilters(ActionsDAG & dag)
     auto & outputs = dag.getOutputs();
     for (size_t i = 0; i < outputs.size(); ++i)
     {
+        if (outputs[i]->result_name != filter_column_name)
+            continue;
+
+        /// Direct bare column as the filter predicate (e.g. `WHERE id`).
         if (const auto * replacement = rewrite_node(outputs[i]))
         {
+            filter_column_name = replacement->result_name;
             outputs[i] = replacement;
-            continue;
+            break;
         }
 
+        /// Bare-column children of a top-level logical operator
+        /// (e.g. `WHERE NOT id` or `WHERE id AND other`).
         if (is_logical(outputs[i]))
         {
-            /// Rewrite bare-column children of top-level logical operators.
-            /// The node's children vector is const, so we must replace the
-            /// whole function node if any child changes.
             bool any_changed = false;
             ActionsDAG::NodeRawConstPtrs new_children = outputs[i]->children;
             for (size_t j = 0; j < new_children.size(); ++j)
@@ -91,8 +95,13 @@ void rewriteBareColumnFilters(ActionsDAG & dag)
                 }
             }
             if (any_changed)
+            {
                 outputs[i] = &dag.addFunction(outputs[i]->function_base, std::move(new_children), {});
+                filter_column_name = outputs[i]->result_name;
+            }
         }
+
+        break;
     }
 }
 
@@ -137,7 +146,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
             for (auto it = expression_dags.rbegin(); it != expression_dags.rend(); ++it)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
 
-            rewriteBareColumnFilters(filter_dag);
+            rewriteBareColumnFilters(filter_dag, filter_column_name);
 
             source_step_with_filter->addFilter(std::move(filter_dag), filter_column_name);
         }
