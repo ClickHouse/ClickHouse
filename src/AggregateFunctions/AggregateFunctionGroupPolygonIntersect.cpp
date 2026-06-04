@@ -55,19 +55,20 @@ struct GroupPolygonIntersectData
             return;
         }
 
-        size_t added = countMultiPolygonPoints(mp);
-        checkPolygonalStateBudget(total_points, added, function_name);
-        total_points += added;
+        total_points += countMultiPolygonPoints(mp);
+        chunks.push_back(std::move(mp));
 
         if (mode == IntersectMode::Uninitialized)
-        {
             mode = IntersectMode::NonEmpty;
-            chunks.push_back(std::move(mp));
-            return;
-        }
 
-        chunks.push_back(std::move(mp));
-        maybeReduce(function_name);
+        /// Intersect the combined chunks before enforcing the budget, mirroring `merge`:
+        /// intersection can only shrink the result, so a valid result must not be rejected
+        /// based on the row/chunk shape of the input. A single not-yet-reducible chunk that
+        /// genuinely exceeds the cap is still rejected by `reduce` -> `recountPoints`.
+        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+            reduce(function_name);
+        else
+            maybeReduce(function_name);
     }
 
     void merge(const GroupPolygonIntersectData & other, const char * function_name)
@@ -252,7 +253,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt8 version;
+        UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
         if (version != GEO_SERDE_VERSION)
             throw Exception(
@@ -263,7 +264,7 @@ public:
                 static_cast<int>(GEO_SERDE_VERSION));
 
         auto & data = AggregateFunctionGroupPolygonIntersect::data(place);
-        UInt8 mode_val;
+        UInt8 mode_val = 0;
         readBinaryLittleEndian(mode_val, buf);
         if (mode_val > static_cast<UInt8>(IntersectMode::Empty))
             throw Exception(
@@ -273,7 +274,7 @@ public:
 
         if (data.mode == IntersectMode::NonEmpty)
         {
-            UInt64 chunk_count;
+            UInt64 chunk_count = 0;
             readVarUInt(chunk_count, buf);
             if (chunk_count == 0)
                 throw Exception(
