@@ -67,9 +67,17 @@ private:
     using LDAPCache = std::unordered_map<String, LDAPCacheEntry>; // user name   -> cache entry
     using LDAPCaches = std::map<String, LDAPCache>;               // server name -> cache
     using LDAPParams = std::map<String, LDAPClient::Params>;      // server name -> params
+    using LDAPParseErrors = std::map<String, String>;             // server name -> error message captured at parse time
 
     mutable std::mutex mutex;
     LDAPParams ldap_client_params_blueprint TSA_GUARDED_BY(mutex) ;
+    /// Names of LDAP servers that were declared in the config but failed to parse,
+    /// together with the error message produced by `parseLDAPServer`. Consulted by
+    /// `findLDAPUser` so a misconfigured server surfaces as a query-time error
+    /// instead of silently degrading to `UNKNOWN_USER` for `EXECUTE AS`. Cleared
+    /// on every `setConfiguration` call so that a `SYSTEM RELOAD CONFIG` that
+    /// fixes the misconfiguration drops the error.
+    LDAPParseErrors ldap_server_parse_errors TSA_GUARDED_BY(mutex) ;
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
     std::unordered_map<String, HTTPAuthClientParams> http_auth_servers TSA_GUARDED_BY(mutex) ;

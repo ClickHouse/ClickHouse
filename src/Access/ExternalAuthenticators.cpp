@@ -316,6 +316,7 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
 void ExternalAuthenticators::resetImpl()
 {
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
@@ -381,6 +382,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     for (auto ldap_server_name : ldap_server_names)
     {
         try
@@ -399,6 +401,11 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         catch (...)
         {
             tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            /// Remember the error so that `findLDAPUser` can surface it as a
+            /// query-time exception. Without this the parsed-out server is
+            /// dropped silently and `EXECUTE AS` collapses to `UNKNOWN_USER`,
+            /// hiding a real operator misconfiguration.
+            ldap_server_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
         }
     }
 
@@ -569,7 +576,19 @@ bool ExternalAuthenticators::findLDAPUser(const String & server, const String & 
 
         const auto pit = ldap_client_params_blueprint.find(server);
         if (pit == ldap_client_params_blueprint.end())
+        {
+            /// If parsing this server failed in `setConfiguration`, surface the saved
+            /// error here. Otherwise the caller has no way to distinguish "user not in
+            /// LDAP" from "the LDAP server config is broken", and `EXECUTE AS` would
+            /// silently degrade to `UNKNOWN_USER`. This mirrors fail-close: better to
+            /// fail loudly on every lookup against the broken server than to skip it.
+            const auto eit = ldap_server_parse_errors.find(server);
+            if (eit != ldap_server_parse_errors.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "LDAP server '{}' is misconfigured and cannot be used for forced "
+                    "user lookup: {}", server, eit->second);
             return false;
+        }
 
         /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does
         /// not participate in forced lookups. Returning false here lets the caller fall through

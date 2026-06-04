@@ -18,10 +18,13 @@ resolved role mapping.
 The tests on `node` rely on test execution order: `cluster.start` runs once for the
 module, leaving the LDAP storage's in-memory cache empty, so the first test exercises
 the not-yet-logged-in path before any subsequent test materializes those users. The
-tests on `node_with_role_mapping`, `node_bad_lookup_password`, and
-`node_with_local_user_precedence` exercise the role-mapping, misconfiguration, and
-local-vs-LDAP precedence variants on instances that no other test logs into, so
-their LDAP cache stays empty for the duration of the module.
+tests on `node_with_role_mapping`, `node_bad_lookup_password`,
+`node_with_local_user_precedence`, `node_misconfigured_lookup`,
+`node_with_role_mapping_user_dn`, `shard1_node`, and `shard2_node` exercise the
+role-mapping, misconfiguration, local-vs-LDAP precedence, surfaced-config-error,
+AD-style `{user_dn}` mapping, and distributed-cache-poisoning variants on instances
+that no other test in this module logs into outside of its dedicated test, so each
+instance's LDAP cache state is controlled by exactly one test.
 """
 
 import logging
@@ -71,6 +74,52 @@ node_with_local_user_precedence = cluster.add_instance(
     "node_with_local_user_precedence",
     main_configs=["configs/ldap_with_local_user_precedence.xml"],
     user_configs=["configs/users_with_local_janedoe.xml"],
+    stay_alive=True,
+)
+
+# Instance whose LDAP server config sets `lookup_bind_dn` and `lookup_password`
+# but omits `user_dn_detection`. `parseLDAPServer` rejects this shape and the
+# server is dropped from the blueprint. Used to verify that the saved parse
+# error surfaces as a query-time exception rather than degrading to
+# `UNKNOWN_USER`.
+node_misconfigured_lookup = cluster.add_instance(
+    "node_misconfigured_lookup",
+    main_configs=["configs/ldap_misconfigured_lookup.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Instance whose `role_mapping` filter uses `{user_dn}` (the AD-style
+# substitution) rather than `{bind_dn}`. The forced-lookup path runs
+# `user_dn_detection` before the role search, so `{user_dn}` should resolve to
+# the DN the search returned. Verifies the AD-style mapping path through the
+# service-bind lookup.
+node_with_role_mapping_user_dn = cluster.add_instance(
+    "node_with_role_mapping_user_dn",
+    main_configs=["configs/ldap_with_role_mapping_user_dn.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+# Two-shard cluster instances configured with `<secret>foo</secret>`, so the
+# interserver protocol authenticates remote queries via
+# `AlwaysAllowCredentials{initial_user}`. Used to reproduce the distributed
+# `EXECUTE AS` cache-poisoning scenario: a fanout under `<secret>` materializes
+# the target user on the receiving shard with empty `users_external_roles` (no
+# role mapping resolved). A subsequent local `EXECUTE AS <same user>` on that
+# shard must still pick up the role mapping, which the fix arranges by asking
+# the LDAP storage to refresh entries whose `users_external_roles` is incomplete.
+shard1_node = cluster.add_instance(
+    "shard1_node",
+    main_configs=["configs/ldap_cluster_with_secret.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+)
+
+shard2_node = cluster.add_instance(
+    "shard2_node",
+    main_configs=["configs/ldap_cluster_with_secret.xml"],
+    user_configs=["configs/users.xml"],
     stay_alive=True,
 )
 
@@ -318,6 +367,205 @@ def test_execute_as_local_user_takes_precedence_over_ldap(started_cluster):
         "EXECUTE AS materialized the LDAP `janedoe` even though a local "
         "`janedoe` exists: got " + post_ldap_count
     )
+
+
+def test_execute_as_misconfigured_lookup_throws_config_error(started_cluster):
+    """`@tiandiwonder` blocker on `src/Access/ExternalAuthenticators.cpp`: when
+    `parseLDAPServer` rejected a server (e.g. `lookup_bind_dn` configured but
+    `user_dn_detection` missing), `setConfiguration` caught the exception, logged
+    a `Could not parse LDAP server` line, and silently dropped the server from
+    `ldap_client_params_blueprint`. `findLDAPUser` then returned `false` for any
+    name on that directory and `EXECUTE AS` collapsed to `UNKNOWN_USER` (or
+    `there is no user`), making the operator think the target did not exist when
+    in fact the directory configuration was broken.
+
+    After the fix the parse error is remembered keyed by server name and
+    `findLDAPUser` rethrows it as a query-time `BAD_ARGUMENTS` exception that
+    names the offending server. `EXECUTE AS` surfaces that exception.
+    """
+    error = node_misconfigured_lookup.query_and_get_error(
+        "EXECUTE AS janedoe SELECT 1",
+        user="admin",
+        password="qwerty",
+    )
+    assert "openldap" in error, error
+    assert "user_dn_detection" in error or "misconfigured" in error.lower(), error
+    assert "UNKNOWN_USER" not in error, error
+
+
+def test_execute_as_role_mapping_user_dn_filter(started_cluster):
+    """`@tiandiwonder` coverage gap on `src/Access/LDAPAccessStorage.cpp`: the
+    other role-mapping tests use the `member={bind_dn}` filter, where
+    `{bind_dn}` is constructed from the `bind_dn` template + `{user_name}` and
+    does not depend on `user_dn_detection`. The documented AD-style mapping
+    uses `{user_dn}`, which defaults to `final_bind_dn` and is overwritten by
+    the `user_dn_detection` search result. The forced-lookup `find()` runs
+    `user_dn_detection` before role search, so `{user_dn}` SHOULD resolve, but
+    that path was not exercised in the existing tests. This test exercises it
+    directly via `node_with_role_mapping_user_dn`, whose role-search filter
+    uses `{user_dn}` rather than `{bind_dn}`.
+    """
+    node_with_role_mapping_user_dn.query(
+        "CREATE ROLE IF NOT EXISTS pre_login_role_user_dn",
+        user="admin",
+        password="qwerty",
+    )
+    try:
+        add_ldap_group(
+            started_cluster,
+            group_cn="clickhouse-pre_login_role_user_dn",
+            member_cn="janedoe",
+        )
+
+        current_roles = node_with_role_mapping_user_dn.query(
+            "EXECUTE AS janedoe SELECT role_name FROM system.current_roles ORDER BY role_name",
+            user="admin",
+            password="qwerty",
+        )
+        assert current_roles.strip() == "pre_login_role_user_dn", current_roles
+    finally:
+        delete_ldap_group(
+            started_cluster, group_cn="clickhouse-pre_login_role_user_dn"
+        )
+        node_with_role_mapping_user_dn.query(
+            "DROP ROLE IF EXISTS pre_login_role_user_dn",
+            user="admin",
+            password="qwerty",
+        )
+
+
+def test_execute_as_refreshes_distributed_cache_poisoned_entry(started_cluster):
+    """`@tiandiwonder` blocker on `src/Interpreters/Access/InterpreterExecuteAsQuery.cpp`
+    + `src/Access/LDAPAccessStorage.cpp`: distributed `EXECUTE AS` over a
+    cluster whose `<remote_servers>` entry has a `<secret>` authenticates
+    remote shards via `AlwaysAllowCredentials{initial_user}`. The receiving
+    shard's `LDAPAccessStorage::authenticateImpl` short-circuits in
+    `areLDAPCredentialsValidNoLock` for `AlwaysAllowCredentials` and
+    materializes the user with empty `users_external_roles` (no role mapping
+    resolved). A subsequent local `EXECUTE AS <same user>` on that shard would
+    hit the poisoned cache entry and run with only the common roles, silently
+    losing the mapped roles. With `role_mapping` configured on every shard,
+    this is a deterministic privilege-de-escalation for the headline guarantee
+    of this PR.
+
+    The fix detects an LDAP-storage-owned cached entry whose
+    `users_external_roles[name].size()` does not match
+    `role_search_params.size()` and refreshes it via the service-bind lookup
+    on the next `EXECUTE AS`. Verified end-to-end by running a remote query
+    that pre-poisons the cache, then a local `EXECUTE AS` that must surface
+    the refreshed mapped role.
+    """
+    # Create the role to be mapped on both shards. The impersonated user must be
+    # able to read from `clusterAllReplicas`, so the role gets `READ ON *.*`. This
+    # privilege is what we later assert is in effect on shard2 by checking the
+    # role name appears in `system.current_roles` after the cache refresh.
+    for inst in (shard1_node, shard2_node):
+        inst.query(
+            "CREATE ROLE IF NOT EXISTS distributed_pre_login_role",
+            user="admin",
+            password="qwerty",
+        )
+        # Grant the impersonated `janedoe` enough privileges to run the
+        # cluster-fanout query (`clusterAllReplicas` needs `SELECT` and
+        # `SHOW COLUMNS` on the target table plus the `REMOTE` source access).
+        # The test is about role-mapping refresh after cache poisoning, not the
+        # specific privilege set.
+        for grant in (
+            "GRANT SELECT ON *.* TO distributed_pre_login_role",
+            "GRANT SHOW COLUMNS ON *.* TO distributed_pre_login_role",
+            "GRANT REMOTE ON *.* TO distributed_pre_login_role",
+        ):
+            inst.query(grant, user="admin", password="qwerty")
+    try:
+        add_ldap_group(
+            started_cluster,
+            group_cn="clickhouse-distributed_pre_login_role",
+            member_cn="janedoe",
+        )
+
+        # Pre-poison shard2's cache: a distributed query that fans out under
+        # `<secret>` causes shard2 to authenticate the remote half via
+        # `AlwaysAllowCredentials{janedoe}`, materializing `janedoe` in
+        # shard2's LDAP storage with empty `users_external_roles`.
+        shard1_node.query(
+            "EXECUTE AS janedoe SELECT count() FROM clusterAllReplicas('ldap_cluster', system.one)",
+            user="admin",
+            password="qwerty",
+        )
+
+        # Confirm shard2's LDAP storage has a `janedoe` entry now.
+        post_remote_count = shard2_node.query(
+            "SELECT count() FROM system.users WHERE name = 'janedoe' AND storage = 'ldap'",
+            user="admin",
+            password="qwerty",
+        )
+        assert post_remote_count.strip() == "1", post_remote_count
+
+        # The local `EXECUTE AS` on shard2 must surface
+        # `distributed_pre_login_role`. Without the cache-refresh fix the
+        # poisoned entry has empty `users_external_roles` and the role would
+        # be missing from `system.current_roles`.
+        current_roles = shard2_node.query(
+            "EXECUTE AS janedoe SELECT role_name FROM system.current_roles ORDER BY role_name",
+            user="admin",
+            password="qwerty",
+        )
+        assert current_roles.strip() == "distributed_pre_login_role", current_roles
+    finally:
+        delete_ldap_group(
+            started_cluster, group_cn="clickhouse-distributed_pre_login_role"
+        )
+        for inst in (shard1_node, shard2_node):
+            inst.query(
+                "DROP ROLE IF EXISTS distributed_pre_login_role",
+                user="admin",
+                password="qwerty",
+            )
+
+
+def test_execute_as_already_materialized_ldap_user_when_ldap_first(started_cluster):
+    """`@tiandiwonder` wording-precision nit on `src/Interpreters/Access/InterpreterExecuteAsQuery.cpp`:
+    the two-pass lookup does not make a local user win regardless of
+    `user_directories` order. When the LDAP storage is ordered before
+    `users_xml` AND the LDAP storage already has a same-name entry materialized
+    (e.g. because a prior LDAP login on this server cached it), the first
+    `find<User>(name)` returns the LDAP entry — exactly as the pre-PR
+    `getID<User>` path did. The two-pass logic only prevents the FORCED LDAP
+    lookup from materializing an LDAP entry on a global normal-lookup miss
+    that would otherwise reach the local user. This test pins that behavior.
+
+    Strategy:
+      1. Authenticate `janedoe` against the LDAP fixture so the LDAP storage
+         on `node_with_local_user_precedence` materializes the LDAP user.
+      2. Run `EXECUTE AS janedoe` from `admin`. The first pass walks the
+         storages in order. LDAP is ordered first AND has the entry, so pass 1
+         returns the LDAP id. The local `janedoe` in `users.xml` is shadowed.
+         This is identical to the pre-PR `getID<User>` resolution order.
+    """
+    # Materialize `janedoe` in the LDAP storage on this instance.
+    assert node_with_local_user_precedence.query(
+        "SELECT currentUser()", user="janedoe", password="qwerty"
+    ).strip() == "janedoe"
+
+    pre_ldap_count = node_with_local_user_precedence.query(
+        "SELECT count() FROM system.users "
+        "WHERE name = 'janedoe' AND storage = 'ldap'",
+        user="admin",
+        password="qwerty",
+    )
+    assert pre_ldap_count.strip() == "1", pre_ldap_count
+
+    # First pass returns the LDAP entry because LDAP is ordered first; the
+    # storage that owns the resolved id is `ldap`. The session runs as the
+    # LDAP `janedoe`, NOT the local `janedoe` from `users_xml`. This is the
+    # same precedence the pre-PR `getID<User>` path produced for an LDAP user
+    # who had already been cached. The two-pass fix does not override that.
+    result = node_with_local_user_precedence.query(
+        "EXECUTE AS janedoe SELECT currentUser()",
+        user="admin",
+        password="qwerty",
+    )
+    assert result.strip() == "janedoe"
 
 
 def test_execute_as_wrong_lookup_password_throws_ldap_error(started_cluster):

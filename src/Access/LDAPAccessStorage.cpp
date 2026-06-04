@@ -411,16 +411,52 @@ std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const Str
 {
     std::lock_guard lock(mutex);
 
-    if (auto id = memory_storage.find(type, name))
-        return id;
+    auto id = memory_storage.find(type, name);
 
     /// Only USER lookups go to LDAP; other entity types (roles, profiles, ...) live
     /// elsewhere and are not resolvable through the LDAP directory.
     if (!force_external_lookup || type != AccessEntityType::USER)
-        return {};
+        return id;
+
+    const bool has_role_mapping = !role_search_params.empty();
+
+    /// If an entry already exists in memory but was materialized through a path
+    /// that did not resolve role mapping, refresh it via the service-bind lookup.
+    ///
+    /// The trigger for this is the interserver `<secret>` path in distributed
+    /// `EXECUTE AS`: the originating shard fans out to other shards under
+    /// `AlwaysAllowCredentials{initial_user}`, which short-circuits in
+    /// `areLDAPCredentialsValidNoLock` and stores the user with an empty
+    /// `external_roles`. A subsequent local `EXECUTE AS <same user>` on that
+    /// shard would otherwise hit the cached entry and run with only the common
+    /// roles (mapped roles silently dropped). The signal that a cached entry
+    /// is incomplete is that `users_external_roles[name]` does not have one
+    /// entry per configured `role_search_params`. A real LDAP login leaves a
+    /// per-search-params entry behind even when the user has no group
+    /// memberships (the inner set is empty), so this distinguishes
+    /// "AlwaysAllow short-circuit" from "user is in no `clickhouse-*` group".
+    if (id && has_role_mapping)
+    {
+        const auto eit = users_external_roles.find(name);
+        const bool needs_refresh = (eit == users_external_roles.end()) || (eit->second.size() != role_search_params.size());
+        if (needs_refresh)
+        {
+            LDAPClient::SearchResultsList external_roles;
+            if (access_control.getExternalAuthenticators().findLDAPUser(
+                    ldap_server_name,
+                    name,
+                    &role_search_params,
+                    &external_roles))
+            {
+                updateAssignedRolesNoLock(*id, name, external_roles);
+            }
+        }
+    }
+
+    if (id)
+        return id;
 
     LDAPClient::SearchResultsList external_roles;
-    const bool has_role_mapping = !role_search_params.empty();
     if (!access_control.getExternalAuthenticators().findLDAPUser(
             ldap_server_name,
             name,
