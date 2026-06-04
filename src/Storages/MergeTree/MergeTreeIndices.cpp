@@ -82,11 +82,19 @@ TopNFilterParameters::TopNFilterParameters(String column_, DataTypePtr type_, si
     condition_hash = hash.get64();
 }
 
-void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
+void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator, Documentation documentation)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index creator name '{}' is not unique",
                         index_type);
+    documentations.emplace(index_type, std::move(documentation));
+}
+
+Documentation MergeTreeIndexFactory::getDocumentation(const std::string & index_type) const
+{
+    if (auto it = documentations.find(index_type); it != documentations.end())
+        return it->second;
+    return {};
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
@@ -186,36 +194,63 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
-    registerCreator("minmax", minmaxIndexCreator);
+    registerCreator("minmax", minmaxIndexCreator, Documentation{
+        .description = "Stores the minimum and maximum values of the index expression for each granule, allowing granules to be skipped when a query's range condition cannot match.",
+        .syntax = "INDEX name expr TYPE minmax GRANULARITY n",
+        .related = {"set"}});
     registerValidator("minmax", minmaxIndexValidator);
 
-    registerCreator("set", setIndexCreator);
+    registerCreator("set", setIndexCreator, Documentation{
+        .description = "Stores up to `max_rows` distinct values of the index expression per granule (0 means unlimited), allowing granules to be skipped for equality and IN conditions.",
+        .syntax = "INDEX name expr TYPE set(max_rows) GRANULARITY n",
+        .related = {"bloom_filter", "minmax"}});
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over all n-grams of the index expression's string values, for speeding up LIKE, IN, equality and similar searches on substrings.",
+        .syntax = "INDEX name expr TYPE ngrambf_v1(n, size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"tokenbf_v1", "bloom_filter", "text"}});
     registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over the tokens (words) of the index expression's string values, for speeding up searches of whole tokens.",
+        .syntax = "INDEX name expr TYPE tokenbf_v1(size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"ngrambf_v1", "text"}});
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
+    registerCreator("sparse_grams", bloomFilterIndexTextCreator, Documentation{
+        .description = "A Bloom filter over the sparse n-grams of the index expression's string values, for speeding up substring searches.",
+        .syntax = "INDEX name expr TYPE sparse_grams(min_ngram_length, max_ngram_length[, min_cutoff_length], size_in_bytes, num_hash_functions, seed) GRANULARITY g",
+        .related = {"ngrambf_v1", "tokenbf_v1"}});
     registerValidator("sparse_grams", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerCreator("bloom_filter", bloomFilterIndexCreator, Documentation{
+        .description = "A Bloom filter over the values of the index expression, for speeding up equality and IN conditions on columns, including Array and Map elements.",
+        .syntax = "INDEX name expr TYPE bloom_filter([false_positive_rate]) GRANULARITY g",
+        .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
 #if USE_USEARCH
-    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
+        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+        .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-    registerCreator("text", textIndexCreator);
+    registerCreator("text", textIndexCreator, Documentation{
+        .description = "A full-text (inverted) index over the tokens of a string column, for speeding up text search functions such as `hasToken`, `hasAnyTokens`, `hasAllTokens`, and `hasPhrase`.",
+        .syntax = "INDEX name expr TYPE text(tokenizer = splitByNonAlpha) GRANULARITY g",
+        .related = {"tokenbf_v1"}});
     registerValidator("text", textIndexValidator);
 
     /// Index type 'hypothesis' is no longer supported.
     /// To allow loading tables with old indexes, register a dummy index which allows attach but
     /// throws an exception when the user attempts to create or use it.
-    registerCreator("hypothesis", legacyHypothesisIndexCreator);
+    registerCreator("hypothesis", legacyHypothesisIndexCreator, Documentation{
+        .description = "Deprecated and no longer supported. It is retained only so that tables which still reference it can be attached.",
+        .syntax = "INDEX name expr TYPE hypothesis GRANULARITY g",
+        .related = {}});
     registerValidator("hypothesis", legacyHypothesisIndexValidator);
 }
 
