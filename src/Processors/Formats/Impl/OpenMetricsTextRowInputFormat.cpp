@@ -574,6 +574,8 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 : (base_type == "histogram" || base_type == "summary");
             if (!type_matches)
                 break;
+            if (r.suffix == "_bucket" && !labels.contains("le"))
+                throwIncorrect("Histogram bucket sample is missing required 'le' label", line);
             logical_name = base;
             if (!r.synth_label.empty())
             {

@@ -292,6 +292,9 @@ FROM format(
     concat('# TYPE x histogram', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))
 )
 ORDER BY name, value FORMAT TSV;
+-- Histogram `_bucket` without `{le=...}` is malformed; do not fold into the base family.
+SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_bucket 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_bucket{job="a"} 1', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
 -- Empty `sum=""` / `count=""` markers from external producers are idempotent (no error).
 SELECT name, value, labels
 FROM format(
