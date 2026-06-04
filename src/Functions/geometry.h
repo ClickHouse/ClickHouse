@@ -2,7 +2,6 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/EnumReflection.h>
 #include <boost/geometry.hpp>
@@ -73,7 +72,7 @@ Polygon<Point> getPolygonFromField(const Field & field)
 {
     Polygon<Point> polygon;
     const auto & array = field.safeGet<Array>();
-    VectorWithMemoryTracking<Ring<Point>> rings_outer;
+    std::vector<Ring<Point>> rings_outer;
     Ring<Point> ring_inner;
 
     for (size_t i = 0; i < array.size(); ++i)
@@ -180,7 +179,7 @@ namespace DB
 {
 
 template <typename Point, typename FunctionToCalculate>
-class FunctionGeometry final : public IFunction
+class FunctionGeometry : public IFunction
 {
 public:
     static const char * name;

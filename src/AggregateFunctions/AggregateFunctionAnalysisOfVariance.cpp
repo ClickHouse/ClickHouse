@@ -112,7 +112,6 @@ AggregateFunctionPtr createAggregateFunctionAnalysisOfVariance(const std::string
 
 }
 
-void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory & factory)
 {
         FunctionDocumentation::Description description_analysisOfVariance = R"(
