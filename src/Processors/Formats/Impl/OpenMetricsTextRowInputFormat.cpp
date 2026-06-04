@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/OpenMetricsTextRowInputFormat.h>
 
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -185,32 +186,26 @@ Float64 parseRealNumber(std::string_view token, const String & line)
     return v;
 }
 
-/// Converts a `realnumber` timestamp token to `Int64` without `Float64` boundary ambiguity.
+/// Convert an OpenMetrics `realnumber` timestamp token (epoch seconds, possibly fractional) to
+/// the Prometheus-compatible millisecond representation stored in the `timestamp` column.
 ///
-/// `Float64` has only 53 mantissa bits, so it cannot distinguish adjacent integers near `Int64`
-/// limits (`Int64::max`, `Int64::max + 1`, and `Int64::min - 1` all round to the same `Float64`
-/// as `±2^63`). A range check done on `Float64` alone therefore both lets out-of-range tokens
-/// through (silent data corruption) and may produce `static_cast<Int64>` undefined behavior.
+/// The conversion is `seconds * 1000`, with the result bounded to `(-2^63, 2^63)` so the cast
+/// to `Int64` is well-defined. We choose two representations based on the token shape so that:
+///   1. Integer-shaped tokens (no `.`, no exponent) are parsed exactly as `Int64` seconds and
+///      multiplied with overflow detection. This guarantees ms-precise round-trip for tokens
+///      whose value fits in `Int64 / 1000` without `Float64` truncation near 2^53.
+///   2. Decimal/exponent tokens are converted via `Float64` because their fractional part is
+///      already a `Float64`. For typical Unix timestamps (`|s| <= 2^53 / 1000 ≈ 9e12`) this is
+///      exact; very large magnitudes may lose at most one millisecond of precision, but are
+///      still inside `Int64` range (or rejected here).
 ///
-/// Strategy (exact textual checks first, `Float64` only when unambiguous):
-///   1. Integer-shaped tokens (no `.`, no exponent) are parsed exactly as `Int64` via
-///      `tryParseInt<Int64>` with overflow detection.
-///   2. Decimal-shaped tokens (`.`, no exponent) are validated by exact-parsing the integer
-///      prefix (substring before `.`) as `Int64`; the integer prefix is the toward-zero
-///      truncation, so we return it directly without relying on the imprecise `Float64`.
-///      Tokens with no integer prefix (`.5`, `+.5`, `-.5`) fall back to `static_cast<Int64>` of
-///      the `Float64`, which is unambiguous because |value| < 1.
-///   3. Tokens with an exponent are checked against exact `Float64` boundaries: strict
-///      `(-2^63, 2^63)`. Equality with `±2^63` is rejected because the original token could
-///      represent `±2^63 ± k` for any small `k` that `Float64` cannot resolve; users who really
-///      want `Int64::min` should write it in the integer-shaped or decimal-shaped form.
-Int64 timestampTokenToInt64(std::string_view token, Float64 ts_value, const String & line)
+/// Strict `(-2^63, 2^63)` is used because `Float64` cannot distinguish `±2^63` from
+/// `±2^63 ± k` for small `k`; equality with the boundary is rejected to avoid silently
+/// admitting out-of-range tokens.
+Int64 secondsTokenToMillis(std::string_view token, Float64 ts_value, const String & line)
 {
-    const size_t dot_pos = token.find('.');
-    const size_t e_pos = token.find('e');
-    const size_t E_pos = token.find('E');
-    const bool has_dot = dot_pos != std::string_view::npos;
-    const bool has_exp = e_pos != std::string_view::npos || E_pos != std::string_view::npos;
+    const bool has_dot = token.find('.') != std::string_view::npos;
+    const bool has_exp = token.find('e') != std::string_view::npos || token.find('E') != std::string_view::npos;
 
     if (!has_dot && !has_exp)
     {
@@ -218,31 +213,21 @@ Int64 timestampTokenToInt64(std::string_view token, Float64 ts_value, const Stri
         if (!body.empty() && body.front() == '+')
             body.remove_prefix(1);
 
-        Int64 i = 0;
-        if (tryParseInt<>(i, body))
-            return i;
-        throwIncorrect("Timestamp value out of Int64 range", line);
+        Int64 seconds = 0;
+        if (!tryParseInt<>(seconds, body))
+            throwIncorrect("Timestamp value out of Int64 second range", line);
+
+        Int64 ms = 0;
+        if (common::mulOverflow(seconds, static_cast<Int64>(1000), ms))
+            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+        return ms;
     }
 
-    if (has_dot && !has_exp)
-    {
-        std::string_view int_part = token.substr(0, dot_pos);
-        if (!int_part.empty() && int_part.front() == '+')
-            int_part.remove_prefix(1);
-
-        if (int_part.empty() || int_part == "-")
-            return static_cast<Int64>(ts_value);
-
-        Int64 int_value = 0;
-        if (!tryParseInt<>(int_value, int_part))
-            throwIncorrect("Timestamp value out of Int64 range", line);
-        return int_value;
-    }
-
+    const Float64 ms_f = ts_value * 1000.0;
     const Float64 upper = std::ldexp(1.0, 63);
-    if (!(ts_value > -upper && ts_value < upper))
-        throwIncorrect("Timestamp value out of Int64 range", line);
-    return static_cast<Int64>(ts_value);
+    if (!(ms_f > -upper && ms_f < upper))
+        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+    return static_cast<Int64>(ms_f);
 }
 
 /// OpenMetrics `number`: real number, NaN, ±Inf. Requires full-token consumption.
@@ -573,7 +558,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             }
             else
             {
-                const Int64 t = timestampTokenToInt64(ts_token, ts_value, line);
+                const Int64 t = secondsTokenToMillis(ts_token, ts_value, line);
                 if (col.isNullable())
                 {
                     auto & nc = assert_cast<ColumnNullable &>(col);

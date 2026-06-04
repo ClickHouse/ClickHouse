@@ -2,6 +2,7 @@ import http
 import json
 import math
 import os
+import re
 import requests
 import snappy
 import sys
@@ -392,14 +393,50 @@ def normalize_exposition_newlines(text: str) -> str:
     return text.rstrip() + "\n"
 
 
+# Sample-line shape: `metric[{labels}] value [timestamp]`. `[^}]*` is fine because the equivalence
+# test query never produces labels with escaped `}` (the only quoted brace would have to come from
+# a label value, which the integration test does not exercise).
+_OM_SAMPLE_LINE_RE = re.compile(
+    r"^([a-zA-Z_:][a-zA-Z0-9_:]*(?:\{[^}]*\})?)"
+    r"\s+(\S+)"
+    r"(?:\s+(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?))?"
+    r"\s*$"
+)
+
+
+def convert_openmetrics_seconds_to_ms(text: str) -> str:
+    """
+    `FORMAT OpenMetrics` writes timestamps as epoch seconds with sub-second precision, while
+    `FORMAT Prometheus` writes the same column as raw `Int64` milliseconds. To compare the two
+    sample-by-sample, convert each OpenMetrics sample-line timestamp token back to integer ms.
+    """
+    out_lines = []
+    for line in text.split("\n"):
+        if not line or line.startswith("#"):
+            out_lines.append(line)
+            continue
+        m = _OM_SAMPLE_LINE_RE.match(line)
+        if not m or m.group(3) is None:
+            out_lines.append(line)
+            continue
+        prefix, value, ts_seconds = m.group(1), m.group(2), m.group(3)
+        ts_ms = int(round(float(ts_seconds) * 1000))
+        out_lines.append(f"{prefix} {value} {ts_ms}")
+    return "\n".join(out_lines)
+
+
 def assert_prometheus_openmetrics_exposition_equivalent(
     prometheus_text: str, openmetrics_text: str
 ) -> None:
     """
-    FORMAT OpenMetrics adds # UNIT when unit is non-empty and always ends with # EOF;
-    sample lines for the same row set must match FORMAT Prometheus after stripping those.
+    FORMAT OpenMetrics adds # UNIT when unit is non-empty, ends with # EOF, and emits timestamps
+    as epoch seconds; sample lines for the same row set must match FORMAT Prometheus after
+    stripping the OpenMetrics-only lines and converting timestamps back to milliseconds.
     """
     assert openmetrics_text.rstrip().endswith("# EOF")
-    assert normalize_exposition_newlines(
+    normalized_om = convert_openmetrics_seconds_to_ms(
         strip_openmetrics_only_lines(openmetrics_text)
-    ) == normalize_exposition_newlines(prometheus_text)
+    )
+    assert normalize_exposition_newlines(normalized_om) == normalize_exposition_newlines(
+        prometheus_text
+    )

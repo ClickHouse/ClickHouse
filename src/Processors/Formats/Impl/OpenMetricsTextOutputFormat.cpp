@@ -7,6 +7,7 @@
 #include <base/sort.h>
 
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
@@ -16,6 +17,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 
 #include <Formats/FormatFactory.h>
@@ -47,6 +49,50 @@ bool isDataTypeMapString(const DataTypePtr & type)
         return false;
     const auto * type_map = assert_cast<const DataTypeMap *>(type.get());
     return isStringOrFixedString(type_map->getKeyType()) && isStringOrFixedString(type_map->getValueType());
+}
+
+/// OpenMetrics timestamps must round-trip with the input parser, which stores into `Int64`
+/// (or `Nullable(Int64)`) milliseconds; reject other numeric types to keep the contract explicit
+/// and avoid silent precision drift through `Float64` or smaller integer widths.
+bool isInt64OrNullableInt64(const DataTypePtr & type)
+{
+    const DataTypePtr & nested = type->isNullable()
+        ? assert_cast<const DataTypeNullable *>(type.get())->getNestedType()
+        : type;
+    return WhichDataType(nested).isInt64();
+}
+
+/// The ClickHouse `timestamp` column is Prometheus-compatible milliseconds. OpenMetrics text
+/// expects epoch seconds (`realnumber`), so format the int64 value as `<seconds>.<3-digit-ms>`
+/// with trailing-zero stripping; the trailing `.` is dropped when the fractional part is zero.
+/// Examples: `1520879607789 -> "1520879607.789"`, `1520879607000 -> "1520879607"`,
+/// `-500 -> "-0.5"`, `0 -> "0"`, `Int64::min -> "-9223372036854775.808"`.
+String formatTimestampMsAsSeconds(Int64 ms)
+{
+    /// `-(Int64::min)` overflows int64, so compute the magnitude in unsigned arithmetic.
+    const bool neg = ms < 0;
+    const UInt64 abs_ms = neg
+        ? (static_cast<UInt64>(-(ms + 1)) + 1u)
+        : static_cast<UInt64>(ms);
+
+    const UInt64 seconds = abs_ms / 1000;
+    const UInt64 frac = abs_ms % 1000;
+
+    String out;
+    if (neg)
+        out.push_back('-');
+    out += std::to_string(seconds);
+    if (frac == 0)
+        return out;
+
+    out.push_back('.');
+    out.push_back(static_cast<char>('0' + (frac / 100) % 10));
+    out.push_back(static_cast<char>('0' + (frac / 10) % 10));
+    out.push_back(static_cast<char>('0' + frac % 10));
+    /// `frac > 0` guarantees at least one non-zero digit, so the `.` is never the last char.
+    while (out.back() == '0')
+        out.pop_back();
+    return out;
 }
 
 template <typename ResType>
@@ -122,7 +168,7 @@ OpenMetricsTextOutputFormat::OpenMetricsTextOutputFormat(
     getColumnPos(header, "help", isStringOrFixedString, pos.help);
     getColumnPos(header, "type", isStringOrFixedString, pos.type);
     getColumnPos(header, "unit", isStringOrFixedString, pos.unit);
-    getColumnPos(header, "timestamp", isNumber, pos.timestamp);
+    getColumnPos(header, "timestamp", isInt64OrNullableInt64, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 
     /// `getColumnPos` strips `Nullable` from optional columns before predicate validation, but
@@ -318,8 +364,15 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
     row.value = getString(columns, row_num, pos.value);
 
     /// OpenMetrics timestamp rule: emit whenever the column is present and non-NULL (including zero).
+    /// Convert the ClickHouse millisecond representation to the OpenMetrics seconds string here.
     if (pos.timestamp.has_value() && !columns[*pos.timestamp]->isNullAt(row_num))
-        row.timestamp = getString(columns, row_num, *pos.timestamp);
+    {
+        const IColumn & ts_col = *columns[*pos.timestamp];
+        const Int64 ms = ts_col.isNullable()
+            ? assert_cast<const ColumnNullable &>(ts_col).getNestedColumn().getInt(row_num)
+            : ts_col.getInt(row_num);
+        row.timestamp = formatTimestampMsAsSeconds(ms);
+    }
 
     if (pos.labels.has_value())
     {
@@ -342,7 +395,12 @@ void registerOutputFormatOpenMetrics(FormatFactory & factory)
         [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr /*format_filter_info*/)
         { return std::make_shared<OpenMetricsTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 
-    factory.setContentType(FORMAT_NAME, "application/openmetrics-text; version=1.0.0; charset=utf-8");
+    /// Intentionally drops the `version=1.0.0` parameter advertised by earlier iterations of this
+    /// PR. This writer does not enforce strict OpenMetrics 1.0 family-metadata requirements
+    /// (`# HELP`/`# TYPE`/`# UNIT` are emitted only when the columns are non-empty, and the `type`
+    /// value is passed through verbatim, including the Prometheus-style `untyped`), so claiming
+    /// version compliance would be misleading to strict consumers.
+    factory.setContentType(FORMAT_NAME, "application/openmetrics-text; charset=utf-8");
 }
 
 }

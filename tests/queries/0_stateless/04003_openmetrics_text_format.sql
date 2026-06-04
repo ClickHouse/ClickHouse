@@ -1,9 +1,41 @@
+-- ============================================================================
+-- FORMAT OpenMetrics: output round-trip / sample shapes / metadata.
+-- The `timestamp` column stays Prometheus-compatible milliseconds; the writer
+-- divides by 1000 to emit OpenMetrics seconds and the reader multiplies back.
+-- ============================================================================
+
 SELECT 'http_requests_total' AS name, 1. AS value, '' AS help, '' AS type, CAST(map(), 'Map(String, String)') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
 
+-- Output: 100 ms in the ClickHouse column emits as `0.1` seconds in OpenMetrics text.
 SELECT 'http_requests_total' AS name, 2. AS value, 'Total number of HTTP requests' AS help, 'counter' AS type, map('method', 'GET', 'status', '200') AS labels, CAST(100 AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
 
+-- Output: ms-to-seconds boundary cases (trailing-zero stripping; negative-zero seconds; INT64_MIN).
+SELECT 'a' AS name, 1.0 AS value, CAST(1520879607789 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
+SELECT 'b' AS name, 2.0 AS value, CAST(1520879607000 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
+SELECT 'c' AS name, 3.0 AS value, CAST(-500 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
+SELECT 'd' AS name, 4.0 AS value, CAST(0 AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
+-- INT64_MIN written via bit math to avoid the literal being parsed as `-(UInt64{2^63})`.
+SELECT 'e' AS name, 5.0 AS value, CAST(bitShiftLeft(toInt64(1), 63) AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
+
+-- Output schema validation: `timestamp` must be `Int64` (or `Nullable(Int64)`); other numeric
+-- types are rejected so the ms-as-seconds contract is unambiguous at the column level.
+SELECT name, value, CAST(timestamp AS Float64) AS timestamp
+FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
+FORMAT OpenMetrics; -- { serverError BAD_ARGUMENTS }
+SELECT name, value, CAST(timestamp AS UInt32) AS timestamp
+FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
+FORMAT OpenMetrics; -- { serverError BAD_ARGUMENTS }
+
+
+-- ============================================================================
+-- FORMAT OpenMetrics: input parsing and validation.
+-- ============================================================================
+
+-- Input: OpenMetrics timestamp tokens are epoch seconds; reader multiplies by 1000
+-- before storing in the ClickHouse `Nullable(Int64)` column (fractional ms preserved).
+-- `999` seconds -> 999000 ms; `42` is the sample value.
 SELECT *
 FROM format(
     OpenMetrics,
@@ -73,7 +105,8 @@ FORMAT TSV;
 -- Reject whitespace between metric name and `{labels}`.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('metric {job="x"} 1', char(10))); -- { serverError INCORRECT_DATA }
 
--- OpenMetrics timestamps are real numbers (`+2`, fractional milliseconds).
+-- Input: OpenMetrics realnumber timestamp tokens (`+2`, fractional `1520879607.789`).
+-- Stored value is `token_seconds * 1000` ms.
 SELECT *
 FROM format(
     OpenMetrics,
@@ -87,6 +120,15 @@ FROM format(
     OpenMetrics,
     'name String, value Float64, timestamp Nullable(Int64)',
     concat('m 1 1520879607.789', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
+-- Input: decimal token below 1 second (e.g. `-.5`) preserves negative sign as `-500` ms.
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 -.5', char(10), '# EOF', char(10))
 )
 FORMAT TSV;
 
@@ -155,45 +197,17 @@ FROM format(
 )
 FORMAT TSV;
 
--- Int64 boundary: max (2^63 - 1) is accepted exactly; max + 1 and min - 1 must be rejected
--- (`Float64` cannot distinguish those values, so the conversion uses an exact-integer path).
+-- Range guards (token is seconds, stored as `seconds * 1000` ms):
+-- Largest in-range integer seconds (INT64_MAX / 1000) is accepted; +1 second overflows Int64 ms.
 SELECT *
 FROM format(
     OpenMetrics,
     'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 9223372036854775807', char(10), '# EOF', char(10))
+    concat('m 1 9223372036854775', char(10), '# EOF', char(10))
 )
 FORMAT TSV;
-SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775808', char(10))); -- { serverError INCORRECT_DATA }
-SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775809', char(10))); -- { serverError INCORRECT_DATA }
--- Fractional timestamp that exceeds Int64 range after truncation must also be rejected.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854776', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854776', char(10))); -- { serverError INCORRECT_DATA }
+-- Float-shaped tokens that obviously overflow Int64 ms after the *1000 conversion are also rejected.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1e20', char(10))); -- { serverError INCORRECT_DATA }
-
--- Decimal-token boundary: `-9223372036854775809.0` rounds to exactly `-2^63` in Float64, so a
--- Float64 range check would accept it as `INT64_MIN`. The decimal path validates the integer
--- prefix exactly to catch this asymmetric leak. The symmetric in-range case `-9223372036854775808.5`
--- (truncation == `INT64_MIN`) must still be accepted.
-SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775809.0', char(10))); -- { serverError INCORRECT_DATA }
-SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775808.0', char(10))); -- { serverError INCORRECT_DATA }
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 -9223372036854775808.5', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 9223372036854775807.5', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
--- Decimal tokens with no integer prefix (`.5`, `-.5`) truncate to 0 / -0 and must still parse.
-SELECT *
-FROM format(
-    OpenMetrics,
-    'name String, value Float64, timestamp Nullable(Int64)',
-    concat('m 1 -.5', char(10), '# EOF', char(10))
-)
-FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -1e20', char(10))); -- { serverError INCORRECT_DATA }

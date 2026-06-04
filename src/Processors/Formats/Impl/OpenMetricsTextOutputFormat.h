@@ -26,10 +26,12 @@ public:
     String getName() const override { return "OpenMetricsTextOutputFormat"; }
 
 private:
+    /// `name` and `value` are required and always assigned by `getColumnPos`; the explicit
+    /// zero-initializers exist purely to satisfy `cppcoreguidelines-pro-type-member-init`.
     struct ColumnPositions
     {
-        size_t name;
-        size_t value;
+        size_t name = 0;
+        size_t value = 0;
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> unit;
