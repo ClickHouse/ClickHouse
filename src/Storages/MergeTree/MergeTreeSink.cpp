@@ -1,6 +1,8 @@
 #include <exception>
+#include <Common/ThreadStatus.h>
 #include <memory>
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>

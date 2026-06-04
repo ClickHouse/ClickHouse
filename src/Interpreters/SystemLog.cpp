@@ -1,6 +1,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 

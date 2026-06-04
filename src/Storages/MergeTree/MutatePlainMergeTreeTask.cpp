@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>

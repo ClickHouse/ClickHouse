@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Common/setThreadName.h>

@@ -1,4 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Interpreters/InsertDeduplication.h>

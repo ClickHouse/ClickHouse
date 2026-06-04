@@ -1,5 +1,6 @@
 
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/StorageReplicatedMergeTree.h>
