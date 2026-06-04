@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
+#include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -98,12 +99,20 @@ namespace
     /// On a blocking socket with setReceiveTimeout, EAGAIN cannot surface (Poco raises
     /// TimeoutException instead), so the would-block return from `tryReceive` would
     /// indicate the socket was reconfigured non-blocking by mistake — we treat it as an error.
-    void receiveAll(Poco::Net::StreamSocket & socket, void * buffer, size_t size, const String & description)
+    void receiveAll(Poco::Net::StreamSocket & socket, void * buffer, size_t size, const String & description, const Stopwatch & handshake_watch)
     {
         char * dst = static_cast<char *>(buffer);
         size_t position = 0;
         while (position < size)
         {
+            /// Absolute deadline across the whole handshake: the per-call receive timeout alone does
+            /// not stop a peer that dribbles one byte just under the timeout and keeps this inline
+            /// accept thread (and thus all later connections) occupied indefinitely.
+            if (handshake_watch.elapsedSeconds() > StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS)
+                throw Poco::Net::NetException(fmt::format(
+                    "Handshake from {} exceeded {}s while receiving {}",
+                    socket.peerAddress().toString(), StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, description));
+
             ssize_t received = StreamingExchangeProtocol::tryReceive(socket, dst + position, size - position, description);
             if (received == 0)
                 throw Poco::Net::NetException(fmt::format(
@@ -125,8 +134,10 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
     socket.setReceiveTimeout(hello_timeout);
     socket.setSendTimeout(hello_timeout);
 
+    Stopwatch handshake_watch;
+
     StreamingExchangeProtocol::PacketHeader header{};
-    receiveAll(socket, &header, sizeof(header), "SourceHello header");
+    receiveAll(socket, &header, sizeof(header), "SourceHello header", handshake_watch);
 
     if (header.packet_type != StreamingExchangeProtocol::PacketType::SourceHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
@@ -147,7 +158,7 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
 
     PODArray<char> body_buffer(header.bytes_size);
     if (!body_buffer.empty())
-        receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body");
+        receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body", handshake_watch);
 
     /// Read only the version field first. The layout of fields after it can change between
     /// protocol versions, so a peer on a different version must not have its body further parsed.
