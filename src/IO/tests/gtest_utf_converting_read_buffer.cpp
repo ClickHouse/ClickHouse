@@ -18,7 +18,8 @@ TEST(UTFConvertingReadBuffer, SurrogateBoundary)
     // low2  = 0xDC00 (bytes: 0x00 0xDC)
     
     String utf16_input;
-    utf16_input += "\xFF\xFE"; // BOM
+    utf16_input.push_back(static_cast<char>(0xFF));
+    utf16_input.push_back(static_cast<char>(0xFE)); // BOM
     
     // Fill with enough dummy characters to exceed DBMS_DEFAULT_BUFFER_SIZE
     // We want the output buffer to run out of space EXACTLY after high1 is read.
@@ -33,12 +34,16 @@ TEST(UTFConvertingReadBuffer, SurrogateBoundary)
     
     for (size_t i = 0; i < dummy_chars; ++i)
     {
-        utf16_input += "A\x00"; // 'A' in UTF-16LE
+        utf16_input.push_back('A');
+        utf16_input.push_back('\0');
     }
     
-    utf16_input += "\x00\xD8"; // high1
-    utf16_input += "\x01\xD8"; // high2
-    utf16_input += "\x00\xDC"; // low2
+    utf16_input.push_back('\0');
+    utf16_input.push_back(static_cast<char>(0xD8)); // high1
+    utf16_input.push_back('\x01');
+    utf16_input.push_back(static_cast<char>(0xD8)); // high2
+    utf16_input.push_back('\0');
+    utf16_input.push_back(static_cast<char>(0xDC)); // low2
     
     auto in = std::make_unique<ReadBufferFromString>(utf16_input);
     UTFConvertingReadBuffer utf_in(std::move(in));

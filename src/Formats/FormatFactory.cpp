@@ -1194,8 +1194,7 @@ bool FormatFactory::shouldDetectUTFBOM(const String & format_name) const
 {
     String format_lower = boost::to_lower_copy(format_name);
     return format_lower.starts_with("csv") || format_lower.starts_with("tsv") || format_lower.starts_with("tabseparated")
-        || format_lower.starts_with("customseparated") || format_lower.starts_with("jsoneachrow") || format_lower == "json"
-        || format_lower == "jsoncompact" || format_lower == "jsoncolumns";
+        || format_lower.starts_with("customseparated") || format_lower.starts_with("json") || format_lower.starts_with("ndjson");
 }
 
 bool FormatFactory::isInputFormat(const String & name) const
