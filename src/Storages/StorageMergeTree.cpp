@@ -577,13 +577,25 @@ void StorageMergeTree::alter(
                     tryLogCurrentException(log, "Failed to revert in-memory metadata; server may be inconsistent until restart");
                 }
                 background_lock.unlock();
-                try
+                /// On-disk rollback is only meaningful for non-replicated databases.
+                /// `Replicated` databases drive metadata via a single-shot
+                /// `ZooKeeperMetadataTransaction` that was already committed by the
+                /// `alterTable(new_metadata)` call above; a second `alterTable` would
+                /// attempt to add ops to that executed transaction and abort the server
+                /// with a `LOGICAL_ERROR`. The local on-disk file is then left ahead of
+                /// in-memory state, but that is the existing behaviour for any failure
+                /// after the ZK commit point under `Replicated`.
+                auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+                if (!database->hasReplicationThread())
                 {
-                    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Failed to roll back on-disk metadata; server may be inconsistent until restart");
+                    try
+                    {
+                        database->alterTable(local_context, table_id, old_metadata, /*validate_new_create_query=*/false);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to roll back on-disk metadata; server may be inconsistent until restart");
+                    }
                 }
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
                 throw;

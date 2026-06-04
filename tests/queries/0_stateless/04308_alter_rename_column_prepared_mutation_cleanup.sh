@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-replicated-database
 # Tag no-parallel: uses fail points which affect the whole server.
+# Tag no-replicated-database: the test asserts the renamed-from column is still
+# queryable after the failed ALTER, which requires the on-disk metadata to be
+# rolled back to the pre-ALTER state. Under `Replicated` databases the metadata
+# update goes through a single-shot `ZooKeeperMetadataTransaction` that is
+# already committed by the time the failure inside `prepareMutationEntry`
+# fires, so the local on-disk file cannot be reverted and the assertion at
+# `SELECT id, d` would not hold. The orphan-mutation-file cleanup that this
+# test exercises is engine-agnostic and is covered for the non-replicated path
+# here.
 #
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/104822
 # inline review on src/Storages/StorageMergeTree.cpp:784.
