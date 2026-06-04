@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -12,6 +13,7 @@
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -40,6 +42,20 @@ std::string_view getTextValue(sqlite3_stmt * statement, int idx)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR, "Cannot read text value from SQLite database");
 
     return {data ? data : "", static_cast<size_t>(len)};
+}
+
+template <typename ColumnType, typename Value>
+void insertNativeValue(IColumn & column, Value value)
+{
+    if (auto * column_low_cardinality = typeid_cast<ColumnLowCardinality *>(&column))
+    {
+        auto full_column = ColumnType::create();
+        full_column->insertValue(value);
+        column_low_cardinality->insertFromFullColumn(*full_column, 0);
+        return;
+    }
+
+    assert_cast<ColumnType &>(column).insertValue(value);
 }
 
 }
@@ -73,7 +89,7 @@ SQLiteStatementReader::ColumnReadInfo SQLiteStatementReader::createColumnReadInf
 
 static std::optional<ExternalResultDescription::ValueType> getNativeFloatValueType(const ColumnWithTypeAndName & column)
 {
-    WhichDataType which(removeNullable(column.type));
+    WhichDataType which(removeLowCardinalityAndNullable(column.type));
 
     if (which.isFloat32())
         return ExternalResultDescription::ValueType::vtFloat32;
@@ -178,11 +194,15 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
                 continue;
             }
 
-            if (info.is_nullable && info.native_value_type)
+            if (info.native_value_type)
             {
-                auto & column_nullable = assert_cast<ColumnNullable &>(*columns[column_index]);
-                insertValue(column_nullable.getNestedColumn(), info, statement, column_index);
-                column_nullable.getNullMapData().emplace_back(false);
+                if (auto * column_nullable = typeid_cast<ColumnNullable *>(columns[column_index].get()))
+                {
+                    insertValue(column_nullable->getNestedColumn(), info, statement, column_index);
+                    column_nullable->getNullMapData().emplace_back(false);
+                }
+                else
+                    insertValue(*columns[column_index], info, statement, column_index);
             }
             else
             {
@@ -238,7 +258,7 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
                 break;
             }
 
-            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(sqlite3_column_double(statement, idx)));
+            insertNativeValue<ColumnFloat32>(column, static_cast<Float32>(sqlite3_column_double(statement, idx)));
             break;
         case ValueType::vtFloat64:
             if (sqlite3_column_type(statement, idx) == SQLITE_TEXT)
@@ -247,7 +267,7 @@ void SQLiteStatementReader::insertValue(IColumn & column, const ColumnReadInfo &
                 break;
             }
 
-            assert_cast<ColumnFloat64 &>(column).insertValue(sqlite3_column_double(statement, idx));
+            insertNativeValue<ColumnFloat64>(column, sqlite3_column_double(statement, idx));
             break;
         case ValueType::vtEnum8:
         {

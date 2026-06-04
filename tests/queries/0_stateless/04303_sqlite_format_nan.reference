@@ -2,3 +2,5 @@ SQLite format NaN roundtrip
 1	Float64	1	Float64	0	1	Nullable(Float64)	1	1	1	1	Float64	1	1	1	1	Float64	4607182418800017409	Float64
 SQLite engine native NaN roundtrip
 1	Float32	1	Float64	0	1	Nullable(Float64)	1	1	1	1	Float32	1	1	1	1	Float64	4607182418800017409	Float64
+SQLite format LowCardinality native Float64 roundtrip
+4607182418800017409	LowCardinality(Float64)	4607182418800017409	LowCardinality(Nullable(Float64))	1	LowCardinality(Float64)	1	LowCardinality(Nullable(Float64))

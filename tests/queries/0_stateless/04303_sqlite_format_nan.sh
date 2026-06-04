@@ -6,7 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_nan_XXXXXX.sqlite")
-trap 'rm -f "$DB"' EXIT
+LC_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_format_lc_float_XXXXXX.sqlite")
+trap 'rm -f "$DB" "$LC_DB"' EXIT
 
 ${CLICKHOUSE_LOCAL} --query "
     SELECT
@@ -57,3 +58,25 @@ ${CLICKHOUSE_LOCAL} --multiquery --query "
         isInfinite(f64_inf), f64_inf > 0, isInfinite(f64_neg_inf), f64_neg_inf < 0, toTypeName(f64_inf),
         reinterpretAsUInt64(exact_f64), toTypeName(exact_f64)
     FROM sqlite_nan"
+
+${CLICKHOUSE_LOCAL} --allow_suspicious_low_cardinality_types=1 --query "
+    SELECT
+        CAST(1.0000000000000002, 'LowCardinality(Float64)') AS lc_f64,
+        CAST(1.0000000000000002, 'LowCardinality(Nullable(Float64))') AS lc_nullable_f64,
+        CAST(nan, 'LowCardinality(Float64)') AS lc_nan,
+        CAST(nan, 'LowCardinality(Nullable(Float64))') AS lc_nullable_nan
+    FORMAT SQLite" > "$LC_DB"
+
+echo "SQLite format LowCardinality native Float64 roundtrip"
+${CLICKHOUSE_LOCAL} \
+    --allow_suspicious_low_cardinality_types=1 \
+    --input-format SQLite \
+    --output-format TSV \
+    --structure "lc_f64 LowCardinality(Float64), lc_nullable_f64 LowCardinality(Nullable(Float64)), lc_nan LowCardinality(Float64), lc_nullable_nan LowCardinality(Nullable(Float64))" \
+    --query "
+        SELECT
+            reinterpretAsUInt64(lc_f64), toTypeName(lc_f64),
+            reinterpretAsUInt64(assumeNotNull(lc_nullable_f64)), toTypeName(lc_nullable_f64),
+            isNaN(lc_nan), toTypeName(lc_nan),
+            isNaN(assumeNotNull(lc_nullable_nan)), toTypeName(lc_nullable_nan)
+        FROM table" < "$LC_DB"
