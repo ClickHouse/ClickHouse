@@ -67,16 +67,16 @@ SELECT test_auto_fill_function(1);
 DROP FUNCTION test_auto_fill_function;
 
 SELECT 'Test 7: SYSTEM query is not rewritten ON CLUSTER';
--- Several SYSTEM subcommands (e.g. SYSTEM FREE MEMORY, SYSTEM REFRESH VIEW) inherit
--- ASTQueryWithOnCluster but are parsed without ON CLUSTER support, so a rewritten query would be
--- rejected by the distributed DDL worker. Auto-fill must skip SYSTEM queries entirely.
-SYSTEM FREE MEMORY;
+-- Several SYSTEM subcommands (e.g. SYSTEM REFRESH VIEW) inherit ASTQueryWithOnCluster but are
+-- parsed without ON CLUSTER support, so a rewritten query would be rejected by the distributed DDL
+-- worker. Auto-fill must skip SYSTEM queries entirely; verify the rewrite did not happen.
+SYSTEM DROP MARK CACHE;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT 'Test 7 verification: SYSTEM query does NOT contain ON CLUSTER';
--- A prefix match on `SYSTEM FREE MEMORY` keeps this verification SELECT (which starts with SELECT)
--- from matching itself via the `ON CLUSTER` literal below.
+-- A prefix match on `SYSTEM DROP MARK CACHE` keeps this verification SELECT (which starts with
+-- SELECT) from matching itself via the `ON CLUSTER` literal below.
 SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
-  AND query LIKE 'SYSTEM FREE MEMORY%'
+  AND query LIKE 'SYSTEM DROP MARK CACHE%'
   AND query LIKE '%ON CLUSTER%';
