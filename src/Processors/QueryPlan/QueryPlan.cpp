@@ -6,8 +6,10 @@
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 
+#include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 
 #include <Processors/ConcatProcessor.h>
@@ -42,6 +44,29 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+/// A stage fragment is shipped to workers by serializing its query plan. A step without serialization
+/// support would fail late, mid-execution, with a generic NOT_IMPLEMENTED. Attempt the serialization
+/// up front (the same path used at dispatch) so an unsupported plan fails early with a clear message.
+void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
+{
+    try
+    {
+        WriteBufferFromOwnString out;
+        fragment.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    }
+    catch (const Exception & e)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan cannot serialize stage '{}' for remote execution: {}", stage_name, e.message());
+    }
+}
+
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -805,6 +830,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             distributed_plan.exchange_descriptions[final_result_exchange.name] = final_result_exchange;
             distributed_plan.final_result_stream_name = result_stream_id.toString();
         }
+
+        /// Fail early (before execution) if any fragment contains a step that cannot be serialized
+        /// for remote execution, instead of throwing late from serializeQueryPlan.
+        for (const auto & [stage_name, stage] : distributed_plan.stages)
+            assertFragmentSerializable(stage.query_plan_fragment, stage_name);
 
         /// Collect the list of all temporary files
         Strings all_temporary_files_for_cleanup;
