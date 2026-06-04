@@ -253,7 +253,7 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
         if (const auto * column = typeid_cast<const ColumnAggregateFunction *>(current.get()))
         {
             auto & totals_column = typeid_cast<ColumnAggregateFunction &>(*current_totals[col]);
-            assert(totals_column.size() == 1);
+            chassert(totals_column.size() == 1);
 
             /// Accumulate all aggregate states from a column of a source chunk into
             /// the corresponding totals column.

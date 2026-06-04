@@ -101,14 +101,7 @@ S3AuthSettings::S3AuthSettings(const S3AuthSettings & settings)
 {
 }
 
-S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept
-    : headers(std::move(settings.headers))
-    , access_headers(std::move(settings.access_headers))
-    , users(std::move(settings.users))
-    , server_side_encryption_kms_config(std::move(settings.server_side_encryption_kms_config))
-    , impl(std::make_unique<S3AuthSettingsImpl>(std::move(*settings.impl)))
-{
-}
+S3AuthSettings::S3AuthSettings(S3AuthSettings && settings) noexcept = default;
 
 S3AuthSettings::S3AuthSettings(const DB::Settings & settings) : impl(std::make_unique<S3AuthSettingsImpl>())
 {
@@ -119,16 +112,7 @@ S3AuthSettings::~S3AuthSettings() = default;
 
 S3AUTH_SETTINGS_SUPPORTED_TYPES(S3AuthSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
-S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept
-{
-    headers = std::move(settings.headers);
-    access_headers = std::move(settings.access_headers);
-    users = std::move(settings.users);
-    server_side_encryption_kms_config = std::move(settings.server_side_encryption_kms_config);
-    *impl = std::move(*settings.impl);
-
-    return *this;
-}
+S3AuthSettings & S3AuthSettings::operator=(S3AuthSettings && settings) noexcept = default;
 
 bool S3AuthSettings::operator==(const S3AuthSettings & right)
 {
@@ -235,7 +219,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
     result.impl = std::make_unique<S3AuthSettingsImpl>();
     result.impl->readBinary(in);
 
-    size_t headers_size;
+    size_t headers_size = 0;
     readVarUInt(headers_size, in);
     for (size_t i = 0; i < headers_size; ++i)
     {
@@ -246,7 +230,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         result.headers.emplace_back(name, value);
     }
 
-    size_t access_headers_size;
+    size_t access_headers_size = 0;
     readVarUInt(access_headers_size, in);
     for (size_t i = 0; i < access_headers_size; ++i)
     {
@@ -256,7 +240,7 @@ S3AuthSettings S3AuthSettings::deserialize(ReadBuffer & in, ContextPtr)
         readStringBinary(value, in);
         result.access_headers.emplace_back(name, value);
     }
-    size_t users_size;
+    size_t users_size = 0;
     readVarUInt(users_size, in);
     for (size_t i = 0; i < users_size; ++i)
     {

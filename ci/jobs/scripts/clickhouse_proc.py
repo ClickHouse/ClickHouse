@@ -199,16 +199,17 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "rpk topic list --brokers 127.0.0.1:9092",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
-        print("Failed to start Kafka")
-        return False
+        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
+        # so wait on the script itself. Its own timeout is 60s; pad here.
+        try:
+            returncode = self.kafka_proc.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_kafka.sh exited with code {returncode}")
+            return False
+        return True
 
     @staticmethod
     def log_cluster_config():
@@ -1133,7 +1134,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
