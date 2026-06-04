@@ -23,6 +23,7 @@ from typing import Optional
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 pytestmark = pytest.mark.timeout(300)
@@ -228,6 +229,60 @@ def test_parallel_read(started_cluster, exchange_kind):
         """,
     )
     assert distributed == baseline
+
+
+def test_parallel_read_missing_part_on_worker_errors(started_cluster):
+    """A distributed read buckets over the parts the coordinator selected. If a
+    worker replica is missing one of those parts (replication lag), the read must
+    fail cleanly instead of silently returning a divergent slice of the data.
+
+    Stop fetches on node2/node3 and add a new part only on the coordinator
+    (node1); the read assigns a bucket to a lagging replica, which cannot find
+    the coordinator-selected part and raises NO_SUCH_DATA_PART."""
+    table = "big_lagging"
+    for node in NODES:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, group_key UInt32, payload String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/{{shard}}/{table}', '{{replica}}')
+            ORDER BY id
+            """
+        )
+        node.query(f"SYSTEM STOP MERGES {table}")
+
+    # Initial data, replicated to every node (multiple parts).
+    for batch in range(2):
+        offset = batch * 25_000
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number + {offset}, (number + {offset}) % 100, "
+            f"concat('p_', toString(number + {offset})) FROM numbers(25000)"
+        )
+    for node in NODES:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    node2.query(f"SYSTEM STOP FETCHES {table}")
+    node3.query(f"SYSTEM STOP FETCHES {table}")
+    try:
+        # New part lands only on the coordinator; node2/node3 stay behind.
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number + 50000, (number + 50000) % 100, "
+            f"concat('p_', toString(number + 50000)) FROM numbers(25000)"
+        )
+        assert int(INITIATOR.query(f"SELECT count() FROM {table}").strip()) == 75_000
+        assert int(node2.query(f"SELECT count() FROM {table}").strip()) == 50_000
+        assert int(node3.query(f"SELECT count() FROM {table}").strip()) == 50_000
+
+        settings = DISTRIBUTED_SETTINGS + ", distributed_plan_force_exchange_kind = 'Persisted'"
+        with pytest.raises(QueryRuntimeException) as exc:
+            INITIATOR.query(f"SELECT count(), sum(id) FROM {table} SETTINGS {settings}")
+        assert "is not available on this replica" in str(exc.value)
+    finally:
+        node2.query(f"SYSTEM START FETCHES {table}")
+        node3.query(f"SYSTEM START FETCHES {table}")
+        for node in NODES:
+            node.query(f"SYSTEM SYNC REPLICA {table}")
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
 @EXCHANGE_KINDS
