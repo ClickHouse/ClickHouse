@@ -4704,7 +4704,7 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
     for (size_t i = 0; i < column_names.size() - 1; i++) // Check if there is no any duplicates because it will lead to broken result
         if (column_names[i] == column_names[i+1])
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication)"
+                            "Name of columns and aliases should be unique for this query (you can add/change aliases to avoid duplication) "
                             "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 

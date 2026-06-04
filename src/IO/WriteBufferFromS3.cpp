@@ -195,11 +195,6 @@ void WriteBufferFromS3::preFinalize()
     else
     {
         writeMultipartUpload();
-        task_tracker->addFinal([this]()
-        {
-            if (completeMultipartUpload())
-                multipart_upload_finished = true;
-        });
     }
 }
 
@@ -223,6 +218,12 @@ void WriteBufferFromS3::finalizeImpl()
     task_tracker->waitAll();
 
     span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
+
+    if (!multipart_upload_id.empty())
+    {
+        completeMultipartUpload();
+        multipart_upload_finished = true;
+    }
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {
@@ -418,9 +419,8 @@ void WriteBufferFromS3::createMultipartUpload()
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
-    /// The storage class of an object uploaded in multiple parts is determined by the CreateMultipartUpload request;
-    /// it cannot be set on UploadPart or CompleteMultipartUpload. Without this, multipart uploads always end up with
-    /// the default STANDARD storage class regardless of the configured value. See https://github.com/ClickHouse/ClickHouse/issues/68551
+    /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
+    /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -618,7 +618,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     task_tracker->add(std::move(upload_worker));
 }
 
-bool WriteBufferFromS3::completeMultipartUpload()
+void WriteBufferFromS3::completeMultipartUpload()
 {
     LOG_TEST(limited_log, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
 
@@ -627,13 +627,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
-    for (const auto & tag : multipart_tags)
+    for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
+        const auto tag = multipart_tags.at(i);
         if (tag.empty())
-        {
-            // One of the earlier uploads failed.
-            return false;
-        }
+            throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
     }
 
     S3::CompleteMultipartUploadRequest req;
@@ -680,7 +680,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (outcome.IsSuccess())
         {
             LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
-            return true;
+            return;
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
