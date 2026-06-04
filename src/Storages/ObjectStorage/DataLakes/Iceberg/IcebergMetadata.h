@@ -34,15 +34,15 @@ namespace DB
 
 struct IcebergFileRecord
 {
-    Int64 snapshot_id;
-    Iceberg::FileContentType content;
+    Int64 snapshot_id = 0;
+    Iceberg::FileContentType content{};
     String file_path;
     String file_format;
-    Int64 record_count;
-    Int64 file_size_in_bytes;
+    Int64 record_count = 0;
+    Int64 file_size_in_bytes = 0;
     String partition;
-    Int32 schema_id;
-    Int64 sequence_number;
+    Int32 schema_id = 0;
+    Int64 sequence_number = 0;
     std::optional<Int32> sort_order_id;
     std::map<Int32, Int64> null_value_counts;
     std::map<Int32, Int64> column_sizes;
