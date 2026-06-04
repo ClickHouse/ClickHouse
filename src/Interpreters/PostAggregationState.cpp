@@ -86,8 +86,8 @@ std::string_view PostAggregationState::serializeByKey(
 
 AggregateDataPtr PostAggregationState::findOrCreateByState(std::string_view key)
 {
-    ByStates::LookupResult it;
-    bool inserted;
+    ByStates::LookupResult it = nullptr;
+    bool inserted = false;
     by_states.emplace(key, it, inserted);
 
     if (inserted)

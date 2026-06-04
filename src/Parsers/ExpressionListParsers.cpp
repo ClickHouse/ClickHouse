@@ -1196,33 +1196,31 @@ public:
                 return true;
             }
 
-            // TOTALS combinator
-            ParserKeyword totals_kw(Keyword::TOTALS);
-            bool totals_matched = totals_kw.ignore(
-                pos, expected);
+            // TOTALS and BY are combinators only when they follow an aggregate argument
+            // and only at most one of them can be applied to a single aggregate call.
+            const bool has_argument = !isCurrentElementEmpty() || !elements.empty();
+            const bool no_combinator_yet = !has_totals && !has_by;
 
-            if (totals_matched)
+            if (has_argument && no_combinator_yet)
             {
-                has_totals = true;
-                // if (!isCurrentElementEmpty()
-                //     || !elements.empty())
-                //     if (!mergeElement())
-                //         return false;
-            }
-
-            // BY combinator
-            ParserKeyword by_kw(Keyword::BY);
-            if (!has_totals
-                && by_kw.ignore(pos, expected))
-            {
-                has_by = true;
-                by_columns = make_intrusive<ASTExpressionList>();
-                if (!isCurrentElementEmpty()
-                    || !elements.empty())
-                    if (!mergeElement())
-                        return false;
-                action = Action::OPERAND;
-                return true;
+                ParserKeyword totals_kw(Keyword::TOTALS);
+                if (totals_kw.ignore(pos, expected))
+                {
+                    has_totals = true;
+                }
+                else
+                {
+                    ParserKeyword by_kw(Keyword::BY);
+                    if (by_kw.ignore(pos, expected))
+                    {
+                        has_by = true;
+                        by_columns = make_intrusive<ASTExpressionList>();
+                        if (!mergeElement())
+                            return false;
+                        action = Action::OPERAND;
+                        return true;
+                    }
+                }
             }
 
 
