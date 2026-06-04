@@ -52,6 +52,8 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Functions/FunctionFactory.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -934,6 +936,37 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
     replace_alias_columns_visitor.visit(query_tree_to_modify);
+
+    /// After inlining ALIAS columns, the projection may contain structurally
+    /// identical expressions (e.g. two ALIAS columns both defined as toString(x)).
+    /// The planner assigns action-node names by expression structure, so duplicates
+    /// get the same name and downstream deduplication shrinks the column count,
+    /// causing NUMBER_OF_COLUMNS_DOESNT_MATCH.  Wrap subsequent duplicates in
+    /// __actionName(expr, 'column_alias') which forces a unique action-node name.
+    auto * query_node_ptr = query_tree_to_modify->as<QueryNode>();
+    if (query_node_ptr)
+    {
+        auto & projection_nodes = query_node_ptr->getProjection().getNodes();
+        struct TreeHashHash { size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); } };
+        std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
+        auto action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
+
+        for (auto & proj_node : projection_nodes)
+        {
+            auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
+            if (!seen_hashes.emplace(tree_hash).second)
+            {
+                auto alias = proj_node->getAlias();
+                auto name_node = std::make_shared<ConstantNode>(alias);
+                auto wrapper = std::make_shared<FunctionNode>("__actionName");
+                wrapper->getArguments().getNodes().push_back(std::move(proj_node));
+                wrapper->getArguments().getNodes().push_back(std::move(name_node));
+                wrapper->resolveAsFunction(action_name_resolver);
+                wrapper->setAlias(alias);
+                proj_node = std::move(wrapper);
+            }
+        }
+    }
 
     const auto & settings = query_context->getSettingsRef();
 

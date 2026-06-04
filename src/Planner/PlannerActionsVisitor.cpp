@@ -198,7 +198,7 @@ public:
 
                     /// Empty node name is not allowed and leads to logical errors
                     if (result.empty())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal and should not be used directly");
                     break;
                 }
                 else if (function_node.getFunctionName() == "exists")
@@ -752,37 +752,10 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
 
     if (auto * expression_list_node = expression_node->as<ListNode>())
     {
-        auto & list_nodes = expression_list_node->getNodes();
-
-        for (size_t i = 0; i < list_nodes.size(); ++i)
+        for (auto & node : expression_list_node->getNodes())
         {
-            auto [node_name, _] = visitImpl(list_nodes[i]);
-            const auto * dag_node = actions_stack.front().getNodeOrThrow(node_name);
-
-            /// When two list items with different aliases resolve to the same DAG node
-            /// (e.g. two ALIAS columns expanding to the same expression in a Distributed
-            /// query), downstream code deduplicates outputs by name, shrinking the column
-            /// count.  Add an ALIAS node with a fresh name for the later occurrence so
-            /// that each item produces a distinct output.  Only do this when both items
-            /// carry different non-empty aliases — this avoids interfering with arrayJoin
-            /// or intentional duplicates like SELECT x, x.
-            const auto & current_alias = list_nodes[i]->getAlias();
-            if (!current_alias.empty())
-            {
-                for (size_t j = 0; j < i; ++j)
-                {
-                    if (result[j] == dag_node && list_nodes[j]->getAlias() != current_alias)
-                    {
-                        String unique_name = node_name + "_" + current_alias;
-                        while (actions_stack.front().containsNode(unique_name))
-                            unique_name += "_";
-                        dag_node = actions_stack.front().addAliasIfNecessary(unique_name, dag_node);
-                        break;
-                    }
-                }
-            }
-
-            result.push_back(dag_node);
+            auto [node_name, _] = visitImpl(node);
+            result.push_back(actions_stack.front().getNodeOrThrow(node_name));
         }
     }
     else
