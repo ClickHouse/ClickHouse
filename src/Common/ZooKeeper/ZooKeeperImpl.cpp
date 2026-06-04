@@ -78,20 +78,6 @@ namespace ProfileEvents
     extern const Event ZooKeeperWatchResponse;
     extern const Event ZooKeeperWatchCallbackDurationMicroseconds;
     extern const Event ZooKeeperWatchCallbackErrors;
-    extern const Event ZooKeeperWatchTriggeredOther;
-    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeQueue;
-    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
-    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
-    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
-    extern const Event ZooKeeperWatchTriggeredDistributedDDL;
-    extern const Event ZooKeeperWatchTriggeredKeeperMap;
-    extern const Event ZooKeeperWatchTriggeredReplicatedAccessControl;
-    extern const Event ZooKeeperWatchTriggeredUserDefinedSQLObjects;
-    extern const Event ZooKeeperWatchTriggeredBackupCoordination;
-    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
-    extern const Event ZooKeeperWatchTriggeredClusterDiscovery;
-    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
-    extern const Event ZooKeeperWatchTriggeredPartMovesBetweenShards;
 }
 
 namespace CurrentMetrics
@@ -1053,7 +1039,7 @@ void ZooKeeper::receiveEvent()
             const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
             auto event_type = watch_response.type;
-            auto trigger_watches = [&watch_response, this](auto & watches_container)
+            auto trigger_watches = [&watch_response](auto & watches_container)
             {
                 auto it = watches_container.find(watch_response.path);
                 if (it == watches_container.end())

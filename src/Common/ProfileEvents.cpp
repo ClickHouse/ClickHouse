@@ -324,19 +324,16 @@
     M(ZooKeeperWatchCallbackDurationMicroseconds, "Total time spent inside ZooKeeper watch callbacks (network thread).", ValueType::Microseconds) \
     M(ZooKeeperWatchCallbackErrors, "Number of exceptions thrown from ZooKeeper watch callbacks.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredOther, "Number of watch notifications dispatched to uncategorized callbacks.", ValueType::Number) \
-    M(ZooKeeperWatchTriggeredReplicatedMergeTreeQueue, "Number of watch notifications dispatched to ReplicatedMergeTree per-replica queue.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeLog, "Number of watch notifications dispatched to ReplicatedMergeTree log entries.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeMutations, "Number of watch notifications dispatched to ReplicatedMergeTree mutations.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection, "Number of watch notifications dispatched to ReplicatedMergeTree leader election / replica locks.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredDistributedDDL, "Number of watch notifications dispatched to DDLWorker queue.", ValueType::Number) \
-    M(ZooKeeperWatchTriggeredKeeperMap, "Number of watch notifications dispatched to StorageKeeperMap.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedAccessControl, "Number of watch notifications dispatched to ReplicatedAccessStorage.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredUserDefinedSQLObjects, "Number of watch notifications dispatched to UserDefinedSQLObjectsZooKeeperStorage.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredBackupCoordination, "Number of watch notifications dispatched to backup / restore coordination.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredObjectStorageQueue, "Number of watch notifications dispatched to ObjectStorageQueue / S3Queue.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredClusterDiscovery, "Number of watch notifications dispatched to ClusterDiscovery.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredMaterializedViewRefresh, "Number of watch notifications dispatched to MaterializedView refresh coordination.", ValueType::Number) \
-    M(ZooKeeperWatchTriggeredPartMovesBetweenShards, "Number of watch notifications dispatched to PartMovesBetweenShardsOrchestrator.", ValueType::Number) \
     M(ZooKeeperUserExceptions, "Number of exceptions while working with ZooKeeper related to the data (no node, bad version or similar).", ValueType::Number) \
     M(ZooKeeperHardwareExceptions, "Number of exceptions while working with ZooKeeper related to network (connection loss or similar).", ValueType::Number) \
     M(ZooKeeperOtherExceptions, "Number of exceptions while working with ZooKeeper other than ZooKeeperUserExceptions and ZooKeeperHardwareExceptions.", ValueType::Number) \
