@@ -170,7 +170,7 @@ public:
     template <typename Fn>
     void computeOnce(Fn && fn) const
     {
-        std::call_once(computed_flag, [&]() {
+        std::call_once(computed_flag, [&] {
             fn();
             computed = true;
         });

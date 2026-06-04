@@ -2772,7 +2772,7 @@ void Aggregator::computePostAggregationStates(AggregatedDataVariants & data_vari
     if (post_aggregation.empty())
         return;
 
-    post_aggregation.computeOnce([&]() {
+    post_aggregation.computeOnce([&] {
         Arena * keys_arena = data_variants.aggregates_pool;
 
         const bool two_level = data_variants.isTwoLevel();
