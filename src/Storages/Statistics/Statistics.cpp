@@ -66,6 +66,8 @@ namespace
 
 /// Wider integer type used to compute `(v - mn)` and `(mx - mn)` without overflow,
 /// before the result is converted to Float64.
+/// Int256/UInt256 have no wider type, so they are intentionally omitted here and
+/// fall back to the Float64 path in `interpolateLessLinear` instead.
 template <typename T> struct WiderIntType { using type = T; };
 template <> struct WiderIntType<UInt64>  { using type = UInt128; };
 template <> struct WiderIntType<Int64>   { using type = Int128; };
@@ -104,8 +106,8 @@ std::optional<Float64> StatisticsUtils::interpolateLessLinear(
             case Field::Types::Int64:   return interpolateLessLinearTyped<Int64>(val, min, max, row_count);
             case Field::Types::UInt128: return interpolateLessLinearTyped<UInt128>(val, min, max, row_count);
             case Field::Types::Int128:  return interpolateLessLinearTyped<Int128>(val, min, max, row_count);
-            case Field::Types::UInt256: return interpolateLessLinearTyped<UInt256>(val, min, max, row_count);
-            case Field::Types::Int256:  return interpolateLessLinearTyped<Int256>(val, min, max, row_count);
+            /// Int256/UInt256 have no wider type, so `(v - mn)` and `(mx - mn)` can overflow
+            /// inside `interpolateLessLinearTyped`. Fall through to the Float64 fallback below.
             case Field::Types::Float64: return interpolateLessLinearTyped<Float64>(val, min, max, row_count);
             default: break;
         }
