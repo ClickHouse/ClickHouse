@@ -20,7 +20,10 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <IO/NetUtils.h>
+#include <Core/UUID.h>
 #include <Common/assert_cast.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -232,6 +235,29 @@ void RecordBatchEncoder::encodeValues(const IColumn & column, const DataTypePtr 
         {
             const auto & cfs = assert_cast<const ColumnFixedString &>(column);
             appendBuffer(cfs.getChars().data(), cfs.getChars().size());
+            return;
+        }
+        case TypeIndex::IPv4: appendFixedWidth<ColumnVector<IPv4>>(*this, column, num_rows, buf); break;
+        case TypeIndex::Int128: appendFixedWidth<ColumnVector<Int128>>(*this, column, num_rows, buf); break;
+        case TypeIndex::UInt128: appendFixedWidth<ColumnVector<UInt128>>(*this, column, num_rows, buf); break;
+        case TypeIndex::Int256: appendFixedWidth<ColumnVector<Int256>>(*this, column, num_rows, buf); break;
+        case TypeIndex::UInt256: appendFixedWidth<ColumnVector<UInt256>>(*this, column, num_rows, buf); break;
+        case TypeIndex::IPv6: appendFixedWidth<ColumnVector<IPv6>>(*this, column, num_rows, buf); break;
+        case TypeIndex::Interval: appendFixedWidth<ColumnVector<Int64>>(*this, column, num_rows, buf); break;
+        case TypeIndex::UUID:
+        {
+            /// fixed_size_binary(16) with the two 64-bit halves byte-reversed, matching the library writer.
+            const auto & data = assert_cast<const ColumnVector<UUID> &>(column).getData();
+            PODArray<char> out(num_rows * 16);
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                UUID value = data[i];
+                auto * bytes = reinterpret_cast<uint8_t *>(&value);
+                std::reverse(bytes, bytes + 8);
+                std::reverse(bytes + 8, bytes + 16);
+                memcpy(out.data() + i * 16, bytes, 16);
+            }
+            appendBuffer(out.data(), out.size());
             return;
         }
         case TypeIndex::Array:

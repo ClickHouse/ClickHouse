@@ -113,6 +113,9 @@ struct ArrowSchema
 /// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
 ArrowSchema parseSchema(const flatbuf::Schema & schema);
 
+/// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
+bool isUUIDField(const ArrowField & field);
+
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
 {

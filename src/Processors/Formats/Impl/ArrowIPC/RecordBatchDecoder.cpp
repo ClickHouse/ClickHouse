@@ -14,6 +14,10 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/FloatUtils.h>
+#include <Core/UUID.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -169,7 +173,15 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             else if (type.float_precision == flatbuf::Precision_SINGLE)
                 fillFixed<ColumnFloat32>(*column, rows, values, 4);
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Native Arrow IPC reader does not support half-float yet");
+            {
+                /// half-float -> Float32
+                checkBufferSize(values, rows * sizeof(uint16_t), "half_float");
+                auto & data = assert_cast<ColumnFloat32 &>(*column).getData();
+                data.resize(rows);
+                const auto * src = reinterpret_cast<const uint16_t *>(values.ptr);
+                for (size_t i = 0; i < rows; ++i)
+                    data[i] = convertFloat16ToFloat32(src[i]);
+            }
             break;
         }
         case TypeKind::Bool:
@@ -225,6 +237,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             fillFixed<ColumnDecimal<DateTime64>>(*column, rows, values, 8);
             break;
         }
+        case TypeKind::Duration:
+        {
+            /// Maps to Interval (stored as Int64); the raw int64 count in the duration's unit.
+            const Slice values = nextBuffer();
+            fillFixed<ColumnInt64>(*column, rows, values, 8);
+            break;
+        }
         case TypeKind::Utf8:
         case TypeKind::Binary:
         case TypeKind::LargeUtf8:
@@ -271,6 +290,20 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows)
             const Slice values = nextBuffer();
             const size_t n = static_cast<size_t>(type.byte_width);
             checkBufferSize(values, rows * n, "fixed_size_binary");
+            if (isUUIDField(field))
+            {
+                /// 16 bytes per value, with the two 64-bit halves byte-reversed (matches the writer).
+                auto & data = assert_cast<ColumnVector<UUID> &>(*column).getData();
+                data.resize(rows);
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    auto * dst = reinterpret_cast<uint8_t *>(&data[i]);
+                    memcpy(dst, values.ptr + i * 16, 16);
+                    std::reverse(dst, dst + 8);
+                    std::reverse(dst + 8, dst + 16);
+                }
+                break;
+            }
             auto & fixed_column = assert_cast<ColumnFixedString &>(*column);
             auto & chars = fixed_column.getChars();
             chars.resize(rows * n);

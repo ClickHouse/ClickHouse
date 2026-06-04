@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -247,6 +248,17 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     return result;
 }
 
+bool isUUIDField(const ArrowField & field)
+{
+    if (field.type.kind != TypeKind::FixedSizeBinary || field.type.byte_width != 16)
+        return false;
+    auto it = field.custom_metadata.find("ARROW:extension:name");
+    if (it != field.custom_metadata.end() && it->second == "arrow.uuid")
+        return true;
+    auto logical = field.custom_metadata.find("PARQUET:logical_type");
+    return logical != field.custom_metadata.end() && logical->second == "UUID";
+}
+
 namespace
 {
 
@@ -396,6 +408,40 @@ buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const D
                 type_offset = flatbuf::CreateMap(b, false).Union();
                 break;
             }
+            case TypeIndex::IPv4:
+                make_int(32, false);
+                break;
+            case TypeIndex::UUID:
+            case TypeIndex::IPv6:
+            case TypeIndex::Int128:
+            case TypeIndex::UInt128:
+                type_type = flatbuf::Type_FixedSizeBinary;
+                type_offset = flatbuf::CreateFixedSizeBinary(b, 16).Union();
+                break;
+            case TypeIndex::Int256:
+            case TypeIndex::UInt256:
+                type_type = flatbuf::Type_FixedSizeBinary;
+                type_offset = flatbuf::CreateFixedSizeBinary(b, 32).Union();
+                break;
+            case TypeIndex::Interval:
+            {
+                const auto kind = assert_cast<const DataTypeInterval &>(*t).getKind().kind;
+                int unit = -1;
+                if (kind == IntervalKind::Kind::Second) unit = flatbuf::TimeUnit_SECOND;
+                else if (kind == IntervalKind::Kind::Millisecond) unit = flatbuf::TimeUnit_MILLISECOND;
+                else if (kind == IntervalKind::Kind::Microsecond) unit = flatbuf::TimeUnit_MICROSECOND;
+                else if (kind == IntervalKind::Kind::Nanosecond) unit = flatbuf::TimeUnit_NANOSECOND;
+                if (unit >= 0)
+                {
+                    type_type = flatbuf::Type_Duration;
+                    type_offset = flatbuf::CreateDuration(b, static_cast<flatbuf::TimeUnit>(unit)).Union();
+                }
+                else
+                {
+                    make_int(64, true);
+                }
+                break;
+            }
             default:
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
@@ -403,11 +449,21 @@ buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const D
         }
     }
 
+    /// UUID is an Arrow extension type over fixed_size_binary(16); flag it in the field metadata.
+    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::KeyValue>>> custom_metadata_off = 0;
+    if (isUUID(t))
+    {
+        std::vector<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
+        kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
+        kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString("")));
+        custom_metadata_off = b.CreateVector(kvs);
+    }
+
     auto name_off = b.CreateString(name);
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>>> children_off = 0;
     if (!children.empty())
         children_off = b.CreateVector(children);
-    return flatbuf::CreateField(b, name_off, nullable, type_type, type_offset, 0, children_off);
+    return flatbuf::CreateField(b, name_off, nullable, type_type, type_offset, 0, children_off, custom_metadata_off);
 }
 
 flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
@@ -600,7 +656,10 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
             result = std::make_shared<DataTypeString>();
             break;
         case TypeKind::FixedSizeBinary:
-            result = std::make_shared<DataTypeFixedString>(type.byte_width);
+            if (isUUIDField(field))
+                result = std::make_shared<DataTypeUUID>();
+            else
+                result = std::make_shared<DataTypeFixedString>(type.byte_width);
             break;
         case TypeKind::List:
         case TypeKind::LargeList:
