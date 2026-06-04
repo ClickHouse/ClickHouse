@@ -127,12 +127,16 @@ namespace
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_total",
         "Number of file segments evicted from a filesystem cache, labelled by cache name.",
-        {"cache_name"});
+        {"cache_name"},
+        {},
+        DimensionalMetrics::MetricType::Counter);
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_total",
         "Total bytes of file segments evicted from a filesystem cache, labelled by cache name.",
-        {"cache_name"});
+        {"cache_name"},
+        {},
+        DimensionalMetrics::MetricType::Counter);
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits",
@@ -147,12 +151,16 @@ namespace
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evictions_by_client_total",
         "Number of file segments evicted from a filesystem cache, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
+        {"cache_name", "client_id"},
+        {},
+        DimensionalMetrics::MetricType::Counter);
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evicted_bytes_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_bytes_by_client_total",
         "Total bytes of file segments evicted, additionally labelled by user id. Disabled by default; enable via `expose_prometheus_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
+        {"cache_name", "client_id"},
+        {},
+        DimensionalMetrics::MetricType::Counter);
 
     HistogramMetrics::MetricFamily & filesystem_cache_evicted_segment_hits_by_client = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits_by_client",
