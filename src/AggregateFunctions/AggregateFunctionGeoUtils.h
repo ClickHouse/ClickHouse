@@ -164,18 +164,6 @@ inline size_t countMultiPolygonPoints(const CartesianMultiPolygon & mp)
     return total;
 }
 
-inline void checkPolygonalStateBudget(size_t current_total, size_t adding, const char * function_name)
-{
-    if (adding > MAX_POINTS_IN_POLYGONAL_STATE - current_total)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Aggregate function {} state has too many points: {} + {} would exceed the limit of {}",
-            function_name,
-            current_total,
-            adding,
-            MAX_POINTS_IN_POLYGONAL_STATE);
-}
-
 /// Recompute the total point count of a polygonal state from its normalized chunks and
 /// re-enforce the budget. `boost::geometry::correct` (run during deserialization and the
 /// add path) can append closing points that were not charged when the count was first
@@ -196,19 +184,6 @@ inline size_t recountPolygonalPointsAndCheck(
             MAX_POINTS_IN_POLYGONAL_STATE);
     return total;
 }
-
-inline void checkConvexHullStateBudget(size_t current_total, size_t adding, const char * function_name)
-{
-    if (adding > MAX_POINTS_IN_CONVEX_HULL_STATE - current_total)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Aggregate function {} state has too many points: {} + {} would exceed the limit of {}",
-            function_name,
-            current_total,
-            adding,
-            MAX_POINTS_IN_CONVEX_HULL_STATE);
-}
-
 
 inline void serializeGeoRing(const CartesianRing & ring, WriteBuffer & buf)
 {
@@ -238,7 +213,7 @@ inline void serializeGeoMultiPolygon(const CartesianMultiPolygon & mp, WriteBuff
 
 inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_name, PolygonalStateBudget & budget)
 {
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, buf);
     if (size > MAX_POINTS_PER_RING)
         throw Exception(
@@ -260,8 +235,8 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
     ring.resize(size);
     for (UInt64 i = 0; i < size; ++i)
     {
-        Float64 x;
-        Float64 y;
+        Float64 x = 0;
+        Float64 y = 0;
         readBinaryLittleEndian(x, buf);
         readBinaryLittleEndian(y, buf);
         if (!std::isfinite(x) || !std::isfinite(y))
@@ -292,7 +267,7 @@ inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * fun
     CartesianPolygon poly;
     poly.outer() = deserializeGeoRing(buf, function_name, budget);
 
-    UInt64 inner_count;
+    UInt64 inner_count = 0;
     readVarUInt(inner_count, buf);
     if (inner_count > MAX_RINGS_PER_POLYGON)
         throw Exception(
@@ -312,7 +287,7 @@ inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * fun
 
 inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * function_name, PolygonalStateBudget & budget)
 {
-    UInt64 poly_count;
+    UInt64 poly_count = 0;
     readVarUInt(poly_count, buf);
     if (poly_count > MAX_POLYGONS_PER_MULTIPOLYGON)
         throw Exception(
