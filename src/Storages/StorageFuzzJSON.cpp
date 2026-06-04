@@ -21,9 +21,6 @@
 #include <Common/escapeString.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
-#if USE_RAPIDJSON
-#include <Common/JSONParsers/RapidJSONParser.h>
-#endif
 
 namespace DB
 {
@@ -68,20 +65,20 @@ JSONValue::Type JSONValue::getType(const JSONValue & v)
 {
     if (v.fixed)
     {
-        chassert(!v.array);
-        chassert(!v.object);
+        assert(!v.array);
+        assert(!v.object);
         return JSONValue::Type::Fixed;
     }
     if (v.array)
     {
-        chassert(!v.fixed);
-        chassert(!v.object);
+        assert(!v.fixed);
+        assert(!v.object);
         return JSONValue::Type::Array;
     }
     if (v.object)
     {
-        chassert(!v.fixed);
-        chassert(!v.array);
+        assert(!v.fixed);
+        assert(!v.array);
         return JSONValue::Type::Object;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to determine JSON node type.");
@@ -116,7 +113,7 @@ void traverse(const ParserImpl::Element & e, std::shared_ptr<JSONNode> node)
 {
     checkStackSize();
 
-    chassert(node);
+    assert(node);
 
     auto & val = node->value;
     if (e.isObject())
@@ -178,7 +175,7 @@ std::shared_ptr<JSONNode> parseJSON(const String & json)
 
 char generateRandomCharacter(pcg64 & rnd, const std::string_view & charset)
 {
-    chassert(!charset.empty());
+    assert(!charset.empty());
     auto idx = uniform(0, charset.size() - 1)(rnd);
     return charset[idx];
 }
@@ -468,7 +465,7 @@ void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const Storag
     fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
-class FuzzJSONSource final : public ISource
+class FuzzJSONSource : public ISource
 {
 public:
     FuzzJSONSource(
@@ -729,7 +726,6 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
     return configuration;
 }
 
-void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageFuzzJSON(StorageFactory & factory)
 {
     factory.registerStorage(

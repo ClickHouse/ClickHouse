@@ -21,7 +21,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -84,13 +83,8 @@ struct QueryState
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
-    /// Query text. Uses `StringWithMemoryTracking` so that the resize on
-    /// receive goes through the throwing memory-tracker path. A client
-    /// sending an oversized query body trips `MEMORY_LIMIT_EXCEEDED`
-    /// cleanly, rather than driving the server's RSS past
-    /// `max_server_memory_usage` via `allocNoThrow` and getting
-    /// cgroup-OOM-killed.
-    StringWithMemoryTracking query;
+    /// Query text.
+    String query;
     std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;

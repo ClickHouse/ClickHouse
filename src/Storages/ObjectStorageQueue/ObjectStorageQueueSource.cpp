@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -296,7 +295,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code = {};
+                Coordination::Error code;
                 zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
@@ -1024,8 +1023,6 @@ Chunk ObjectStorageQueueSource::generate()
     return chunk;
 }
 
-void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
-
 Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
@@ -1121,7 +1118,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1657,7 +1653,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code = {};
+    Coordination::Error code;
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {

@@ -7,7 +7,6 @@
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <base/scope_guard.h>
 
@@ -154,11 +153,10 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
@@ -260,9 +258,6 @@ private:
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
 
-    /// Thread pool used to parallelize `copyObjectToAnotherObjectStorage` calls.
-    std::shared_ptr<ThreadPool> copy_object_pool;
-
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
@@ -311,7 +306,7 @@ public:
 private:
     DiskObjectStoragePtr disk;
     UInt64 size;
-    UInt64 unreserved_space{};
+    UInt64 unreserved_space;
     CurrentMetrics::Increment metric_increment;
 };
 
