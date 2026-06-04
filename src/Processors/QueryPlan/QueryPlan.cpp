@@ -878,6 +878,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         *this = std::move(read_from_distributed);
         resources = std::move(preserved_resources);
 
+        /// In-memory exchanges (execute_locally) must outlive the executor: the result reader drains
+        /// final_result after the driver has finished. Remove them when the pipeline resources go away.
+        resources.custom_resources.emplace_back(makeInMemoryExchangesCleaner(object_storage_path));
+
         /// Add temporary files cleaner to the resources so that all temporary files are removed after the pipeline is executed
         if (final_result_exchange.kind == ExchangeDescription::Kind::Persisted)
             all_temporary_files_for_cleanup.push_back(result_stream_id.toString());

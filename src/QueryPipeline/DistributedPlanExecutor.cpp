@@ -251,8 +251,10 @@ public:
         return element;
     }
 
-    /// Cancel every exchange of the query (so waiting tasks unblock) and drop them from the registry.
-    void cancelAndRemoveQuery(const String & query_id)
+    /// Cancel every exchange of the query so waiting tasks unblock. The exchanges stay in the
+    /// registry so a result reader that looks one up afterwards still finds the produced chunks and
+    /// their end-of-data marker; removeQuery drops them once the whole query pipeline is destroyed.
+    void cancelQuery(const String & query_id)
     {
         std::lock_guard lock(mutex);
         auto it = exchanges_by_query_id.find(query_id);
@@ -260,7 +262,13 @@ public:
             return;
         for (auto & [_, exchange] : it->second)
             exchange->cancel();
-        exchanges_by_query_id.erase(it);
+    }
+
+    /// Drop the query's exchanges from the registry. Called when the query pipeline is destroyed.
+    void removeQuery(const String & query_id)
+    {
+        std::lock_guard lock(mutex);
+        exchanges_by_query_id.erase(query_id);
     }
 
     static std::shared_ptr<InMemoryExchanges> instance()
@@ -442,6 +450,35 @@ private:
 std::shared_ptr<ICustomResourceHolder> makeTemporaryFilesCleaner(ObjectStoragePtr object_storage_, const String & object_storage_path_, const Strings & temporary_files_)
 {
     return std::make_shared<TemporaryFilesInObjectStorageCleaner>(object_storage_, object_storage_path_, temporary_files_);
+}
+
+/// Removes the query's in-memory exchanges from the registry when the query pipeline is destroyed.
+/// Their lifetime spans the whole pipeline because the result reader drains final_result after the
+/// executor (the driver) has finished, so removal cannot be tied to the executor's completion.
+class InMemoryExchangesCleaner : public ICustomResourceHolder
+{
+public:
+    explicit InMemoryExchangesCleaner(String query_id_) : query_id(std::move(query_id_)) {}
+
+    ~InMemoryExchangesCleaner() override
+    {
+        try
+        {
+            InMemoryExchanges::instance()->removeQuery(query_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+private:
+    const String query_id;
+};
+
+std::shared_ptr<ICustomResourceHolder> makeInMemoryExchangesCleaner(const String & query_id)
+{
+    return std::make_shared<InMemoryExchangesCleaner>(query_id);
 }
 
 TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storage_, const String & object_storage_path_,
@@ -673,9 +710,11 @@ public:
 
     void cleanup() override
     {
-        /// Cancel the query's in-memory exchanges before waiting for the detached task threads,
-        /// or a task stuck in InMemoryExchange::getChunk never returns. Also drops them from the registry.
-        InMemoryExchanges::instance()->cancelAndRemoveQuery(getTemporaryFilesPath(toString(unique_query_id), context));
+        /// Cancel the query's in-memory exchanges before waiting for the detached task threads, or a
+        /// task stuck in InMemoryExchange::getChunk never returns. The exchanges are not removed here:
+        /// the result reader still drains final_result after the driver finishes; removal happens when
+        /// the query pipeline is destroyed (see makeInMemoryExchangesCleaner).
+        InMemoryExchanges::instance()->cancelQuery(getTemporaryFilesPath(toString(unique_query_id), context));
 
         for (auto & [_, tasks] : stage_tasks)
             for (auto & task : tasks)

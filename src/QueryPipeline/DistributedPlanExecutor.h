@@ -125,4 +125,7 @@ class ICustomResourceHolder;
 std::shared_ptr<ICustomResourceHolder> makeTemporaryFilesCleaner(ObjectStoragePtr object_storage_, const String & object_storage_path_,
     const Strings & temporary_files_);
 
+/// Helper to drop the query's in-memory exchanges once the query pipeline is destroyed.
+std::shared_ptr<ICustomResourceHolder> makeInMemoryExchangesCleaner(const String & query_id);
+
 }
