@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <unordered_set>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -339,18 +340,43 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
 
     if (group_expression_list)
     {
+        // The output of AGGREGATE is the grouping columns followed by the aggregate
+        // expressions. A grouping expression is only prepended when its result is not
+        // already present in the user-provided projection, so that
+        //   AGGREGATE number % 2 AS k, count() AS c GROUP BY number % 2
+        // produces `number % 2 AS k, count() AS c` instead of duplicating `number % 2`.
+        // A projection expression is matched both by its output name (the alias, e.g.
+        // `GROUP BY k`) and by its alias-less form (the expression, e.g. `GROUP BY number % 2`).
+        std::unordered_set<String> projected;
+        for (const auto & expr : select_expression_list->children)
+        {
+            projected.insert(expr->getAliasOrColumnName());
+            projected.insert(expr->getColumnNameWithoutAlias());
+        }
+
         // new vector created in order to preserve order SELECT <group_cols>, <agg_expr>
         ASTs prepended_grouping_cols;
+        auto prepend_if_absent = [&](const ASTPtr & expr)
+        {
+            if (projected.contains(expr->getAliasOrColumnName()) || projected.contains(expr->getColumnNameWithoutAlias()))
+                return;
+
+            prepended_grouping_cols.push_back(expr->clone());
+            // Record the prepended column so a repeated grouping expression is not prepended twice.
+            projected.insert(expr->getAliasOrColumnName());
+            projected.insert(expr->getColumnNameWithoutAlias());
+        };
+
         if (query.group_by_with_grouping_sets)
         {
             for (const auto & grouping_set : group_expression_list->children)
                 for (const auto & expr : grouping_set->children)
-                    prepended_grouping_cols.push_back(expr->clone());
+                    prepend_if_absent(expr);
         }
         else
         {
             for (const auto & expr : group_expression_list->children)
-                prepended_grouping_cols.push_back(expr->clone());
+                prepend_if_absent(expr);
         }
 
         for (const auto & expr : select_expression_list->children)
