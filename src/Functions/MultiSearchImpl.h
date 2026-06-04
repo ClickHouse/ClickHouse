@@ -101,7 +101,9 @@ struct MultiSearchImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            needles.reserve(needles_offsets[i] - prev_needles_offset);
+            size_t needles_count = needles_offsets[i] - prev_needles_offset;
+            checkMultiSearchNeedlesLimit(name, needles_count);
+            needles.reserve(needles_count);
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
                 needles.emplace_back(needles_data_string.getDataAt(j));

@@ -14,6 +14,24 @@ Granules: 6/6
 Granules: 2/6
 -- the index is recognized by force_data_skipping_indices
 3
+-- negation stays correct but cannot prune: the index proves a token is present, never that it is absent
+2	Well, Hello World!
+3	Good Weather!
+4	Say Hello!
+6	True World Champion
+2	Well, Hello World!
+3	Good Weather!
+4	Say Hello!
+6	True World Champion
+-- the "= 0" comparison form negates identically
+2	Well, Hello World!
+3	Good Weather!
+4	Say Hello!
+6	True World Champion
+Granules: 6/6
+Granules: 6/6
+-- the index is still recognized by force_data_skipping_indices (it is read, just prunes nothing)
+4
 -- a catch-all pattern disables pruning, but results stay correct
 1	Well, Hello ClickHouse!
 2	Well, Hello World!

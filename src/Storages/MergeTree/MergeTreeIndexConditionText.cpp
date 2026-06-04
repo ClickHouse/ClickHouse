@@ -570,13 +570,10 @@ std::vector<VectorWithMemoryTracking<String>> MergeTreeIndexConditionText::regex
         }
     }
 
-    for (const auto & tokens : tokens_for_queries)
-    {
-        /// An element that tokenizes to nothing cannot be proven present by the index.
-        /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
-        if (tokens.empty())
-            return {};
-    }
+    /// An element that tokenizes to nothing cannot be proven present by the index.
+    /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
+    if (std::ranges::any_of(tokens_for_queries, [](const auto & tokens) { return tokens.empty(); }))
+        return {};
 
     return tokens_for_queries;
 }

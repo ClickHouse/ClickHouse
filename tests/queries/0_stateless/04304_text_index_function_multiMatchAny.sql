@@ -45,6 +45,25 @@ WHERE explain LIKE '%Granules: %';
 SELECT '-- the index is recognized by force_data_skipping_indices';
 SELECT count() FROM tab WHERE multiMatchAny(str, ['OLAP', 'World']) SETTINGS force_data_skipping_indices = 'inv_idx';
 
+SELECT '-- negation stays correct but cannot prune: the index proves a token is present, never that it is absent';
+SELECT * FROM tab WHERE NOT multiMatchAny(str, ['Hello ClickHouse', 'OLAP']) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT * FROM tab WHERE NOT multiMatchAny(str, ['Hello ClickHouse', 'OLAP']) ORDER BY id SETTINGS use_skip_indexes = 1;
+
+SELECT '-- the "= 0" comparison form negates identically';
+SELECT * FROM tab WHERE multiMatchAny(str, ['Hello ClickHouse', 'OLAP']) = 0 ORDER BY id SETTINGS use_skip_indexes = 1;
+
+-- No granules are pruned for a negated predicate (6/6), unlike the positive predicate (2/6)
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tab WHERE NOT multiMatchAny(str, ['Hello ClickHouse', 'OLAP']) ORDER BY id
+)
+WHERE explain LIKE '%Granules: %';
+
+SELECT '-- the index is still recognized by force_data_skipping_indices (it is read, just prunes nothing)';
+SELECT count() FROM tab WHERE NOT multiMatchAny(str, ['Hello ClickHouse', 'OLAP']) SETTINGS force_data_skipping_indices = 'inv_idx';
+
 SELECT '-- a catch-all pattern disables pruning, but results stay correct';
 SELECT * FROM tab WHERE multiMatchAny(str, ['OLAP', '.*']) ORDER BY id SETTINGS use_skip_indexes = 0;
 SELECT * FROM tab WHERE multiMatchAny(str, ['OLAP', '.*']) ORDER BY id SETTINGS use_skip_indexes = 1;

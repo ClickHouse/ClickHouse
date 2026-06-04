@@ -64,6 +64,25 @@ FROM
 )
 WHERE explain LIKE '%Granules: %';
 
+SELECT '-- negation stays correct but cannot prune: the index proves a token is present, never that it is absent';
+SELECT * FROM tab WHERE NOT multiSearchAny(str, ['ClickHouse', 'World']) ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT * FROM tab WHERE NOT multiSearchAny(str, ['ClickHouse', 'World']) ORDER BY id SETTINGS use_skip_indexes = 1;
+
+SELECT '-- the "= 0" comparison form negates identically';
+SELECT * FROM tab WHERE multiSearchAny(str, ['ClickHouse', 'World']) = 0 ORDER BY id SETTINGS use_skip_indexes = 1;
+
+-- No granules are pruned for a negated predicate (6/6), unlike the positive predicate (3/6)
+SELECT trim(explain)
+FROM
+(
+    EXPLAIN PLAN indexes = 1
+    SELECT * FROM tab WHERE NOT multiSearchAny(str, ['ClickHouse', 'World']) ORDER BY id
+)
+WHERE explain LIKE '%Granules: %';
+
+SELECT '-- the index is still recognized by force_data_skipping_indices (it is read, just prunes nothing)';
+SELECT count() FROM tab WHERE NOT multiSearchAny(str, ['ClickHouse', 'World']) SETTINGS force_data_skipping_indices = 'inv_idx';
+
 SELECT '-- an empty needle array is always false';
 SELECT count() FROM tab WHERE multiSearchAny(str, CAST([], 'Array(String)')) SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE multiSearchAny(str, CAST([], 'Array(String)')) SETTINGS use_skip_indexes = 1;

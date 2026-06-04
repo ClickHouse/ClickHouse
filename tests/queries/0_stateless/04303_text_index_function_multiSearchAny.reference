@@ -27,6 +27,21 @@ Granules: 0/6
 4	Say Hello !
 Granules: 6/6
 Granules: 3/6
+-- negation stays correct but cannot prune: the index proves a token is present, never that it is absent
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+-- the "= 0" comparison form negates identically
+3	Good Weather !
+4	Say Hello !
+5	Its An OLAP Database
+Granules: 6/6
+Granules: 6/6
+-- the index is still recognized by force_data_skipping_indices (it is read, just prunes nothing)
+3
 -- an empty needle array is always false
 0
 0
