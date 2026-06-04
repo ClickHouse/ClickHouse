@@ -566,3 +566,33 @@ SELECT 'case15_new_insert';
 SELECT * FROM t_skip_empty_alter_default ORDER BY key;
 
 DROP TABLE t_skip_empty_alter_default;
+
+-- ============================================================================
+-- CASE 16: Enum column whose first declared value is not the zero value.
+-- Inserting 'zero' (value 0) produces an all-zero column, but the type-default
+-- (IDataType::insertDefaultInto) is the first declared value 'neg' (value -1).
+-- Such a column must NOT be skipped, otherwise the read path would fill it with
+-- 'neg' and return wrong data.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_enum;
+
+CREATE TABLE t_skip_empty_enum
+(
+    key UInt64,
+    a UInt64,
+    e Enum8('neg' = -1, 'zero' = 0, 'pos' = 1)
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- e = 'zero' has all-zero bytes but must not be skipped (type-default is 'neg').
+INSERT INTO t_skip_empty_enum (key, a, e) VALUES (1, 100, 'zero');
+
+SELECT 'case16_enum';
+SELECT key, a, e FROM t_skip_empty_enum ORDER BY key;
+
+DROP TABLE t_skip_empty_enum;

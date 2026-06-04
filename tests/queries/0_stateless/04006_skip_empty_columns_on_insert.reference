@@ -87,3 +87,5 @@ case15_post_alter
 case15_new_insert
 1	100	0
 2	200	0
+case16_enum
+1	100	zero

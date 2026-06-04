@@ -645,6 +645,13 @@ Block MergeTreeDataWriter::mergeBlock(
 /// Columns with DEFAULT/MATERIALIZED/ALIAS expressions are never skipped:
 /// the read path would evaluate the expression instead of returning the
 /// type-default that was explicitly inserted.
+/// Columns whose IDataType default does not coincide with the column's
+/// own default representation are never skipped either: on read a missing
+/// column is filled via IDataType::insertDefaultInto, so skipping would
+/// change the values. For example Enum8('neg' = -1, 'zero' = 0) stores an
+/// all-zero column for 'zero', but insertDefaultInto inserts the first
+/// declared value 'neg', so reading back the skipped column would return
+/// 'neg' instead of the inserted 'zero'.
 /// Patch parts are excluded — they require all columns for lightweight UPDATE.
 /// If every removable column is empty, the smallest one is kept so that the
 /// part still has at least one physical column.
@@ -661,14 +668,23 @@ static void skipEmptyColumnsOnInsert(
 
     const auto & columns_description = metadata_snapshot->getColumns();
     NameSet empty_columns;
-    for (const auto & [col_name, _type] : columns)
+    for (const auto & [col_name, type] : columns)
     {
         auto col_default = columns_description.getDefault(col_name);
         if (col_default && col_default->expression)
             continue;
         const auto & col_data = block.getByName(col_name);
-        if (col_data.column->hasOnlyTypeDefaults())
-            empty_columns.insert(col_name);
+        if (!col_data.column->hasOnlyTypeDefaults())
+            continue;
+        /// Only skip when the read path can reconstruct the values exactly:
+        /// a missing column is filled via IDataType::insertDefaultInto, which
+        /// must produce a value that is itself a type-default (this is not the
+        /// case for e.g. Enum types whose first declared value is not zero).
+        auto default_sample = type->createColumn();
+        type->insertDefaultInto(*default_sample);
+        if (!default_sample->isDefaultAt(0))
+            continue;
+        empty_columns.insert(col_name);
     }
     if (empty_columns.empty())
         return;
