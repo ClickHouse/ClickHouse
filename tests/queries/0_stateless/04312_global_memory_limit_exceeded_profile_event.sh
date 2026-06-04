@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-${CLICKHOUSE_LOCAL} --ignore-error --multiquery -- --max_server_memory_usage=1Gi 2>/dev/null <<'EOF'
+${CLICKHOUSE_LOCAL} --ignore-error --multiquery -- --max_server_memory_usage=0 2>/dev/null <<'EOF'
 SELECT number
 FROM system.numbers
 GROUP BY number
