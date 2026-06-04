@@ -3043,7 +3043,7 @@ class FakePrefetchPool : public PrefetchThreadPool
 {
 public:
     FakePrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> /*task*/) override
+    std::shared_ptr<PrefetchHandle> submit(std::function<Rope()> /*task*/) override
     {
         return nullptr;
     }
@@ -3056,7 +3056,7 @@ class SyncPrefetchPool : public PrefetchThreadPool
 {
 public:
     SyncPrefetchPool() : PrefetchThreadPool(NoWorkers{}) {}
-    std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task) override
+    std::shared_ptr<PrefetchHandle> submit(std::function<Rope()> task) override
     {
         return makeCompletedHandleForTest(task());
     }

@@ -735,7 +735,7 @@ void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
 {
     abandoned_prefetches.erase(
         std::remove_if(abandoned_prefetches.begin(), abandoned_prefetches.end(),
-            [this, wait_finished](std::unique_ptr<PrefetchHandle> & h)
+            [this, wait_finished](std::shared_ptr<PrefetchHandle> & h)
             {
                 if (!wait_finished && !h->isFinished())
                     return false;

@@ -51,16 +51,24 @@ public:
 private:
     friend class PrefetchThreadPool;
 
-    struct SharedState
+    /// Passkey: only `PrefetchThreadPool` can mint the tag, so only it can
+    /// construct handles - yet the ctor is public enough for `make_shared`,
+    /// which a plain private ctor + friendship would not allow.
+    struct ConstructTag
     {
-        std::atomic<State> state{State::Queued};
-        std::promise<Rope> promise;
+        explicit ConstructTag() = default;
     };
 
-    PrefetchHandle(std::shared_ptr<SharedState> shared_, std::future<Rope> future_)
-        : shared(std::move(shared_)), future(std::move(future_)) {}
+public:
+    /// The worker thread and the submitter share ownership of this one object
+    /// (the worker captures a `shared_ptr` to it), so the task's result and
+    /// cancellation state live here rather than in a separate heap allocation.
+    /// `future` is wired to `promise` at construction.
+    explicit PrefetchHandle(ConstructTag) : future(promise.get_future()) {}
 
-    std::shared_ptr<SharedState> shared;
+private:
+    std::atomic<State> current_state{State::Queued};
+    std::promise<Rope> promise;
     std::future<Rope> future;
 };
 
@@ -83,14 +91,14 @@ public:
     ///
     /// Virtual so tests can install a mock that controls timing (e.g. drop
     /// every submission) without spinning up real workers.
-    virtual std::unique_ptr<PrefetchHandle> submit(std::function<Rope()> task);
+    virtual std::shared_ptr<PrefetchHandle> submit(std::function<Rope()> task);
 
     /// Test-only factory: build a `Done`-state `PrefetchHandle` from a
     /// precomputed `Rope`. Lets tests exercise the prefetch-consume path
     /// deterministically without spinning up real worker threads. Required
-    /// because `PrefetchHandle`'s ctor is private and only friend with
-    /// `PrefetchThreadPool` — a subclass mock can't construct handles directly.
-    static std::unique_ptr<PrefetchHandle> makeCompletedHandleForTest(Rope rope);
+    /// because `PrefetchHandle` can only be constructed via the pool's
+    /// passkey — a subclass mock can't construct handles directly.
+    static std::shared_ptr<PrefetchHandle> makeCompletedHandleForTest(Rope rope);
 
 protected:
     /// Test-only constructor: skips ThreadPool initialization so a mock

@@ -316,7 +316,7 @@ private:
     /// Single source of truth for "is there a prefetch scheduled":
     /// `prefetch_handle != nullptr`. `prefetch_range` is only meaningful when
     /// the handle is non-null.
-    std::unique_ptr<PrefetchHandle> prefetch_handle;
+    std::shared_ptr<PrefetchHandle> prefetch_handle;
     ByteRange prefetch_range;
     /// `stats.prefetch_issued_*` snapshot taken when the in-flight prefetch was
     /// submitted. On a discard of a running prefetch, the delta since the snapshot
@@ -335,7 +335,7 @@ private:
     /// Cancelled prefetches whose worker may still be inside the pool job
     /// slot. The destructor waits on each; running calls sweep finished ones
     /// to keep the vector bounded under seek-heavy workloads.
-    VectorWithMemoryTracking<std::unique_ptr<PrefetchHandle>> abandoned_prefetches;
+    VectorWithMemoryTracking<std::shared_ptr<PrefetchHandle>> abandoned_prefetches;
     /// Set when the source returned fewer bytes than requested AND the
     /// total file size is unknown — in that mode the short return IS the
     /// EOF marker. `readNextWindow` consults this so a subsequent call
