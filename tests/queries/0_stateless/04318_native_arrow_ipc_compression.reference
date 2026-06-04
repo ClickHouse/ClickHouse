@@ -1,0 +1,6 @@
+lz4_frame writer=1 reader=1: OK
+lz4_frame writer=1 reader=0: OK
+lz4_frame writer=0 reader=1: OK
+zstd writer=1 reader=1: OK
+zstd writer=1 reader=0: OK
+zstd writer=0 reader=1: OK

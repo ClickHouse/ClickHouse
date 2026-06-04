@@ -5,10 +5,13 @@
 #if USE_ARROW
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
+#include <Processors/Formats/Impl/ArrowIPC/BufferCompression.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <Common/PODArray.h>
+
+#include <optional>
 
 namespace DB::ArrowIPC
 {
@@ -28,6 +31,8 @@ public:
         std::vector<flatbuf::Buffer> buffers;
         PODArray<char> body;
         int64_t num_rows = 0;
+        /// Set when the body buffers were compressed; the writer then adds a BodyCompression to the batch.
+        std::optional<CompressionCodec> codec;
     };
 
     EncodedBatch encode(const Columns & columns, const DataTypes & types, size_t num_rows);
@@ -44,7 +49,7 @@ private:
     int64_t appendValidity(const IColumn * null_map_column, size_t num_rows);
     void appendOffsets(const IColumn::Offsets & ch_offsets, size_t num_rows);
 
-    [[maybe_unused]] const FormatSettings & settings;
+    const FormatSettings & settings;
     std::vector<flatbuf::FieldNode> nodes;
     std::vector<flatbuf::Buffer> buffers;
     PODArray<char> body;

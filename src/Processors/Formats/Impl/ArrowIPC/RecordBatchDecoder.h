@@ -71,13 +71,17 @@ private:
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, int64_t null_count) const;
     ColumnPtr readOffsetsAndChild(const ArrowField & field, size_t rows, bool large);
 
+    void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body);
+
     const ArrowSchema & schema;
     const FormatSettings & settings;
     const DictionaryRegistry & registry;
 
     /// State valid only during a single decode call.
     const flatbuf::RecordBatch * current_batch = nullptr;
-    const PODArray<char> * current_body = nullptr;
+    /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
+    std::vector<Slice> buffer_slices;
+    PODArray<char> decompressed_body;
     size_t node_index = 0;
     size_t buffer_index = 0;
 };

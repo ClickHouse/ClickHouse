@@ -2,6 +2,8 @@
 
 #if USE_ARROW
 
+#include <Processors/Formats/Impl/ArrowIPC/BufferCompression.h>
+#include <IO/NetUtils.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -58,22 +60,9 @@ const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
 
 RecordBatchDecoder::Slice RecordBatchDecoder::nextBuffer()
 {
-    const auto * buffers = current_batch->buffers();
-    if (!buffers || buffer_index >= buffers->size())
+    if (buffer_index >= buffer_slices.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer buffers than the schema requires");
-
-    const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(buffer_index++));
-    const int64_t offset = buffer->offset();
-    const int64_t length = buffer->length();
-    const int64_t body_size = static_cast<int64_t>(current_body->size());
-
-    if (offset < 0 || length < 0 || offset > body_size || length > body_size - offset)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Arrow IPC buffer (offset {}, length {}) is out of the message body of size {}",
-            offset, length, body_size);
-
-    return Slice{current_body->data() + offset, length};
+    return buffer_slices[buffer_index++];
 }
 
 namespace
@@ -479,13 +468,10 @@ ColumnPtr RecordBatchDecoder::decodeField(const ArrowField & field)
 std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns(
     const flatbuf::RecordBatch & batch, const PODArray<char> & body, const std::vector<ArrowField> & fields)
 {
-    if (batch.compression() != nullptr)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compressed Arrow IPC bodies are not supported by the native reader yet");
-
     current_batch = &batch;
-    current_body = &body;
     node_index = 0;
     buffer_index = 0;
+    prepareBuffers(batch, body);
 
     std::vector<DecodedColumn> result;
     result.reserve(fields.size());
@@ -500,8 +486,90 @@ std::vector<RecordBatchDecoder::DecodedColumn> RecordBatchDecoder::decodeColumns
     }
 
     current_batch = nullptr;
-    current_body = nullptr;
+    buffer_slices.clear();
     return result;
+}
+
+void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body)
+{
+    buffer_slices.clear();
+    decompressed_body.clear();
+
+    const auto * buffers = batch.buffers();
+    const size_t num_buffers = buffers ? buffers->size() : 0;
+    const int64_t body_size = static_cast<int64_t>(body.size());
+
+    auto validate = [&](int64_t offset, int64_t length)
+    {
+        if (offset < 0 || length < 0 || offset > body_size || length > body_size - offset)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC buffer (offset {}, length {}) is out of the message body of size {}", offset, length, body_size);
+    };
+
+    if (batch.compression() == nullptr)
+    {
+        buffer_slices.reserve(num_buffers);
+        for (size_t i = 0; i < num_buffers; ++i)
+        {
+            const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
+            validate(buffer->offset(), buffer->length());
+            buffer_slices.push_back(Slice{body.data() + buffer->offset(), buffer->length()});
+        }
+        return;
+    }
+
+    /// Compressed body: each non-empty buffer is an 8-byte little-endian uncompressed length followed
+    /// by the compressed bytes (or, when the length is -1, the bytes stored uncompressed).
+    const auto codec = batch.compression()->codec() == flatbuf::CompressionType_ZSTD
+        ? CompressionCodec::Zstd : CompressionCodec::Lz4Frame;
+
+    std::vector<std::pair<size_t, size_t>> placements; /// (offset in decompressed_body, length)
+    placements.reserve(num_buffers);
+    for (size_t i = 0; i < num_buffers; ++i)
+    {
+        const auto * buffer = buffers->Get(static_cast<flatbuffers::uoffset_t>(i));
+        validate(buffer->offset(), buffer->length());
+        const char * src = body.data() + buffer->offset();
+        const int64_t length = buffer->length();
+
+        while (decompressed_body.size() % 8 != 0)
+            decompressed_body.push_back('\0');
+        const size_t dst_offset = decompressed_body.size();
+
+        if (length == 0)
+        {
+            placements.emplace_back(dst_offset, 0);
+            continue;
+        }
+        if (length < 8)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is too small for its length prefix");
+
+        int64_t uncompressed_length;
+        memcpy(&uncompressed_length, src, sizeof(uncompressed_length));
+        uncompressed_length = DB::fromLittleEndian(uncompressed_length);
+
+        if (uncompressed_length < 0)
+        {
+            /// Stored uncompressed.
+            const size_t len = static_cast<size_t>(length - 8);
+            decompressed_body.resize(dst_offset + len);
+            memcpy(decompressed_body.data() + dst_offset, src + 8, len);
+            placements.emplace_back(dst_offset, len);
+        }
+        else
+        {
+            decompressed_body.resize(dst_offset + static_cast<size_t>(uncompressed_length));
+            decompressBuffer(
+                codec, src + 8, static_cast<size_t>(length - 8),
+                decompressed_body.data() + dst_offset, static_cast<size_t>(uncompressed_length));
+            placements.emplace_back(dst_offset, static_cast<size_t>(uncompressed_length));
+        }
+    }
+
+    buffer_slices.reserve(placements.size());
+    for (const auto & [offset, length] : placements)
+        buffer_slices.push_back(Slice{decompressed_body.data() + offset, static_cast<int64_t>(length)});
 }
 
 std::vector<RecordBatchDecoder::DecodedColumn>

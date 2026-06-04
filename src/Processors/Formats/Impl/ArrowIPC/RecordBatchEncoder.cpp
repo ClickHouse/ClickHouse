@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <IO/NetUtils.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -329,10 +330,66 @@ RecordBatchEncoder::EncodedBatch RecordBatchEncoder::encode(const Columns & colu
         body.push_back('\0');
 
     EncodedBatch result;
-    result.nodes = std::move(nodes);
-    result.buffers = std::move(buffers);
-    result.body = std::move(body);
     result.num_rows = static_cast<int64_t>(num_rows);
+
+    if (settings.arrow.output_compression_method == FormatSettings::ArrowCompression::NONE)
+    {
+        result.nodes = std::move(nodes);
+        result.buffers = std::move(buffers);
+        result.body = std::move(body);
+    }
+    else
+    {
+        const auto codec = settings.arrow.output_compression_method == FormatSettings::ArrowCompression::ZSTD
+            ? CompressionCodec::Zstd : CompressionCodec::Lz4Frame;
+        const int level = codec == CompressionCodec::Zstd ? 1 : 0;
+        result.codec = codec;
+        result.nodes = std::move(nodes);
+
+        /// Each buffer becomes an 8-byte little-endian uncompressed length followed by the compressed
+        /// bytes; if compression does not shrink it, store it uncompressed with a -1 length prefix.
+        for (const auto & buffer : buffers)
+        {
+            const char * src = body.data() + buffer.offset();
+            const size_t len = static_cast<size_t>(buffer.length());
+
+            while (result.body.size() % 8 != 0)
+                result.body.push_back('\0');
+            const size_t dst_offset = result.body.size();
+
+            if (len == 0)
+            {
+                result.buffers.emplace_back(static_cast<int64_t>(dst_offset), 0);
+                continue;
+            }
+
+            auto compressed = compressBuffer(codec, src, len, level);
+            int64_t prefix;
+            const char * payload;
+            size_t payload_size;
+            if (compressed.size() < len)
+            {
+                prefix = DB::toLittleEndian(static_cast<int64_t>(len));
+                payload = compressed.data();
+                payload_size = compressed.size();
+            }
+            else
+            {
+                prefix = DB::toLittleEndian(static_cast<int64_t>(-1));
+                payload = src;
+                payload_size = len;
+            }
+
+            const size_t total = sizeof(int64_t) + payload_size;
+            result.body.resize(dst_offset + total);
+            memcpy(result.body.data() + dst_offset, &prefix, sizeof(prefix));
+            memcpy(result.body.data() + dst_offset + sizeof(int64_t), payload, payload_size);
+            result.buffers.emplace_back(static_cast<int64_t>(dst_offset), static_cast<int64_t>(total));
+        }
+        while (result.body.size() % 8 != 0)
+            result.body.push_back('\0');
+    }
+
     nodes = {};
     buffers = {};
     body = {};

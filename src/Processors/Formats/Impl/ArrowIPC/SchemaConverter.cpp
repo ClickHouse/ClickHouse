@@ -418,7 +418,14 @@ flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
     for (size_t i = 0; i < names.size(); ++i)
         field_offsets.push_back(buildField(builder, names[i], types[i], settings));
     auto fields_vec = builder.CreateVector(field_offsets);
-    return flatbuf::CreateSchema(builder, flatbuf::Endianness_Little, fields_vec, 0, 0);
+
+    flatbuffers::Offset<flatbuffers::Vector<int64_t>> features = 0;
+    if (settings.arrow.output_compression_method != FormatSettings::ArrowCompression::NONE)
+    {
+        const std::vector<int64_t> feature_list{flatbuf::Feature_COMPRESSED_BODY};
+        features = builder.CreateVector(feature_list);
+    }
+    return flatbuf::CreateSchema(builder, flatbuf::Endianness_Little, fields_vec, 0, features);
 }
 
 }

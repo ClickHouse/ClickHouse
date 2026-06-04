@@ -55,9 +55,18 @@ void ArrowIPCBlockOutputFormat::consume(Chunk chunk)
     auto batch = encoder->encode(chunk.getColumns(), column_types, num_rows);
 
     flatbuffers::FlatBufferBuilder builder;
+    flatbuffers::Offset<ArrowIPC::flatbuf::BodyCompression> compression_off = 0;
+    if (batch.codec)
+    {
+        const auto codec_type = *batch.codec == ArrowIPC::CompressionCodec::Zstd
+            ? ArrowIPC::flatbuf::CompressionType_ZSTD
+            : ArrowIPC::flatbuf::CompressionType_LZ4_FRAME;
+        compression_off = ArrowIPC::flatbuf::CreateBodyCompression(
+            builder, codec_type, ArrowIPC::flatbuf::BodyCompressionMethod_BUFFER);
+    }
     auto nodes_vec = builder.CreateVectorOfStructs(batch.nodes.data(), batch.nodes.size());
     auto buffers_vec = builder.CreateVectorOfStructs(batch.buffers.data(), batch.buffers.size());
-    auto record_batch = ArrowIPC::flatbuf::CreateRecordBatch(builder, batch.num_rows, nodes_vec, buffers_vec);
+    auto record_batch = ArrowIPC::flatbuf::CreateRecordBatch(builder, batch.num_rows, nodes_vec, buffers_vec, compression_off);
     auto message = ArrowIPC::flatbuf::CreateMessage(
         builder,
         ArrowIPC::flatbuf::MetadataVersion_V5,
