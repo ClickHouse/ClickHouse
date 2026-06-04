@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -398,6 +399,16 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
+
+        /// Report the data file size for file-level progress tracking. Without this the
+        /// generic plumbing in `StorageObjectStorageSource::ReadTaskIterator`/`KeysIterator`
+        /// updates `total_bytes_to_read`, but Iceberg substitutes its own iterator and the
+        /// progress bar shows nothing for `total_bytes_to_read`. Position/equality delete
+        /// sizes are intentionally excluded - they're internal and not part of the user
+        /// data scan estimate.
+        if (callback)
+            callback(FileProgress(0, size_t(manifest_file_entry->parsed_entry->file_size_in_bytes)));
+
         return object_info;
     }
     {

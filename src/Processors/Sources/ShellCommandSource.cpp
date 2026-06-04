@@ -3,7 +3,9 @@
 #include <poll.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
+#include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -137,11 +139,13 @@ public:
         int stdout_fd_,
         int stderr_fd_,
         size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_)
+        ExternalCommandStderrReaction stderr_reaction_,
+        UDFProcessSubtreeSampler * sampler_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , sampler(sampler_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -267,7 +271,11 @@ public:
                 }
 
                 if (res > 0)
+                {
                     bytes_read += res;
+                    if (sampler)
+                        sampler->recordOutputBytes(static_cast<size_t>(res));
+                }
             }
         }
 
@@ -331,6 +339,7 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
+    UDFProcessSubtreeSampler * sampler;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -344,8 +353,8 @@ private:
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_, UDFProcessSubtreeSampler * sampler_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_), sampler(sampler_)
     {
         makeFdNonBlocking(fd);
     }
@@ -368,7 +377,11 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
+            {
                 bytes_written += res;
+                if (sampler)
+                    sampler->recordInputBytes(static_cast<size_t>(res));
+            }
         }
     }
 
@@ -385,6 +398,7 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
+    UDFProcessSubtreeSampler * sampler;
 };
 
 class ShellCommandHolder
@@ -446,7 +460,7 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
+            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -527,6 +541,25 @@ namespace
             for (auto & thread : send_data_threads)
                 if (thread.joinable())
                     thread.join();
+
+            /// Resource accounting must observe the borrow's resident set before
+            /// the worker is torn down or the slot is handed back to the pool —
+            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+            /// would then read zero CPU and zero `VmHWM`.
+            /// `recordReleased` reads procfs and may throw, but `cleanup` is
+            /// called from the destructor — swallow any exception so the
+            /// destructor stays noexcept.
+            if (configuration.sampler)
+            {
+                try
+                {
+                    configuration.sampler->recordReleased();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
+            }
 
             if (command_is_invalid)
                 command = nullptr;
@@ -743,6 +776,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             },
             configuration.max_command_execution_time_seconds * 10000);
 
+        /// Pool wait is frozen here on both the success and the timeout-failure
+        /// paths so that `PoolWaitMicroseconds` always records contention for a
+        /// slot. Any time spent below in `buildCommand` (cold spawn) lands in
+        /// `ElapsedMicroseconds` instead.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordPoolWaitDone();
+
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -750,6 +790,30 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 configuration.max_command_execution_time_seconds);
 
         process = process_holder->buildCommand();
+
+        /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
+        /// runs here so `clear_refs` and the utime/stime baseline cover only
+        /// the work attributable to this borrow.
+        ///
+        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
+        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
+        /// If it throws here, `process_holder` is still a local — ownership
+        /// does not transfer to `ShellCommandSource` until further below — so
+        /// stack unwinding would destroy it without calling `returnObject`,
+        /// permanently shrinking the pool's effective capacity by one. Swallow
+        /// the exception so the local stays intact for the normal hand-off;
+        /// sampling is best-effort and dropping one pre baseline is harmless.
+        if (source_configuration.sampler)
+        {
+            try
+            {
+                source_configuration.sampler->recordPidAcquired(process->getPid());
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
+        }
     }
     else
     {
@@ -781,8 +845,12 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
+        /// Only the primary stdin pipe (i == 0) contributes to InputBytes.
+        /// Additional write descriptors carry side-channel data that isn't
+        /// part of the UDF's observable input.
+        UDFProcessSubtreeSampler * write_sampler = (i == 0) ? source_configuration.sampler.get() : nullptr;
         auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds, write_sampler);
 
         input_pipes[i].resize(1);
 

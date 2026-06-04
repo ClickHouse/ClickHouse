@@ -2,12 +2,17 @@
 #include <base/DecomposedFloat.h>
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/NaNUtils.h>
 
 #include <zmij.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
@@ -371,4 +376,85 @@ size_t writeFloatTextFastPath(T x, char * buffer)
 template size_t writeFloatTextFastPath(Float64 x, char * buffer);
 template size_t writeFloatTextFastPath(Float32 x, char * buffer);
 template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+
+template <typename T>
+requires is_floating_point<T>
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
+{
+    if (settings.float_precision == 0 || !isFinite(x))
+    {
+        writeFloatText(x, buf);
+        return;
+    }
+
+    using Converter = double_conversion::DoubleToStringConverter;
+    const int max_fixed_digits = Converter::kMaxFixedDigitsAfterPoint;
+    if (settings.float_precision > static_cast<UInt64>(max_fixed_digits))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Too high precision requested for Float, must not be more than {}, got {}",
+            max_fixed_digits, settings.float_precision);
+
+    /// First compute the default shortest round-trip representation.
+    /// If it already has fewer or equal decimal places than requested, use it directly
+    /// to avoid introducing floating-point artefacts from ToFixed.
+    char default_buf[64];
+    const size_t default_len = writeFloatTextFastPath(x, default_buf);
+
+    /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
+    /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
+    int default_decimals = -1;
+    if (!memchr(default_buf, 'e', default_len) && !memchr(default_buf, 'E', default_len))
+    {
+        const char * dot = static_cast<const char *>(memchr(default_buf, '.', default_len));
+        default_decimals = dot ? static_cast<int>(default_buf + default_len - dot - 1) : 0;
+    }
+
+    /// For fixed-notation defaults with few enough decimal places, use them directly.
+    if (default_decimals >= 0 && default_decimals <= static_cast<int>(settings.float_precision))
+    {
+        buf.write(default_buf, default_len);
+        return;
+    }
+
+    /// Otherwise use ToFixed to produce a fixed-notation form with the requested precision.
+    /// ToFixed returns false for values with large magnitude; use the default in that case.
+    DoubleConverter<false>::BufferType buffer;
+    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
+    if (!DoubleConverter<false>::instance().ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder))
+    {
+        buf.write(default_buf, default_len);
+        return;
+    }
+
+    /// Strip trailing zeros after the decimal point (and the point itself if unneeded).
+    int len = builder.position();
+    const char * dot = static_cast<const char *>(memchr(buffer, '.', len));
+    if (dot)
+    {
+        int decimal_pos = static_cast<int>(dot - buffer);
+        while (len > decimal_pos + 1 && buffer[len - 1] == '0')
+            --len;
+        if (len == decimal_pos + 1)
+            --len;
+    }
+
+    /// For values in scientific notation (e.g. 1.23e-20) that ToFixed rounds to ±0 at
+    /// the requested precision, fall back to the default representation to avoid
+    /// silently discarding information.
+    if (default_decimals < 0)
+    {
+        int non_sign = (buffer[0] == '-') ? 1 : 0;
+        if (len - non_sign == 1 && buffer[non_sign] == '0')
+        {
+            buf.write(default_buf, default_len);
+            return;
+        }
+    }
+
+    buf.write(buffer, len);
+}
+
+template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
 }
