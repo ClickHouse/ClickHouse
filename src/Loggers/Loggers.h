@@ -38,6 +38,8 @@ public:
 
     void stopLogging();
 
+    bool isAuditLogChannelInitialized() const { return static_cast<bool>(audit_log_file); }
+
 protected:
     virtual bool allowTextLog() const { return true; }
 

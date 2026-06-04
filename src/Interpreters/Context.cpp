@@ -7942,14 +7942,17 @@ void Context::resetAuditTypes() const
 
 void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & config)
 {
-    /// Reset audit_types if logger.auditlog is absent or empty or audit logging is disabled
-    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
-    if (!isAuditLogEnabled() || auditlog_path_prop.empty() || !config.getBool("allow_experimental_audit_log", false))
+    /// The caller (server) already checks if audit file channel intialized
+    /// Reset audit_types if audit logging is disabled
+    if (!config.getBool("allow_experimental_audit_log", false))
     {
         disableAuditLogging();
         resetAuditTypes();
         return;
     }
+
+    if (!isAuditLogEnabled())
+        enableAuditLogging();
 
     /// audit log types
     std::string auditlog_types = config.getString("logger.auditlog_types", "");

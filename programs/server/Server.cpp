@@ -2336,7 +2336,8 @@ try
             global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
             global_context->setExternalAuthenticatorsConfig(config());
 
-            global_context->loadOrReloadAuditTypes(config());
+            if (isAuditLogChannelInitialized())
+                global_context->loadOrReloadAuditTypes(config());
 
             global_context->setDashboardsConfig(config());
 
@@ -3139,7 +3140,8 @@ try
         if (config().has("startup_scripts"))
             loadStartupScripts(config(), server_settings, global_context, log);
 
-        global_context->loadOrReloadAuditTypes(config());
+        if (isAuditLogChannelInitialized())
+            global_context->loadOrReloadAuditTypes(config());
 
         {
             std::lock_guard lock(servers_lock);

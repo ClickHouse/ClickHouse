@@ -281,14 +281,14 @@ void MySQLHandler::run()
         {
             auto e = Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
             session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), e);
-            throw e;
+            throw e; /// NOLINT
         }
 
         if (secure_required && !(client_capabilities & CLIENT_SSL))
         {
             auto e = Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
             session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), e);
-            throw e;
+            throw e; /// NOLINT
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
@@ -456,7 +456,6 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
-        session->onAuthenticationFailure(user_name, socket().peerAddress(), exc);
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
