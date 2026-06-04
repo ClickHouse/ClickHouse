@@ -4984,20 +4984,34 @@ def do_run_tests(
                     stop_testing.set()
 
             if stop_testing.is_set():
-                print("Stopping tests, terminating all processes...")
-                # Wait briefly for test results to be written
-                sleep(5)
-                for p in processes:
-                    if p.is_alive():
-                        p.terminate()
-                # Wait for processes to exit, then force-kill stragglers
-                for p in processes:
-                    p.join(timeout=10)
-                    if p.is_alive():
-                        print(f"Force killing process {p.name} (pid {p.pid})")
-                        p.kill()
-                for p in processes:
-                    p.join(timeout=5)
+                # Mask SIGTERM during the cleanup: when we terminate a worker,
+                # its `except KeyboardInterrupt` handler in `run_tests_array`
+                # calls `stop_tests()`, which broadcasts SIGTERM to the whole
+                # process group via `cleanup_child_processes`. Without this
+                # mask the signal would reach us mid-join, `signal_handler`
+                # would raise `Terminated`, and we would exit with 128+15=143
+                # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
+                # parser to misclassify the run as "terminated unexpectedly"
+                # (`Result.Status.ERROR`) rather than synthesizing the
+                # `Server died` FAIL leaf that bugfix validation needs.
+                old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                try:
+                    print("Stopping tests, terminating all processes...")
+                    # Wait briefly for test results to be written
+                    sleep(5)
+                    for p in processes:
+                        if p.is_alive():
+                            p.terminate()
+                    # Wait for processes to exit, then force-kill stragglers
+                    for p in processes:
+                        p.join(timeout=10)
+                        if p.is_alive():
+                            print(f"Force killing process {p.name} (pid {p.pid})")
+                            p.kill()
+                    for p in processes:
+                        p.join(timeout=5)
+                finally:
+                    signal.signal(signal.SIGTERM, old_sigterm_handler)
                 if global_time_limit_reached:
                     raise StopTesting(
                         "global time limit reached",
