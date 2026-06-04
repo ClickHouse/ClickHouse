@@ -17,7 +17,7 @@ WHERE event = 'GlobalMemoryLimitExceeded'
 SETTINGS system_events_show_zero_values = 1;
 EOF
 
-${CLICKHOUSE_LOCAL} --ignore-error --multiquery -- --max_server_memory_usage=100Mi 2>/dev/null <<'EOF'
+${CLICKHOUSE_LOCAL} --ignore-error --multiquery -- --max_server_memory_usage=512Mi 2>/dev/null <<'EOF'
 SELECT number
 FROM system.numbers
 GROUP BY number
