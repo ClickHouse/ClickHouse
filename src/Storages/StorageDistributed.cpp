@@ -953,7 +953,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         for (auto & proj_node : projection_nodes)
         {
             auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
-            if (!seen_hashes.emplace(tree_hash).second)
+            while (!seen_hashes.emplace(tree_hash).second)
             {
                 auto alias = proj_node->getAlias();
                 auto wrapper = std::make_shared<FunctionNode>("identity");
@@ -961,6 +961,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 wrapper->resolveAsFunction(identity_resolver);
                 wrapper->setAlias(alias);
                 proj_node = std::move(wrapper);
+                tree_hash = proj_node->getTreeHash({.compare_aliases = false});
             }
         }
     }
