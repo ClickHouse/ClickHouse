@@ -841,11 +841,12 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
         auto shard_addresses = cluster->getShardsAddresses();
         if (shard_addresses.empty())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-        /// The worker pool is the flat set of all replicas across every shard; otherwise tasks would
-        /// only go to the first shard and the rest of the configured workers would be ignored.
-        for (const auto & shard : shard_addresses)
-            for (const auto & replica : shard)
-                hostnames.push_back(replica.host_name);
+        /// Only a single-shard worker cluster is supported for now.
+        if (shard_addresses.size() > 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
+        for (const auto & replica : shard_addresses[0])
+            hostnames.push_back(replica.host_name);
     }
     else
     {

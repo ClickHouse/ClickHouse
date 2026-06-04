@@ -8,7 +8,8 @@
 
     <stateless_worker_client>
         <enabled>1</enabled>
-        <cluster>test_cluster_two_shards</cluster>
+        <!-- Distributed reads require a single-shard worker cluster (replicas hold the same data). -->
+        <cluster>test_cluster_one_shard_two_replicas</cluster>
     </stateless_worker_client>
 
     <distributed_query>
