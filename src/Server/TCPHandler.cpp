@@ -152,6 +152,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
     extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
+    extern const Event FileProgressCallbackInvocations;
 }
 
 namespace DB::ErrorCodes
@@ -2276,7 +2277,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     if (part_uuids_to_ignore.has_value())
         state->part_uuids_to_ignore = std::move(part_uuids_to_ignore);
 
-    readStringBinary(state->query_id, *in);
+    readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 
     /// In interserver mode,
     /// initial_user can be empty in case of Distributed INSERT via Buffer/Kafka,
@@ -2388,7 +2389,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             throw exception; /// NOLINT
         }
 
-        std::string data(salt);
+        /// `StringWithMemoryTracking` so the duplicate of the (potentially
+        /// large) query body that the hash needs goes through the throwing
+        /// memory-tracker path. With a plain `std::string` the append below
+        /// would allocate through `allocNoThrow` and could push the server
+        /// past `max_server_memory_usage` without throwing.
+        StringWithMemoryTracking data(salt);
         // For backward compatibility
         if (nonce.has_value())
             data += std::to_string(nonce.value());
@@ -2472,6 +2478,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             auto current_state = state_wptr.lock();
             if (!current_state)
                 return;
+            ProfileEvents::increment(ProfileEvents::FileProgressCallbackInvocations);
             this->updateProgress(*current_state, Progress(value));
         });
 
