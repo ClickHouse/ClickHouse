@@ -119,6 +119,8 @@ const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_disti
 const constexpr uint32_t collect_generated = (1 << 0), flat_tuple = (1 << 1), flat_nested = (1 << 2), flat_json = (1 << 3),
                          skip_tuple_node = (1 << 4), skip_nested_node = (1 << 5), to_table_entries = (1 << 6), to_remote_entries = (1 << 7);
 
+void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+
 class CatalogBackup
 {
 public:
@@ -339,7 +341,7 @@ private:
         BetweenExpr,
         InExpr,
         AnyExpr,
-        IsNullExpr,
+        IsTruthExpr,
         ExistsExpr,
         LikeExpr,
         SearchExpr,
@@ -535,7 +537,7 @@ private:
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     void addTableIndex(RandomGenerator & rg, SQLTable & t, bool projection, IndexDef * idef);
     void addTableProjection(RandomGenerator & rg, SQLTable & t, ProjectionDef * pdef);
-    void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
+    void addTableConstraint(RandomGenerator & rg, SQLTable & t, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterClause(RandomGenerator & rg, const std::optional<String> & cluster, Cluster * clu, bool force = false) const;
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
