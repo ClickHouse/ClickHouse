@@ -23,4 +23,6 @@ private:
     bool eof_ = false;
 };
 
+void registerInputFormatColumnBinary(FormatFactory & factory);
+
 }

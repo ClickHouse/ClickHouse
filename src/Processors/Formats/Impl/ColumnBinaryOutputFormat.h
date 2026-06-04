@@ -6,6 +6,7 @@
 namespace DB
 {
 
+class FormatFactory;
 class ColumnBinaryOutputFormat final : public IOutputFormat
 {
 public:
@@ -25,5 +26,7 @@ protected:
     SharedHeader header_;
     bool disable_preallocation_;
 };
+
+void registerOutputFormatColumnBinary(FormatFactory & factory);
 
 }

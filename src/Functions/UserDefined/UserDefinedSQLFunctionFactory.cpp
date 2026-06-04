@@ -142,14 +142,7 @@ static void checkCanBeRegistered(const ContextPtr & context, const String & func
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
 
     if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
-    {
-        /// Allow WASM aggregate functions to be re-registered (CREATE OR REPLACE) — they are dual-registered
-        /// in AggregateFunctionFactory by UserDefinedWebAssemblyFunctionFactory::addOrReplace, and the
-        /// hasNameOrAlias guard there prevents duplicate entries across reloads.
-        const auto * wasm_query = create_function_query.as<ASTCreateWasmFunctionQuery>();
-        if (!wasm_query || !wasm_query->validateAndGetDefinition().settings.isAggregate())
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
-    }
+        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
 
     if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context)) /// NOLINT(readability-static-accessed-through-instance)
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
