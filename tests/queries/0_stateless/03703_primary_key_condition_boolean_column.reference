@@ -43,7 +43,7 @@ Expression
 2	two
 --- Test 4: Bool column used as boolean condition in WHERE
 Expression
-  Filter
+  Expression
     ReadFromMergeTree
     Indexes:
       PrimaryKey
@@ -66,7 +66,7 @@ Expression
         Condition: (id in [0, 0])
         Parts: 1/1
         Granules: 1/1
-        Search Algorithm: generic exclusion search
+        Search Algorithm: binary search
       Ranges: 1
 0	0
 --- Test 6: Minmax skip index with bare column
