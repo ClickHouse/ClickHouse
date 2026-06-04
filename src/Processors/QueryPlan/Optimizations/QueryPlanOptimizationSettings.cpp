@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -189,7 +190,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
-    topn_aggregation = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_topn_aggregation];
+    /// `TopNAggregatingStep` does not implement plan serialization yet, so producing it would
+    /// throw `NOT_IMPLEMENTED` when the optimized plan has to be serialized (`serialize_query_plan`).
+    /// Disable the rewrite in that case and fall back to the standard, serializable pipeline.
+    topn_aggregation = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_topn_aggregation]
+        && !from[Setting::serialize_query_plan];
     topn_aggregation_pruning_level = from[Setting::topn_aggregation_pruning_level];
     topn_aggregation_max_limit = from[Setting::topn_aggregation_max_limit];
     optimize_projection = from[Setting::optimize_use_projections];

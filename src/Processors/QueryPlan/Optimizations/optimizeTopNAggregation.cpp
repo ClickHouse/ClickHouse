@@ -186,6 +186,14 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (keys_ptr->empty())
         return;
 
+    /// The TopN transforms bypass `Aggregator`, so they cannot honor the GROUP BY
+    /// overflow limit (`max_rows_to_group_by` with `group_by_overflow_mode = 'throw'`/`'break'`)
+    /// nor the external (on-disk) aggregation path (`max_bytes_before_external_group_by`).
+    /// Fall back to the standard aggregation + sorting pipeline when either is configured,
+    /// otherwise we would silently change semantics and memory behavior.
+    if (params.max_rows_to_group_by != 0 || params.max_bytes_before_external_group_by != 0)
+        return;
+
     const auto & agg_descs = *agg_descs_ptr;
     if (agg_descs.empty())
         return;
@@ -402,14 +410,24 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             order_agg.argument_names.back(),
             agg_node->children.size() == 1 ? agg_node->children[0] : nullptr);
 
-        const auto & sorting_key_columns = read_from_mt->getStorageMetadata()->getSortingKeyColumns();
+        const auto storage_metadata = read_from_mt->getStorageMetadata();
+        const auto & sorting_key_columns = storage_metadata->getSortingKeyColumns();
         if (!sorting_key_columns.empty() && sorting_key_columns[0] == order_arg_name)
         {
             const auto & mt_header = *read_from_mt->getOutputHeader();
             bool arg_is_nullable = mt_header.has(order_arg_name)
                 && isNullableOrLowCardinalityNullable(mt_header.getByName(order_arg_name).type);
 
-            if (!arg_is_nullable && read_from_mt->requestReadingInOrder(1, required_direction, limit_value))
+            /// `required_direction` is the SQL direction relative to the column value, but
+            /// `requestReadingInOrder` expects the direction relative to the MergeTree sorting
+            /// key. For a descending sorting key (`ORDER BY val DESC`) the physical key order is
+            /// reversed, so we must flip the requested direction — otherwise `Mode 1` would read
+            /// the wrong end of each group and stop after the wrong `K` groups.
+            const auto reverse_flags = storage_metadata->getSortingKeyReverseFlags();
+            const int reverse_indicator = (!reverse_flags.empty() && reverse_flags[0]) ? -1 : 1;
+            const int read_direction = required_direction * reverse_indicator;
+
+            if (!arg_is_nullable && read_from_mt->requestReadingInOrder(1, read_direction, limit_value))
             {
                 sorted_input = true;
                 /// TopNAggregatingStep consumes the pre-aggregation header where the
