@@ -1,14 +1,16 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/cluster.xml", "configs/backup_disk.xml"],
+    main_configs=["configs/backup_disk.xml"],
     with_zookeeper=True,
     macros={"shard": 0, "replica": 1},
+    stay_alive=True,
 )
 
 
@@ -23,42 +25,98 @@ def start_cluster():
 
 backup_id_counter = 0
 
+
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{backup_id_counter}/')"
 
-# based on https://github.com/ClickHouse/ClickHouse/issues/67457
 
-def test_restore_table_metadata_version(start_cluster):
-    node.query("CREATE DATABASE IF NOT EXISTS test_db;")
-    node.query("DROP TABLE IF EXISTS test_db.t1 SYNC")
-    node.query("DROP TABLE IF EXISTS test_db.t2 SYNC")
+def metadata_version(table):
+    return node.query(
+        f"SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = '{table}'"
+    ).strip()
 
-    for table_name in ["t1", "t2"]:
-        create_table_query = f"""
-            CREATE TABLE test_db.{table_name} (
-                id UInt64,
-                name Nullable(String)
-            ) ENGINE = ReplicatedReplacingMergeTree(
-                  '/clickhouse/tables/test_db/{table_name}', '{{replica}}'
-            ) 
-            PRIMARY KEY id
-            ORDER BY id;
+
+def create_table(table):
+    node.query("CREATE DATABASE IF NOT EXISTS test_db")
+    node.query(
+        f"""
+        CREATE TABLE test_db.{table} (id UInt64, name Nullable(String))
+        ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/test_db/{table}', '{{replica}}')
+        ORDER BY id
         """
-        node.query(create_table_query)
+    )
 
-    node.query("INSERT INTO test_db.t1 SELECT number, toString(number) FROM numbers(30);")
 
-    # Modify table (add column) so that metadata version is incremented
-    node.query("ALTER TABLE test_db.t1 ADD COLUMN `surname` Nullable(String) after `name` SETTINGS alter_sync = 2")
+# Reproduces https://github.com/ClickHouse/ClickHouse/issues/67457
+def test_restore_table_metadata_version(start_cluster):
+    create_table("t1")
+    node.query(
+        "INSERT INTO test_db.t1 SELECT number, toString(number) FROM numbers(10)"
+    )
+    node.query(
+        "ALTER TABLE test_db.t1 ADD COLUMN surname Nullable(String) AFTER name SETTINGS alter_sync = 2"
+    )
+    node.query(
+        "INSERT INTO test_db.t1 SELECT number, toString(number), toString(number) FROM numbers(10, 10)"
+    )
+    assert metadata_version("t1") == "1"
 
     backup_name = new_backup_name()
-    node.query(f"BACKUP TABLE test_db.t1 TO {backup_name} SETTINGS structure_only=true")
-    node.query("DROP TABLE test_db.t1 SYNC;")
-    node.query(f"RESTORE TABLE test_db.t1 AS test_db.t2 FROM {backup_name} SETTINGS structure_only=true, allow_different_table_def=true")
+    node.query(f"BACKUP TABLE test_db.t1 TO {backup_name}")
+    node.query("DROP TABLE test_db.t1 SYNC")
+    node.query(f"RESTORE TABLE test_db.t1 FROM {backup_name}")
+
+    assert metadata_version("t1") == "1"
+
+    # Merges of parts with metadata version 1 are not blocked (the symptom of #67457).
+    node.query("OPTIMIZE TABLE test_db.t1 FINAL", timeout=120)
+    assert (
+        node.query(
+            "SELECT count() FROM system.parts WHERE database = 'test_db' AND table = 't1' AND active"
+        ).strip()
+        == "1"
+    )
+
+    # ALTER works after the restore (the version in ZooKeeper matches the in-memory one).
+    node.query(
+        "ALTER TABLE test_db.t1 ADD COLUMN extra UInt8 SETTINGS alter_sync = 2"
+    )
+    assert metadata_version("t1") == "2"
+
+    # The restored metadata version survives a server restart.
+    node.restart_clickhouse()
+    assert_eq_with_retry(
+        node,
+        "SELECT metadata_version FROM system.tables WHERE database = 'test_db' AND name = 't1'",
+        "2",
+    )
+
+    node.query("DROP TABLE test_db.t1 SYNC")
 
 
-    assert node.query("select metadata_version from system.tables where database='test_db' and name='t2';") == "1\n"
-    node.query("DROP TABLE IF EXISTS test_db.t1 SYNC")
-    node.query("DROP TABLE IF EXISTS test_db.t2 SYNC")
+def test_restore_table_metadata_version_structure_only(start_cluster):
+    create_table("t2")
+    node.query(
+        "ALTER TABLE test_db.t2 ADD COLUMN surname Nullable(String) AFTER name SETTINGS alter_sync = 2"
+    )
+    assert metadata_version("t2") == "1"
+
+    backup_name = new_backup_name()
+    node.query(
+        f"BACKUP TABLE test_db.t2 TO {backup_name} SETTINGS structure_only = true"
+    )
+    node.query("DROP TABLE test_db.t2 SYNC")
+    node.query(
+        f"RESTORE TABLE test_db.t2 FROM {backup_name} SETTINGS structure_only = true"
+    )
+
+    assert metadata_version("t2") == "1"
+
+    node.query(
+        "ALTER TABLE test_db.t2 ADD COLUMN extra UInt8 SETTINGS alter_sync = 2"
+    )
+    assert metadata_version("t2") == "2"
+
+    node.query("DROP TABLE test_db.t2 SYNC")
