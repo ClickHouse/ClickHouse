@@ -3497,7 +3497,13 @@ void Context::makeQueryContext()
     local_read_query_throttler.reset();
     local_write_query_throttler.reset();
     backups_query_throttler.reset();
-    query_privileges_info = std::make_shared<QueryPrivilegesInfo>(*query_privileges_info);
+    /// A new query starts with an empty set of used/missing privileges.
+    /// We must not copy the contents of the parent's `QueryPrivilegesInfo`: the parent is the session
+    /// (or global) context, whose `query_privileges_info` object is shared between all sessions and queries
+    /// (session contexts are created via `createCopy(global_context)` and never call `makeQueryContext`).
+    /// Copying its contents — and racing with concurrent writers during the copy — leaked privilege strings
+    /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
+    query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 }
