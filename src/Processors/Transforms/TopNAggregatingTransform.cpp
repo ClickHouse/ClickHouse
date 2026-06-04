@@ -296,7 +296,7 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
     {
         auto key_holder = serializeGroupKey(columns, row);
 
-        decltype(group_indices)::LookupResult it;
+        decltype(group_indices)::LookupResult it = nullptr;
         bool inserted = false;
         group_indices.emplace(key_holder, it, inserted);
 
@@ -442,7 +442,7 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
 
         auto key_holder = serializeGroupKey(columns, row);
 
-        decltype(group_indices)::LookupResult it;
+        decltype(group_indices)::LookupResult it = nullptr;
         bool inserted = false;
         group_indices.emplace(key_holder, it, inserted);
 
@@ -765,11 +765,11 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
             key = key_col_ptrs[k]->serializeValueIntoArena(row, *arena, begin, nullptr);
         SerializedKeyHolder key_holder{std::string_view(begin, key.data() + key.size() - begin), *arena};
 
-        decltype(group_indices)::LookupResult it;
+        decltype(group_indices)::LookupResult it = nullptr;
         bool inserted = false;
         group_indices.emplace(key_holder, it, inserted);
 
-        size_t group_idx;
+        size_t group_idx = 0;
         if (inserted)
         {
             group_idx = num_groups++;
