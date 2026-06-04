@@ -110,7 +110,7 @@ public:
             return {};
 
         RedisArray scan_keys;
-        RedisIterator next_iterator;
+        RedisIterator next_iterator = 0;
 
         std::tie(next_iterator, scan_keys) = storage.scan(iterator == -1 ? 0 : iterator, pattern, max_block_size);
         iterator = next_iterator;
@@ -147,7 +147,7 @@ private:
     FieldVector::const_iterator it;
 
     /// For full scan
-    RedisIterator iterator;
+    RedisIterator iterator{};
     String pattern;
 
     const size_t max_block_size;
@@ -675,6 +675,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 }
 
 /// TODO support ttl
+void registerStorageRedis(StorageFactory & factory);
 void registerStorageRedis(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
