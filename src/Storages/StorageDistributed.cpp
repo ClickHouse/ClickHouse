@@ -975,6 +975,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (has_duplicate)
         {
             seen_hashes.clear();
+            std::unordered_set<String> wrapped_aliases;
             auto action_name_resolver = FunctionFactory::instance().get("__actionName", query_context);
 
             for (size_t i = 0; i < projection_nodes.size(); ++i)
@@ -988,7 +989,14 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
                     continue;
 
-                auto unique_name = node_alias + "_" + std::to_string(i);
+                /// Only wrap the first occurrence of each distinct ALIAS column
+                /// name that collides.  Repeated references to the same column
+                /// (SELECT a2, a2) share one identifier in the original tree and
+                /// must remain as one DAG node so the column count matches.
+                if (!wrapped_aliases.emplace(node_alias).second)
+                    continue;
+
+                auto unique_name = "__distributed_alias_" + node_alias + "_" + std::to_string(i);
                 projection_nodes[i]->removeAlias();
                 auto name_node = std::make_shared<ConstantNode>(unique_name);
                 auto wrapper = std::make_shared<FunctionNode>("__actionName");
