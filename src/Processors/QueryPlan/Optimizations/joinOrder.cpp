@@ -406,13 +406,18 @@ bool JoinOrderOptimizer::continueEnumeration()
 {
     if (dphyp_unsupported_predicate || search_budget_exceeded)
         return false;
-    if (max_searched_plans && ++searched_plans > max_searched_plans)
+    ++searched_plans;
+    if (max_searched_plans && searched_plans > max_searched_plans)
     {
         search_budget_exceeded = true;
         LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
         return false;
     }
-    checkLimits();
+    /// `checkLimits` invokes the interactive cancel callback, which can send progress over the
+    /// network and snapshot profile events. Poll it once every few thousand enumerated subsets
+    /// instead of on every one, which would otherwise dominate the optimization time.
+    if ((searched_plans & 0xFFF) == 0)
+        checkLimits();
     return true;
 }
 
@@ -1171,7 +1176,6 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
 {
     if (dphyp_unsupported_predicate)
         return;
-    checkLimits();
 
     LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
         fmt::join(csg, ","), fmt::join(complement, ","), fmt::join(exclusion, ","));
@@ -1251,7 +1255,6 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
 {
     if (dphyp_unsupported_predicate)
         return;
-    checkLimits();
 
     LOG_TEST(log, "DPhyp: enumerateCsgRec(csg={{ {} }}, excl={{ {} }})",
         fmt::join(csg, ","), fmt::join(exclusion, ","));
