@@ -3,8 +3,9 @@
 -- `timeSeries*ToGrid` aggregate functions.
 SET allow_experimental_time_series_aggregate_functions = 1;
 
--- The exact result values are not the focus; what matters is that each call returns without
--- aborting the server under UBSan. `length` is the grid bucket count.
+-- Test cases 1 and 2 use `length` (the grid bucket count): the exact values are not the focus, only that
+-- the call returns without aborting under UBSan. Test case 3 asserts actual values, because that overflow
+-- dropped in-grid samples.
 
 -- 1. isSampleOutOfWindow(): Condition `front().first + Base::window <= current_timestamp`
 -- was able to cause overflow.
@@ -41,3 +42,16 @@ WITH toDateTime64('1900-01-01 00:00:00', 0, 'UTC') AS start_time,
 SELECT
     length(timeSeriesRateToGrid(start_time, end_time, step, window)(timestamps, values)),
     length(timeSeriesDeltaToGrid(start_time, end_time, step, window)(timestamps, values));
+
+-- 3. Base::add(): Condition `timestamp + window + step < start_time` was able to cause overflow
+-- and drop in-grid samples.
+-- Here we reproduce the case with start_time = 0, window = INT64_MAX, step = 1, timestamp = 1:
+-- 1 + INT64_MAX + 1 overflowed and so it was considered negative (< start_time = 0),
+-- so the sample was wrongly discarded.
+WITH 0 AS start_time,
+     10 AS end_time,
+     1 AS step,
+     9223372036854775807 AS window,                                      -- INT64_MAX
+     [toDateTime64(1, 0)] AS timestamps,
+     [5.0] AS values
+SELECT timeSeriesResampleToGridWithStaleness(start_time, end_time, step, window)(timestamps, values);
