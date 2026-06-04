@@ -267,6 +267,7 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTITIONS;
+    extern const int NO_SUCH_DATA_PART;
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -3525,6 +3526,29 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Filter ranges by 'bucket_id' parameter so that each distributed worker reads only its slice of the parts.
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
+        /// Bucket over the coordinator-selected parts in a fixed order, so every worker partitions the
+        /// same ordered list (replicas can have different local part layouts). A missing part is a
+        /// retryable error rather than a silently divergent read.
+        if (!distributed_read_part_names.empty())
+        {
+            std::unordered_map<String, RangesInDataPart> parts_by_name;
+            for (auto & part : result.parts_with_ranges)
+                parts_by_name.emplace(part.data_part->name, std::move(part));
+
+            RangesInDataParts coordinator_parts;
+            coordinator_parts.reserve(distributed_read_part_names.size());
+            for (const auto & part_name : distributed_read_part_names)
+            {
+                auto it = parts_by_name.find(part_name);
+                if (it == parts_by_name.end())
+                    throw Exception(ErrorCodes::NO_SUCH_DATA_PART,
+                        "Distributed read: part {} selected by the coordinator is not available on this replica "
+                        "(diverged by merge or replication lag); retry the query", part_name);
+                coordinator_parts.push_back(std::move(it->second));
+            }
+            result.parts_with_ranges = std::move(coordinator_parts);
+        }
+
         const size_t bucket_id = parse<UInt64>(settings.parameter_lookup->getParameter("bucket_id").safeGet<String>());
         const size_t total_buckets = settings.parameter_lookup->getParameter("total_buckets").safeGet<UInt64>();
 
@@ -4685,6 +4709,11 @@ void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
     distributed_read_bucket_count = bucket_count;
 }
 
+void ReadFromMergeTree::setDistributedReadParts(Names part_names)
+{
+    distributed_read_part_names = std::move(part_names);
+}
+
 Strings ReadFromMergeTree::getShardsForDistributedRead() const
 {
     Strings default_shard_list = {"0"};
@@ -4764,6 +4793,23 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         query_info.prewhere_info->serialize(ctx);
 
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+
+    /// Pin the coordinator-selected parts so all workers bucket over the same ordered list.
+    if (distributed_read_bucket_count)
+    {
+        Names part_names;
+        if (auto analysis = selectRangesToRead())
+        {
+            part_names.reserve(analysis->parts_with_ranges.size());
+            for (const auto & part : analysis->parts_with_ranges)
+                part_names.push_back(part.data_part->name);
+        }
+        std::sort(part_names.begin(), part_names.end());
+
+        writeVarUInt(part_names.size(), ctx.out);
+        for (const auto & part_name : part_names)
+            writeStringBinary(part_name, ctx.out);
+    }
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
@@ -4816,6 +4862,20 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
 
+    Names distributed_read_part_names;
+    if (distributed_read_bucket_count)
+    {
+        size_t num_parts = 0;
+        readVarUInt(num_parts, ctx.in);
+        distributed_read_part_names.reserve(num_parts);
+        for (size_t i = 0; i < num_parts; ++i)
+        {
+            String part_name;
+            readStringBinary(part_name, ctx.in);
+            distributed_read_part_names.push_back(std::move(part_name));
+        }
+    }
+
     StorageID table_id(database_name, table_name);
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
     if (!storage_ptr)
@@ -4843,6 +4903,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        read_from_merge_tree_step->setDistributedReadParts(std::move(distributed_read_part_names));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
