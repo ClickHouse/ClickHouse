@@ -2634,13 +2634,13 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP header
+Maximum number of fields in HTTP query parameters and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
-Maximum length of field name in HTTP header
+Maximum length of a field name in HTTP query parameters and form data.
 )", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
-Maximum length of field value in HTTP header
+Maximum length of a field value in HTTP query parameters and form data.
 )", 0) \
     DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
 Maximum total size of all HTTP request headers (names and values combined) in bytes.
