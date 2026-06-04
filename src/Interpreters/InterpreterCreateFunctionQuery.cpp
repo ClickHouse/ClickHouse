@@ -481,6 +481,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot execute query, got unexpected AST type: {}", query_ptr->getID());
 }
 
+void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
