@@ -526,6 +526,33 @@ struct CosineDistance
     }
 };
 
+#if USE_MULTITARGET_CODE
+/// Generic v4 distance kernel for integer inputs (widened to `Float64`). Unlike the hand-written float and
+/// BFloat16 kernels, this leans on the auto-vectorizer: the per-lane independent-accumulator loop and the
+/// `static_cast<ResultType>` integer->double widening both vectorize under the `x86-64-v4` target attribute,
+/// while the final horizontal `combine` reduction stays scalar (strict FP forbids reassociating it). This
+/// brings integer distances from the file's `x86-64-v2` baseline up to AVX-512 without a per-type kernel.
+template <typename Kernel, typename ResultType, typename ArgumentType>
+X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineIntegerV4(
+    const ArgumentType * __restrict data_x,
+    const ArgumentType * __restrict data_y,
+    size_t i_max,
+    size_t & i_x,
+    size_t & i_y,
+    typename Kernel::template State<ResultType> & state,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = 16;
+    typename Kernel::template State<ResultType> partial_results[unroll_count]{};
+    for (; i_x + unroll_count < i_max; i_x += unroll_count, i_y += unroll_count)
+        for (size_t s = 0; s < unroll_count; ++s)
+            Kernel::template accumulate<ResultType>(
+                partial_results[s], static_cast<ResultType>(data_x[i_x + s]), static_cast<ResultType>(data_y[i_y + s]), params);
+    for (auto & partial_result : partial_results)
+        Kernel::template combine<ResultType>(state, partial_result, params);
+}
+#endif
+
 template <typename Kernel>
 class FunctionArrayDistance : public IFunction
 {
@@ -786,6 +813,16 @@ private:
                     if (isArchSupported(TargetArch::x86_64_v4))
                     {
                         Kernel::accumulateCombineBF16V4(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
+                        processed_with_simd = true;
+                    }
+                }
+                else if constexpr (is_integer<LeftType> && std::is_same_v<LeftType, RightType>)
+                {
+                    /// Same-type integer inputs (widened to `Float64`): a generic v4 kernel auto-vectorizes
+                    /// the accumulation, lifting integer distances from `x86-64-v2` to AVX-512.
+                    if (isArchSupported(TargetArch::x86_64_v4))
+                    {
+                        accumulateCombineIntegerV4<Kernel, ResultType, LeftType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state, kernel_params);
                         processed_with_simd = true;
                     }
                 }
