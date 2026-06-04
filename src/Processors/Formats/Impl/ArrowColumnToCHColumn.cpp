@@ -184,13 +184,13 @@ void checkBooleanBuffer(const arrow::BooleanArray & chunk, const String & column
 /// for all declared rows.  Element size is derived from ArrowNumericArray::value_type,
 /// so this only compiles for typed numeric arrays (Date32, Date64, Timestamp,
 /// Time32/64, HalfFloat, and the plain numeric types).
-/// Use checkedCastFSB for FixedSizeBinary arrays, checkedCastBool for BooleanArray.
+/// Use checkedCastFixedSizeBinary for FixedSizeBinary arrays, checkedCastBool for BooleanArray.
 template <typename ArrowNumericArray>
 const ArrowNumericArray & checkedCast(const arrow::Array & array, const String & column_name)
 {
     static_assert(
         requires { typename ArrowNumericArray::value_type; },
-        "use checkedCastFSB for FixedSizeBinary arrays or checkedCastBool for BooleanArray");
+        "use checkedCastFixedSizeBinary for FixedSizeBinary arrays or checkedCastBool for BooleanArray");
     const auto & typed = assert_cast<const ArrowNumericArray &>(array);
     checkArrowBuffer(typed, sizeof(typename ArrowNumericArray::value_type), column_name);
     return typed;
@@ -284,10 +284,10 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
 
 /// Cast to a FixedSizeBinaryArray subclass (plain FixedSizeBinaryArray, Decimal128Array,
 /// Decimal256Array) and validate the data buffer using the runtime byte_width().
-template <typename ArrowFSBArray = arrow::FixedSizeBinaryArray>
-const ArrowFSBArray & checkedCastFSB(const arrow::Array & array, const String & column_name)
+template <typename ArrowFixedSizeBinaryArray = arrow::FixedSizeBinaryArray>
+const ArrowFixedSizeBinaryArray & checkedCastFixedSizeBinary(const arrow::Array & array, const String & column_name)
 {
-    const auto & typed = assert_cast<const ArrowFSBArray &>(array);
+    const auto & typed = assert_cast<const ArrowFixedSizeBinaryArray &>(array);
     checkArrowBuffer(typed, static_cast<size_t>(typed.byte_width()), column_name);
     return typed;
 }
@@ -654,7 +654,7 @@ static ColumnWithTypeAndName readColumnWithFixedStringData(const std::shared_ptr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & chunk = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
+        const auto & chunk = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
         const uint8_t * raw_data = chunk.raw_values();
         column_chars.insert_assume_reserved(raw_data, raw_data + fixed_len * chunk.length());
     }
@@ -680,7 +680,7 @@ static ColumnWithTypeAndName readColumnWithBigIntegerFromFixedBinaryData(const s
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & chunk = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
+        const auto & chunk = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
         const auto * raw_data = reinterpret_cast<const ValueType *>(chunk.raw_values());
         data.insert_assume_reserved(raw_data, raw_data + chunk.length());
     }
@@ -903,7 +903,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataImpl(const std::shared_ptr
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & chunk = checkedCastFSB<DecimalArray>(*(arrow_column->chunk(chunk_i)), column_name);
+        const auto & chunk = checkedCastFixedSizeBinary<DecimalArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             column_data.emplace_back(chunk.IsNull(value_i) ? DecimalType(0) : *reinterpret_cast<const DecimalType *>(chunk.Value(value_i))); // TODO: copy column
@@ -953,7 +953,7 @@ static ColumnWithTypeAndName readColumnWithUUIDFromFixedBinaryData(
 
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
-        const auto & fixed_binary_array = checkedCastFSB(*(arrow_column->chunk(chunk_i)), column_name);
+        const auto & fixed_binary_array = checkedCastFixedSizeBinary(*(arrow_column->chunk(chunk_i)), column_name);
 
         if (fixed_binary_array.byte_width() != sizeof(UUID))
             throw Exception(ErrorCodes::INCORRECT_DATA,
