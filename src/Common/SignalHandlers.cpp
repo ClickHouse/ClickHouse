@@ -21,7 +21,9 @@
 #include <thread>
 #include <unistd.h>
 
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -243,7 +245,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 
 void HandledSignals::addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal)
 {
-    struct sigaction sa;
+    struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
     sa.sa_flags = SA_SIGINFO;
@@ -343,7 +345,7 @@ void SignalListener::run()
         }
         else if (sig == StdTerminate)
         {
-            UInt32 thread_num;
+            UInt32 thread_num = 0;
             std::string message;
 
             readBinary(thread_num, in);
@@ -353,7 +355,7 @@ void SignalListener::run()
         }
         else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
-            bool crashing;
+            bool crashing = false;
             {
                 std::lock_guard lock(terminate_request_mutex);
                 ++terminate_requested;
@@ -737,3 +739,5 @@ void HandledSignals::setupCommonTerminateRequestSignalHandlers()
 {
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, true);
 }
+
+#pragma clang diagnostic pop

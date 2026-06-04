@@ -58,8 +58,8 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
 template <typename PrefetchAction>
 struct JoinPrefetcher
 {
-    bool use_prefetch;
-    size_t total;
+    bool use_prefetch = false;
+    size_t total = 0;
     PrefetchAction prefetch_action;
     PrefetchingHelper prefetching{};
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
@@ -209,7 +209,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             is_join_get,
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
-            join.enable_lazy_columns_indexing
         });
 
     if (next_scattered_block)
@@ -616,7 +615,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if (!skip_row)
         {
-            bool row_acceptable;
+            bool row_acceptable = false;
             if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                 row_acceptable = false;
             else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
@@ -747,7 +746,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
             if (!skip_row)
             {
-                bool row_acceptable;
+                bool row_acceptable = false;
                 if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                     row_acceptable = false;
                 else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
