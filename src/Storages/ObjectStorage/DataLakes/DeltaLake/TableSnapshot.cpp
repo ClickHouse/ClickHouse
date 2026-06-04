@@ -29,18 +29,15 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ExpressionVisitor.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/EnginePredicate.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 #include <roaring/roaring.hh>
 
-
-namespace fs = std::filesystem;
-
 namespace DB::ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -57,30 +54,6 @@ namespace ProfileEvents
     extern const Event DeltaLakePartitionPrunedFiles;
     extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
-}
-
-namespace DB
-{
-
-Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
-{
-    try
-    {
-        ReadBufferFromString buffer(value);
-        auto col = data_type->createColumn();
-        auto serialization = data_type->getDefaultSerialization();
-        serialization->deserializeWholeText(*col, buffer, FormatSettings{});
-        return (*col)[0];
-    }
-    catch (...)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot parse {} for data type {}: {}",
-            value, data_type->getName(), getCurrentExceptionMessage(false));
-    }
-}
-
 }
 
 namespace DeltaLake
@@ -452,6 +425,7 @@ public:
             /// We cannot allow to throw exceptions from ScanCallback,
             /// otherwise delta-kernel will panic and call terminate.
             context->setScanException();
+            context->data_files_cv.notify_all();
 
             return false;  /// Stop iteration on exception
         }
@@ -512,7 +486,8 @@ public:
 
         ProfileEvents::increment(ProfileEvents::DeltaLakeScannedFiles);
 
-        std::string full_path = fs::path(context->getDataPath()) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
+        std::string full_path = DB::resolvePathInsideTable(
+            context->getDataPath(), DB::unescapeForFileName(KernelUtils::fromDeltaString(path)));
         auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
         object->data_lake_metadata.emplace();
 
