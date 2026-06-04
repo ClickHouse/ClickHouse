@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StreamingExchangeSink::~StreamingExchangeSink()
@@ -303,6 +304,13 @@ void StreamingExchangeSink::consume(Chunk chunk)
 
         if (packet_data_size < 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packet data size: {}", packet_data_size);
+
+        /// The receiver rejects Data packets above this limit; fail here with a clear, local error
+        /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
+        if (static_cast<UInt64>(packet_data_size) > StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
+                packet_data_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES);
 
         /// Fill bytes_size field using memcpy because packet header address in the buffer might not be properly aligned.
         char * packet_header_start = const_cast<char*>(out->stringView().data()) + packet_header_offset;
