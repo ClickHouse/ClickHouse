@@ -586,8 +586,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
+
+    /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the
+    /// initiator, so data_type_default_nullable and flatten_nested must not be applied a second time.
+    const bool already_normalized_on_initiator = context_->isDDLOrOnClusterInternal();
+
     bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
-        && !context_->getZooKeeperMetadataTransaction()
+        && !already_normalized_on_initiator
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
@@ -706,7 +711,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !context_->getZooKeeperMetadataTransaction()
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
         && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
