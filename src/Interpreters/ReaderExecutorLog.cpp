@@ -28,9 +28,9 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"source_file_path", std::make_shared<DataTypeString>(), "Cache-key path the executor was reading. Typically the first object's `remote_path`."},
         {"total_size", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Total logical size in bytes the executor was set up to read across all objects. `NULL` when the underlying object had no known size (e.g. S3 HEAD without `Content-Length`)."},
 
-        {"bytes_from_page_cache", std::make_shared<DataTypeUInt64>(), "Bytes served to the consumer from the page cache tier."},
-        {"bytes_from_filesystem_cache", std::make_shared<DataTypeUInt64>(), "Bytes served to the consumer from the filesystem cache tier."},
-        {"bytes_from_source", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source after missing all cache tiers."},
+        {"bytes_from_page_cache", std::make_shared<DataTypeUInt64>(), "Physical bytes issued to the page cache tier (foreground plus background prefetch, including bytes a discarded prefetch wasted) - not consumer-served bytes."},
+        {"bytes_from_filesystem_cache", std::make_shared<DataTypeUInt64>(), "Physical bytes issued to the filesystem cache tier (foreground plus background prefetch, including bytes a discarded prefetch wasted) - not consumer-served bytes."},
+        {"bytes_from_source", std::make_shared<DataTypeUInt64>(), "Physical bytes fetched from source after missing all cache tiers (foreground plus background prefetch, including bytes a discarded prefetch wasted) - drives the bandwidth cost."},
         {"bytes_pushed_to_cache_sync", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers via `put` from a foreground (synchronous) read."},
         {"bytes_pushed_to_cache_async", std::make_shared<DataTypeUInt64>(), "Bytes written back into cache tiers via `put` from a background prefetch read."},
 
