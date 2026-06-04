@@ -37,3 +37,38 @@ SYSTEM SCHEDULE MERGE t_manual_missing PARTS 'all_1_2_1', 'all_4_4_0'; -- { serv
 SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_manual_missing' AND active ORDER BY name;
 
 DROP TABLE t_manual_missing;
+
+-- Scheduling the same parts twice (before either merge runs) must be rejected: the first merge
+-- consumes the inputs, so the second can never run and would block the queue. Merges are stopped
+-- so both schedules see the inputs as still active.
+DROP TABLE IF EXISTS t_manual_dup;
+
+CREATE TABLE t_manual_dup (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS merge_selector_algorithm = 'Manual';
+
+INSERT INTO t_manual_dup VALUES (1);
+INSERT INTO t_manual_dup VALUES (2);
+
+SYSTEM STOP MERGES t_manual_dup;
+SYSTEM SCHEDULE MERGE t_manual_dup PARTS 'all_1_1_0', 'all_2_2_0';
+SYSTEM SCHEDULE MERGE t_manual_dup PARTS 'all_1_1_0', 'all_2_2_0'; -- { serverError BAD_ARGUMENTS }
+SYSTEM START MERGES t_manual_dup;
+SYSTEM SYNC MERGES t_manual_dup;
+
+SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_manual_dup' AND active ORDER BY name;
+
+DROP TABLE t_manual_dup;
+
+-- A merge whose parts are in different partitions can never be selected, so it must be rejected
+-- rather than left to hang SYNC MERGES.
+DROP TABLE IF EXISTS t_manual_parts;
+
+CREATE TABLE t_manual_parts (p UInt64, x UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY x
+SETTINGS merge_selector_algorithm = 'Manual';
+
+INSERT INTO t_manual_parts VALUES (1, 10);
+INSERT INTO t_manual_parts VALUES (2, 20);
+
+SYSTEM SCHEDULE MERGE t_manual_parts PARTS '1_1_1_0', '2_2_2_0'; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE t_manual_parts;

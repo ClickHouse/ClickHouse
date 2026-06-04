@@ -8,7 +8,6 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -26,8 +25,7 @@ struct ManualMergeSelectorTableInfo
     std::deque<Names> queue;
     std::vector<MergeTreePartInfo> scheduled_part_infos;
     /// Every merge scheduled since the last completed SYNC MERGES, kept (unlike `queue`, which is
-    /// drained by select) so we can tell whether a not-yet-existing part is still going to be
-    /// produced. See isProducible.
+    /// drained by select) so the projection in push can replay them. See projectScheduledMerges.
     std::vector<Names> merge_defs;
 };
 
@@ -36,8 +34,16 @@ MergeTreePartInfo partInfoFromName(const std::string & name)
     return MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
 }
 
-/// Result part of merging a contiguous range, named the same way as FutureMergedMutatedPart.
-std::string mergeResultName(const Names & merge)
+bool isExactlyPresent(const ActiveDataPartSet & parts, const std::string & name)
+{
+    /// Compared as a string, the form select/lookupRange use, so a non-canonical spelling
+    /// (all_1_1_0_0 for all_1_1_0) or a part merely covered by a larger one does not qualify.
+    return parts.getContainingPart(partInfoFromName(name)) == name;
+}
+
+/// Result part of merging the range, named the same way as FutureMergedMutatedPart. The caller
+/// guarantees all parts are in the same partition.
+MergeTreePartInfo mergeResultInfo(const Names & merge)
 {
     std::vector<MergeTreePartInfo> infos;
     infos.reserve(merge.size());
@@ -53,35 +59,27 @@ std::string mergeResultName(const Names & merge)
         max_mutation = std::max(max_mutation, info.mutation);
     }
 
-    return MergeTreePartInfo(infos.front().getPartitionId(), infos.front().min_block, infos.back().max_block, max_level + 1, max_mutation)
-        .getPartNameV1();
+    return MergeTreePartInfo(infos.front().getPartitionId(), infos.front().min_block, infos.back().max_block, max_level + 1, max_mutation);
 }
 
-/// Whether `name` either is an active part right now or can still be produced by the scheduled
-/// merges from parts that are themselves active or producible. Names are compared as strings
-/// (the form select/lookupRange use), so a non-canonical spelling never qualifies. A part that
-/// was a scheduled-merge result but has since been consumed or dropped is not producible: the
-/// merge that made it has left the queue and its inputs are no longer active.
-bool isProducible(const std::string & name, const ActiveDataPartSet & active_set,
-    const std::vector<Names> & merge_defs, std::unordered_set<std::string> & visited)
+/// The parts that will exist once the already-scheduled merges run: start from the parts active
+/// now and replay each scheduled merge that can still run (all its inputs are present and not yet
+/// consumed by an earlier one). A merge whose inputs are gone has already executed (its result is
+/// either present or was dropped) and is not replayed, so a consumed or dropped result is absent
+/// from the projection. In-flight merges keep their inputs active until they commit, so a chained
+/// reference stays valid across the pop-to-commit window.
+ActiveDataPartSet projectScheduledMerges(const ActiveDataPartSet & active_set, const std::vector<Names> & merge_defs)
 {
-    if (active_set.getContainingPart(partInfoFromName(name)) == name)
-        return true;
-
-    if (!visited.insert(name).second)
-        return false;
-
+    ActiveDataPartSet projected = active_set;
     for (const auto & def : merge_defs)
     {
-        if (mergeResultName(def) != name)
-            continue;
-
-        if (std::ranges::all_of(def, [&](const std::string & input)
-                { return isProducible(input, active_set, merge_defs, visited); }))
-            return true;
+        if (std::ranges::all_of(def, [&](const std::string & name) { return isExactlyPresent(projected, name); }))
+        {
+            const auto result = mergeResultInfo(def);
+            projected.add(result, result.getPartNameV1());
+        }
     }
-
-    return false;
+    return projected;
 }
 
 std::mutex registry_mutex;
@@ -177,16 +175,23 @@ void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merg
 {
     auto [info, lock] = getTableInfo(id);
 
-    /// Reject inputs that can never be merged, so SYNC MERGES does not wait for them until it times
-    /// out. An input is fine if it is active now or still producible by the scheduled merges; the
-    /// check runs against the merges scheduled so far, not including this one. See isProducible.
+    /// A merge spanning several partitions can never be selected (lookupRange matches within a
+    /// single range), so reject it outright rather than let SYNC MERGES wait for it to time out.
+    const std::string partition_id = partInfoFromName(parts_to_merge.front()).getPartitionId();
     for (const auto & name : parts_to_merge)
-    {
-        std::unordered_set<std::string> visited;
-        if (!isProducible(name, active_set, info->merge_defs, visited))
+        if (partInfoFromName(name).getPartitionId() != partition_id)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SCHEDULE MERGE: parts {} and {} are in different partitions", parts_to_merge.front(), name);
+
+    /// Reject inputs that can never be merged, so SYNC MERGES does not wait for them until it times
+    /// out. Validate against the parts that will exist once the merges scheduled so far have run:
+    /// an input must be present there, i.e. active now and not already consumed by an earlier
+    /// scheduled merge, or produced by one. See projectScheduledMerges.
+    const ActiveDataPartSet projected = projectScheduledMerges(active_set, info->merge_defs);
+    for (const auto & name : parts_to_merge)
+        if (!isExactlyPresent(projected, name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "SCHEDULE MERGE: part {} does not exist and is not produced by a previously scheduled merge", name);
-    }
 
     for (const auto & name : parts_to_merge)
         info->scheduled_part_infos.push_back(partInfoFromName(name));

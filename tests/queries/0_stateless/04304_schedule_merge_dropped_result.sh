@@ -20,11 +20,18 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO t_manual_dropped VALUES (3)"
 # Schedule the merge but do NOT call SYSTEM SYNC MERGES; let the background merge produce all_1_2_1.
 $CLICKHOUSE_CLIENT --query "SYSTEM SCHEDULE MERGE t_manual_dropped PARTS 'all_1_1_0', 'all_2_2_0'"
 
+produced=0
 for _ in {1..60}; do
     produced=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_manual_dropped' AND active AND name = 'all_1_2_1'")
     [ "$produced" = "1" ] && break
     sleep 0.5
 done
+
+if [ "$produced" != "1" ]; then
+    echo "all_1_2_1 was not produced within the timeout" >&2
+    $CLICKHOUSE_CLIENT --query "DROP TABLE t_manual_dropped"
+    exit 1
+fi
 
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_manual_dropped DETACH PART 'all_1_2_1'"
 
