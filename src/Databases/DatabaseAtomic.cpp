@@ -282,10 +282,6 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
         LOG_TRACE(log, "Rename metadata from {} to {} for removing.", table_metadata_path, table_metadata_path_drop);
         db_disk->replaceFile(table_metadata_path, table_metadata_path_drop);
 
-        const auto dropped_detached_flag_path = DatabaseCatalog::instance().getPathForDetachedDropFlag(storage_id);
-        LOG_TRACE(log, "Creating {} flag.", dropped_detached_flag_path);
-        db_disk->createFile(dropped_detached_flag_path);
-
         /// If a crash happens here, we get stale orphan flag
         /// but it is better than removing detached flag first and risking table ressurection on restart
         const auto detached_flag_path = getDetachedPermanentlyFlagPath(table_metadata_path);
@@ -304,7 +300,7 @@ void DatabaseAtomic::dropDetachedTable(ContextPtr local_context, const String & 
     }
 
     LOG_TRACE(log, "Table {} ready for remove.", table_name);
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync, true);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, table_metadata_path_drop, sync);
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

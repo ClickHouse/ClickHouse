@@ -1277,24 +1277,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
-            /// `DROP DETACHED TABLE` uses a UUID-only marker near dropped metadata. The old detached flag can also be left near the
-            /// original metadata path if server restarted after moving metadata but before creating the new marker.
-            bool has_old_detached_flag = false;
-            if (auto database = tryGetDatabase(dropped_id.getDatabaseName()))
-            {
-                try
-                {
-                    auto metadata_path = getPathForMetadata(dropped_id);
-                    has_old_detached_flag = db_disk->existsFileOrDirectory(DatabaseOnDisk::getDetachedPermanentlyFlagPath(metadata_path));
-                }
-                // NOLINTNEXTLINE(bugprone-empty-catch)
-                catch (...)
-                {
-                    // Database may not exist anymore, ignore
-                }
-            }
-            bool drop_as_detached = db_disk->existsFileOrDirectory(getPathForDetachedDropFlag(dropped_id)) || has_old_detached_flag;
-            dropped_metadata.emplace(std::move(full_path), DroppedMetadataInfo{std::move(dropped_id), db_disk, drop_as_detached});
+            dropped_metadata.emplace(std::move(full_path), DroppedMetadataInfo{std::move(dropped_id), db_disk});
         }
     }
 
@@ -1324,11 +1307,6 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
                escapeForFileName(table_id.getDatabaseName()),
                escapeForFileName(table_id.getTableName()),
                toString(table_id.uuid));
-}
-
-String DatabaseCatalog::getPathForDetachedDropFlag(const StorageID & table_id) const
-{
-    return fs::path("metadata_dropped") / fmt::format("{}.detached", toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1396,7 +1374,10 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
 
-        if (!drop_as_detached)
+        /// A table dropped with DROP DETACHED TABLE was detached but never dropped, so it still
+        /// has its UUID mapping. A table recovered after a crash (loadMarkedAsDroppedTables) has
+        /// no mapping yet. Add the mapping only when it is missing to avoid a collision.
+        if (!hasUUIDMapping(table_id.uuid))
             addUUIDMapping(table_id.uuid);
         drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
@@ -1467,8 +1448,6 @@ void DatabaseCatalog::undropTable(StorageID table_id)
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
-        if (dropped_table.drop_as_detached)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot undrop table {} that was dropped as DETACHED", table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
@@ -1719,7 +1698,6 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
-    db_disk->removeFileIfExists(getPathForDetachedDropFlag(table.table_id));
     try
     {
         auto metadata_path = getPathForMetadata(table.table_id);

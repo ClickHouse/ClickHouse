@@ -510,13 +510,47 @@ def test_drop_detached_with_undrop(start_cluster):
     table_name = "test_drop_detached_with_undrop"
 
     create_table(replica1, table_name)
+    replica1.query(
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 5"
+    )
     replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
     replica1.query(
         f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name}"
     )
+
+    assert_eq_with_retry(
+        instance=replica1,
+        query=f"SELECT count() FROM system.dropped_tables WHERE table = '{table_name}'",
+        expectation="1",
+    )
+
+    replica1.query(f"UNDROP TABLE {table_name}")
+    assert "5" == replica1.query(f"SELECT count() FROM {table_name}").rstrip()
+
+    replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+
+
+def test_drop_detached_with_undrop_after_restart(start_cluster):
+    table_name = "test_drop_detached_with_undrop_after_restart"
+
+    create_table(replica1, table_name)
+    replica1.query(
+        f"INSERT INTO {table_name} SELECT number FROM system.numbers LIMIT 7"
+    )
+    replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+    replica1.query(
+        f"SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE {table_name}"
+    )
+
     replica1.restart_clickhouse(kill=True)
 
-    error = replica1.query_and_get_error(f"UNDROP TABLE {table_name}", timeout=10)
-    assert "dropped as DETACHED" in error
+    assert_eq_with_retry(
+        instance=replica1,
+        query=f"SELECT count() FROM system.dropped_tables WHERE table = '{table_name}'",
+        expectation="1",
+    )
 
-    check_no_table_in_detached_table(node=replica1, table_name=table_name)
+    replica1.query(f"UNDROP TABLE {table_name}")
+    assert "7" == replica1.query(f"SELECT count() FROM {table_name}").rstrip()
+
+    replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

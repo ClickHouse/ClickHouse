@@ -227,7 +227,6 @@ public:
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
-    String getPathForDetachedDropFlag(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(
         StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false, bool drop_as_detached = false);
