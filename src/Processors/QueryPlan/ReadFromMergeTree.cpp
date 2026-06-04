@@ -192,6 +192,7 @@ namespace Setting
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool optimize_final_limit_pushdown;
     extern const SettingsBool optimize_final_sequential_partitions;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
@@ -1911,7 +1912,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         }
 
         UInt64 limit = 0;
-        if (settings[Setting::optimize_final_limit_pushdown])
+        /// Do not push the limit into the FINAL merge when `exact_rows_before_limit` is set:
+        /// in that mode the whole input must be read so that `rows_before_limit_at_least`
+        /// reflects the full post-FINAL row count. Terminating the merge after `N` groups
+        /// would make it report roughly `N` instead. This mirrors the `always_read_till_end`
+        /// guards in `limitPushDown` and `topKThroughJoin`.
+        if (settings[Setting::optimize_final_limit_pushdown] && !settings[Setting::exact_rows_before_limit])
         {
             /// Use final_limit which is set by the optimizer from the SortingStep's limit.
             /// Unlike input_order_info->limit, final_limit is not cleared by filters/prewhere
@@ -2039,6 +2045,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         && reader_settings.read_in_order
         && settings[Setting::optimize_final_sequential_partitions]
         && settings[Setting::optimize_final_limit_pushdown]
+        && !settings[Setting::exact_rows_before_limit]
         && final_limit > 0
         && merging_pipes.size() > 1
         && no_merging_pipes.empty()
