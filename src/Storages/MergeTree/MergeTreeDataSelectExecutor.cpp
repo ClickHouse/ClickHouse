@@ -2379,19 +2379,25 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     vector_search_hints.tryMergeGranuleHintsOnce(
                         index_mark, nn, *part->index_granularity, skip_index_granularity);
 
+                    /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
+                    /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
+                    const MarkRanges * pk_ranges_for_index_mark = nullptr;
+                    MarkRanges single_pk_range;
+                    if (use_vector_search_cache)
+                        pk_ranges_for_index_mark = &vector_search_cache.pk_ranges_by_index_mark.at(index_mark);
+                    else
+                    {
+                        single_pk_range.push_back(ranges[i]);
+                        pk_ranges_for_index_mark = &single_pk_range;
+                    }
+
                     for (auto row : rows)
                     {
                         size_t num_marks = part->index_granularity->countMarksForRows(index_mark * skip_index_granularity, row);
                         const size_t absolute_mark = (index_mark * skip_index_granularity) + num_marks;
 
-                        /// The same skip-index granule may be reached from several PK ranges (e.g. OR).
-                        /// ANN uses the union of PK ranges for this index_mark; do not clamp rows to ranges[i] only.
-                        const MarkRanges & pk_ranges_for_index_mark = use_vector_search_cache
-                            ? vector_search_cache.pk_ranges_by_index_mark.at(index_mark)
-                            : MarkRanges{ranges[i]};
-
                         std::optional<MarkRange> data_range;
-                        for (const auto & pk_range : pk_ranges_for_index_mark)
+                        for (const auto & pk_range : *pk_ranges_for_index_mark)
                         {
                             if (absolute_mark < pk_range.begin || absolute_mark >= pk_range.end)
                                 continue;
