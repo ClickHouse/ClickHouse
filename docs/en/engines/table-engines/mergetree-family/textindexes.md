@@ -303,8 +303,8 @@ Optional parameter `posting_list_codec` (default: `none`) specifies the codec fo
 :::note Experimental
 Optional parameter `enable_phrase_query_support` (default: `0`) enables an experimental phrase-search backend.
 When set to `1`, the index additionally stores per-token positions (a `.pos` substream) using the Roaringish encoding from [Searching 1.3 Billion Vector-Embedded Wikipedia Articles in 50ms](https://research.marqo.ai/blog/searching-1-3-billion-vector-embedded-wikipedia-articles-in-50ms).
-This allows `hasPhrase` queries to be answered exactly from the index without re-scanning the source column, which can be substantially faster on selective phrase queries.
-The trade-off is increased index size and slower index build / merge times.
+These positions are intended to let phrase predicates be evaluated exactly from the index, without re-scanning the source column, which can be substantially faster on selective phrase queries.
+The query-side integration is still under development, so enabling this option currently only changes the on-disk format; the trade-off is increased index size and slower index build / merge times.
 This feature is experimental and the on-disk layout may change in future versions.
 :::
 </details>
