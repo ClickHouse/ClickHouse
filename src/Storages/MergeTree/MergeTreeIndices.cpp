@@ -223,7 +223,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {}});
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 
-    registerCreator("vector_spann", spannIndexCreator);
+    registerCreator("vector_spann", spannIndexCreator, Documentation{
+        .description = "An experimental SPANN-style approximate nearest-neighbour index over a vector column (centroid HNSW + posting lists), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_spann('spann', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction, centroid_ratio]) GRANULARITY g",
+        .related = {"vector_similarity"}});
     registerValidator("vector_spann", spannIndexValidator);
 #endif
 
