@@ -636,7 +636,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             return std::make_pair(base_storage, key_to_use);
 
         /// Construct the endpoint for this storage, then build the cache key from it.
-        /// A generic `s3://bucket/...` inherits one from the base storage. 
+        /// A generic `s3://bucket/...` inherits one from the base storage.
         const bool endpoint_explicit = (target_decomposed.scheme == "http" || target_decomposed.scheme == "https");
 
         std::string endpoint_to_use;
