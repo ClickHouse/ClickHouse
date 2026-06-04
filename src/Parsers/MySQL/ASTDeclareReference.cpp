@@ -11,7 +11,7 @@ namespace DB
 namespace MySQLParser
 {
 
-static bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::ReferenceOption & option, Expected & expected)
+bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::ReferenceOption & option, Expected & expected)
 {
     if (ParserKeyword(Keyword::RESTRICT).ignore(pos, expected))
         option = ASTDeclareReference::RESTRICT;
@@ -31,7 +31,7 @@ static bool parseReferenceOption(IParser::Pos & pos, ASTDeclareReference::Refere
 
 ASTPtr ASTDeclareReference::clone() const
 {
-    auto res = make_intrusive<ASTDeclareReference>(*this);
+    auto res = std::make_shared<ASTDeclareReference>(*this);
     res->children.clear();
 
     if (reference_expression)
@@ -90,7 +90,7 @@ bool ParserDeclareReference::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
             break;
     }
 
-    auto declare_reference = make_intrusive<ASTDeclareReference>();
+    auto declare_reference = std::make_shared<ASTDeclareReference>();
     declare_reference->kind = match_kind;
     declare_reference->on_delete_option = delete_option;
     declare_reference->on_update_option = update_option;

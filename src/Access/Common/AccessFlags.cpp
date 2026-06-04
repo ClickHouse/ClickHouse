@@ -216,7 +216,7 @@ namespace
             {
                 auto parent_node = std::make_unique<Node>(parent_keyword);
                 it_parent = nodes.emplace(parent_node->keyword, parent_node.get()).first;
-                chassert(!owned_nodes.contains(parent_node->keyword));
+                assert(!owned_nodes.contains(parent_node->keyword));
                 std::string_view parent_keyword_as_string_view = parent_node->keyword;
                 owned_nodes[parent_keyword_as_string_view] = std::move(parent_node);
             }
@@ -299,7 +299,7 @@ namespace
             }
             if (start_node->node_type != GROUP)
             {
-                chassert(static_cast<size_t>(start_node->node_type) < std::size(all_flags_for_target));
+                assert(static_cast<size_t>(start_node->node_type) < std::size(all_flags_for_target));
                 all_flags_for_target[start_node->node_type] |= start_node->flags;
             }
             for (const auto & child : start_node->children)

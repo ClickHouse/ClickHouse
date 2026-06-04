@@ -25,8 +25,6 @@ void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 
 void registerInputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory);
-void registerInputFormatBuffers(FormatFactory & factory);
-void registerOutputFormatBuffers(FormatFactory & factory);
 
 void registerInputFormatRowBinary(FormatFactory & factory);
 void registerOutputFormatRowBinary(FormatFactory & factory);
@@ -156,7 +154,6 @@ void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
-void registerFormats();
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
@@ -177,8 +174,6 @@ void registerFormats()
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
-    registerInputFormatBuffers(factory);
-    registerOutputFormatBuffers(factory);
 
     registerInputFormatRowBinary(factory);
     registerOutputFormatRowBinary(factory);
