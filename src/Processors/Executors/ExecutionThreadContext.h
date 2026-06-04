@@ -38,6 +38,7 @@ public:
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
+    const bool measure_step_wall_clock;
 
     /// There is a performance optimization that schedules a task to the current thread, avoiding global task queue.
     /// Optimization decreases contention on global task queue but may cause starvation.
@@ -62,11 +63,12 @@ public:
     void setException(std::exception_ptr exception_) { exception = exception_; }
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool measure_step_wall_clock_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
+        , measure_step_wall_clock(measure_step_wall_clock_)
     {}
 };
 

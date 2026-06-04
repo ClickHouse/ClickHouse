@@ -967,6 +967,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             });
 
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+            pipeline.setMeasureStepWallClock(true);
 
             CompletedPipelineExecutor executor(pipeline);
 
@@ -980,7 +981,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             0, 
             query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
             "",
-            0,
+            false,
             &steps_to_stats);
         }
     }

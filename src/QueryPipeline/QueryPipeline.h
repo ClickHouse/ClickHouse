@@ -120,6 +120,8 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
+    void setMeasureStepWallClock(bool measure_step_wall_clock_) { measure_step_wall_clock = measure_step_wall_clock_; }
+
     void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
     void finalizeWriteInQueryResultCache();
     void readFromQueryResultCache(
@@ -160,6 +162,7 @@ private:
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
     bool update_profile_events = true;
+    bool measure_step_wall_clock = false;
 
     std::shared_ptr<Processors> processors;
 

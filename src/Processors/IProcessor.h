@@ -3,6 +3,7 @@
 #include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
+#include <Processors/StepWallClock.h>
 
 #include <atomic>
 #include <list>
@@ -32,6 +33,8 @@ using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::list<ProcessorPtr>;
+
+using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
@@ -380,6 +383,10 @@ public:
     /// For unspillable processors, the memory usage is not tracked.
     inline bool isSpillable() const { return spillable; }
 
+    void setStepWallClock(const StepWallClockPtr & clock) { step_wall_clock = clock; }
+
+    const StepWallClockPtr & getStepWallClock() { return step_wall_clock; }
+
     virtual ProcessorMemoryStats getMemoryStats()
     {
         return {};
@@ -403,6 +410,8 @@ private:
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
     friend class ExecutingGraph;
+
+    StepWallClockPtr step_wall_clock;
 
     std::string processor_description;
 

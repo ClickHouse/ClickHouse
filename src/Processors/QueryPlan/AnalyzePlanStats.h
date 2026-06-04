@@ -27,6 +27,7 @@ struct AnalyzeStats
     UInt64 input_bytes = 0;
     UInt64 output_rows = 0;
     UInt64 output_bytes = 0;
+    UInt64 wall_clock_time = 0;
 };
 
 class AnalyzeStepsStats

@@ -50,9 +50,11 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
-    : process_list_element(std::move(elem))
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool measure_step_wall_clock_)
+    : measure_step_wall_clock(measure_step_wall_clock_)
+    , process_list_element(std::move(elem))
 {
+
     if (process_list_element)
     {
         profile_processors = process_list_element->getContext()->getSettingsRef()[Setting::log_processors_profiles]
@@ -60,9 +62,10 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
         trace_processors = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
         trace_cpu_scheduling = process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_cpu_scheduling];
     }
+    UInt64 query_start_ns = measure_step_wall_clock_ ? clock_gettime_ns() : 0;
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
+        graph = std::make_unique<ExecutingGraph>(processors, profile_processors, measure_step_wall_clock_, query_start_ns);
     }
     catch (Exception & exception)
     {
@@ -546,7 +549,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, measure_step_wall_clock, read_progress_callback.get());
     tasks.fill(queue, async_queue);
 
     if (num_threads > 1)

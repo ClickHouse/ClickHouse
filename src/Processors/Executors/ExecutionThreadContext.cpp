@@ -1,6 +1,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
@@ -98,6 +99,12 @@ bool ExecutionThreadContext::executeTask()
         execution_time_watch.emplace();
 #endif
 
+    if (measure_step_wall_clock)
+    {
+        chassert(node->processor()->getStepWallClock().get());
+        node->processor()->getStepWallClock()->onEnter();
+    }
+
     try
     {
         executeJob(node, read_progress_callback);
@@ -106,6 +113,12 @@ bool ExecutionThreadContext::executeTask()
     catch (...)
     {
         node->exception = std::current_exception();
+    }
+
+    if (measure_step_wall_clock)
+    {
+        chassert(node->processor()->getStepWallClock().get());
+        node->processor()->getStepWallClock()->onLeave();
     }
 
     if (profile_processors)

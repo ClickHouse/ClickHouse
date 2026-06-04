@@ -24,6 +24,8 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline)
         stats.input_bytes += processor_data_stats.input_bytes;
         stats.output_rows += processor_data_stats.output_rows;
         stats.output_bytes += processor_data_stats.output_bytes;
+        stats.sum_elapsed_ns += proc->getElapsedNs();
+
     }
 }
 
@@ -38,7 +40,7 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
         return;  
     
     const auto & stats = it->second;
-    out << prefix << "Total time: " << stats.sum_elapsed_ns / 1000UL << " µs\n";
+    out << prefix << "Wall time: " << stats.sum_elapsed_ns / 1000UL << " µs\n";
     out << prefix << "Input rows: " <<  stats.input_rows << "\n";
     out << prefix << "Output rows: " <<  stats.output_rows << "\n";
     out << prefix << "Input bytes: " <<  stats.input_bytes << "\n";
