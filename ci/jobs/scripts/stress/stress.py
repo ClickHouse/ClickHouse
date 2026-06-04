@@ -184,7 +184,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
-        client_options.append("memory_tracker_fault_probability=0.01")
+        client_options.append("memory_tracker_fault_probability=0.001")
 
     if i % 5 == 1:
         client_options.append(
