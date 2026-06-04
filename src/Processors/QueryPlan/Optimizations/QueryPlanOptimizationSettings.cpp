@@ -25,6 +25,7 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -201,6 +202,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+    distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];

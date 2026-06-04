@@ -822,7 +822,11 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         auto context = CurrentThread::tryGetQueryContext();
         chassert(context);
-        TaskToHostMapPtr task_to_host_map = std::make_shared<TaskToHostMap>(distributed_plan, context);
+        /// Local execution runs every task in-process and needs no worker hosts; constructing
+        /// TaskToHostMap would require a configured worker cluster and fail on a plain single server.
+        TaskToHostMapPtr task_to_host_map = optimization_settings.distributed_plan_execute_locally
+            ? nullptr
+            : std::make_shared<TaskToHostMap>(distributed_plan, context);
 
         /// Generate random unique id for the query
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
@@ -844,7 +848,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         auto exchange_lookup = createExchangeLookup(
             object_storage_path,
             exchange_descriptions,
-            ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()},
+            task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
             context);
 
