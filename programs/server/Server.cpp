@@ -3139,6 +3139,8 @@ try
         if (config().has("startup_scripts"))
             loadStartupScripts(config(), server_settings, global_context, log);
 
+        global_context->loadOrReloadAuditTypes(config());
+
         {
             std::lock_guard lock(servers_lock);
 

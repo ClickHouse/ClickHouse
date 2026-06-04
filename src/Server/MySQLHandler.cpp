@@ -456,6 +456,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
         packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
+        session->onAuthenticationFailure(user_name, socket().peerAddress(), exc);
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);

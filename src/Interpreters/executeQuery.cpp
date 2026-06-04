@@ -1005,7 +1005,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
     /// Map the query kind to an audit type. Every `QueryKind` is classified deliberately so
     /// that sensitive operations (such as `Backup`, `Restore`, or moving access entities) are
     /// not silently hidden under `MISC` and excluded by common audit filters.
-    Context::AuditLogTypes audit_type;
+    Context::AuditLogTypes audit_type = Context::AuditLogTypes::MISC;
     switch (elem.query_kind)
     {
         /// Statements that query or modify data (and read-only schema/data inspection).
