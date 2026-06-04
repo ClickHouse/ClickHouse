@@ -32,6 +32,8 @@ using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
 class ASTInsertQuery;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 struct Settings;
 
@@ -231,6 +233,12 @@ public:
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Storage-side state that must stay stable between table-metadata and
+    /// data capture during BACKUP.  Called by `BackupEntriesCollector` once
+    /// the per-table share lock is held; `backupData` later compares against
+    /// the current state and fails closed on divergence.  Default: no check.
+    virtual ColumnIdMappingPtr captureBackupAuxSnapshot() const { return nullptr; }
 
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);

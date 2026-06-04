@@ -665,6 +665,14 @@ public:
         return column_id_mapping.get();
     }
 
+    /// Snapshot the column-ID mapping pointer at BACKUP-lock time.
+    /// `MultiVersion::set` installs a fresh pointer per publish, so a
+    /// different pointer at `backupData` time means an ALTER landed.
+    ColumnIdMappingPtr captureBackupAuxSnapshot() const override
+    {
+        return getColumnIdMapping();
+    }
+
     void setColumnIdMapping(ColumnIdMapping mapping_)
     {
         column_id_mapping.set(std::make_unique<const ColumnIdMapping>(std::move(mapping_)));

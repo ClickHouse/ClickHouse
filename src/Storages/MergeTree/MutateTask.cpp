@@ -789,26 +789,18 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
 
-    /// Filter out source slots whose effective column ID is no longer in
-    /// the current mapping at all.  After separate `DROP COLUMN b` then
-    /// `ADD COLUMN b`, an old wide part still keeps the original `b` slot
-    /// (we preserve it so the compact ordinal layout stays stable -- see
-    /// remapColumnsWithPhysicalNames case (c)), but the current mapping
-    /// has dropped the old column-id for `b` and bound logical `b` to a
-    /// fresh column ID.  Reusing that stale slot would have
-    /// `populateColumnIds` stamp it with the new ID while the writer
-    /// never produces a file at that ID -- the result part claims `b` is
-    /// stored at the new ID, but no such file exists.
-    ///
-    /// Conversely, after a metadata-only `RENAME COLUMN b TO d` followed
-    /// by `ADD COLUMN b UInt64`, the old slot's effective ID `b` is
-    /// still mapped (now to logical `d`).  We must NOT drop it -- it
-    /// carries live data for column `d`, and a partial mutation of
-    /// another column would otherwise write a result that loses `d`.
-    /// Skip only effective IDs that are no longer known by
-    /// `ColumnIdMapping`.
+    /// Metadata-only RENAME does not reload parts, so `col.name` in
+    /// `source_part->getColumns()` may be stale.  Filter slots whose
+    /// effective column-id is no longer in the mapping (orphan after
+    /// DROP+ADD reuses the name with a fresh id), and key
+    /// `source_columns_name_to_type` by the CURRENT logical name so the
+    /// downstream `storage_columns` lookups align regardless of load order.
+    /// Side-map keeps the load-time name for `getColumnPosition`.
     const auto & source_columns_raw = source_part->getColumns();
     NamesAndTypesList source_columns;
+    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
+    std::unordered_map<String, String> source_local_name_by_current_logical;
+
     if (auto active_mapping = source_part->storage.getActiveColumnIdMapping())
     {
         for (const auto & col : source_columns_raw)
@@ -817,16 +809,28 @@ getColumnsForNewDataPart(
             if (!active_mapping->hasColumnId(source_effective_id))
                 continue;
             source_columns.push_back(col);
+
+            const String current_logical = active_mapping->getLogicalName(source_effective_id);
+            source_columns_name_to_type[current_logical] = col.type;
+            source_local_name_by_current_logical[current_logical] = col.name;
         }
     }
     else
     {
         source_columns = source_columns_raw;
+        for (const auto & it : source_columns)
+            source_columns_name_to_type[it.name] = it.type;
     }
 
-    std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
-    for (const auto & it : source_columns)
-        source_columns_name_to_type[it.name] = it.type;
+    /// In column-IDs mode the lookup key is the CURRENT logical name;
+    /// `getColumnPosition` indexes by load-time name.  Identity elsewhere.
+    auto sourceLocalName = [&](const String & key) -> const String &
+    {
+        if (auto it = source_local_name_by_current_logical.find(key);
+            it != source_local_name_by_current_logical.end())
+            return it->second;
+        return key;
+    };
 
     const ColumnsSubstreams & source_columns_substreams = source_part->getColumnsSubstreams();
     bool fill_columns_substreams = !source_columns_substreams.empty();
@@ -878,7 +882,7 @@ getColumnsForNewDataPart(
                         it->type = source_col->second;
 
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first), has_column_ids);
+                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(sourceLocalName(source_col->first)), has_column_ids);
 
                         ++it;
                     }
@@ -933,7 +937,7 @@ getColumnsForNewDataPart(
                         if (fill_columns_substreams)
                         {
                             new_columns_substreams.addColumn(it->name);
-                            new_columns_substreams.addSubstreamsToLastColumn(source_columns_substreams.getColumnSubstreams(*source_part->getColumnPosition(it->name)));
+                            new_columns_substreams.addSubstreamsToLastColumn(source_columns_substreams.getColumnSubstreams(*source_part->getColumnPosition(sourceLocalName(it->name))));
                         }
                     }
                     ++it;
@@ -1259,11 +1263,18 @@ static NameToNameVector collectFilesForRenames(
             }
             else if (command.type == MutationCommand::Type::UPDATE || command.type == MutationCommand::Type::READ_COLUMN || command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
-                /// Remove files for streams that exist in source_part,
-                /// but were removed in new_part by MODIFY COLUMN or MATERIALIZE COLUMN from
-                /// type with higher number of streams (e.g. LowCardinality -> String).
-                auto old_streams = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
-                auto new_streams = getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
+                /// Remove files for streams that exist in source_part but
+                /// were removed in new_part by MODIFY/MATERIALIZE COLUMN.
+                /// In column-IDs mode iterate each part's own column list
+                /// so streams resolve via column_id; comparing by name
+                /// would falsely flag live files after a metadata-only
+                /// RENAME (source carries the stale name, new the current).
+                auto old_streams = has_column_ids
+                    ? getStreamCounts(source_part, source_part->checksums, source_part->getColumns())
+                    : getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
+                auto new_streams = has_column_ids
+                    ? getStreamCounts(new_part, source_part->checksums, new_part->getColumns())
+                    : getStreamCounts(new_part, source_part->checksums, source_part->getColumns().getNames());
 
                 for (const auto & [old_stream, _] : old_streams)
                 {

@@ -3617,19 +3617,24 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
 
+    /// Column-ID ALTER takes `lockForAlter`, BACKUP only `lockForShare`;
+    /// the two are independent.  Verify the mapping pointer captured at
+    /// share-lock time matches the current one -- a different pointer means
+    /// an ALTER raced and the backup would pair the captured CREATE with
+    /// a newer mapping.
+    auto qualified_name = QualifiedTableName{getStorageID().database_name, getStorageID().table_name};
+    auto captured_mapping = backup_entries_collector.getBackupAuxSnapshot(qualified_name);
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+    if (captured_mapping.get() != column_ids_mapping_snapshot.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed between table metadata and BACKUP data capture; retry.");
+
     DataPartsVector data_parts;
     if (partitions)
         data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
     else
         data_parts = getVisibleDataPartsVector(local_context);
-
-    /// `BackupEntriesCollector` only holds `tryLockForShare`; column-ID
-    /// `ALTER`s use the separate `lockForAlter`, so the parts vector above
-    /// and the mapping below are two independent snapshots.  Pin the
-    /// mapping pointer now and re-check after collecting entries -- if it
-    /// changed, the backup would pair the old parts with a newer mapping
-    /// and `RESTORE` would resolve columns through the wrong IDs.
-    auto column_ids_mapping_snapshot = getColumnIdMapping();
 
     Int64 min_data_version = std::numeric_limits<Int64>::max();
     for (const auto & data_part : data_parts)
@@ -3641,20 +3646,12 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
 
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
 
-    /// Pointer equality is the column-ID mapping version check: `MultiVersion::set`
-    /// always installs a fresh unique_ptr, so a different pointer here means
-    /// a column-ID ALTER ran during the BACKUP collection.  Fail closed so
-    /// the user retries -- a silent partial snapshot would resolve restored
-    /// columns through the wrong IDs.
+    /// Re-check after parts/mutations collection (catches ALTER racing with it).
     if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Column ID mapping changed concurrently with BACKUP collection; "
-            "the snapshot would pair the captured parts with a newer mapping. "
-            "Retry the BACKUP without a concurrent column-ID ALTER.");
+            "Column ID mapping changed during BACKUP collection; retry.");
 
-    /// Without the mapping, restored parts cannot resolve any non-identity
-    /// column ID (DROP+ADD or RENAME).
     if (column_ids_mapping_snapshot)
     {
         backup_entries_collector.addBackupEntry(
