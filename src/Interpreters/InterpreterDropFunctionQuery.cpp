@@ -50,7 +50,6 @@ BlockIO InterpreterDropFunctionQuery::execute()
     return {};
 }
 
-void registerInterpreterDropFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterDropFunctionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

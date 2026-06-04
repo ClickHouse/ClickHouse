@@ -1,6 +1,5 @@
 #include <Common/QueryFuzzer.h>
 
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -79,7 +78,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #if USE_BUZZHOUSE
-#    include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#include <Client/BuzzHouse/Generator/RandomGenerator.h>
 namespace BuzzHouse
 {
 extern std::unordered_map<String, CHSetting> performanceSettings;
@@ -98,82 +97,6 @@ namespace ErrorCodes
 {
 extern const int TOO_DEEP_RECURSION;
 }
-
-static const Strings insert_formats = {
-    "Values",
-    "CSV",
-    "TSV",
-    "TabSeparated",
-    "TabSeparatedRaw",
-    "TSKV",
-    "JSON",
-    "JSONCompact",
-    "JSONColumns",
-    "JSONColumnsWithMetadata",
-    "JSONEachRow",
-    "JSONStringsEachRow",
-    "JSONLines",
-    "JSONCompactEachRow",
-    "JSONCompactStringsEachRow",
-    "JSONObjectEachRow",
-    "JSONCompactColumns",
-    "BSONEachRow",
-    "Native",
-    "RowBinary",
-    "MsgPack",
-    "LineAsString",
-    "RawBLOB",
-    "Parquet",
-    "Arrow",
-    "ArrowStream",
-    "ORC",
-    "Avro",
-    "AvroConfluent",
-    "CustomSeparated",
-};
-
-static const Strings data_formats = {
-    "Values",
-    "CSV",
-    "TSV",
-    "TabSeparated",
-    "TabSeparatedRaw",
-    "TSKV",
-    "JSON",
-    "JSONCompact",
-    "JSONColumns",
-    "JSONColumnsWithMetadata",
-    "JSONEachRow",
-    "JSONStringsEachRow",
-    "JSONLines",
-    "JSONCompactEachRow",
-    "JSONCompactStringsEachRow",
-    "JSONObjectEachRow",
-    "JSONCompactColumns",
-    "JSONEachRowWithProgress",
-    "JSONCompactEachRowWithProgress",
-    "BSONEachRow",
-    "Native",
-    "RowBinary",
-    "MsgPack",
-    "LineAsString",
-    "RawBLOB",
-    "Parquet",
-    "Arrow",
-    "ArrowStream",
-    "ORC",
-    "Avro",
-    "AvroConfluent",
-    "CustomSeparated",
-    "Markdown",
-    "Pretty",
-    "PrettyCompact",
-    "Vertical",
-    "SQLInsert",
-    "XML",
-    "Npy",
-    "Null",
-};
 
 static String fieldToNumericString(const Field & f)
 {
@@ -266,17 +189,16 @@ Field QueryFuzzer::getRandomField(int type)
             return bad_int64_values[fuzz_rand() % std::size(bad_int64_values)];
         }
         case 1: {
-            static constexpr double values[] = {
-                std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
-                -std::numeric_limits<double>::infinity(), 0.,
-                -0.,       0.0001,
-                0.5,       0.9999,
-                1.,        1.0001,
-                2.,        10.0001,
-                100.0001,  1000.0001,
-                1e10,      1e20,
-                static_cast<double>(FLT_MIN), static_cast<double>(FLT_MIN) + static_cast<double>(FLT_EPSILON),
-                static_cast<double>(FLT_MAX), static_cast<double>(FLT_MAX) + static_cast<double>(FLT_EPSILON)};
+            static constexpr double values[] = {NAN,       INFINITY,
+                                                -INFINITY, 0.,
+                                                -0.,       0.0001,
+                                                0.5,       0.9999,
+                                                1.,        1.0001,
+                                                2.,        10.0001,
+                                                100.0001,  1000.0001,
+                                                1e10,      1e20,
+                                                FLT_MIN,   FLT_MIN + FLT_EPSILON,
+                                                FLT_MAX,   FLT_MAX + FLT_EPSILON};
             return values[fuzz_rand() % std::size(values)];
         }
         case 2: {
@@ -352,7 +274,7 @@ Field QueryFuzzer::getRandomField(int type)
             return String(json_values[fuzz_rand() % std::size(json_values)]);
         }
         default:
-            chassert(false);
+            assert(false);
             return Null{};
     }
 }
@@ -1757,90 +1679,6 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
     fuzzProjectionWithSettings(projection);
 }
 
-static const std::map<size_t, Strings> swapAggrs
-    = {{1,
-        {"any",
-         "anyHeavy",
-         "anyLast",
-         "anyRespectNulls",
-         "avg",
-         "count",
-         "deltaSum",
-         "entropy",
-         "first_value",
-         "groupArray",
-         "groupBitAnd",
-         "groupBitOr",
-         "groupBitXor",
-         "groupUniqArray",
-         "kurtPop",
-         "kurtSamp",
-         "last_value",
-         "max",
-         "median",
-         "min",
-         "singleValueOrNull",
-         "skewPop",
-         "skewSamp",
-         "stddevPop",
-         "stddevPopStable",
-         "stddevSamp",
-         "stddevSampStable",
-         "sum",
-         "sumCount",
-         "sumKahan",
-         "sumWithOverflow",
-         "topK",
-         "uniq",
-         "uniqCombined",
-         "uniqCombined64",
-         "uniqExact",
-         "uniqHLL12",
-         "uniqTheta",
-         "varPop",
-         "varPopStable",
-         "varSamp",
-         "varSampStable",
-         "groupArrayIntersect",
-         "groupBitmapAnd",
-         "groupBitmapOr",
-         "groupBitmapXor",
-         "quantile",
-         "groupArrayMovingAvg",
-         "groupArrayMovingSum",
-         "groupArraySorted",
-         "aggThrow"}},
-       {2,
-        {"argMax",
-         "argMin",
-         "avgWeighted",
-         "boundingRatio",
-         "contingency",
-         "corr",
-         "corrStable",
-         "covarPop",
-         "covarPopStable",
-         "covarSamp",
-         "covarSampStable",
-         "cramersV",
-         "cramersVBiasCorrected",
-         "deltaSumTimestamp",
-         "kolmogorovSmirnovTest",
-         "mannWhitneyUTest",
-         "maxIntersections",
-         "maxIntersectionsPosition",
-         "quantileWeighted",
-         "rankCorr",
-         "studentTTest",
-         "theilsU",
-         "topKWeighted",
-         "uniq",
-         "welchTTest",
-         "simpleLinearRegression",
-         "largestTriangleThreeBuckets",
-         "analysisOfVariance",
-         "intervalLengthSum"}}};
-
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
@@ -1992,48 +1830,6 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 #undef FUZZ_DECIMAL
     /// NOLINTEND(bugprone-macro-parentheses)
 
-    const auto * type_aggr = typeid_cast<const DataTypeAggregateFunction *>(type.get());
-    if (type_aggr && fuzz_rand() % 4 != 0)
-    {
-        const auto nargs = type_aggr->getArgumentsDataTypes().size();
-        String new_name = type_aggr->getFunctionName();
-        DataTypes new_arg_types = type_aggr->getArgumentsDataTypes();
-        bool changed = false;
-
-        if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
-        {
-            String candidate = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
-            if (candidate != new_name)
-            {
-                new_name = std::move(candidate);
-                changed = true;
-            }
-        }
-        for (auto & arg_type : new_arg_types)
-        {
-            auto fuzzed = fuzzDataType(arg_type);
-            if (fuzzed != arg_type)
-            {
-                arg_type = fuzzed;
-                changed = true;
-            }
-        }
-        if (changed)
-        {
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto new_func = AggregateFunctionFactory::instance().get(
-                    new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
-                return std::make_shared<DataTypeAggregateFunction>(new_func, new_arg_types, type_aggr->getParameters());
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject fuzzed argument types
-            {
-            }
-        }
-        return type;
-    }
-
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
         return std::make_shared<DataTypeArray>(type);
@@ -2054,20 +1850,16 @@ DataTypePtr QueryFuzzer::getRandomType()
 {
     checkIterationLimit();
 
-    static const std::vector<TypeIndex> random_types = {TypeIndex::UInt8,      TypeIndex::UInt16,         TypeIndex::UInt32,
-                                                        TypeIndex::UInt64,     TypeIndex::UInt128,        TypeIndex::UInt256,
-                                                        TypeIndex::Int8,       TypeIndex::Int16,          TypeIndex::Int32,
-                                                        TypeIndex::Int64,      TypeIndex::Int128,         TypeIndex::Int256,
-                                                        TypeIndex::BFloat16,   TypeIndex::Float32,        TypeIndex::Float64,
-                                                        TypeIndex::Date,       TypeIndex::Date32,         TypeIndex::DateTime,
-                                                        TypeIndex::DateTime64, TypeIndex::String,         TypeIndex::FixedString,
-                                                        TypeIndex::Enum8,      TypeIndex::Enum16,         TypeIndex::Decimal32,
-                                                        TypeIndex::Decimal64,  TypeIndex::Decimal128,     TypeIndex::Decimal256,
-                                                        TypeIndex::UUID,       TypeIndex::Array,          TypeIndex::Tuple,
-                                                        TypeIndex::Nullable,   TypeIndex::LowCardinality, TypeIndex::Map,
-                                                        TypeIndex::IPv4,       TypeIndex::IPv6,           TypeIndex::Variant,
-                                                        TypeIndex::Dynamic,    TypeIndex::Time,           TypeIndex::Time64,
-                                                        TypeIndex::Object,     TypeIndex::QBit,           TypeIndex::AggregateFunction};
+    static const std::vector<TypeIndex> random_types
+        = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
+           TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
+           TypeIndex::Int128,      TypeIndex::Int256,         TypeIndex::BFloat16, TypeIndex::Float32,    TypeIndex::Float64,
+           TypeIndex::Date,        TypeIndex::Date32,         TypeIndex::DateTime, TypeIndex::DateTime64, TypeIndex::String,
+           TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
+           TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
+           TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
+           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64,     TypeIndex::Object,
+           TypeIndex::QBit};
 
     /// Geo types (Point, Ring, Polygon, MultiPolygon) are custom-named Array aliases with no TypeIndex
     /// of their own, so they are appended after the TypeIndex vector in a unified selection.
@@ -2160,37 +1952,12 @@ DataTypePtr QueryFuzzer::getRandomType()
             const size_t dimension = fuzz_rand() % 128 + 1;
             return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
         }
-        case TypeIndex::AggregateFunction: {
-            const size_t nargs = fuzz_rand() % 3;
-            String name = "count";
-            DataTypes arg_types;
-            if (nargs > 0 && swapAggrs.contains(nargs))
-            {
-                name = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
-                for (size_t i = 0; i < nargs; ++i)
-                    arg_types.push_back(getRandomType());
-            }
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject random argument types
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, DataTypes{}, Array{});
-            }
-        }
         default:
-            break;
+            return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
     }
 
 #undef DISPATCH
     /// NOLINTEND(bugprone-macro-parentheses)
-
-    return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
 }
 
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
@@ -2690,7 +2457,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
         }
         else if (!alias.empty())
         {
-            ASTIdentifier * id = nullptr;
+            ASTIdentifier * id;
             const int next_action = fuzz_rand() % 30;
 
             if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
@@ -2987,34 +2754,7 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
         }
     }
 
-    /// Convert any join to PASTE JOIN: no ON/USING, no strictness/locality/NATURAL.
-    if (fuzz_rand() % 50 == 0)
-    {
-        table_join->kind = JoinKind::Paste;
-        table_join->strictness = JoinStrictness::Unspecified;
-        table_join->locality = JoinLocality::Unspecified;
-        table_join->is_natural = false;
-        auto & ch = table_join->children;
-        ch.erase(
-            std::remove_if(
-                ch.begin(),
-                ch.end(),
-                [&](const ASTPtr & c)
-                { return c.get() == table_join->using_expression_list.get() || c.get() == table_join->on_expression.get(); }),
-            ch.end());
-        table_join->using_expression_list.reset();
-        table_join->on_expression.reset();
-    }
-    /// Cross/Comma/Paste → regular join (only safe when a condition already exists).
-    else if (table_join->kind >= JoinKind::Cross)
-    {
-        if (fuzz_rand() % 20 == 0 && (table_join->on_expression || table_join->using_expression_list))
-        {
-            static const std::vector<JoinKind> regular_kinds = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full};
-            table_join->kind = regular_kinds[fuzz_rand() % regular_kinds.size()];
-        }
-    }
-    else
+    if (table_join->kind < JoinKind::Cross)
     {
         static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
         static const std::vector<JoinStrictness> all_strictness_values
@@ -3026,7 +2766,8 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
                JoinStrictness::Semi};
         static const std::vector<JoinStrictness> right_strictness_values
             = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
-        static const std::vector<JoinKind> kind_values = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full};
+        static const std::vector<JoinKind> kind_values
+            = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full /*,JoinKind::Cross,JoinKind::Comma,JoinKind::Paste*/};
 
         table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
         table_join->kind = kind_values[fuzz_rand() % kind_values.size()];
@@ -3039,6 +2780,7 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
             switch (table_join->kind)
             {
                 case JoinKind::Inner:
+                    /// Semi inner join not possible
                     table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 2)];
                     break;
                 case JoinKind::Left:
@@ -3150,8 +2892,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             ntexp->database_and_table_name = ntexp->children.back();
         }
 
-        /// NATURAL JOIN and PASTE JOIN do not take ON/USING — only attach a condition for other joins.
-        if (!table_join->is_natural && table_join->kind != JoinKind::Paste)
+        /// NATURAL JOIN does not take ON/USING — only attach a condition for non-natural joins.
+        if (!table_join->is_natural)
         {
             const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
             for (int i = 0; i < nconditions; i++)
@@ -3224,24 +2966,89 @@ ASTPtr QueryFuzzer::addArrayJoinClause()
     return nullptr;
 }
 
-/// Higher-order array functions that accept a lambda or function name as first argument.
-/// Shared between swapFuncs and the HOF fuzzing logic below.
-static const std::unordered_set<String> higher_order_array_funcs = {
-    "arraySort",        "arrayReverseSort", "arrayPartialSort",  "arrayPartialReverseSort",
-    "arrayFilter",      "arrayMap",         "arrayCount",        "arrayExists",
-    "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
-    "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
-    "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
-};
-
-/// Higher-order map functions (same idea, for Map-typed arguments).
-static const std::unordered_set<String> higher_order_map_funcs = {
-    "mapFilter",
-    "mapApply",
-    "mapExists",
-    "mapAll",
-    "mapSort",
-};
+static const std::map<size_t, Strings> swapAggrs
+    = {{1,
+        {"any",
+         "anyHeavy",
+         "anyLast",
+         "anyRespectNulls",
+         "avg",
+         "count",
+         "deltaSum",
+         "entropy",
+         "first_value",
+         "groupArray",
+         "groupBitAnd",
+         "groupBitOr",
+         "groupBitXor",
+         "groupUniqArray",
+         "kurtPop",
+         "kurtSamp",
+         "last_value",
+         "max",
+         "median",
+         "min",
+         "singleValueOrNull",
+         "skewPop",
+         "skewSamp",
+         "stddevPop",
+         "stddevPopStable",
+         "stddevSamp",
+         "stddevSampStable",
+         "sum",
+         "sumCount",
+         "sumKahan",
+         "sumWithOverflow",
+         "topK",
+         "uniq",
+         "uniqCombined",
+         "uniqCombined64",
+         "uniqExact",
+         "uniqHLL12",
+         "uniqTheta",
+         "varPop",
+         "varPopStable",
+         "varSamp",
+         "varSampStable",
+         "groupArrayIntersect",
+         "groupBitmapAnd",
+         "groupBitmapOr",
+         "groupBitmapXor",
+         "quantile",
+         "groupArrayMovingAvg",
+         "groupArrayMovingSum",
+         "groupArraySorted",
+         "aggThrow"}},
+       {2,
+        {"argMax",
+         "argMin",
+         "avgWeighted",
+         "boundingRatio",
+         "contingency",
+         "corr",
+         "corrStable",
+         "covarPop",
+         "covarPopStable",
+         "covarSamp",
+         "covarSampStable",
+         "cramersV",
+         "cramersVBiasCorrected",
+         "deltaSumTimestamp",
+         "kolmogorovSmirnovTest",
+         "mannWhitneyUTest",
+         "maxIntersections",
+         "maxIntersectionsPosition",
+         "quantileWeighted",
+         "rankCorr",
+         "studentTTest",
+         "theilsU",
+         "topKWeighted",
+         "uniq",
+         "welchTTest",
+         "simpleLinearRegression",
+         "largestTriangleThreeBuckets",
+         "analysisOfVariance",
+         "intervalLengthSum"}}};
 
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
@@ -3360,25 +3167,15 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toDecimal256OrNull",
          "toDecimal256OrZero",
          "toDecimal256OrDefault"},
-        /// Integer type casts (bare, OrNull, OrZero, and OrDefault variants)
-        {"toInt8",          "toInt8OrNull",       "toInt8OrZero",   "toInt8OrDefault",   "toInt16",         "toInt16OrNull",
-         "toInt16OrZero",   "toInt16OrDefault",   "toInt32",        "toInt32OrNull",     "toInt32OrZero",   "toInt32OrDefault",
-         "toInt64",         "toInt64OrNull",      "toInt64OrZero",  "toInt64OrDefault",  "toInt128",        "toInt128OrNull",
-         "toInt128OrZero",  "toInt128OrDefault",  "toInt256",       "toInt256OrNull",    "toInt256OrZero",  "toInt256OrDefault",
-         "toUInt8",         "toUInt8OrNull",      "toUInt8OrZero",  "toUInt8OrDefault",  "toUInt16",        "toUInt16OrNull",
-         "toUInt16OrZero",  "toUInt16OrDefault",  "toUInt32",       "toUInt32OrNull",    "toUInt32OrZero",  "toUInt32OrDefault",
-         "toUInt64",        "toUInt64OrNull",     "toUInt64OrZero", "toUInt64OrDefault", "toUInt128",       "toUInt128OrNull",
-         "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
-        /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
-        {"toBFloat16",
-         "toFloat32",
-         "toFloat32OrNull",
-         "toFloat32OrZero",
-         "toFloat32OrDefault",
-         "toFloat64",
-         "toFloat64OrNull",
-         "toFloat64OrZero",
-         "toFloat64OrDefault"},
+        /// Integer type casts (bare, OrNull, and OrZero variants)
+        {"toInt8",    "toInt8OrNull",    "toInt8OrZero",    "toInt16",   "toInt16OrNull",   "toInt16OrZero",
+         "toInt32",   "toInt32OrNull",   "toInt32OrZero",   "toInt64",   "toInt64OrNull",   "toInt64OrZero",
+         "toInt128",  "toInt128OrNull",  "toInt128OrZero",  "toInt256",  "toInt256OrNull",  "toInt256OrZero",
+         "toUInt8",   "toUInt8OrNull",   "toUInt8OrZero",   "toUInt16",  "toUInt16OrNull",  "toUInt16OrZero",
+         "toUInt32",  "toUInt32OrNull",  "toUInt32OrZero",  "toUInt64",  "toUInt64OrNull",  "toUInt64OrZero",
+         "toUInt128", "toUInt128OrNull", "toUInt128OrZero", "toUInt256", "toUInt256OrNull", "toUInt256OrZero"},
+        /// Floating-point type casts (bare, OrNull, and OrZero variants)
+        {"toBFloat16", "toFloat32", "toFloat32OrNull", "toFloat32OrZero", "toFloat64", "toFloat64OrNull", "toFloat64OrZero"},
         /// Date/datetime type casts
         {"toDate",
          "toDate32",
@@ -3389,22 +3186,18 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toTime64",
          "toDateOrNull",
          "toDateOrZero",
-         "toDateOrDefault",
          "toDate32OrNull",
          "toDate32OrZero",
-         "toDate32OrDefault",
          "toDateTimeOrNull",
          "toDateTimeOrZero",
-         "toDateTimeOrDefault",
-         "toDateTime64OrNull",
-         "toDateTime64OrZero",
-         "toDateTime64OrDefault",
          "toTimeOrNull",
          "toTimeOrZero",
-         "toTimeOrDefault",
-         "toTime64OrDefault"},
+         "toDateOrDefault",
+         "toDate32OrDefault",
+         "toDateTimeOrDefault",
+         "toTimeOrDefault"},
         /// Rounding functions (number → number)
-        {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
+        {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc"},
         /// Bitwise binary operators
         {"bitAnd", "bitOr", "bitXor"},
         /// Bit shift operators
@@ -3463,17 +3256,16 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Array scalar reductions (array → scalar)
         {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq"},
         /// Array transform functions (array → array, no lambda)
-        {"arrayReverse",           "arrayShuffle",    "arrayDistinct",  "arrayCompact",      "arrayFlatten",       "arrayConcat",
-         "arrayIntersect",         "arrayPopFront",   "arrayPopBack",   "arrayPushFront",    "arrayPushBack",      "arrayRotateLeft",
-         "arrayRotateRight",       "arraySlice",      "arrayZip",       "arrayEnumerate",    "arrayEnumerateUniq", "arrayCumSum",
-         "arrayCumSumNonNegative", "arrayDifference", "arrayTranspose", "arrayJaccardIndex", "arrayRandomSample",  "arrayShingles",
-         "arrayShiftLeft",         "arrayShiftRight"},
+        {"arrayReverse",           "arrayShuffle",    "arrayDistinct", "arrayCompact",   "arrayFlatten",       "arrayConcat",
+         "arrayIntersect",         "arrayPopFront",   "arrayPopBack",  "arrayPushFront", "arrayPushBack",      "arrayRotateLeft",
+         "arrayRotateRight",       "arraySlice",      "arrayZip",      "arrayEnumerate", "arrayEnumerateUniq", "arrayCumSum",
+         "arrayCumSumNonNegative", "arrayDifference", "arrayTranspose"},
         /// URL hierarchy generators (url → Array(String))
         {"URLHierarchy", "URLPathHierarchy"},
         /// Trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",   "atan",
-         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",     "exp2",
-         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid", "atan2"},
+        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",  "atan",
+         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",    "exp2",
+         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
@@ -3490,8 +3282,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "sipHash64",
          "wyHash64",
          "xxHash32",
-         "xxHash64",
-         "xxh3"},
+         "xxHash64"},
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
         {"sipHash128", "murmurHash3_128"},
         /// Cryptographic hashes (string → FixedString)
@@ -3528,8 +3319,10 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"mapAdd", "mapSubtract"},
         /// Map sorting (map → map)
         {"mapSort", "mapReverseSort"},
-        /// Higher-order map functions (lambda, map → map or UInt8)
-        higher_order_map_funcs,
+        /// Higher-order map transforms (lambda, map → map)
+        {"mapFilter", "mapApply"},
+        /// Higher-order map predicates (lambda, map → UInt8)
+        {"mapExists", "mapAll"},
         /// Binary encoding (bytes → encoded String)
         {"hex", "bin", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
@@ -3591,8 +3384,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Bitmap ↔ Array conversion (single-arg)
         {"bitmapBuild", "bitmapToArray"},
         /// IP address type casts (String → IPv4/IPv6)
-        {"toIPv4", "toIPv4OrNull", "toIPv4OrZero", "toIPv4OrDefault"},
-        {"toIPv6", "toIPv6OrNull", "toIPv6OrZero", "toIPv6OrDefault"},
+        {"toIPv4", "toIPv4OrNull", "toIPv4OrZero"},
+        {"toIPv6", "toIPv6OrNull", "toIPv6OrZero"},
         /// IPv4 numeric ↔ string conversions
         {"IPv4NumToString", "IPv4NumToStringClassC"},
         /// IPv6 numeric ↔ string conversions
@@ -3618,7 +3411,20 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Conditional branching (if: 3 args; multiIf: 2n+1 args; caseWithExpression: subject + 2n+1 args — errors on mismatch are fine)
         {"if", "multiIf", "caseWithExpression"},
         /// Array higher-order functions ([lambda,] array → array or scalar)
-        higher_order_array_funcs,
+        {"arraySort",
+         "arrayReverseSort",
+         "arrayFilter",
+         "arrayMap",
+         "arrayCount",
+         "arrayExists",
+         "arrayAll",
+         "arrayAny",
+         "arrayFirst",
+         "arrayLast",
+         "arrayFirstIndex",
+         "arrayLastIndex",
+         "arrayFill",
+         "arrayReverseFill"},
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])
@@ -3644,9 +3450,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Text classification (arity mismatch is intentional: naiveBayesClassifier takes (model, text), the rest take (text))
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
-        {"stem", "lemmatize", "synonyms"},
-        /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
-        {"greatCircleDistance", "geoDistance", "greatCircleAngle"}};
+        {"stem", "lemmatize", "synonyms"}};
 
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
@@ -3671,8 +3475,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     auto [_, inserted] = debug_visited_nodes.insert(ast.get());
     if (!inserted)
     {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(
             stderr,
             "The AST node '{}' was already visited before."
@@ -3681,7 +3483,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
-#pragma clang diagnostic pop
         std::abort();
     }
 
@@ -3711,19 +3512,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         fuzz(with_union->list_of_selects);
-
-        /// Duplicate ASTPtr siblings in a UNION are invalid fuzzer output. If such sharing
-        /// reaches the analyzer, the resulting QueryTree can also contain shared nodes;
-        /// when the planner then registers column identifiers in the shared GlobalPlannerContext,
-        /// the second branch throws a LOGICAL_ERROR ("Column identifier is already registered").
-        /// Normalize any duplicate siblings by cloning them.
-        {
-            std::unordered_set<IAST *> seen;
-            for (auto & member : union_members)
-                if (!seen.insert(member.get()).second)
-                    member = member->clone();
-        }
-
         /// Fuzzing SELECT query to EXPLAIN query randomly.
         /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
         if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
@@ -3933,27 +3721,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
-        /// ClickHouse HOFs accept a bare function name instead of a lambda, e.g. arrayMap(toUInt64, arr).
-        /// Two mutations: (1) replace an existing lambda with a function name,
-        /// (2) prepend a function name to a HOF that currently has no lambda/identifier first arg.
-        if (fn->arguments && !fn->arguments->children.empty() && fuzz_rand() % 30 == 0)
-        {
-            auto * first_arg = fn->arguments->children[0]->as<ASTFunction>();
-            if (first_arg && first_arg->name == "lambda")
-            {
-                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
-                fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
-            }
-            else if (
-                (higher_order_array_funcs.contains(fn->name) || higher_order_map_funcs.contains(fn->name))
-                && !(first_arg && first_arg->name == "lambda") && !fn->arguments->children[0]->as<ASTIdentifier>())
-            {
-                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
-                fn->arguments->children.insert(
-                    fn->arguments->children.begin(), make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group)));
-            }
-        }
-
         if (fn->isWindowFunction() && fn->window_definition)
         {
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
@@ -3981,39 +3748,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             fuzzJoinType(tj);
         }
-        /// ON → USING: replace the ON predicate with a USING column list.
-        if (fuzz_rand() % 50 == 0 && tj->on_expression && tj->kind != JoinKind::Paste)
-        {
-            colids.clear();
-            std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
-            if (!colids.empty())
-            {
-                auto using_list = make_intrusive<ASTExpressionList>();
-                const size_t ncols = 1 + fuzz_rand() % std::min<size_t>(3, colids.size());
-                for (size_t i = 0; i < ncols; i++)
-                {
-                    auto it = colids.begin();
-                    std::advance(it, fuzz_rand() % colids.size());
-                    using_list->children.push_back(it->second->clone());
-                }
-                tj->children.erase(std::remove(tj->children.begin(), tj->children.end(), tj->on_expression), tj->children.end());
-                tj->on_expression.reset();
-                tj->children.push_back(using_list);
-                tj->using_expression_list = tj->children.back();
-            }
-        }
-        /// USING → ON: replace the USING column list with a generated predicate.
-        else if (fuzz_rand() % 50 == 0 && tj->using_expression_list && tj->kind != JoinKind::Paste)
-        {
-            if (ASTPtr pred = generatePredicate())
-            {
-                tj->children.erase(std::remove(tj->children.begin(), tj->children.end(), tj->using_expression_list), tj->children.end());
-                tj->using_expression_list.reset();
-                tj->children.push_back(pred);
-                tj->on_expression = tj->children.back();
-            }
-        }
-        else if (fuzz_rand() % 20 == 0)
+        if (fuzz_rand() % 20 == 0)
         {
             if (tj->using_expression_list)
             {
@@ -4303,19 +4038,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 else if (fuzz_rand() % 50 == 0)
                 {
-                    /// Negative offsets exercise error-handling paths in the server.
-                    auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                                                    : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
+                    select->setExpression(
+                        ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
                 }
             }
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            /// Add a LIMIT clause (negative values half the time).
-            auto val
-                = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
+            /// Add a LIMIT clause
+            select->setExpression(
+                ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
         }
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
@@ -4327,9 +4059,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                                                 : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(val));
+                select->setExpression(
+                    ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
             }
             if (select->limitByOffset())
             {
@@ -4338,9 +4069,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                                                 : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(val));
+                select->setExpression(
+                    ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
             }
         }
         fuzzColumnLikeExpressionList(select->limitBy().get());
@@ -4458,7 +4188,37 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            insert_query->format = insert_formats[fuzz_rand() % insert_formats.size()];
+            static const Strings insert_fmts = {
+                "Values",
+                "CSV",
+                "TSV",
+                "TabSeparated",
+                "TabSeparatedRaw",
+                "TSKV",
+                "JSON",
+                "JSONCompact",
+                "JSONColumns",
+                "JSONColumnsWithMetadata",
+                "JSONEachRow",
+                "JSONStringsEachRow",
+                "JSONLines",
+                "JSONCompactEachRow",
+                "JSONCompactStringsEachRow",
+                "JSONObjectEachRow",
+                "JSONCompactColumns",
+                "BSONEachRow",
+                "Native",
+                "RowBinary",
+                "MsgPack",
+                "LineAsString",
+                "RawBLOB",
+                "Parquet",
+                "Arrow",
+                "ArrowStream",
+                "ORC",
+                "Avro",
+            };
+            insert_query->format = insert_fmts[fuzz_rand() % insert_fmts.size()];
         }
         /// Occasionally drop inline SETTINGS
         if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
@@ -5138,54 +4898,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else
     {
         fuzz(ast->children);
-    }
-
-    if (auto * query_with_output = typeid_cast<ASTQueryWithOutput *>(ast.get()))
-    {
-        if (query_with_output->out_file)
-        {
-            if (fuzz_rand() % 20 == 0)
-            {
-                query_with_output->reset(query_with_output->out_file);
-                query_with_output->reset(query_with_output->compression);
-                query_with_output->reset(query_with_output->compression_level);
-                query_with_output->setIsOutfileAppend(false);
-                query_with_output->setIsOutfileTruncate(false);
-                query_with_output->setIsIntoOutfileWithStdout(false);
-            }
-            else
-            {
-                if (fuzz_rand() % 10 == 0)
-                    query_with_output->setIsOutfileAppend(!query_with_output->isOutfileAppend());
-                if (fuzz_rand() % 10 == 0)
-                    query_with_output->setIsOutfileTruncate(!query_with_output->isOutfileTruncate());
-                if (fuzz_rand() % 10 == 0)
-                    query_with_output->setIsIntoOutfileWithStdout(!query_with_output->isIntoOutfileWithStdout());
-                if (fuzz_rand() % 20 == 0)
-                {
-                    static const Strings compressions
-                        = {"none", "gzip", "deflate", "br", "brotli", "xz", "lzma", "zstd", "zst", "lz4", "bz2", "snappy"};
-                    query_with_output->set(
-                        query_with_output->compression, make_intrusive<ASTLiteral>(compressions[fuzz_rand() % compressions.size()]));
-                }
-                if (fuzz_rand() % 20 == 0)
-                {
-                    query_with_output->set(
-                        query_with_output->compression_level, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 23)));
-                }
-                if (fuzz_rand() % 10 == 0)
-                {
-                    auto fmt = make_intrusive<ASTIdentifier>(data_formats[fuzz_rand() % data_formats.size()]);
-                    query_with_output->set(query_with_output->format_ast, fmt);
-                }
-            }
-        }
-        else if (fuzz_rand() % 50 == 0)
-        {
-            query_with_output->set(query_with_output->out_file, make_intrusive<ASTLiteral>("/dev/null"));
-            if (fuzz_rand() % 2 == 0)
-                query_with_output->setIsOutfileTruncate(true);
-        }
     }
 }
 

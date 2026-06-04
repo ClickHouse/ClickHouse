@@ -39,21 +39,10 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
-void ProtobufReader::resetState()
-{
-    root_message_has_length_delimiter = false;
-    current_message_level = 0;
-    current_message_end = 0;
-    parent_message_ends.clear();
-    field_number = 0;
-    next_field_number = 0;
-    field_end = 0;
-}
-
 void ProtobufReader::startMessage(bool with_length_delimiter_)
 {
     // Start reading a root message.
-    chassert(!current_message_level);
+    assert(!current_message_level);
 
     root_message_has_length_delimiter = with_length_delimiter_;
     if (root_message_has_length_delimiter)
@@ -94,7 +83,7 @@ void ProtobufReader::endMessage(bool ignore_errors)
 
 void ProtobufReader::startNestedMessage()
 {
-    chassert(current_message_level >= 1);
+    assert(current_message_level >= 1);
     if ((cursor > field_end) && (field_end != END_OF_GROUP))
         throwUnknownFormat();
 
@@ -109,7 +98,7 @@ void ProtobufReader::startNestedMessage()
 
 void ProtobufReader::endNestedMessage()
 {
-    chassert(current_message_level >= 2);
+    assert(current_message_level >= 2);
     if (cursor != current_message_end)
     {
         if (current_message_end == END_OF_GROUP)
@@ -132,7 +121,7 @@ void ProtobufReader::endNestedMessage()
 
 bool ProtobufReader::readFieldNumber(int & field_number_)
 {
-    chassert(current_message_level);
+    assert(current_message_level);
     if (next_field_number)
     {
         field_number_ = field_number = next_field_number;
@@ -224,7 +213,7 @@ bool ProtobufReader::readFieldNumber(int & field_number_)
 
 UInt64 ProtobufReader::readUInt()
 {
-    UInt64 value = 0;
+    UInt64 value;
     if (field_end == END_OF_VARINT)
     {
         value = readVarint();
@@ -317,7 +306,7 @@ void ProtobufReader::moveCursorBackward(UInt64 num_bytes)
 UInt64 ProtobufReader::continueReadingVarint(UInt64 first_byte)
 {
     UInt64 result = (first_byte & ~static_cast<UInt64>(0x80));
-    char c = 0;
+    char c;
 
 #    define PROTOBUF_READER_READ_VARINT_BYTE(byteNo) \
         do \
@@ -356,7 +345,7 @@ UInt64 ProtobufReader::continueReadingVarint(UInt64 first_byte)
 
 void ProtobufReader::ignoreVarint()
 {
-    char c = 0;
+    char c;
 
 #    define PROTOBUF_READER_IGNORE_VARINT_BYTE(byteNo) \
         do \

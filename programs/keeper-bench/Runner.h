@@ -62,7 +62,7 @@ class Runner
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
     {
-        size_t thread_idx = 0;
+        size_t thread_idx;
         Stats thread_info;
     };
 

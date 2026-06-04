@@ -167,7 +167,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     }
     max_granule = granule_num;
 
-    UInt64 rows_to_read = 0;
+    UInt64 rows_to_read;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
@@ -346,7 +346,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
-static KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
     return KeyCondition{filter_dag, context, index.column_names, index.expression};
 }

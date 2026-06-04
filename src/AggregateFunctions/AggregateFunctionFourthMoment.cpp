@@ -7,7 +7,6 @@ namespace DB
 
 template <typename T> using AggregateFunctionFourthMoment = AggregateFunctionVarianceSimple<StatFuncOneArg<T, 4>>;
 
-void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsFourthMoment(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_samp = R"(

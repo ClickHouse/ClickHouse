@@ -20,7 +20,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
@@ -39,7 +38,7 @@ namespace ErrorCodes
 
 enum class ArraySetMode { Intersect, Union, SymmetricDifference };
 
-class FunctionArrayIntersect final : public IFunction
+class FunctionArrayIntersect : public IFunction
 {
 public:
     FunctionArrayIntersect(const char * name_, ArraySetMode mode_, ContextPtr context)
@@ -88,7 +87,7 @@ private:
 
         };
 
-        VectorWithMemoryTracking<UnpackedArray> args;
+        std::vector<UnpackedArray> args;
         Columns column_holders;
 
         UnpackedArrays() = default;
@@ -538,7 +537,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     bool all_nullable = true;
     bool has_nullable = false;
 
-    VectorWithMemoryTracking<const ColumnType *> columns;
+    std::vector<const ColumnType *> columns;
     columns.reserve(args);
     for (const auto & arg : arrays.args)
     {
@@ -565,7 +564,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     Arena arena;
 
     Map map;
-    VectorWithMemoryTracking<size_t> prev_off(args, 0);
+    std::vector<size_t> prev_off(args, 0);
     size_t result_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {
@@ -580,7 +579,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             const auto & arg = arrays.args[arg_num];
             current_has_nullable = false;
 
-            size_t off = 0;
+            size_t off;
             // const array has only one row
             if (arg.is_const)
                 off = (*arg.offsets)[0];
@@ -630,9 +629,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
         // We have NULL in output only once if it should be there
         bool null_added = false;
-        bool use_null_map = false;
+        bool use_null_map;
         const auto & arg = arrays.args[0];
-        size_t off = 0;
+        size_t off;
         // const array has only one row
         if (arg.is_const)
             off = (*arg.offsets)[0];

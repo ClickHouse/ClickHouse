@@ -629,7 +629,6 @@ struct KeeperStorageBase::Delta
     Operation operation;
 };
 
-std::string_view deltaTypeToString(const Operation & operation);
 std::string_view deltaTypeToString(const Operation & operation)
 {
     /// Using std::visit ensures compile-time exhaustiveness checking -
@@ -3160,7 +3159,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         {
             using enum Coordination::ListRequestType;
 
-            bool is_ephemeral = false;
+            bool is_ephemeral;
             if constexpr (!Storage::use_rocksdb)
             {
                 auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
@@ -3453,7 +3452,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     return {};
 }
 
-static KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
+KeeperStorageBase::DeltaRange extractSubdeltas(KeeperStorageBase::DeltaRange & deltas)
 {
     std::list<KeeperStorageBase::Delta> subdeltas;
     auto it = deltas.begin();
@@ -3813,7 +3812,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
-    TransactionInfo * transaction = nullptr;
+    TransactionInfo * transaction;
     uint64_t new_digest = 0;
 
     {

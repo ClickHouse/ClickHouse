@@ -1,10 +1,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/TextIndexAnalyzer.h>
-#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
@@ -19,6 +16,8 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexReaderTotalMicroseconds;
+    extern const Event TextIndexUseHint;
+    extern const Event TextIndexDiscardHint;
 }
 
 namespace DB
@@ -26,17 +25,13 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_text_index_lazy_apply;
-    extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
-    extern const SettingsFloat text_index_density_threshold;
+    extern const SettingsFloat text_index_hint_max_selectivity;
 }
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -55,6 +50,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->all_mark_ranges,
         main_reader_->settings)
     , index(std::move(index_))
+    , granule(std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule_))
+    , postings_serialization(typeid_cast<const MergeTreeIndexText &>(*index.index).getPostingListCodec())
 {
     for (const auto & column : columns_)
     {
@@ -79,51 +76,13 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
-
-    /// Validate lazy mode request once; actual support is determined from the on-disk sparse-index header.
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    const auto & ctx_settings = condition_text.getContext()->getSettingsRef();
-    const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
-
-    if (apply_mode == TextIndexPostingListApplyMode::LAZY && !ctx_settings[Setting::allow_experimental_text_index_lazy_apply])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Lazy posting list apply mode requires setting allow_experimental_text_index_lazy_apply = 1");
-
-    lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::LAZY);
-    lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
-
-    if (!std::isfinite(lazy_density_threshold) || lazy_density_threshold < 0.0f || lazy_density_threshold > 1.0f)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting text_index_density_threshold must be a value in [0.0, 1.0], got {}", lazy_density_threshold);
-
-    if (index_granule_)
-        setIndexGranule(std::move(index_granule_));
-
     initializeFallbackReader(main_reader_);
-}
-
-void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_granule)
-{
-    chassert(index_granule);
-    granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
-    auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
-
-    /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
-    /// pure-token queries — pattern predicates take the eager materialize path.
-    auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-
-    use_lazy_mode = lazy_mode_requested
-        && postings_codec->getType() != IPostingListCodec::Type::None
-        && granule->getSerializationVersion() >= required_version
-        && !condition_text.hasSearchPatterns();
-
-    postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());
 }
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)
 {
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    if (!condition_text.hasSearchPatterns())
+    if (condition_text.getAllSearchPatterns().empty())
         return;
 
     /// Build a fallback evaluation path for when the dictionary scan is cut short
@@ -226,13 +185,22 @@ void MergeTreeReaderTextIndex::readGranule()
 
     LOG_TRACE(getLogger("MergeTreeReaderTextIndex"), "Reading text index granule for data part '{}'", data_part->getDataPartStorage().getFullPath());
 
-    auto sparse_index_stream = makeTextIndexStream(substreams[0]);
-    auto dictionary_stream = makeTextIndexStream(substreams[1]);
-    small_postings_stream = makeTextIndexStream(substreams[2]);
+    auto make_stream = [&](const auto & substream)
+    {
+        return makeTextIndexInputStream(
+            data_part->getDataPartStoragePtr(),
+            index.index->getFileName() + substream.suffix,
+            substream.extension,
+            MergeTreeIndexReader::patchSettings(settings, substream.type));
+    };
+
+    auto sparse_index_stream = make_stream(substreams[0]);
+    auto dictionary_stream = make_stream(substreams[1]);
+    auto small_postings_stream = make_stream(substreams[2]);
 
     sparse_index_stream->seekToStart();
-    lazy_cursors.clear();
-    prebuilt_cursors.clear();
+    dictionary_stream->seekToStart();
+    small_postings_stream->seekToStart();
 
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
@@ -241,48 +209,62 @@ void MergeTreeReaderTextIndex::readGranule()
 
     auto granule_ptr = index.index->createIndexGranule();
     granule_ptr->deserializeBinaryWithMultipleStreams(streams, *deserialization_state);
-    setIndexGranule(std::move(granule_ptr));
+    granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(granule_ptr);
 }
 
-void MergeTreeReaderTextIndex::classifyVirtualColumns()
+void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 {
     is_always_true.resize(columns_to_read.size(), false);
     use_fallback.resize(columns_to_read.size(), false);
-
-    const auto & analyzer = granule->getAnalyzer();
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & remaining_tokens = granule->getRemainingTokens();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         const auto & column = columns_to_read[i];
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
-        const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
+        /// Always return true for empty needles.
         if (search_query->tokens.empty() && search_query->patterns.empty())
         {
-            /// Always return true for empty needles.
             is_always_true[i] = true;
         }
-        else if (query_builder.is_failed)
+        else if (!search_query->patterns.empty())
         {
-            /// Query is definitely false (e.g. a required token in All mode is missing).
-            continue;
-        }
-        else if (query_builder.is_bypassed)
-        {
-            if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
+            if (!granule->canUseLikeDictionaryScan())
             {
-                is_always_true[i] = true;
+                if (!fallback_reader)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");
+
+                use_fallback[i] = true;
             }
             else
             {
-                if (!fallback_reader || !fallback_expressions.contains(column.name))
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "The fallback reader or expression for pattern virtual column '{}' is not initialized", column.name);
-                }
+                const auto & pattern_tokens = granule->getPatternTokensForTextQuery(*search_query);
+                for (const auto & token : pattern_tokens)
+                    useful_tokens.insert(token);
+            }
+        }
+        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
+        {
+            useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+        }
+        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
+        {
+            const auto & settings = condition_text.getContext()->getSettingsRef();
+            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
+            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
+            double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
-                use_fallback[i] = true;
+            if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
+            {
+                useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+                ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
+            }
+            else
+            {
+                is_always_true[i] = true;
+                ProfileEvents::increment(ProfileEvents::TextIndexDiscardHint);
             }
         }
     }
@@ -290,32 +272,39 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
 void MergeTreeReaderTextIndex::initializePostingStreams()
 {
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & token_infos = analyzer.getAllTokenInfos();
+    const auto & remaining_tokens = granule->getRemainingTokens();
+    const auto & pattern_tokens = granule->getPatternTokens();
 
     auto data_part = getDataPart();
     auto substream = index.index->getSubstreams()[2];
 
-    for (const auto & [token, token_info] : token_infos)
+    auto make_stream = [&]
     {
-        if (analyzer.isTokenNeeded(token) && !analyzer.hasReadPostings(token))
-            large_postings_streams.emplace(token, makeTextIndexStream(substream));
+        auto stream = makeTextIndexInputStream(
+            data_part->getDataPartStoragePtr(),
+            index.index->getFileName() + substream.suffix,
+            substream.extension,
+            MergeTreeIndexReader::patchSettings(settings, substream.type));
+
+        stream->seekToStart();
+        return stream;
+    };
+
+    for (const auto & [token, token_info] : remaining_tokens)
+    {
+        if (granule->getPostingsForRareToken(token) || !useful_tokens.contains(token))
+            continue;
+
+        large_postings_streams.emplace(token, make_stream());
     }
-}
 
-PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info)
-{
-    if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Multi-block postings must be compressed", token);
+    for (const auto & [token, token_info] : pattern_tokens)
+    {
+        if (granule->getPostingsForRareToken(token) || !useful_tokens.contains(token))
+            continue;
 
-    auto stream_it = large_postings_streams.find(token);
-    if (stream_it != large_postings_streams.end())
-        return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
-
-    if (!small_postings_stream)
-        small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
-
-    return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
+        large_postings_streams.emplace(token, make_stream());
+    }
 }
 
 size_t MergeTreeReaderTextIndex::readRows(
@@ -329,7 +318,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
-    size_t from_row = 0;
+    size_t from_row;
     if (continue_reading)
     {
         from_mark = current_mark;
@@ -337,15 +326,6 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
     else
     {
-        /// Backward jump invalidates the per-token cursor cache: cached cursors are
-        /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
-        /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
-        if (from_mark < current_mark)
-        {
-            lazy_cursors.clear();
-            prebuilt_cursors.clear();
-        }
-
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
@@ -374,7 +354,7 @@ size_t MergeTreeReaderTextIndex::readRows(
             readGranule();
 
         is_initialized = true;
-        classifyVirtualColumns();
+        analyzeTokensCardinality();
         initializePostingStreams();
     }
 
@@ -401,11 +381,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
-
-        /// In lazy mode skip per-mark Roaring Bitmap materialization — cursors decode on demand.
-        std::vector<PostingList> mark_postings;
-        if (!use_lazy_mode)
-            mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1));
+        auto mark_postings = readPostingsIfNeeded(from_mark);
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
@@ -425,13 +401,9 @@ size_t MergeTreeReaderTextIndex::readRows(
                     fallback_offset,
                     rows_to_read);
             }
-            else if (use_lazy_mode)
-            {
-                fillColumnLazy(column_mutable, columns_to_read[i].name, from_row, rows_to_read);
-            }
             else
             {
-                fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
+                fillColumn(column_mutable, columns_to_read[i].name, mark_postings, from_row, rows_to_read);
             }
         }
 
@@ -459,15 +431,67 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
+double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
-    auto data_part = getDataPart();
+    chassert(!query.tokens.empty());
 
-    return makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
-        index.index->getFileName() + substream.suffix,
-        substream.extension,
-        MergeTreeIndexReader::patchSettings(settings, substream.type));
+    /// Here we assume that tokens are independent and their distribution is uniform.
+    /// Below universe E stands for the set of documents in the index granule.
+    /// N stands for the size of the index granule in rows.
+    /// Sets Ai stand for the posting lists of the searched tokens.
+    switch (query.search_mode)
+    {
+        case TextSearchMode::All:
+        {
+            /// Estimate the cardinality of the intersection of the sets.
+            /// Assume each set Ai has known size |Ai|, and all sets are chosen
+            /// independently and uniformly at random from the universe E of size N.
+            /// Then, for any particular element, the probability that it appears in set Ai is pi = |Ai|/N.
+            /// The probability that a particular element is in all n sets is pn = p1 * p2 * ... * pn.
+            /// The the expected cardinality of the intersection is:
+            /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
+
+            /// Compute in log-space to avoid double overflow when many tokens
+            /// have large cardinalities: log(N * p1 * p2 * ... * pn) =
+            /// sum(log(|Ai|)) - (n-1) * log(N).
+            double log_cardinality = 0.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = remaining_tokens.find(token);
+                if (it == remaining_tokens.end())
+                    return 0;
+
+                log_cardinality += std::log(static_cast<double>(it->second->cardinality));
+            }
+
+            log_cardinality -= static_cast<double>(query.tokens.size() - 1) * std::log(static_cast<double>(total_rows));
+            return std::exp(log_cardinality);
+        }
+        case TextSearchMode::Any:
+        {
+            /// Estimate the cardinality of the union of the sets.
+            /// The same as above the probability that a particular element appears in set Ai is pi = |Ai|/N
+            /// The probability that element is not in set Ai is 1 - pi
+            /// The probability that element is in none of the n sets is (1 - p1) * (1 - p2) * ... * (1 - pn).
+            /// The probability that element is at least in one of the n sets is 1 - (1 - p1) * (1 - p2) * ... * (1 - pn).
+            /// Then, the expected cardinality of the union is:
+            /// N * (1 - (1 - |A1|/N) * (1 - |A2|/N) * ... * (1 - |An|/N))
+
+            double cardinality = 1.0;
+
+            for (const auto & token : query.tokens)
+            {
+                auto it = remaining_tokens.find(token);
+                /// Same reasoning as above: absent from sparse index ⟹ too common ⟹ treat as all rows.
+                double token_cardinality = it == remaining_tokens.end() ? static_cast<double>(total_rows) : it->second->cardinality;
+                cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
+            }
+
+            cardinality = static_cast<double>(total_rows) * (1.0 - cardinality);
+            return cardinality;
+        }
+    }
 }
 
 std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t mark) const
@@ -482,120 +506,74 @@ std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t ma
     return RowsRange(row_begin, row_end - 1);
 }
 
-std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark, const RowsRange & slice_range)
+PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 {
-    std::vector<PostingList> result(columns_to_read.size());
-    auto mark_range = getRowsRangeForMark(mark);
-
-    if (!mark_range.has_value())
-        return result;
-
-    /// Clip to `slice_range`, not the full mark, so postings stay in bounds on partial-mark
-    /// reads (`rows_offset > 0` or `max_rows_to_read` stops inside the mark).
-    auto effective_range = mark_range->intersectWith(slice_range);
-    if (!effective_range.has_value())
-        return result;
-
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    const auto & analyzer = granule->getAnalyzer();
-
-    for (size_t i = 0; i < columns_to_read.size(); ++i)
-    {
-        if (is_always_true[i] || use_fallback[i])
-            continue;
-
-        auto search_query = condition_text.getSearchQueryForVirtualColumn(columns_to_read[i].name);
-        if (search_query->tokens.empty() && search_query->patterns.empty())
-            continue;
-
-        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range);
-    }
-
-    return result;
-}
-
-PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
-    const TextSearchQuery & query,
-    const TextIndexAnalyzer & analyzer,
-    const RowsRange & range)
-{
-    const auto & query_builder = analyzer.getQueryBuilder(query);
-    if (query_builder.is_failed)
+    auto rows_range = getRowsRangeForMark(mark);
+    if (!rows_range.has_value())
         return {};
 
-    std::optional<PostingList> result;
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
+    const auto & remaining_tokens = granule->getRemainingTokens();
+    const auto & pattern_tokens = granule->getPatternTokens();
+    PostingsMap result;
 
-    if (query_builder.postings)
-        result = *query_builder.postings & range_posting;
-
-    if (!query_builder.needReadPostings())
-        return result.value_or(PostingList{});
-
-    for (const auto & [token, token_info] : query_builder.tokens)
+    const auto read_postings_if_needed = [&](const String & token, const TokenPostingsInfoPtr & token_info)
     {
-        if (!large_postings_streams.contains(token))
-            continue;
+        if (!useful_tokens.contains(token))
+            return;
 
-        auto read_blocks = readPostingsBlocksForToken(token, *token_info, range);
-        if (read_blocks.empty())
+        auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
+
+        if (token_postings.size() == 1)
         {
-            if (query.search_mode == TextSearchMode::All)
-                return {};
-            else
-                continue;
+            result[token] = std::move(token_postings.front());
         }
+        else if (token_postings.size() > 1)
+        {
+            auto union_posting = std::make_shared<PostingList>();
 
-        PostingList large_postings = (*read_blocks.front() & range_posting);
-        for (size_t i = 1; i < read_blocks.size(); ++i)
-            large_postings |= (*read_blocks[i] & range_posting);
+            for (const auto & posting : token_postings)
+                *union_posting |= *posting;
 
-        if (!result)
-            result = std::move(large_postings);
-        else if (query.search_mode == TextSearchMode::All)
-            *result &= large_postings;
-        else if (query.search_mode == TextSearchMode::Any)
-            *result |= large_postings;
+            result[token] = std::move(union_posting);
+        }
+    };
 
-        if (query.search_mode == TextSearchMode::All && result && result->cardinality() == 0)
-            return {};
-    }
+    /// Read postings for exact token matches
+    for (const auto & [token, token_info] : remaining_tokens)
+        read_postings_if_needed(token, token_info);
 
-    return result.value_or(PostingList{});
+    /// Read postings for pattern-matched tokens
+    for (const auto & [token, token_info] : pattern_tokens)
+        read_postings_if_needed(token, token_info);
+
+    return result;
 }
 
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
-    if (!postings_serialization.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Postings serialization is not set");
+    auto read_postings = granule->getPostingsForRareToken(token);
+
+    if (read_postings)
+        return {read_postings};
 
     auto blocks_to_read = token_info.getBlocksToRead(range);
+    std::vector<PostingListPtr> token_postings;
+    token_postings.reserve(blocks_to_read.size());
 
-    if (blocks_to_read.empty())
-        return {};
-
-    std::vector<PostingListPtr> result;
     for (const auto & block_idx : blocks_to_read)
     {
-        auto * postings_stream = large_postings_streams.at(token).get();
         auto [it, inserted] = postings_blocks[token].try_emplace(block_idx);
 
         if (inserted)
         {
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(
-                *postings_stream,
-                *deserialization_state,
-                token_info,
-                block_idx,
-                postings_serialization.value(),
-                granule->getIndexIdForCaches());
+            auto * postings_stream = large_postings_streams.at(token).get();
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, postings_serialization, granule->getIndexIdForCaches());
         }
 
-        result.push_back(it->second);
+        token_postings.push_back(it->second);
     }
 
-    return result;
+    return token_postings;
 }
 
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
@@ -603,112 +581,161 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
     if (!granule)
         return;
 
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & token_infos = analyzer.getAllTokenInfos();
+    const auto & remaining_tokens = granule->getRemainingTokens();
+    const auto & pattern_tokens = granule->getPatternTokens();
 
-    for (const auto & [token, token_info] : token_infos)
+    const auto cleanup_postings = [&](const String & token, const TokenPostingsInfoPtr & token_info)
     {
         auto it = postings_blocks.find(token);
         if (it == postings_blocks.end())
-            continue;
+            return;
 
         for (size_t i = 0; i < token_info->ranges.size(); ++i)
         {
             if (!token_info->ranges[i].intersects(range))
                 it->second.erase(i);
         }
-    }
+    };
+
+    for (const auto & [token, token_info] : remaining_tokens)
+        cleanup_postings(token, token_info);
+
+    for (const auto & [token, token_info] : pattern_tokens)
+        cleanup_postings(token, token_info);
 }
 
-void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows)
+/// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
+void applyPostingsAny(
+    IColumn & column,
+    PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
+    const std::vector<String> & search_tokens,
+    size_t column_offset,
+    size_t row_offset,
+    size_t num_rows)
 {
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    size_t old_size = column_data.size();
-    column_data.resize_fill(old_size + num_rows, 0);
+    PostingList union_posting;
+    PostingList range_posting;
+    range_posting.addRange(row_offset, row_offset + num_rows);
 
-    size_t cardinality = postings.cardinality();
+    for (const auto & token : search_tokens)
+    {
+        auto it = postings_map.find(token);
+        if (it == postings_map.end())
+            continue;
+
+        union_posting |= (*it->second & range_posting);
+    }
+
+    size_t cardinality = union_posting.cardinality();
     if (cardinality == 0)
         return;
 
-    indices_buffer.resize(cardinality);
-    postings.toUint32Array(indices_buffer.data());
+    indices.resize(cardinality);
+    union_posting.toUint32Array(indices.data());
 
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
     for (size_t i = 0; i < cardinality; ++i)
     {
-        size_t relative_row_number = indices_buffer[i] - row_offset;
+        size_t relative_row_number = indices[i] - row_offset;
         chassert(relative_row_number < num_rows);
-        column_data[old_size + relative_row_number] = 1;
+        column_data[column_offset + relative_row_number] = 1;
     }
 }
 
-void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows)
+/// Finds the intersection of the posting lists for range [granule_offset, granule_offset + num_rows)
+void applyPostingsAll(
+    IColumn & column,
+    PostingsMap & postings_map,
+    PaddedPODArray<UInt32> & indices,
+    const std::vector<String> & search_tokens,
+    size_t column_offset,
+    size_t row_offset,
+    size_t num_rows)
+{
+    if (postings_map.size() > std::numeric_limits<UInt16>::max())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
+
+    std::vector<PostingListPtr> token_postings;
+    token_postings.reserve(search_tokens.size());
+
+    for (const auto & token : search_tokens)
+    {
+        auto it = postings_map.find(token);
+        if (it == postings_map.end())
+            return;
+
+        token_postings.push_back(it->second);
+    }
+
+    PostingList intersection_posting;
+    intersection_posting.addRange(row_offset, row_offset + num_rows);
+
+    for (const PostingListPtr & posting : token_postings)
+    {
+        intersection_posting &= (*posting);
+
+        if (intersection_posting.cardinality() == 0)
+            return;
+    }
+
+    const size_t cardinality = intersection_posting.cardinality();
+    if (cardinality == 0)
+        return;
+
+    indices.resize(cardinality);
+    intersection_posting.toUint32Array(indices.data());
+
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    for (size_t i = 0; i < cardinality; ++i)
+    {
+        size_t relative_row_number = indices[i] - row_offset;
+        chassert(relative_row_number < num_rows);
+        column_data[column_offset + relative_row_number] = 1;
+    }
+}
+
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows)
 {
     auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
+
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
-    chassert(search_query->patterns.empty());
+    if (!search_query->patterns.empty())
+    {
+        std::vector<String> matched_tokens;
+        for (const auto & token : granule->getPatternTokensForTextQuery(*search_query))
+            if (postings.contains(token))
+                matched_tokens.push_back(String(token));
+
+        if (!matched_tokens.empty())
+            applyPostingsAny(column, postings, indices_buffer, matched_tokens, old_size, row_offset, num_rows);
+
+        return;
+    }
+
+    if (postings.empty())
+        return;
 
     if (search_query->tokens.empty())
-        return;
-
-    const auto & analyzer = granule->getAnalyzer();
-    const auto & query_builder = analyzer.getQueryBuilder(*search_query);
-
-    if (query_builder.is_failed)
-        return;
-
-    std::vector<PostingListCursorPtr> cursors;
-    cursors.reserve(query_builder.tokens.size());
-
-    if (query_builder.postings && query_builder.postings->cardinality() > 0)
     {
-        auto [it, inserted] = prebuilt_cursors.try_emplace(column_name);
-
-        if (inserted)
-        {
-            TokenPostingsInfo prebuilt_info;
-            prebuilt_info.header = PostingsSerialization::Flags::EmbeddedPostings;
-            prebuilt_info.cardinality = static_cast<UInt32>(query_builder.postings->cardinality());
-            prebuilt_info.offsets = {0};
-            prebuilt_info.ranges = {{query_builder.postings->minimum(), query_builder.postings->maximum()}};
-            prebuilt_info.embedded_postings = std::make_shared<PostingList>(*query_builder.postings);
-
-            it->second = std::make_shared<PostingListCursor>(prebuilt_info);
-        }
-
-        cursors.push_back(it->second);
-    }
-
-    if (query_builder.needReadPostings())
-    {
-        auto & column_cursors = lazy_cursors[column_name];
-
-        for (const auto & [token, token_info] : query_builder.tokens)
-        {
-            if (analyzer.hasReadPostings(token))
-                continue;
-
-            auto [it, inserted] = column_cursors.try_emplace(token);
-
-            if (inserted)
-                it->second = makeLazyCursor(token, *token_info);
-
-            cursors.push_back(it->second);
-        }
-    }
-
-    if (cursors.empty())
         return;
-
-    if (search_query->search_mode == TextSearchMode::Any)
-        lazyUnionPostingLists(column, cursors, old_size, row_offset, num_rows);
+    }
+    else if (search_query->search_mode == TextSearchMode::Any)
+    {
+        applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    }
     else if (search_query->search_mode == TextSearchMode::All)
-        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, lazy_density_threshold);
+    {
+        applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    }
     else
+    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+    }
 }
 
 void MergeTreeReaderTextIndex::fillColumnFallback(
@@ -745,12 +772,7 @@ void MergeTreeReaderTextIndex::setPrecomputedGranule(const IndexGranulesMap & gr
     auto it = granules.find(index.index->index.name);
 
     if (it != granules.end() && it->second)
-    {
-        lazy_cursors.clear();
-        prebuilt_cursors.clear();
-        postings_blocks.clear();
-        setIndexGranule(it->second);
-    }
+        granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(it->second);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

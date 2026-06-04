@@ -192,7 +192,7 @@ static DataTypePtr parseORCType(
     const orc::StripeInformation * stripe_info,
     bool & skipped)
 {
-    chassert(orc_type != nullptr);
+    assert(orc_type != nullptr);
 
     const int subtype_count = static_cast<int>(orc_type->getSubtypeCount());
     switch (orc_type->getKind())
@@ -373,7 +373,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
             }
             case orc::FLOAT:
             case orc::DOUBLE: {
-                Float64 val = 0;
+                Float64 val;
                 if (field.tryGet(val))
                     return orc::Literal(val);
                 break;
@@ -387,7 +387,7 @@ convertFieldToORCLiteral(const orc::Type & orc_type, const Field & field, DataTy
                 break;
             }
             case orc::DATE: {
-                Int64 val = 0;
+                Int64 val;
                 if (field.tryGet(val))
                     return orc::Literal(orc::PredicateDataType::DATE, val);
                 break;
@@ -1048,7 +1048,7 @@ std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_str
 
 bool NativeORCBlockInputFormat::prepareStripeReader()
 {
-    chassert(file_reader);
+    assert(file_reader);
 
     if (read_iterator >= selected_stripes.size())
         return false;
@@ -1511,7 +1511,7 @@ static ColumnWithTypeAndName readColumnWithDecimalDataCast(
     {
         if (!orc_decimal_column->hasNulls || orc_decimal_column->notNull[i])
         {
-            DecimalType decimal_value{};
+            DecimalType decimal_value;
             if constexpr (std::is_same_v<BatchType, orc::Decimal128VectorBatch>)
             {
                 Int128 int128_value;
@@ -1691,7 +1691,7 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])
         {
-            Int64 timestamp_value = 0;
+            Int64 timestamp_value;
             Int64 seconds = orc_ts_column->data[i];
             Int64 nanoseconds = orc_ts_column->nanoseconds[i];
 

@@ -737,7 +737,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version{};
+    int32_t session_node_version;
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };

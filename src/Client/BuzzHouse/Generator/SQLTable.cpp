@@ -595,96 +595,96 @@ void StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t
     entries.clear();
 }
 
-static const std::vector<std::string> multicolHash
-    = {"halfMD5",
-       "sipHash64",
-       "sipHash128",
-       "sipHash128Reference",
-       "cityHash64",
-       "farmFingerprint64",
-       "farmHash64",
-       "metroHash64",
-       "murmurHash2_32",
-       "murmurHash2_64",
-       "gccMurmurHash",
-       "kafkaMurmurHash",
-       "murmurHash3_32",
-       "murmurHash3_64",
-       "murmurHash3_128",
-       "xxh3",
-       "xxh3_128"};
+static const std::vector<SQLFunc> multicolHash
+    = {SQLFunc::FUNChalfMD5,
+       SQLFunc::FUNCsipHash64,
+       SQLFunc::FUNCsipHash128,
+       SQLFunc::FUNCsipHash128Reference,
+       SQLFunc::FUNCcityHash64,
+       SQLFunc::FUNCfarmFingerprint64,
+       SQLFunc::FUNCfarmHash64,
+       SQLFunc::FUNCmetroHash64,
+       SQLFunc::FUNCmurmurHash2_32,
+       SQLFunc::FUNCmurmurHash2_64,
+       SQLFunc::FUNCgccMurmurHash,
+       SQLFunc::FUNCkafkaMurmurHash,
+       SQLFunc::FUNCmurmurHash3_32,
+       SQLFunc::FUNCmurmurHash3_64,
+       SQLFunc::FUNCmurmurHash3_128,
+       SQLFunc::FUNCxxh3,
+       SQLFunc::FUNCxxh3_128};
 
-static const std::vector<std::string> datesHash
-    = {"toYear",
-       "toQuarter",
-       "toMonth",
-       "toDayOfYear",
-       "toDayOfMonth",
-       "toDayOfWeek",
-       "toHour",
-       "toMinute",
-       "toSecond",
-       "toMillisecond",
-       "toUnixTimestamp",
-       "toStartOfYear",
-       "toStartOfISOYear",
-       "toStartOfQuarter",
-       "toStartOfMonth",
-       "toLastDayOfMonth",
-       "toMonday",
-       "toStartOfWeek",
-       "toLastDayOfWeek",
-       "toStartOfDay",
-       "toStartOfHour",
-       "toStartOfMinute",
-       "toStartOfSecond",
-       "toStartOfMillisecond",
-       "toStartOfMicrosecond",
-       "toStartOfNanosecond",
-       "toStartOfFiveMinutes",
-       "toStartOfTenMinutes",
-       "toStartOfFifteenMinutes",
-       "toTime",
-       "toRelativeYearNum",
-       "toRelativeQuarterNum",
-       "toRelativeMonthNum",
-       "toRelativeWeekNum",
-       "toRelativeDayNum",
-       "toRelativeHourNum",
-       "toRelativeMinuteNum",
-       "toRelativeSecondNum",
-       "toISOYear",
-       "toISOWeek",
-       "toWeek",
-       "toYearWeek",
-       "toDaysSinceYearZero",
-       "timeSlot",
-       "toYYYYMM",
-       "toYYYYMMDD",
-       "toYYYYMMDDhhmmss",
-       "monthName",
-       "toModifiedJulianDay",
-       "toModifiedJulianDayOrNull"};
+static const std::vector<SQLFunc> datesHash
+    = {SQLFunc::FUNCtoYear,
+       SQLFunc::FUNCtoQuarter,
+       SQLFunc::FUNCtoMonth,
+       SQLFunc::FUNCtoDayOfYear,
+       SQLFunc::FUNCtoDayOfMonth,
+       SQLFunc::FUNCtoDayOfWeek,
+       SQLFunc::FUNCtoHour,
+       SQLFunc::FUNCtoMinute,
+       SQLFunc::FUNCtoSecond,
+       SQLFunc::FUNCtoMillisecond,
+       SQLFunc::FUNCtoUnixTimestamp,
+       SQLFunc::FUNCtoStartOfYear,
+       SQLFunc::FUNCtoStartOfISOYear,
+       SQLFunc::FUNCtoStartOfQuarter,
+       SQLFunc::FUNCtoStartOfMonth,
+       SQLFunc::FUNCtoLastDayOfMonth,
+       SQLFunc::FUNCtoMonday,
+       SQLFunc::FUNCtoStartOfWeek,
+       SQLFunc::FUNCtoLastDayOfWeek,
+       SQLFunc::FUNCtoStartOfDay,
+       SQLFunc::FUNCtoStartOfHour,
+       SQLFunc::FUNCtoStartOfMinute,
+       SQLFunc::FUNCtoStartOfSecond,
+       SQLFunc::FUNCtoStartOfMillisecond,
+       SQLFunc::FUNCtoStartOfMicrosecond,
+       SQLFunc::FUNCtoStartOfNanosecond,
+       SQLFunc::FUNCtoStartOfFiveMinutes,
+       SQLFunc::FUNCtoStartOfTenMinutes,
+       SQLFunc::FUNCtoStartOfFifteenMinutes,
+       SQLFunc::FUNCtoTime,
+       SQLFunc::FUNCtoRelativeYearNum,
+       SQLFunc::FUNCtoRelativeQuarterNum,
+       SQLFunc::FUNCtoRelativeMonthNum,
+       SQLFunc::FUNCtoRelativeWeekNum,
+       SQLFunc::FUNCtoRelativeDayNum,
+       SQLFunc::FUNCtoRelativeHourNum,
+       SQLFunc::FUNCtoRelativeMinuteNum,
+       SQLFunc::FUNCtoRelativeSecondNum,
+       SQLFunc::FUNCtoISOYear,
+       SQLFunc::FUNCtoISOWeek,
+       SQLFunc::FUNCtoWeek,
+       SQLFunc::FUNCtoYearWeek,
+       SQLFunc::FUNCtoDaysSinceYearZero,
+       SQLFunc::FUNCtimeSlot,
+       SQLFunc::FUNCtoYYYYMM,
+       SQLFunc::FUNCtoYYYYMMDD,
+       SQLFunc::FUNCtoYYYYMMDDhhmmss,
+       SQLFunc::FUNCmonthName,
+       SQLFunc::FUNCtoModifiedJulianDay,
+       SQLFunc::FUNCtoModifiedJulianDayOrNull};
 
-static const std::vector<std::string> arithmeticFuncs
-    = {"plus",
-       "minus",
-       "multiply",
-       "divide",
-       "intDiv",
-       "intDivOrZero",
-       "ifNotFinite",
-       "modulo",
-       "moduloOrZero",
-       "positiveModulo",
-       "gcd",
-       "lcm",
-       "max2",
-       "min2",
-       "icebergBucket",
-       "icebergTruncate"};
+static const std::vector<SQLFunc> arithmeticFuncs
+    = {SQLFunc::FUNCplus,
+       SQLFunc::FUNCminus,
+       SQLFunc::FUNCmultiply,
+       SQLFunc::FUNCdivide,
+       SQLFunc::FUNCintDiv,
+       SQLFunc::FUNCintDivOrZero,
+       SQLFunc::FUNCifNotFinite,
+       SQLFunc::FUNCmodulo,
+       SQLFunc::FUNCmoduloOrZero,
+       SQLFunc::FUNCpositiveModulo,
+       SQLFunc::FUNCgcd,
+       SQLFunc::FUNClcm,
+       SQLFunc::FUNCmax2,
+       SQLFunc::FUNCmin2,
+       SQLFunc::FUNCicebergBucket,
+       SQLFunc::FUNCicebergTruncate};
 
-static const std::vector<std::string> icebergFuncs = {"icebergBucket", "icebergTruncate"};
+static const std::vector<SQLFunc> icebergFuncs = {SQLFunc::FUNCicebergBucket, SQLFunc::FUNCicebergTruncate};
 
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
@@ -757,7 +757,8 @@ void StatementGenerator::colRefOrExpression(
               SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
               func_call->mutable_func()->set_catalog_func(
-                  (b.isAnyIcebergEngine() && rg.nextBool()) ? "identity" : rg.pickRandomly(this->one_arg_funcs).fname);
+                  (b.isAnyIcebergEngine() && rg.nextBool()) ? SQLFunc::FUNCidentity
+                                                            : static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
               columnPathRef(entry, func_call->add_args()->mutable_expr());
           }},
          {hash_func,
@@ -781,7 +782,7 @@ void StatementGenerator::colRefOrExpression(
           [&]
           {
               /// Use random func
-              expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("rand");
+              expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
           }},
          {arithmetic_func,
           [&]
@@ -1133,7 +1134,7 @@ void StatementGenerator::setRandomShardKey(RandomGenerator & rg, const std::opti
     if (this->allow_not_deterministic && rg.nextMediumNumber() < 26)
     {
         /// Use random sharding key sometimes
-        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("rand");
+        expr->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(SQLFunc::FUNCrand);
     }
     else if (t.has_value())
     {
@@ -1557,14 +1558,14 @@ void StatementGenerator::addTableColumnInternal(
     {
         if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
-            Integers nint = {};
+            Integers nint;
 
             std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
         else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
-            Dates dd = {};
+            Dates dd;
 
             std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
@@ -1580,15 +1581,16 @@ void StatementGenerator::addTableColumnInternal(
         /// Use now() functions for TTL
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-        static const std::vector<std::string> ttlfuncs = {"now", "nowInBlock", "now64", "nowInBlock64"};
-        const std::string & tfunc = rg.pickRandomly(ttlfuncs);
+        static const std::vector<SQLFunc> ttlfuncs
+            = {SQLFunc::FUNCnow, SQLFunc::FUNCnowInBlock, SQLFunc::FUNCnow64, SQLFunc::FUNCnowInBlock64};
+        const SQLFunc tfunc = rg.pickRandomly(ttlfuncs);
 
         tp = randomDateTimeType(
             rg, std::numeric_limits<uint64_t>::max(), cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
         def_value->set_dvalue(DModifier::DEF_MATERIALIZED);
         col.dmod = std::optional<DModifier>(DModifier::DEF_MATERIALIZED);
         fcall->mutable_func()->set_catalog_func(tfunc);
-        if (tfunc != "nowInBlock" && rg.nextBool())
+        if (tfunc != SQLFunc::FUNCnowInBlock && rg.nextBool())
         {
             /// Add precision modifier
             fcall->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_int_lit(3);
@@ -1597,7 +1599,7 @@ void StatementGenerator::addTableColumnInternal(
     else if (special == ColumnSpecial::ID_COL)
     {
         /// Use generateSerialID
-        Integers nint = {};
+        Integers nint;
         DefaultModifier * def_value = cd->mutable_defaultv();
         SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -1605,7 +1607,7 @@ void StatementGenerator::addTableColumnInternal(
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         def_value->set_dvalue(DModifier::DEF_MATERIALIZED);
         col.dmod = std::optional<DModifier>(DModifier::DEF_MATERIALIZED);
-        fcall->mutable_func()->set_catalog_func("generateSerialID");
+        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCgenerateSerialID);
         /// Add precision modifier
         fcall->add_args()->mutable_expr()->mutable_lit_val()->set_string_lit("id" + std::to_string(id_counter++));
     }
@@ -2554,7 +2556,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     uint32_t col_counter = 0;
     const DictionaryLayouts & dl = rg.pickRandomly(allDictionaryLayoutSettings);
     const bool isRange = dl == COMPLEX_KEY_RANGE_HASHED || dl == RANGE_HASHED;
-    const bool is_polygon = dl == POLYGON || dl == POLYGON_SIMPLE || dl == POLYGON_INDEX_EACH || dl == POLYGON_INDEX_CELL;
     const bool is_complex_key
         = (dl == COMPLEX_KEY_CACHE || dl == COMPLEX_KEY_DIRECT || dl == COMPLEX_KEY_HASHED || dl == COMPLEX_KEY_HASHED_ARRAY
            || dl == COMPLEX_KEY_RANGE_HASHED || dl == COMPLEX_KEY_SPARSE_HASHED || dl == COMPLEX_KEY_SSD_CACHE);
@@ -2606,7 +2607,6 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
     /// REGEXP_TREE layout is tied to YAMLRegExpTree source: skip all other source types when this layout is in use.
-    /// Polygon layouts need a ClickHouse/null source (not YAML).
     const uint32_t generic_src_mult = static_cast<uint32_t>(dl != REGEXP_TREE);
     const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table) * generic_src_mult;
     const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty()) * generic_src_mult;
@@ -2783,17 +2783,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
                 | allow_time | allow_array | (is_complex_key ? UINT64_C(0) : allow_fixed_strings));
-        if (is_polygon && i == 0)
-        {
-            /// Polygon layouts require a key of Array(Array(Array(Array(Float64))))
-            TopTypeName * arr = dc->mutable_type()->mutable_type();
-            for (int d = 0; d < 4; d++)
-                arr = arr->mutable_array();
-            arr->mutable_non_nullable()->set_floats(Float64);
-            col.tp = std::make_unique<ArrayType>(
-                std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<ArrayType>(std::make_unique<FloatType>(64)))));
-        }
-        else if (yaml_dsd && i == 0)
+        if (yaml_dsd && i == 0)
         {
             /// YAMLRegExpTree requires the primary key to be exactly one String column.
             dc->mutable_type()->mutable_type()->mutable_non_nullable()->set_standard_string(true);
@@ -2885,20 +2875,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             clickhouse_dsd->set_update_lag(rg.randomInt<uint32_t>(0, 3600));
         }
     }
-    if (is_polygon)
-    {
-        /// Polygon layouts require the polygon key column (first column, Array type)
-        std::vector<ColumnPathChain> arr_entries;
-        for (const auto & e : this->entries)
-        {
-            const SQLType * tp = e.getBottomType();
-            if (tp && tp->getTypeClass() == SQLTypeClass::ARRAY)
-                arr_entries.push_back(e);
-        }
-        if (!arr_entries.empty())
-            this->entries = std::move(arr_entries);
-    }
-    else if (dl == IP_TRIE || yaml_dsd)
+    if (dl == IP_TRIE || yaml_dsd)
     {
         /// IP_TRIE and YAMLRegExpTree both require a String primary key
         std::vector<ColumnPathChain> str_entries;
@@ -2932,9 +2909,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         if (!uint64_entries.empty() && !isRange)
             this->entries = std::move(uint64_entries);
     }
-    const size_t kcols = (dl == IP_TRIE || is_polygon || !is_complex_key)
-        ? 1
-        : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
+    const size_t kcols
+        = (dl == IP_TRIE || !is_complex_key) ? 1 : ((rg.nextLargeNumber() % std::min<size_t>(entries.size(), UINT32_C(3))) + 1);
     std::shuffle(entries.begin(), entries.end(), rg.generator);
     TableKey * tkey = cd->mutable_primary_key();
     for (size_t i = 0; i < kcols; i++)
