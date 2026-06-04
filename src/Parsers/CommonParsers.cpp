@@ -1,9 +1,8 @@
-#include <Parsers/CommonParsers.h>
-#include <Common/ErrorCodes.h>
-#include <base/find_symbols.h>
 #include <algorithm>
 #include <cctype>
-
+#include <Parsers/CommonParsers.h>
+#include <base/find_symbols.h>
+#include <Common/ErrorCodes.h>
 namespace DB
 {
 
@@ -35,6 +34,8 @@ public:
         return mapping;
     }
 
+    const std::unordered_set<std::string> & getSet() const { return set; }
+
 private:
     KeyWordToStringConverter()
     {
@@ -63,6 +64,7 @@ private:
         size_t index = static_cast<size_t>(identifier);
         mapping.resize(std::max(index + 1, mapping.size()));
         mapping[index] = value;
+        set.emplace(value);
     }
 
     void checkUnderscore(std::string_view value)
@@ -94,6 +96,7 @@ private:
     }
 
     Strings mapping;
+    std::unordered_set<std::string> set;
 };
 }
 
@@ -108,6 +111,11 @@ const std::vector<String> & getAllKeyWords()
     return KeyWordToStringConverter::instance().getMapping();
 }
 
+const std::unordered_set<std::string> & getKeyWordSet()
+{
+    return KeyWordToStringConverter::instance().getSet();
+}
+
 ParserKeyword::ParserKeyword(Keyword keyword)
     : s(toStringView(keyword))
 {}
@@ -117,7 +125,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
     if (pos->type != TokenType::BareWord)
         return false;
 
-    const char * current_word = s.begin();
+    const char * current_word = s.data();
 
     while (true)
     {
@@ -126,7 +134,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
         if (pos->type != TokenType::BareWord)
             return false;
 
-        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.end());
+        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.data() + s.size());
         const size_t word_length = next_whitespace - current_word;
 
         if (word_length != pos->size())

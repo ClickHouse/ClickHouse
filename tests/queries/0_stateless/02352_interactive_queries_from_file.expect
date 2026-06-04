@@ -22,7 +22,7 @@ expect_after {
 }
 
 spawn bash -c "echo 'select 1;\nselect 2;\nselect 3' > queries_02352"
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT --disable_suggestion --enable-progress-table-toggle=0"
 expect ":) "
 
 send -- "\\i queries_02352\r"

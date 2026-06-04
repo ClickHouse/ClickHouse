@@ -2,9 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
 #if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
 #include <immintrin.h>
 #endif
@@ -17,11 +14,8 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-    extern const int LOGICAL_ERROR;
-}
+[[noreturn]] void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit);
+[[noreturn]] void throwUnsupportedIndexesColumnType(const std::string & name);
 
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
@@ -36,17 +30,6 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
         | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
         _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__SSE2__)
-    const __m128i zero16 = _mm_setzero_si128();
-    UInt64 res =
-        (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16))) & 0xffff)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16) & 0xffff0000)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32) & 0xffff00000000)
-        | ((static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48) & 0xffff000000000000);
 #elif defined(__aarch64__) && defined(__ARM_NEON)
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     const auto * src = reinterpret_cast<const unsigned char *>(bytes64);
@@ -78,7 +61,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
 
 /// Returns vector with num_columns elements. vector[i] is the count of i values in selector.
 /// Selector must contain values from 0 to num_columns - 1. NOTE: this is not checked.
-std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector);
+VectorWithMemoryTracking<size_t> countColumnsSizeInSelector(size_t num_columns, const IColumn::Selector & selector);
 
 /// Returns true, if the memory contains only zeros.
 bool memoryIsZero(const void * data, size_t start, size_t end);
@@ -98,6 +81,12 @@ void filterArraysImplOnlyData(
     PaddedPODArray<T> & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint);
 
+/// In-place version of filterArraysImpl for when src and res are the same arrays
+template <typename T>
+void filterArraysImplInPlace(
+    PaddedPODArray<T> & elems, IColumn::Offsets & offsets,
+    const IColumn::Filter & filt);
+
 namespace detail
 {
     template <typename T>
@@ -112,20 +101,18 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         limit = indexes.size();
 
     if (indexes.size() < limit)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
+        throwIndexesSizeTooSmall(indexes.size(), limit);
 
     if (const auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
-    else if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
+    if (const auto * data_uint16 = detail::getIndexesData<UInt16>(indexes))
         return column.template indexImpl<UInt16>(*data_uint16, limit);
-    else if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
+    if (const auto * data_uint32 = detail::getIndexesData<UInt32>(indexes))
         return column.template indexImpl<UInt32>(*data_uint32, limit);
-    else if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
+    if (const auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}",
-                        indexes.getName());
+
+    throwUnsupportedIndexesColumnType(indexes.getName());
 }
 
 size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);
@@ -143,4 +130,10 @@ ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, 
     template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
     template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
+
+#define INSTANTIATE_INDEX_TEMPLATE_IMPL(ColumnTemplate) \
+    template ColumnPtr ColumnTemplate<UInt8>::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt16>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt32>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
+    template ColumnPtr ColumnTemplate<UInt64>::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
 }

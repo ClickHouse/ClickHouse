@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+message A {
+  message B {
+    uint32 k = 2100 ;
+    uint32 l = 2200 ;
+  }
+
+  uint32     i = 1000 ;
+  repeated B j = 2000 ;
+  uint32     m = 3000 ;
+
+  repeated uint32 n = 4000 ;
+
+  map<uint32, C> o = 5000 ;
+}
+
+message D {
+  uint32 q = 5110 ;
+  uint32 r = 5120 ;
+}
+
+message C {
+  repeated D p = 5100 ;
+}

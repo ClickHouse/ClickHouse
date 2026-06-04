@@ -1,6 +1,7 @@
 #include <Analyzer/ColumnTransformers.h>
 
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/re2.h>
 
 #include <IO/WriteBuffer.h>
@@ -74,13 +75,13 @@ void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState 
     expression_node->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ApplyColumnTransformerNode &>(rhs);
     return apply_transformer_type == rhs_typed.apply_transformer_type;
 }
 
-void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getApplyTransformerType()));
@@ -93,7 +94,7 @@ QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
 
 ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto ast_apply_transformer = std::make_shared<ASTColumnsApplyTransformer>();
+    auto ast_apply_transformer = make_intrusive<ASTColumnsApplyTransformer>();
     const auto & expression_node = getExpressionNode();
 
     if (apply_transformer_type == ApplyColumnTransformerType::FUNCTION)
@@ -163,22 +164,20 @@ void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState
         buffer << ", pattern: " << column_matcher->pattern();
         return;
     }
-    else
+
+    buffer << ", identifiers: ";
+
+    size_t except_column_names_size = except_column_names.size();
+    for (size_t i = 0; i < except_column_names_size; ++i)
     {
-        buffer << ", identifiers: ";
+        buffer << except_column_names[i];
 
-        size_t except_column_names_size = except_column_names.size();
-        for (size_t i = 0; i < except_column_names_size; ++i)
-        {
-            buffer << except_column_names[i];
-
-            if (i + 1 != except_column_names_size)
-                buffer << ", ";
-        }
+        if (i + 1 != except_column_names_size)
+            buffer << ", ";
     }
 }
 
-bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ExceptColumnTransformerNode &>(rhs);
     if (except_transformer_type != rhs_typed.except_transformer_type ||
@@ -190,15 +189,15 @@ bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     if (!column_matcher && !rhs_column_matcher)
         return true;
-    else if (column_matcher && !rhs_column_matcher)
+    if (column_matcher && !rhs_column_matcher)
         return false;
-    else if (!column_matcher && rhs_column_matcher)
+    if (!column_matcher && rhs_column_matcher)
         return false;
 
     return column_matcher->pattern() == rhs_column_matcher->pattern();
 }
 
-void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getExceptTransformerType()));
@@ -229,7 +228,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
 
 ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
-    auto ast_except_transformer = std::make_shared<ASTColumnsExceptTransformer>();
+    auto ast_except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
 
     if (column_matcher)
     {
@@ -239,7 +238,7 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
 
     ast_except_transformer->children.reserve(except_column_names.size());
     for (const auto & name : except_column_names)
-        ast_except_transformer->children.push_back(std::make_shared<ASTIdentifier>(name));
+        ast_except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
 
     return ast_except_transformer;
 }
@@ -302,13 +301,13 @@ void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatStat
     }
 }
 
-bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
     return is_strict == rhs_typed.is_strict && replacements_names == rhs_typed.replacements_names;
 }
 
-void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const
+void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
 
@@ -336,7 +335,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
 
 ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto ast_replace_transformer = std::make_shared<ASTColumnsReplaceTransformer>();
+    auto ast_replace_transformer = make_intrusive<ASTColumnsReplaceTransformer>();
 
     const auto & replacement_expressions_nodes = getReplacements().getNodes();
     size_t replacements_size = replacement_expressions_nodes.size();
@@ -345,7 +344,7 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
 
     for (size_t i = 0; i < replacements_size; ++i)
     {
-        auto replacement_ast = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
+        auto replacement_ast = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
         ast_replace_transformer->children.push_back(std::move(replacement_ast));

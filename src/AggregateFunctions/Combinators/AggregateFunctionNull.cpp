@@ -1,10 +1,9 @@
-#include "AggregateFunctionNull.h"
-#include "AggregateFunctionState.h"
-#include "AggregateFunctionSimpleState.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionSimpleState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -77,7 +76,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        UnorderedSetWithMemoryTracking<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 
@@ -112,11 +111,10 @@ public:
               */
             if (properties.returns_default_when_only_null)
                 return std::make_shared<AggregateFunctionNothingUInt64>(arguments, params);
-            else
-                return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
+            return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
-        assert(nested_function);
+        chassert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
@@ -137,23 +135,18 @@ public:
             {
                 return std::make_shared<AggregateFunctionNullUnary<true, true>>(nested_function, arguments, params);
             }
-            else
-            {
-                if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
-                else
-                    return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
-            }
+
+            if (serialize_flag)
+                return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
+            return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
         }
-        else
+
+        if (return_type_is_nullable)
         {
-            if (return_type_is_nullable)
-            {
-                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
-            }
-            else
-            {
-                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+            return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+        }
+
+        return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
 #if 0
                 if (serialize_flag)
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
@@ -164,13 +157,12 @@ public:
                     return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
             }
 #endif
-            }
-        }
     }
 };
 
 }
 
+void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>());

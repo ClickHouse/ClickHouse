@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -39,6 +40,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
         case QueryTreeNodeType::QUERY: return "QUERY";
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
+        case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
     }
@@ -94,8 +96,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
-        assert(lhs_node_to_compare);
-        assert(rhs_node_to_compare);
+        chassert(lhs_node_to_compare);
+        chassert(rhs_node_to_compare);
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
@@ -107,7 +109,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
+            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
@@ -127,9 +129,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_child && !rhs_child)
                 continue;
-            else if (lhs_child && !rhs_child)
+            if (lhs_child && !rhs_child)
                 return false;
-            else if (!lhs_child && rhs_child)
+            if (!lhs_child && rhs_child)
                 return false;
 
             nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
@@ -150,9 +152,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_strong_pointer && !rhs_strong_pointer)
                 continue;
-            else if (lhs_strong_pointer && !rhs_strong_pointer)
+            if (lhs_strong_pointer && !rhs_strong_pointer)
                 return false;
-            else if (!lhs_strong_pointer && rhs_strong_pointer)
+            if (!lhs_strong_pointer && rhs_strong_pointer)
                 return false;
 
             nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
@@ -164,7 +166,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
     return true;
 }
 
-IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
+IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
     /** Compute tree hash with this node as root.
       *
@@ -201,13 +203,13 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash() const
         }
 
         hash_state.update(static_cast<size_t>(node_to_process->getNodeType()));
-        if (!node_to_process->alias.empty())
+        if (compare_options.compare_aliases && !node_to_process->alias.empty())
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
         }
 
-        node_to_process->updateTreeHashImpl(hash_state);
+        node_to_process->updateTreeHashImpl(hash_state, compare_options);
 
         hash_state.update(node_to_process->children.size());
 
@@ -280,6 +282,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 
@@ -297,13 +300,22 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         }
     }
 
+    /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
+      * When a node is replaced, its children are not traversed and thus not added
+      * to old_pointer_to_new_pointer. If those children are also in the replacement_map
+      * (e.g., inner column sources of an ARRAY_JOIN being replaced), their entries
+      * must be available for weak pointer updates below.
+      */
+    for (const auto & [old_ptr, new_ptr] : replacement_map)
+        old_pointer_to_new_pointer.emplace(old_ptr, new_ptr);
+
     /** Update weak pointers to new pointers if they were changed during clone.
       * To do this we check old pointer to new pointer map, if weak pointer
       * strong pointer exists as old pointer in map, reinitialize weak pointer with new pointer.
       */
     for (auto & weak_pointer_ptr : weak_pointers_to_update_after_clone)
     {
-        assert(weak_pointer_ptr);
+        chassert(weak_pointer_ptr);
         auto strong_pointer = weak_pointer_ptr->lock();
         auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
 
@@ -336,8 +348,10 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
+
+    converted_node->setParenthesized(parenthesized);
 
     return converted_node;
 }

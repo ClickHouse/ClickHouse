@@ -10,7 +10,7 @@ namespace DB
 struct StreamNameAndMark
 {
     String stream_name;
-    MarkInCompressedFile mark;
+    MarkInCompressedFile mark{};
 };
 
 using StreamsWithMarks = std::vector<StreamNameAndMark>;
@@ -19,28 +19,41 @@ using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
 /// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
+    using Base = MergeTreeDataPartWriterOnDisk;
+
 public:
     MergeTreeDataPartWriterWide(
-        const MergeTreeMutableDataPartPtr & data_part,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity);
+        MergeTreeIndexGranularityPtr index_granularity_,
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) final;
+    void finalizeIndexGranularity() final;
+    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
+    void cancel() noexcept override;
+
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
+
+    static ISerialization::EnumerateStreamsSettings getEnumerateSettings(const MergeTreeWriterSettings & settings);
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove);
+    void fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
@@ -49,41 +62,39 @@ private:
     void writeColumn(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        WrittenOffsetSubstreams & offset_substreams,
         const Granules & granules);
 
     /// Write single granule of one column.
     void writeSingleGranule(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        const WrittenOffsetSubstreams & offset_substreams,
         ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
 
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
-        const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns);
+        const NameAndTypePair & name_and_type,
+        const WrittenOffsetSubstreams & offset_substreams);
 
     /// Write mark to disk using stream and rows count
-    void flushMarkToFile(
-        const StreamNameAndMark & stream_with_mark,
-        size_t rows_in_mark);
+    void flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark);
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
-        const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns,
+        const NameAndTypePair & name_and_type,
+        const WrittenOffsetSubstreams & offset_substreams,
         size_t number_of_rows);
 
     void writeFinalMark(
-        const NameAndTypePair & column,
-        WrittenOffsetColumns & offset_columns);
+        const NameAndTypePair & name_and_type,
+        WrittenOffsetSubstreams & offset_substreams);
 
     void addStreams(
-        const NameAndTypePair & column,
-        const ASTPtr & effective_codec_desc);
+        const NameAndTypePair & name_and_type,
+        const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -104,7 +115,10 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+        const WrittenOffsetSubstreams & offset_substreams) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
@@ -126,9 +140,14 @@ private:
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
 
+    /// Set of columns to put marks in cache during write.
+    NameSet columns_to_load_marks;
+
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    String already_written_stream_holder;
 };
 
 }

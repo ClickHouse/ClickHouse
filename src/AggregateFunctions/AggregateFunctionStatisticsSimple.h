@@ -4,8 +4,6 @@
 
 #include <base/arithmeticOverflow.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Moments.h>
@@ -15,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
 
 
 /** This is simple, not numerically stable
@@ -35,7 +32,7 @@ namespace DB
 
 struct Settings;
 
-enum class StatisticsFunctionKind
+enum class StatisticsFunctionKind : uint8_t
 {
     varPop, varSamp,
     stddevPop, stddevSamp,
@@ -151,12 +148,12 @@ public:
             }
             case StatisticsFunctionKind::stddevPop:
             {
-                dst.push_back(sqrt(data.getPopulation()));
+                dst.push_back(std::sqrt(data.getPopulation()));
                 break;
             }
             case StatisticsFunctionKind::stddevSamp:
             {
-                dst.push_back(sqrt(data.getSample()));
+                dst.push_back(std::sqrt(data.getSample()));
                 break;
             }
             case StatisticsFunctionKind::skewPop:
@@ -164,7 +161,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment3()) / std::pow(static_cast<Float64>(var_value), 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -175,7 +172,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment3() / pow(var_value, 1.5)));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment3()) / std::pow(static_cast<Float64>(var_value), 1.5)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -186,7 +183,7 @@ public:
                 ResultType var_value = data.getPopulation();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment4()) / std::pow(static_cast<Float64>(var_value), 2.0)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 
@@ -197,7 +194,7 @@ public:
                 ResultType var_value = data.getSample();
 
                 if (var_value > 0)
-                    dst.push_back(static_cast<ResultType>(data.getMoment4() / pow(var_value, 2)));
+                    dst.push_back(static_cast<ResultType>(static_cast<Float64>(data.getMoment4()) / std::pow(static_cast<Float64>(var_value), 2.0)));
                 else
                     dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
 

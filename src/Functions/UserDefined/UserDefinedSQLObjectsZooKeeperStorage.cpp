@@ -4,20 +4,28 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Core/Settings.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -35,7 +43,6 @@ namespace
             case UserDefinedSQLObjectType::Function:
                 return "function_";
         }
-        UNREACHABLE();
     }
 
     constexpr std::string_view sql_extension = ".sql";
@@ -44,12 +51,22 @@ namespace
     {
         return root_path + "/" + String{getNodePrefix(object_type)} + escapeForFileName(object_name) + String{sql_extension};
     }
+
+    String makeWatchIdFromName(const String & name)
+    {
+        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(name={})", name);
+    }
+
+    String makeWatchIdFromType(const UserDefinedSQLObjectType & type)
+    {
+        return fmt::format("UserDefinedSQLObjectsZooKeeperStorage(type={})", type);
+    }
 }
 
 
 UserDefinedSQLObjectsZooKeeperStorage::UserDefinedSQLObjectsZooKeeperStorage(
     const ContextPtr & global_context_, const String & zookeeper_path_)
-    : global_context{global_context_}
+    : UserDefinedSQLObjectsStorageBase(global_context_)
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch_queue{std::make_shared<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>>(std::numeric_limits<size_t>::max())}
@@ -139,8 +156,9 @@ void UserDefinedSQLObjectsZooKeeperStorage::loadObjects()
 void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
-    setThreadName("UserDefObjWatch");
+    DB::setThreadName(ThreadName::USER_DEFINED_WATCH);
 
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue");
     while (watching_flag)
     {
         try
@@ -181,6 +199,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::stopWatching()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObjects");
     auto zookeeper = getZooKeeper();
     refreshAllObjects(zookeeper);
     startWatchingThread();
@@ -189,6 +208,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObject");
     auto zookeeper = getZooKeeper();
     refreshObject(zookeeper, object_type, object_name);
 }
@@ -209,11 +229,13 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(*create_object_query, create_statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
+    create_object_query->format(create_statement_buf, format_settings);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 
@@ -230,7 +252,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
         {
             if (throw_if_exists)
                 throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
-            else if (!replace_if_exists)
+            if (!replace_if_exists)
                 return false;
 
             code = zookeeper->trySet(path, create_statement);
@@ -259,6 +281,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     const String & object_name,
     bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Removing user-defined object {} at zk path {}", backQuote(object_name), path);
 
@@ -272,8 +295,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     {
         if (throw_if_not_exists)
             throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined object '{}' doesn't exist", object_name);
-        else
-            return false;
+        return false;
     }
 
     LOG_DEBUG(log, "Object {} removed", backQuote(object_name));
@@ -287,18 +309,20 @@ bool UserDefinedSQLObjectsZooKeeperStorage::getObjectDataAndSetWatch(
     UserDefinedSQLObjectType object_type,
     const String & object_name)
 {
-    const auto object_watcher = [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
+    auto object_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromName(object_name), [&] -> Coordination::WatchCallback
     {
-        if (response.type == Coordination::Event::CHANGED)
+        return [my_watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
         {
-            [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, object_name);
-            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
-        }
-        /// Event::DELETED is processed as child event by getChildren watch
-    };
+            if (response.type == Coordination::Event::CHANGED)
+            {
+                [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, object_name);
+                /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
+            }
+            /// Event::DELETED is processed as child event by getChildren watch
+        };
+    });
 
     Coordination::Stat entity_stat;
-    String object_create_query;
     return zookeeper->tryGetWatch(path, data, &entity_stat, object_watcher);
 }
 
@@ -307,6 +331,7 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
     switch (object_type)
     {
         case UserDefinedSQLObjectType::Function: {
+            auto context = getContext();
             ParserCreateFunctionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
@@ -314,8 +339,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef().max_parser_depth,
-                global_context->getSettingsRef().max_parser_backtracks);
+                context->getSettingsRef()[Setting::max_parser_depth],
+                context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
     }
@@ -341,6 +366,17 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::tryLoadObject(
 
         return parseObjectData(object_data, object_type);
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+        {
+            LOG_WARNING(log, "Keeper hardware error while loading user defined SQL object {}: {}",
+                backQuote(object_name), e.message());
+            throw; /// Re-throw hardware errors so the caller can handle them properly
+        }
+        tryLogCurrentException(log, fmt::format("while loading user defined SQL object {}", backQuote(object_name)));
+        return nullptr; /// Non-hardware Keeper errors — treat as missing
+    }
     catch (...)
     {
         tryLogCurrentException(log, fmt::format("while loading user defined SQL object {}", backQuote(object_name)));
@@ -351,11 +387,14 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::tryLoadObject(
 Strings UserDefinedSQLObjectsZooKeeperStorage::getObjectNamesAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
-    auto object_list_watcher = [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
+    auto object_list_watcher = zookeeper->createWatchFromRawCallback(makeWatchIdFromType(object_type), [&] -> Coordination::WatchCallback
     {
-        [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, "");
-        /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
-    };
+        return [my_watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
+        {
+            [[maybe_unused]] bool inserted = my_watch_queue->emplace(object_type, "");
+            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
+        };
+    });
 
     Coordination::Stat stat;
     const auto node_names = zookeeper->getChildrenWatch(zookeeper_path, &stat, object_list_watcher);
@@ -388,15 +427,41 @@ void UserDefinedSQLObjectsZooKeeperStorage::refreshAllObjects(const zkutil::ZooK
 void UserDefinedSQLObjectsZooKeeperStorage::refreshObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
     LOG_DEBUG(log, "Refreshing all user-defined {} objects", object_type);
-    Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    /// Read & parse all SQL objects from ZooKeeper
-    std::vector<std::pair<String, ASTPtr>> function_names_and_asts;
-    for (const auto & function_name : object_names)
+    /// Read & parse all SQL objects from ZooKeeper.
+    /// tryLoadObject re-throws Keeper hardware errors, which ZooKeeperRetriesControl
+    /// catches and retries automatically.  On retry we obtain a fresh session via
+    /// zookeeper_getter (the provided handle may point to an expired session) and
+    /// re-fetch the object list, so that watches are set on the live session.
+    /// If retries are exhausted the exception propagates to the caller, so we never
+    /// reach setAllObjects with a partial set.
+    static constexpr UInt64 max_retries = 5;
+    static constexpr UInt64 initial_backoff_ms = 200;
+    static constexpr UInt64 max_backoff_ms = 5000;
+
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_asts;
+    zkutil::ZooKeeperPtr current_zookeeper = zookeeper;
+
+    ZooKeeperRetriesControl retries_ctl(
+        "refreshObjects",
+        log,
+        ZooKeeperRetriesInfo{max_retries, initial_backoff_ms, max_backoff_ms, /*query_status=*/nullptr});
+
+    retries_ctl.retryLoop([&]
     {
-        if (auto ast = tryLoadObject(zookeeper, UserDefinedSQLObjectType::Function, function_name))
-            function_names_and_asts.emplace_back(function_name, ast);
-    }
+        /// Renew the session on retry — the previous one may have expired.
+        if (retries_ctl.isRetry())
+            current_zookeeper = zookeeper_getter.getZooKeeper().first;
+
+        Strings object_names = getObjectNamesAndSetWatch(current_zookeeper, object_type);
+
+        function_names_and_asts.clear();
+        for (const auto & function_name : object_names)
+        {
+            if (auto ast = tryLoadObject(current_zookeeper, UserDefinedSQLObjectType::Function, function_name))
+                function_names_and_asts.emplace_back(function_name, ast);
+        }
+    });
 
     setAllObjects(function_names_and_asts);
 
@@ -408,7 +473,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::syncObjects(const zkutil::ZooKeeperP
     LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
-    getLock();
+    auto lock = getLock();
 
     /// Remove stale objects
     removeAllObjectsExcept(object_names);

@@ -1,7 +1,8 @@
 #if defined(OS_LINUX)
 
-#include "Epoll.h"
+#include <Common/Epoll.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <unistd.h>
@@ -19,7 +20,7 @@ Epoll::Epoll() : events_count(0)
 {
     epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
-        throw DB::ErrnoException(DB::ErrorCodes::EPOLL_ERROR, "Cannot open epoll descriptor");
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot open epoll descriptor");
 }
 
 Epoll::Epoll(Epoll && other) noexcept : epoll_fd(other.epoll_fd), events_count(other.events_count.load())
@@ -37,7 +38,7 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
 
 void Epoll::add(int fd, void * ptr, uint32_t events)
 {
-    epoll_event event;
+    epoll_event event{};
     event.events = events | EPOLLPRI;
     if (ptr)
         event.data.ptr = ptr;
@@ -47,7 +48,7 @@ void Epoll::add(int fd, void * ptr, uint32_t events)
     ++events_count;
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1)
-        throw DB::ErrnoException(DB::ErrorCodes::EPOLL_ERROR, "Cannot add new descriptor to epoll");
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot add new descriptor to epoll");
 }
 
 void Epoll::remove(int fd)
@@ -55,7 +56,7 @@ void Epoll::remove(int fd)
     --events_count;
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr) == -1)
-        throw DB::ErrnoException(DB::ErrorCodes::EPOLL_ERROR, "Cannot remove descriptor from epoll");
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot remove descriptor from epoll");
 }
 
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout) const
@@ -64,7 +65,7 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
     Stopwatch watch;
-    int ready_size;
+    int ready_size = 0;
     while (true)
     {
         ready_size = epoll_wait(epoll_fd, events_out, max_events, timeout);
@@ -81,11 +82,9 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
                 }
                 continue;
             }
-            else
-                throw DB::ErrnoException(DB::ErrorCodes::EPOLL_ERROR, "Error in epoll_wait");
+            throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Error in epoll_wait");
         }
-        else
-            break;
+        break;
     }
 
     return ready_size;
@@ -95,7 +94,7 @@ Epoll::~Epoll()
 {
     if (epoll_fd != -1)
     {
-        int err = close(epoll_fd);
+        [[maybe_unused]] int err = close(epoll_fd);
         chassert(!err || errno == EINTR);
     }
 }

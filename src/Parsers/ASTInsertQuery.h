@@ -2,6 +2,9 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <IO/ReadBuffer.h>
+
+class SipHash;
 
 namespace DB
 {
@@ -24,7 +27,6 @@ public:
     ASTPtr settings_ast;
 
     ASTPtr select;
-    ASTPtr watch;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -33,7 +35,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBuffer * tail = nullptr;
+    mutable ReadBufferPtr tail = nullptr;
 
     bool async_insert_flush = false;
 
@@ -53,7 +55,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTInsertQuery>(*this);
+        auto res = make_intrusive<ASTInsertQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
@@ -63,7 +65,6 @@ public:
         if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
-        if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 
@@ -73,7 +74,7 @@ public:
     QueryKind getQueryKind() const override { return async_insert_flush ? QueryKind::AsyncInsertFlush : QueryKind::Insert; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 

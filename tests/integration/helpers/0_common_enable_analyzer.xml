@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_analyzer>1</allow_experimental_analyzer>
-        </default>
-    </profiles>
-</clickhouse>

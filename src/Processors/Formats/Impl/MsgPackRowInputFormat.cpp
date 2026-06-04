@@ -1,4 +1,6 @@
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/MsgPackRowInputFormat.h>
+#include <Core/UUID.h>
 
 #if USE_MSGPACK
 
@@ -13,6 +15,7 @@
 
 #include <cstdlib>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -47,11 +50,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
     : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_->getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -130,13 +133,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
     {
         case TypeIndex::UInt8:
         {
-            assert_cast<ColumnUInt8 &>(column).insertValue(value);
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
             break;
         }
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
-            assert_cast<ColumnUInt16 &>(column).insertValue(value);
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
             break;
         }
         case TypeIndex::DateTime: [[fallthrough]];
@@ -153,13 +156,13 @@ static void insertInteger(IColumn & column, DataTypePtr type, UInt64 value)
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {
-            assert_cast<ColumnInt8 &>(column).insertValue(value);
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
             break;
         }
         case TypeIndex::Enum16: [[fallthrough]];
         case TypeIndex::Int16:
         {
-            assert_cast<ColumnInt16 &>(column).insertValue(value);
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
             break;
         }
         case TypeIndex::Date32: [[fallthrough]];
@@ -397,17 +400,34 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
         if (size > 0)
             info_stack.push(Info{nested_column, nested_type, false, size, nullptr});
     }
-    else if (isTuple(info_stack.top().type))
+    else if (isTuple(removeNullable(info_stack.top().type)))
     {
-        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*info_stack.top().type);
+        const auto & tuple_type = assert_cast<const DataTypeTuple &>(*removeNullable(info_stack.top().type));
         const auto & nested_types = tuple_type.getElements();
         if (size != nested_types.size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack array with size {} into Tuple column with {} elements", size, nested_types.size());
 
-        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
+        /// If the type is Nullable, reaching start_array means the value
+        /// is non-null (for nulls, the parser calls visit_nil instead).
+        /// So we can safely unwrap the Nullable to work with the inner
+        /// ColumnTuple directly.
+        IColumn * column_ptr = &info_stack.top().column;
+        if (info_stack.top().type->isNullable())
+        {
+            auto & nullable_column = assert_cast<ColumnNullable &>(*column_ptr);
+            nullable_column.getNullMapColumn().insertValue(0);
+            column_ptr = &nullable_column.getNestedColumn();
+        }
+
+        ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*column_ptr);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
+
+        /// There are no nested columns to grow, so we must explicitly increment the column size.
+        /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+        if (nested_types.empty())
+            column_tuple.addSize(1);
     }
     else
     {
@@ -424,7 +444,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        assert(info_stack.top().array_size.has_value());
+        chassert(info_stack.top().array_size.has_value());
         auto & current_array_size = *info_stack.top().array_size;
         --current_array_size;
         if (current_array_size == 0)
@@ -561,6 +581,15 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "You must specify setting input_format_msgpack_number_of_columns "
                         "to extract table schema from MsgPack data");
+
+    /// Guard against absurdly large values that would cause std::length_error
+    /// or trigger sanitizer OOM aborts in vector::reserve() below.
+    /// Uses the same limit as Native format readers (see Core/Defines.h).
+    if (number_of_columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "input_format_msgpack_number_of_columns = {} is too large "
+                        "(maximum: {})",
+                        number_of_columns, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS);
 }
 
 
@@ -657,7 +686,6 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Msgpack extension type {:x} is not supported", object_ext.type());
         }
     }
-    UNREACHABLE();
 }
 
 std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
@@ -676,6 +704,7 @@ std::optional<DataTypes> MsgPackSchemaReader::readRowAndGetDataTypes()
     return data_types;
 }
 
+void registerInputFormatMsgPack(FormatFactory & factory);
 void registerInputFormatMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormat("MsgPack", [](
@@ -684,11 +713,12 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             const RowInputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
+        return std::make_shared<MsgPackRowInputFormat>(std::make_shared<const Block>(sample), buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
 }
 
+void registerMsgPackSchemaReader(FormatFactory & factory);
 void registerMsgPackSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MsgPack", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -711,6 +741,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatMsgPack(FormatFactory &);
+void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

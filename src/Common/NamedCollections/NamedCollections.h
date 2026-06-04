@@ -1,7 +1,11 @@
 #pragma once
-#include <Interpreters/Context.h>
+
 #include <Common/NamedCollections/NamedCollections_fwd.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+
+#include <mutex>
+
 
 namespace Poco { namespace Util { class AbstractConfiguration; } }
 
@@ -23,15 +27,14 @@ class NamedCollection
 public:
     using Key = std::string;
     using Keys = std::set<Key, std::less<>>;
-    using SourceId = NamedCollectionUtils::SourceId;
-
-    static MutableNamedCollectionPtr create(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & collection_name,
-        const std::string & collection_path,
-        const Keys & keys,
-        SourceId source_id_,
-        bool is_mutable_);
+    enum class SourceId : uint8_t
+    {
+        /// None source_id is possible only if the object is a
+        /// duplicate of some named collection. See `duplicate` method.
+        NONE = 0,
+        CONFIG = 1,
+        SQL = 2,
+    };
 
     bool has(const Key & key) const;
 
@@ -57,6 +60,7 @@ public:
 
     template <bool locked = false> void remove(const Key & key);
 
+    /// Creates mutable, with NONE source id full copy.
     MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys(ssize_t depth = -1, const std::string & prefix = "") const;
@@ -72,80 +76,72 @@ public:
 
     bool isMutable() const { return is_mutable; }
 
-    SourceId getSourceId() const { return source_id; }
+    virtual SourceId getSourceId() const { return SourceId::NONE; }
 
-private:
+    virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
+
+    virtual void update(const ASTAlterNamedCollectionQuery & query);
+
+    virtual ~NamedCollection();
+
+protected:
     class Impl;
     using ImplPtr = std::unique_ptr<Impl>;
-
     NamedCollection(
         ImplPtr pimpl_,
         const std::string & collection_name,
-        SourceId source_id,
-        bool is_mutable);
+        bool is_mutable_
+    );
 
     void assertMutable() const;
 
+
     ImplPtr pimpl;
     const std::string collection_name;
-    const SourceId source_id;
     const bool is_mutable;
     mutable std::mutex mutex;
 };
 
-/**
- * A factory of immutable named collections.
- */
-class NamedCollectionFactory : boost::noncopyable
+class NamedCollectionFromSQL final : public NamedCollection
 {
 public:
-    static NamedCollectionFactory & instance();
+    static MutableNamedCollectionPtr create(const ASTCreateNamedCollectionQuery & query);
 
-    bool exists(const std::string & collection_name) const;
+    String getCreateStatement(bool show_secrects) override;
 
-    NamedCollectionPtr get(const std::string & collection_name) const;
+    void update(const ASTAlterNamedCollectionQuery & query) override;
 
-    NamedCollectionPtr tryGet(const std::string & collection_name) const;
-
-    MutableNamedCollectionPtr getMutable(const std::string & collection_name) const;
-
-    void add(const std::string & collection_name, MutableNamedCollectionPtr collection);
-
-    void add(NamedCollectionsMap collections);
-
-    void update(NamedCollectionsMap collections);
-
-    void remove(const std::string & collection_name);
-
-    void removeIfExists(const std::string & collection_name);
-
-    void removeById(NamedCollectionUtils::SourceId id);
-
-    NamedCollectionsMap getAll() const;
+    NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
 
 private:
-    bool existsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
+    explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
 
-    MutableNamedCollectionPtr tryGetUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock) const;
-
-    void addUnlocked(
-        const std::string & collection_name,
-        MutableNamedCollectionPtr collection,
-        std::lock_guard<std::mutex> & lock);
-
-    bool removeIfExistsUnlocked(
-        const std::string & collection_name,
-        std::lock_guard<std::mutex> & lock);
-
-    mutable NamedCollectionsMap loaded_named_collections;
-
-    mutable std::mutex mutex;
-    bool is_initialized = false;
+    ASTCreateNamedCollectionQuery create_query_ptr;
 };
 
+class NamedCollectionFromConfig final : public NamedCollection
+{
+public:
+
+    static MutableNamedCollectionPtr create(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name,
+        const std::string & collection_path,
+        const Keys & keys);
+
+    String getCreateStatement(bool /*show_secrects*/) override { return {}; }
+
+    void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
+
+    NamedCollection::SourceId getSourceId() const override { return SourceId::CONFIG; }
+
+private:
+
+    NamedCollectionFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & collection_name,
+        const std::string & collection_path,
+        const Keys & keys);
+};
 
 }

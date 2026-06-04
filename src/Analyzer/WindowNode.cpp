@@ -1,11 +1,10 @@
 #include <Analyzer/WindowNode.h>
-
-#include <Common/SipHash.h>
-
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
+#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -80,20 +79,22 @@ void WindowNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     }
 }
 
-bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const WindowNode &>(rhs);
 
     return window_frame == rhs_typed.window_frame && parent_window_name == rhs_typed.parent_window_name;
 }
 
-void WindowNode::updateTreeHashImpl(HashState & hash_state) const
+void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
     hash_state.update(window_frame.is_default);
     hash_state.update(window_frame.type);
     hash_state.update(window_frame.begin_type);
+    applyVisitor(FieldVisitorHash(hash_state), window_frame.begin_offset);
     hash_state.update(window_frame.begin_preceding);
     hash_state.update(window_frame.end_type);
+    applyVisitor(FieldVisitorHash(hash_state), window_frame.end_offset);
     hash_state.update(window_frame.end_preceding);
 
     hash_state.update(parent_window_name);
@@ -109,7 +110,7 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
 
 ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto window_definition = std::make_shared<ASTWindowDefinition>();
+    auto window_definition = make_intrusive<ASTWindowDefinition>();
 
     window_definition->parent_window_name = parent_window_name;
 
@@ -142,6 +143,15 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         window_definition->children.push_back(getFrameEndOffsetNode()->toAST(options));
         window_definition->frame_end_offset = window_definition->children.back();
+    }
+
+    if (hasAlias())
+    {
+        auto window_list_element = make_intrusive<ASTWindowListElement>();
+        window_list_element->name = getAlias();
+        window_list_element->children.push_back(window_definition);
+        window_list_element->definition = window_list_element->children.back();
+        return window_list_element;
     }
 
     return window_definition;

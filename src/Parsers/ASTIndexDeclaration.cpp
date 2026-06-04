@@ -3,59 +3,120 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
 {
 
-ASTPtr ASTIndexDeclaration::clone() const
+namespace ErrorCodes
 {
-    auto res = std::make_shared<ASTIndexDeclaration>();
-
-    res->name = name;
-    if (granularity)
-        res->granularity = granularity;
-    if (expr)
-        res->set(res->expr, expr->clone());
-    if (type)
-        res->set(res->type, type->clone());
-    return res;
+    extern const int LOGICAL_ERROR;
 }
 
 
-void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_)
+    : name(name_)
 {
-    if (expr)
+    if (!expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration must have an expression");
+    children.push_back(expression);
+
+    if (type)
     {
+        if (!dynamic_cast<const ASTFunction *>(type.get()))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
+        children.push_back(type);
+    }
+}
+
+ASTPtr ASTIndexDeclaration::clone() const
+{
+    ASTPtr expr = getExpression();
+    if (expr)
+        expr = expr->clone();
+
+    ASTPtr type = getType();
+    if (type)
+        type = type->clone();
+
+    auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
+    res->granularity = granularity;
+
+    return res;
+}
+
+ASTPtr ASTIndexDeclaration::getExpression() const
+{
+    if (children.size() <= expression_idx)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration must have an expression");
+    return children[expression_idx];
+}
+
+boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
+{
+    if (children.size() <= type_idx)
+        return nullptr;
+    auto func_ast = boost::dynamic_pointer_cast<ASTFunction>(children[type_idx]);
+    if (!func_ast)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
+    return func_ast;
+}
+
+void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+{
+    if (auto expr = getExpression())
+    {
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+
         if (part_of_create_index_query)
         {
             if (expr->as<ASTExpressionList>())
             {
-                s.ostr << "(";
-                expr->formatImpl(s, state, frame);
-                s.ostr << ")";
+                ostr << "(";
+                expr->format(ostr, s, state, nested_frame);
+                ostr << ")";
             }
             else
-                expr->formatImpl(s, state, frame);
+                expr->format(ostr, s, state, nested_frame);
         }
         else
         {
-            s.ostr << backQuoteIfNeed(name);
-            s.ostr << " ";
-            expr->formatImpl(s, state, frame);
+            s.writeIdentifier(ostr, name, /*ambiguous=*/false);
+            ostr << " ";
+            expr->format(ostr, s, state, nested_frame);
         }
     }
 
-    if (type)
+    if (auto type = getType())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-        type->formatImpl(s, state, frame);
+        ostr << " TYPE ";
+        type->format(ostr, s, state, frame);
     }
+
     if (granularity)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-        s.ostr << granularity;
+        ostr << " GRANULARITY ";
+        ostr << granularity;
     }
+}
+
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)
+{
+    /// Text index is always built for the whole part and granularity is ignored.
+    if (type && type->name == "text")
+        return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+
+    if (granularity)
+        return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+    if (type && type->name == "vector_similarity")
+        return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+
+    return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
 }
 
 }

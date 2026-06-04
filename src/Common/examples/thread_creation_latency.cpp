@@ -5,14 +5,10 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
-
-
-int value = 0;
-
-static void f() { ++value; }
-static void * g(void *) { f(); return {}; }
+#include <Examples/clickhouse_examples.h>
 
 
 namespace CurrentMetrics
@@ -30,6 +26,16 @@ namespace DB
     }
 }
 
+namespace
+{
+
+int value = 0;
+
+void f() { ++value; }
+void * g(void *) { f(); return {}; }
+
+using ThreadFromGlobalPoolSimple = ThreadFromGlobalPoolImpl</* propagate_opentelemetry_context= */ false, /* global_trace_collector_allowed= */ false>;
+using SimpleThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolSimple>;
 
 template <typename F>
 void test(size_t n, const char * name, F && kernel)
@@ -49,8 +55,7 @@ void test(size_t n, const char * name, F && kernel)
         kernel();
 
         watch_one.stop();
-        if (watch_one.elapsedSeconds() > max_seconds)
-            max_seconds = watch_one.elapsedSeconds();
+        max_seconds = std::max(watch_one.elapsedSeconds(), max_seconds);
     }
 
     watch.stop();
@@ -59,28 +64,29 @@ void test(size_t n, const char * name, F && kernel)
         << std::fixed << std::setprecision(2)
         << n << " ops in "
         << watch.elapsedSeconds() << " sec., "
-        << n / watch.elapsedSeconds() << " ops/sec., "
-        << "avg latency: " << watch.elapsedSeconds() / n * 1000000 << " μs, "
+        << static_cast<double>(n) / watch.elapsedSeconds() << " ops/sec., "
+        << "avg latency: " << watch.elapsedSeconds() / static_cast<double>(n) * 1000000 << " μs, "
         << "max latency: " << max_seconds * 1000000 << " μs "
         << "(res = " << value << ")"
         << std::endl;
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleThreadCreationLatency(int argc, char ** argv)
 {
     size_t n = argc == 2 ? DB::parse<UInt64>(argv[1]) : 100000;
 
     test(n, "Create and destroy ThreadPool each iteration", []
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
         tp.scheduleOrThrowOnError(f);
         tp.wait();
     });
 
     test(n, "pthread_create, pthread_join each iteration", []
     {
-        pthread_t thread;
+        pthread_t thread = {};
         if (pthread_create(&thread, nullptr, g, nullptr))
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot create thread");
         if (pthread_join(thread, nullptr))
@@ -94,7 +100,7 @@ int main(int argc, char ** argv)
     });
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
 
         test(n, "Schedule job for Threadpool each iteration", [&tp]
         {
@@ -104,7 +110,7 @@ int main(int argc, char ** argv)
     }
 
     {
-        ThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 128);
+        SimpleThreadPool tp(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 128);
 
         test(n, "Schedule job for Threadpool with 128 threads each iteration", [&tp]
         {

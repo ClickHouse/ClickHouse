@@ -1,10 +1,10 @@
-import pytest
 from contextlib import nullcontext as does_not_raise
-from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import exec_query_with_retry
-from helpers.test_tools import assert_eq_with_retry
 
+import pytest
+
+from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 
 ACCESSIBLE_IPV4 = "10.5.172.10"
 OTHER_ACCESSIBLE_IPV4 = "10.5.172.20"
@@ -52,14 +52,14 @@ def started_cluster():
 @pytest.fixture
 def dst_node_addrs(started_cluster, request):
     src_node.set_hosts([(ip, "dst_node") for ip in request.param])
-    src_node.query("SYSTEM DROP DNS CACHE")
+    src_node.query("SYSTEM CLEAR DNS CACHE")
 
     yield
 
     # Clear static DNS entries and all keep alive connections
     src_node.set_hosts([])
-    src_node.query("SYSTEM DROP DNS CACHE")
-    src_node.query("SYSTEM DROP CONNECTIONS CACHE")
+    src_node.query("SYSTEM CLEAR DNS CACHE")
+    src_node.query("SYSTEM CLEAR CONNECTIONS CACHE")
 
 
 @pytest.mark.parametrize(
@@ -105,7 +105,7 @@ def test_url_ip_change(started_cluster):
     src_node.set_hosts(
         [(OTHER_ACCESSIBLE_IPV4, "dst_node"), (NOT_ACCESSIBLE_IPV6, "dst_node")]
     )
-    src_node.query("SYSTEM DROP DNS CACHE")
+    src_node.query("SYSTEM CLEAR DNS CACHE")
 
     assert (
         src_node.query(

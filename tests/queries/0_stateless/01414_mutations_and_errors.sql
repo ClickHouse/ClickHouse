@@ -16,9 +16,9 @@ INSERT INTO mutation_table SELECT toDate('2019-10-02'), number, 'Hello' FROM num
 
 SELECT distinct(value) FROM mutation_table ORDER BY value;
 
-ALTER TABLE mutation_table MODIFY COLUMN value UInt64 SETTINGS mutations_sync = 2; --{serverError 341}
+ALTER TABLE mutation_table MODIFY COLUMN value UInt64 SETTINGS mutations_sync = 2; --{serverError UNFINISHED}
 
-SELECT distinct(value) FROM mutation_table ORDER BY value; --{serverError 6}
+SELECT distinct(value) FROM mutation_table ORDER BY value; --{serverError CANNOT_PARSE_TEXT}
 
 KILL MUTATION where table = 'mutation_table' and database = currentDatabase();
 

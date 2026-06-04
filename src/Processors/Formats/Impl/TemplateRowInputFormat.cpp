@@ -48,7 +48,7 @@ static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_r
 }
 
 TemplateRowInputFormat::TemplateRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     FormatSettings settings_,
@@ -61,26 +61,26 @@ TemplateRowInputFormat::TemplateRowInputFormat(
 {
 }
 
-TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
+TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
                                                FormatSettings settings_, bool ignore_spaces_,
                                                ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                std::string row_between_delimiter_)
-    : RowInputFormatWithDiagnosticInfo(header_, *buf_, params_), buf(std::move(buf_)), data_types(header_.getDataTypes()),
+    : RowInputFormatWithDiagnosticInfo(header_, *buf_, params_), buf(std::move(buf_)), data_types(header_->getDataTypes()),
       settings(std::move(settings_)), ignore_spaces(ignore_spaces_),
       format(std::move(format_)), row_format(std::move(row_format_)),
       default_csv_delimiter(settings.csv.delimiter), row_between_delimiter(row_between_delimiter_),
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
-    std::vector<UInt8> column_in_format(header_.columns(), false);
+    std::vector<UInt8> column_in_format(header_->columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         const auto & column_index = row_format.format_idx_to_column_idx[i];
         if (column_index)
         {
-            if (header_.columns() <= *column_index)
+            if (header_->columns() <= *column_index)
                 row_format.throwInvalidFormat("Column index " + std::to_string(*column_index) +
-                                              " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
+                                              " must be less then number of columns (" + std::to_string(header_->columns()) + ")", i);
             if (row_format.escaping_rules[i] == EscapingRule::None)
                 row_format.throwInvalidFormat("Column is not skipped, but deserialization type is None", i);
 
@@ -97,7 +97,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, std::uniqu
         }
     }
 
-    for (size_t i = 0; i < header_.columns(); ++i)
+    for (size_t i = 0; i < header_->columns(); ++i)
         if (!column_in_format[i])
             always_default_columns.push_back(i);
 }
@@ -122,7 +122,12 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     updateDiagnosticInfo();
 
     if (likely(getRowNum() != 0))
-        format_reader->skipRowBetweenDelimiter();
+    {
+        if (row_between_delimiter_already_skipped)
+            row_between_delimiter_already_skipped = false;
+        else
+            format_reader->skipRowBetweenDelimiter();
+    }
 
     extra.read_columns.assign(columns.size(), false);
 
@@ -279,6 +284,7 @@ void TemplateRowInputFormat::syncAfterError()
 {
     skipToNextRowOrEof(*buf, row_format.delimiters.back(), row_between_delimiter, ignore_spaces);
     end_of_stream = buf->eof();
+    row_between_delimiter_already_skipped = !end_of_stream;
     /// It can happen that buf->position() is not at the beginning of row
     /// if some delimiters is similar to row_format.delimiters.back() and row_between_delimiter.
     /// It will cause another parsing error.
@@ -288,6 +294,7 @@ void TemplateRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
+    row_between_delimiter_already_skipped = false;
 }
 
 void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
@@ -545,8 +552,14 @@ static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & set
     {
         /// Read format string from file
         resultset_format = ParsedTemplateFormatString(
-            FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
-                             settings.schema.is_server, settings.schema.format_schema_path),
+            FormatSchemaInfo(
+                /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+                /*format_schema=*/settings.template_settings.resultset_format,
+                /*format_schema_message_name=*/"",
+                /*format=*/"Template",
+                /*require_message=*/false,
+                /*is_server=*/settings.schema.is_server,
+                /*format_schema_path=*/settings.schema.format_schema_path),
             [&](const String & partName) -> std::optional<size_t>
             {
                 if (partName == "data")
@@ -561,10 +574,18 @@ static ParsedTemplateFormatString fillRowFormat(const FormatSettings & settings,
 {
     return ParsedTemplateFormatString(
         FormatSchemaInfo(
-            settings.template_settings.row_format, "Template", false, settings.schema.is_server, settings.schema.format_schema_path),
-        idx_getter, allow_indexes);
+            /*format_schema_source=*/FormatSettings::FORMAT_SCHEMA_SOURCE_FILE,
+            /*format_schema=*/settings.template_settings.row_format,
+            /*format_schema_message_name=*/"",
+            /*format=*/"Template",
+            /*require_message=*/false,
+            /*is_server=*/settings.schema.is_server,
+            /*format_schema_path=*/settings.schema.format_schema_path),
+        idx_getter,
+        allow_indexes);
 }
 
+void registerInputFormatTemplate(FormatFactory & factory);
 void registerInputFormatTemplate(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -581,7 +602,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
             };
 
             return std::make_shared<TemplateRowInputFormat>(
-                sample,
+                std::make_shared<const Block>(sample),
                 buf,
                 params,
                 settings,
@@ -593,6 +614,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
     }
 }
 
+void registerTemplateSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})

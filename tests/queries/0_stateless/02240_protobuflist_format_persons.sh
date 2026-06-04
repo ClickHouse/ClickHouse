@@ -15,7 +15,7 @@ SCHEMADIR=$CURDIR/format_schemas
 set -eo pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS persons_02240;
 DROP TABLE IF EXISTS roundtrip_persons_02240;
 DROP TABLE IF EXISTS alt_persons_02240;
@@ -118,7 +118,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO syntax2_persons_02240 SETTINGS format_sc
 $CLICKHOUSE_CLIENT --query "SELECT * FROM syntax2_persons_02240 ORDER BY name"
 rm "$BINARY_FILE_PATH"
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE persons_02240;
 DROP TABLE roundtrip_persons_02240;
 DROP TABLE alt_persons_02240;

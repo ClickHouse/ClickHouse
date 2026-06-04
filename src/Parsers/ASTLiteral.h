@@ -2,11 +2,6 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTWithAlias.h>
-#include <Parsers/TokenIterator.h>
-#include <Common/FieldVisitorDump.h>
-
-#include <optional>
-
 
 namespace DB
 {
@@ -14,14 +9,24 @@ namespace DB
 /// Literal (atomic) - number, string, NULL
 class ASTLiteral : public ASTWithAlias
 {
+protected:
+    struct ASTLiteralFlags
+    {
+        using ParentFlags = ASTWithAliasFlags;
+        static constexpr UInt32 RESERVED_BITS = ASTWithAliasFlags::RESERVED_BITS + 1;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 use_legacy_column_name_of_tuple : 1;
+        UInt32 unused : 30;
+    };
+
 public:
-    explicit ASTLiteral(Field value_) : value(std::move(value_)) {}
+    explicit ASTLiteral(Field value_)
+        : value(std::move(value_))
+    {
+    }
 
     Field value;
-
-    /// For ConstantExpressionTemplate
-    std::optional<TokenIterator> begin;
-    std::optional<TokenIterator> end;
 
     /*
      * The name of the column corresponding to this literal. Only used to
@@ -32,19 +37,25 @@ public:
      */
     String unique_column_name;
 
-    /// For compatibility reasons in distributed queries,
-    /// we may need to use legacy column name for tuple literal.
-    bool use_legacy_column_name_of_tuple = false;
+    void setUseLegacyColumnNameOfTuple(bool _value)
+    {
+        flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple = _value;
+    }
+
+    bool getUseLegacyColumnNameOfTuple() const
+    {
+        return flags<ASTLiteralFlags>().use_legacy_column_name_of_tuple;
+    }
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 

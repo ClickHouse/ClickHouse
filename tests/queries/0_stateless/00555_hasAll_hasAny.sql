@@ -39,10 +39,10 @@ select hasAny(['a', 'b'], ['a', 'c']);
 select hasAll(['a', 'b'], ['a', 'c']);
 select '-';
 
-select hasAny([1], ['a']); -- { serverError 386 }
-select hasAll([1], ['a']); -- { serverError 386 }
-select hasAll([[1, 2], [3, 4]], ['a', 'c']); -- { serverError 386 }
-select hasAny([[1, 2], [3, 4]], ['a', 'c']); -- { serverError 386 }
+select hasAny([1], ['a']); -- { serverError NO_COMMON_TYPE }
+select hasAll([1], ['a']); -- { serverError NO_COMMON_TYPE }
+select hasAll([[1, 2], [3, 4]], ['a', 'c']); -- { serverError NO_COMMON_TYPE }
+select hasAny([[1, 2], [3, 4]], ['a', 'c']); -- { serverError NO_COMMON_TYPE }
 select '-';
 
 select hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]]);

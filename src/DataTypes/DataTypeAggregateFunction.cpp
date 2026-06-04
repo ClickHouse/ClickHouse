@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -11,10 +12,14 @@
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
+#include <Common/FieldVisitorToCastedLiteral.h>
+#include <Parsers/parseFieldFromCastedLiteral.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -27,9 +32,23 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+}
+
+
+DataTypeAggregateFunction::DataTypeAggregateFunction(AggregateFunctionPtr function_, const DataTypes & argument_types_,
+                            const Array & parameters_, std::optional<size_t> version_)
+    : function(std::move(function_))
+    , argument_types(argument_types_)
+    , parameters(parameters_)
+    , version(version_)
+{
+}
+
+String DataTypeAggregateFunction::getFunctionName() const
+{
+    return function->getName();
 }
 
 
@@ -52,6 +71,25 @@ size_t DataTypeAggregateFunction::getVersion() const
     return function->getDefaultVersion();
 }
 
+DataTypePtr DataTypeAggregateFunction::getReturnType() const
+{
+    return function->getResultType();
+}
+
+DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
+{
+    return function->getReturnTypeToPredict();
+}
+
+bool DataTypeAggregateFunction::isVersioned() const
+{
+    return function->isVersioned();
+}
+
+void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
+{
+    setVersion(function->getVersionFromRevision(revision), if_empty);
+}
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
@@ -67,11 +105,25 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
     if (!parameters.empty())
     {
         stream << '(';
-        for (size_t i = 0, size = parameters.size(); i < size; ++i)
+        if (function->shouldPrintParametersWithTypes())
         {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            FieldVisitorToCastedLiteral visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
+        }
+        else
+        {
+            FieldVisitorToString visitor;
+            for (size_t i = 0, size = parameters.size(); i < size; ++i)
+            {
+                if (i)
+                    stream << ", ";
+                stream << applyVisitor(visitor, parameters[i]);
+            }
         }
         stream << ')';
     }
@@ -94,7 +146,7 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = AggregateFunctionStateData();
-    field.get<AggregateFunctionStateData &>().name = getName();
+    field.safeGet<AggregateFunctionStateData>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -103,7 +155,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
+        WriteBufferFromString buffer_from_field(field.safeGet<AggregateFunctionStateData>().data);
         function->serialize(place, buffer_from_field, version);
     }
     catch (...)
@@ -117,12 +169,15 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
+        return false;
+
+    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -145,6 +200,31 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     return true;
 }
 
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
+    hash.update(static_cast<UInt8>(function->getStateVariant()));
+}
+
+bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
+}
+
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -157,11 +237,30 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
+    return SerializationAggregateFunction::create(function, getName(), getVersion());
 }
 
+
+namespace
+{
+
+/// Extract a single AggregateFunction parameter value from its AST node.
+Field parseAggregateFunctionParameter(const ASTPtr & param_ast, const String & function_name)
+{
+    try
+    {
+        return parseFieldFromCastedLiteral(param_ast);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while parsing aggregate function '{}'", function_name);
+        throw;
+    }
+}
+
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -199,7 +298,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->nulls_action;
+        action = parametric->getNullsAction();
 
         if (parametric->arguments)
         {
@@ -207,17 +306,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row.resize(parameters.size());
 
             for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const auto * literal = parameters[i]->as<ASTLiteral>();
-                if (!literal)
-                    throw Exception(
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
-                        "Parameters to aggregate functions must be literals. "
-                        "Got parameter '{}' for function '{}'",
-                        parameters[i]->formatForErrorMessage(), function_name);
-
-                params_row[i] = literal->value;
-            }
+                params_row[i] = parseAggregateFunctionParameter(parameters[i], function_name);
         }
     }
     else if (auto opt_name = tryGetIdentifierName(data_type_ast))
@@ -232,8 +321,8 @@ static DataTypePtr create(const ASTPtr & arguments)
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Unexpected AST element passed as aggregate function name for data type AggregateFunction. "
-                        "Must be identifier or function.");
+                        "Unexpected AST element {} passed as aggregate function name for data type AggregateFunction. "
+                        "Must be identifier or function", data_type_ast->getID());
 
     for (size_t i = argument_types_start_idx; i < arguments->children.size(); ++i)
         argument_types.push_back(DataTypeFactory::instance().get(arguments->children[i]));
@@ -267,6 +356,19 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataType("AggregateFunction", create);
+}
+
+bool hasAggregateFunctionType(const DataTypePtr & type)
+{
+    auto result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= WhichDataType(t).isAggregateFunction();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
 }
 
 }

@@ -29,11 +29,13 @@ public:
     requires std::is_convertible_v<G, F>
     constexpr BasicScopeGuard & operator=(BasicScopeGuard<G> && src) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved, cppcoreguidelines-noexcept-move-operations)
     {
-        if (this != &src)
+        if constexpr (std::is_same_v<G, F>)
         {
-            invoke();
-            function = src.release();
+            if (this == &src)
+                return *this;
         }
+        invoke();
+        function = src.release();
         return *this;
     }
 

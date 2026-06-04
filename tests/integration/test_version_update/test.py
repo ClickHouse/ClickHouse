@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -14,7 +14,6 @@ node2 = cluster.add_instance(
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     stay_alive=True,
-    allow_analyzer=False,
 )
 
 
@@ -69,6 +68,7 @@ def start_cluster():
 
 
 def test_modulo_partition_key_issue_23508(start_cluster):
+    node2.query("DROP TABLE IF EXISTS test SYNC")
     node2.query(
         "CREATE TABLE test (id Int64, v UInt64, value String) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/table1', '1', v) PARTITION BY id % 20 ORDER BY (id, v)"
     )

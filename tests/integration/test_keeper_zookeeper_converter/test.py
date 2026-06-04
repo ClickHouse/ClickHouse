@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-from kazoo.client import KazooClient
-from kazoo.retry import KazooRetry
-from kazoo.security import make_acl
-from kazoo.handlers.threading import KazooTimeoutError
 import os
 import time
+
+import pytest
+from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.security import make_acl
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -19,15 +19,60 @@ node = cluster.add_instance(
 
 
 def start_zookeeper():
-    node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"])
+    for attempt in range(5):
+        try:
+            node.exec_in_container(
+                ["bash", "-c", "/opt/zookeeper/bin/zkServer.sh start"]
+            )
+            return
+        except Exception:
+            if attempt == 4:
+                raise
+            time.sleep(3)
+
+
+# pgrep / pkill -f match against the full command line, which includes the
+# pgrep / pkill process itself. The bracket expression `[o]rg` is a standard
+# trick that keeps `pgrep -f` from matching its own shell process: pgrep's
+# argv contains the literal string `[o]rg.apache.zookeeper.server` (the
+# brackets are passed through verbatim by bash because they are inside single
+# quotes), and the regex `[o]rg\.apache\.zookeeper\.server` does not match
+# that literal string (it needs `o` as the first character, not `[`).
+ZK_JVM_PATTERN = "[o]rg\\.apache\\.zookeeper\\.server"
+
+
+def _zk_jvm_running():
+    return bool(
+        node.exec_in_container(
+            ["bash", "-c", f"pgrep -f '{ZK_JVM_PATTERN}' || true"],
+            nothrow=True,
+        ).strip()
+    )
 
 
 def stop_zookeeper():
+    # `zkServer.sh stop` sends a single SIGTERM to the JVM, removes the PID
+    # file, and returns — it does not wait for the JVM to actually exit and
+    # has no SIGKILL fallback. Under sanitizer-heavy CI builds the JVM can
+    # take a long time to run its shutdown hooks, so we have to do the wait
+    # ourselves and force-kill the JVM if it does not exit in time.
     node.exec_in_container(["bash", "-c", "/opt/zookeeper/bin/zkServer.sh stop"])
-    timeout = time.time() + 60
-    while node.get_process_pid("zookeeper") != None:
-        if time.time() > timeout:
-            raise Exception("Failed to stop ZooKeeper in 60 secs")
+    sigterm_deadline = time.time() + 60
+    while _zk_jvm_running():
+        if time.time() > sigterm_deadline:
+            # SIGTERM did not stop the JVM in time. The JVM is just an
+            # external dependency used to populate test data, so a hard
+            # kill is acceptable — we do not need a clean shutdown.
+            print("ZooKeeper JVM did not exit 60s after SIGTERM; sending SIGKILL")
+            node.exec_in_container(
+                ["bash", "-c", f"pkill -9 -f '{ZK_JVM_PATTERN}' || true"],
+            )
+            sigkill_deadline = time.time() + 10
+            while _zk_jvm_running():
+                if time.time() > sigkill_deadline:
+                    raise Exception("Failed to stop ZooKeeper even after SIGKILL")
+                time.sleep(0.2)
+            return
         time.sleep(0.2)
 
 
@@ -138,23 +183,16 @@ def started_cluster():
 
 
 def get_fake_zk(timeout=60.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, "node", timeout=timeout)
 
 
 def get_genuine_zk(timeout=60.0):
     CONNECTION_RETRIES = 100
     for i in range(CONNECTION_RETRIES):
         try:
-            _genuine_zk_instance = KazooClient(
-                hosts=cluster.get_instance_ip("node") + ":2181",
-                timeout=timeout,
-                connection_retry=KazooRetry(max_tries=20),
+            _genuine_zk_instance = cluster.get_kazoo_client(
+                "node", timeout=timeout, external_port=2181
             )
-            _genuine_zk_instance.start()
             return _genuine_zk_instance
         except KazooTimeoutError:
             if i == CONNECTION_RETRIES - 1:
@@ -262,7 +300,7 @@ def compare_states(zk1, zk2, path="/", exclude_paths=[]):
         assert set(first_children) ^ set(second_children) == set(["keeper"])
     else:
         assert first_children == second_children, (
-            "Childrens are not equal on path " + path
+            "Children are not equal on path " + path
         )
 
     for children in first_children:
@@ -375,7 +413,7 @@ def test_simple_crud_requests(started_cluster, create_snapshots):
 
     first_children = list(sorted(genuine_connection.get_children("/test_sequential")))
     second_children = list(sorted(fake_connection.get_children("/test_sequential")))
-    assert first_children == second_children, "Childrens are not equal on path " + path
+    assert first_children == second_children, "Children are not equal on path " + path
 
     genuine_connection.stop()
     genuine_connection.close()

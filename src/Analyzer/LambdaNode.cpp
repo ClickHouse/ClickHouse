@@ -3,6 +3,9 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -10,10 +13,11 @@
 namespace DB
 {
 
-LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_)
+LambdaNode::LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_)
     : IQueryTreeNode(children_size)
     , argument_names(std::move(argument_names_))
     , result_type(std::move(result_type_))
+    , is_operator(is_operator_)
 {
     auto arguments_list_node = std::make_shared<ListNode>();
     auto & nodes = arguments_list_node->getNodes();
@@ -46,13 +50,13 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool LambdaNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
     return argument_names == rhs_typed.argument_names;
 }
 
-void LambdaNode::updateTreeHashImpl(HashState & state) const
+void LambdaNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 {
     state.update(argument_names.size());
     for (const auto & argument_name : argument_names)
@@ -64,27 +68,29 @@ void LambdaNode::updateTreeHashImpl(HashState & state) const
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const
 {
-    return std::make_shared<LambdaNode>(argument_names, getExpression(), result_type);
+    return std::make_shared<LambdaNode>(argument_names, getExpression(), is_operator, result_type);
 }
 
 ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
+    auto lambda_function_arguments_ast = make_intrusive<ASTExpressionList>();
 
-    auto tuple_function = std::make_shared<ASTFunction>();
+    auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->children.push_back(children[arguments_child_index]->toAST(options));
     tuple_function->arguments = tuple_function->children.back();
+    tuple_function->setIsOperator(true);
 
     lambda_function_arguments_ast->children.push_back(std::move(tuple_function));
     lambda_function_arguments_ast->children.push_back(children[expression_child_index]->toAST(options));
 
-    auto lambda_function_ast = std::make_shared<ASTFunction>();
+    auto lambda_function_ast = make_intrusive<ASTFunction>();
     lambda_function_ast->name = "lambda";
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
-    lambda_function_ast->is_lambda_function = true;
+    lambda_function_ast->setIsLambdaFunction(true);
+    lambda_function_ast->setIsOperator(is_operator);
 
     return lambda_function_ast;
 }

@@ -6,12 +6,12 @@
 namespace DB
 {
 
-class SourceFromSingleChunk : public ISource
+class SourceFromSingleChunk final : public ISource
 {
 /// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:
-    SourceFromSingleChunk(Block header, Chunk chunk_);
-    explicit SourceFromSingleChunk(Block data);
+    SourceFromSingleChunk(SharedHeader header, Chunk chunk_);
+    explicit SourceFromSingleChunk(SharedHeader data);
     String getName() const override;
 
 protected:

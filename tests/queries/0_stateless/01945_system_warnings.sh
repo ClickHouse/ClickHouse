@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,6 +16,7 @@ fi
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
 ${CLICKHOUSE_CLIENT} --multiple_joins_rewriter_version=42 -q "SELECT message FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
+${CLICKHOUSE_CLIENT} --cloud_mode=1 --multiple_joins_rewriter_version=42 -q "SELECT count() FROM system.warnings WHERE message LIKE '%Obsolete setting%'"
 
 # Avoid duplicated warnings
 ${CLICKHOUSE_CLIENT} -q "SELECT count() = countDistinct(message) FROM system.warnings"

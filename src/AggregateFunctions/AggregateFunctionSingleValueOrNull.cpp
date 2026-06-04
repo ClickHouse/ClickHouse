@@ -28,17 +28,23 @@ struct AggregateFunctionSingleValueOrNullData
     using Self = AggregateFunctionSingleValueOrNullData;
 
 private:
-    SingleValueDataBaseMemoryBlock v_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     bool first_value = true;
     bool is_null = false;
 
 public:
-    [[noreturn]] explicit AggregateFunctionSingleValueOrNullData()
+    [[noreturn]] explicit AggregateFunctionSingleValueOrNullData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionSingleValueOrNullData initialized empty");
     }
 
-    explicit AggregateFunctionSingleValueOrNullData(TypeIndex value_type) { generateSingleValueFromTypeIndex(value_type, v_data); }
+    explicit AggregateFunctionSingleValueOrNullData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    {
+        generateSingleValueFromType(value_type, v_data);
+    }
 
     ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
 
@@ -62,6 +68,12 @@ public:
 
     void add(const Self & to, Arena * arena)
     {
+        if (to.is_null)
+        {
+            is_null = true;
+            return;
+        }
+
         if (!to.data().has())
             return;
 
@@ -80,9 +92,9 @@ public:
     /// Fixing it requires a breaking change (but it's probably necessary)
     void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) { data().read(buf, serialization, arena); }
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, Arena * arena) { data().read(buf, serialization, data_type, arena); }
 
-    void insertResultInto(IColumn & to) const
+    void insertResultInto(IColumn & to, const DataTypePtr & result_type) const
     {
         if (is_null || first_value)
         {
@@ -92,7 +104,7 @@ public:
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data().insertResultInto(col.getNestedColumn());
+            data().insertResultInto(col.getNestedColumn(), removeNullable(result_type));
         }
     }
 };
@@ -103,24 +115,24 @@ class AggregateFunctionSingleValueOrNull final
 {
 private:
     SerializationPtr serialization;
-    const TypeIndex value_type_index;
+    const DataTypePtr value_type;
 
 public:
     explicit AggregateFunctionSingleValueOrNull(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<AggregateFunctionSingleValueOrNullData, AggregateFunctionSingleValueOrNull>(
             {type}, {}, makeNullable(type))
         , serialization(type->getDefaultSerialization())
-        , value_type_index(WhichDataType(type).idx)
+        , value_type(type)
     {
     }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type_index); }
+    void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type); }
 
     String getName() const override { return "singleValueOrNull"; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        this->data(place).add(*columns[0], row_num, arena);
+        data(place).add(*columns[0], row_num, arena);
     }
 
     void addBatchSinglePlace(
@@ -131,7 +143,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (this->data(place).isNull())
+        if (data(place).isNull())
             return;
         IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull>::addBatchSinglePlace(
             row_begin, row_end, place, columns, arena, if_argument_pos);
@@ -146,7 +158,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (this->data(place).isNull())
+        if (data(place).isNull())
             return;
         IAggregateFunctionDataHelper<Data, AggregateFunctionSingleValueOrNull>::addBatchSinglePlaceNotNull(
             row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
@@ -154,29 +166,29 @@ public:
 
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
     {
-        this->data(place).add(*columns[0], 0, arena);
+        data(place).add(*columns[0], 0, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).add(this->data(rhs), arena);
+        data(place).add(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf, *serialization);
+        data(place).write(buf, *serialization);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, *serialization, arena);
+        data(place).read(buf, *serialization, value_type, arena);
     }
 
-    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type_index); }
+    bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        this->data(place).insertResultInto(to);
+        data(place).insertResultInto(to, result_type);
     }
 };
 
@@ -192,8 +204,52 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
 
 }
 
+void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("singleValueOrNull", createAggregateFunctionSingleValueOrNull);
+    FunctionDocumentation::Description description_singleValueOrNull = R"(
+The aggregate function `singleValueOrNull` is used to implement subquery operators, such as `x = ALL (SELECT ...)`. It checks if there is only one unique non-NULL value in the data.
+If there is only one unique value, it returns it. If there are zero or at least two distinct values, it returns NULL.
+    )";
+    FunctionDocumentation::Syntax syntax_singleValueOrNull = R"(
+singleValueOrNull(x)
+    )";
+    FunctionDocumentation::Parameters parameters_singleValueOrNull = {};
+    FunctionDocumentation::Arguments arguments_singleValueOrNull = {
+        {"x", "A column of any data type except Map, Array or Tuple which cannot be of type Nullable.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_singleValueOrNull = {"Returns the unique value if there is only one unique non-NULL value in `x`. Returns `NULL` if there are zero or at least two distinct values.", {"Any", "NULL"}};
+    FunctionDocumentation::Examples examples_singleValueOrNull = {
+    {
+        "Single unique value",
+        R"(
+CREATE TABLE test (x UInt8 NULL) ENGINE=Log;
+INSERT INTO test (x) VALUES (NULL), (NULL), (5), (NULL), (NULL);
+SELECT singleValueOrNull(x) FROM test;
+        )",
+        R"(
+┌─singleValueOrNull(x)─┐
+│                    5 │
+└──────────────────────┘
+        )"
+    },
+    {
+        "Multiple distinct values",
+        R"(
+INSERT INTO test (x) VALUES (10);
+SELECT singleValueOrNull(x) FROM test;
+        )",
+        R"(
+┌─singleValueOrNull(x)─┐
+│                 ᴺᵁᴸᴸ │
+└──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_singleValueOrNull = {21, 9};
+    FunctionDocumentation::Category category_singleValueOrNull = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_singleValueOrNull = {description_singleValueOrNull, syntax_singleValueOrNull, arguments_singleValueOrNull, parameters_singleValueOrNull, returned_value_singleValueOrNull, examples_singleValueOrNull, introduced_in_singleValueOrNull, category_singleValueOrNull};
+
+    factory.registerFunction("singleValueOrNull", {createAggregateFunctionSingleValueOrNull, documentation_singleValueOrNull});
 }
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import socket
 import os
+import socket
 import uuid
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
@@ -195,6 +195,15 @@ def readHeader(s):
         col_name = readStringBinary(s)
         type_name = readStringBinary(s)
         print("Column {} type {}".format(col_name, type_name))
+
+
+def readProgress(s):
+    read_rows = readVarUInt(s)
+    read_bytes = readVarUInt(s)
+    total_rows_to_read = readVarUInt(s)
+    written_rows = readVarUInt(s)
+    written_bytes = readVarUInt(s)
+    return read_rows, read_bytes, total_rows_to_read, written_rows, written_bytes
 
 
 def readException(s):

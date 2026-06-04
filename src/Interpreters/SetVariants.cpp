@@ -41,8 +41,6 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -57,8 +55,6 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    UNREACHABLE();
 }
 
 template <typename Variant>
@@ -74,7 +70,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*col))
         {
             nested_key_columns.push_back(&nullable->getNestedColumn());
             has_nullable_key = true;
@@ -118,11 +114,11 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
+            if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size_v<KeysNullMap<UInt128>>))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregator: keys sizes overflow");
-            if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
+            if ((std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes) <= 16)
                 return Type::nullable_keys128;
-            if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
+            if ((std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes) <= 32)
                 return Type::nullable_keys256;
         }
 

@@ -4,7 +4,6 @@
 
 #if USE_LIBPQXX
 
-#include <Core/Block.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 
@@ -14,7 +13,7 @@ namespace DB
 
 struct PostgreSQLArrayInfo
 {
-    size_t num_dimensions;
+    size_t num_dimensions{};
     Field default_value;
     std::function<Field(std::string & field)> pqxx_parser;
 };

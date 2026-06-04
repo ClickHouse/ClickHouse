@@ -1,5 +1,6 @@
--- Tags: zookeeper, no-replicated-database
+-- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 -- Tag no-replicated-database: Unsupported type of ALTER query
+-- Tag no-shared-merge-tree: for smt works
 
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;
@@ -18,7 +19,7 @@ CREATE TABLE replicated_table_for_alter2 (
 
 SHOW CREATE TABLE replicated_table_for_alter1;
 
-ALTER TABLE replicated_table_for_alter1 MODIFY SETTING index_granularity = 4096; -- { serverError 472 }
+ALTER TABLE replicated_table_for_alter1 MODIFY SETTING index_granularity = 4096; -- { serverError READONLY_SETTING }
 
 SHOW CREATE TABLE replicated_table_for_alter1;
 
@@ -45,7 +46,7 @@ SELECT COUNT() FROM replicated_table_for_alter1;
 SELECT COUNT() FROM replicated_table_for_alter2;
 
 ALTER TABLE replicated_table_for_alter2 MODIFY SETTING  parts_to_throw_insert = 1, parts_to_delay_insert = 1;
-INSERT INTO replicated_table_for_alter2 VALUES (3, '1'), (4, '2'); -- { serverError 252 }
+INSERT INTO replicated_table_for_alter2 VALUES (3, '1'), (4, '2'); -- { serverError TOO_MANY_PARTS }
 
 INSERT INTO replicated_table_for_alter1 VALUES (5, '5'), (6, '6');
 
@@ -89,7 +90,7 @@ CREATE TABLE replicated_table_for_reset_setting2 (
 SHOW CREATE TABLE replicated_table_for_reset_setting1;
 SHOW CREATE TABLE replicated_table_for_reset_setting2;
 
-ALTER TABLE replicated_table_for_reset_setting1 MODIFY SETTING index_granularity = 4096; -- { serverError 472 }
+ALTER TABLE replicated_table_for_reset_setting1 MODIFY SETTING index_granularity = 4096; -- { serverError READONLY_SETTING }
 
 SHOW CREATE TABLE replicated_table_for_reset_setting1;
 
@@ -109,7 +110,7 @@ SHOW CREATE TABLE replicated_table_for_reset_setting1;
 SHOW CREATE TABLE replicated_table_for_reset_setting2;
 
 -- don't execute alter with incorrect setting
-ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING check_delay_period, unknown_setting; -- { serverError 36 }
+ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING check_delay_period, unknown_setting; -- { serverError BAD_ARGUMENTS }
 ALTER TABLE replicated_table_for_reset_setting1 RESET SETTING merge_with_ttl_timeout;
 ALTER TABLE replicated_table_for_reset_setting2 RESET SETTING merge_with_ttl_timeout;
 

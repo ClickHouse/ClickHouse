@@ -4,10 +4,10 @@
 #include <optional>
 #include <mutex>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/IStorage.h>
-#include <Storages/MemorySettings.h>
+#include <Interpreters/MaterializedCTE.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>
 
@@ -15,13 +15,14 @@ namespace DB
 {
 class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
+struct MemorySettings;
 
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public IStorage
+class StorageMemory final : public StorageWithCommonVirtualColumns
 {
 friend class MemorySink;
 
@@ -31,7 +32,9 @@ public:
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
         const String & comment,
-        const MemorySettings & settings = MemorySettings());
+        const MemorySettings & memory_settings_);
+
+    ~StorageMemory() override;
 
     String getName() const override { return "Memory"; }
 
@@ -42,11 +45,14 @@ public:
     struct SnapshotData : public StorageSnapshot::Data
     {
         std::shared_ptr<const Blocks> blocks;
+        size_t rows_approx = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
-    void read(
+    const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -58,7 +64,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -78,9 +84,10 @@ public:
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalRows(ContextPtr) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -119,9 +126,18 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
+    /// Stored as a weak_ptr to break the reference cycle: MaterializedCTE owns the StorageMemory
+    /// (via its `storage` and `table_holder` members), and this back-pointer lets us recover the
+    /// CTE descriptor from the storage. If we kept a shared_ptr here, neither object would ever
+    /// be destroyed, and the temporary table would never be removed from `DatabaseMemory`.
+    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = materialized_cte_; }
+    MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
+
 private:
+    static VirtualColumnsDescription createVirtuals();
+
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
@@ -130,16 +146,12 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
+    MaterializedCTEWeakPtr materialized_cte;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
-    bool compress;
-    UInt64 min_rows_to_keep;
-    UInt64 max_rows_to_keep;
-    UInt64 min_bytes_to_keep;
-    UInt64 max_bytes_to_keep;
-
+    std::unique_ptr<MemorySettings> memory_settings;
 
     friend class ReadFromMemoryStorageStep;
 };

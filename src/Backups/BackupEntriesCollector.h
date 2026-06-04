@@ -1,14 +1,15 @@
 #pragma once
 
+#include <filesystem>
+#include <queue>
 #include <Backups/BackupSettings.h>
-#include <Databases/DDLRenamingVisitor.h>
 #include <Core/QualifiedTableName.h>
+#include <Databases/DDLRenamingVisitor.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <filesystem>
-#include <queue>
 
 
 namespace DB
@@ -20,8 +21,8 @@ using BackupEntries = std::vector<std::pair<String, BackupEntryPtr>>;
 class IBackupCoordination;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
-struct StorageID;
-enum class AccessEntityType;
+struct IAccessEntity;
+using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -30,12 +31,14 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class BackupEntriesCollector : private boost::noncopyable
 {
 public:
-    BackupEntriesCollector(const ASTBackupQuery::Elements & backup_query_elements_,
-                           const BackupSettings & backup_settings_,
-                           std::shared_ptr<IBackupCoordination> backup_coordination_,
-                           const ReadSettings & read_settings_,
-                           const ContextPtr & context_,
-                           ThreadPool & threadpool_);
+    BackupEntriesCollector(
+        const ASTBackupQuery::Elements & backup_query_elements_,
+        const BackupSettings & backup_settings_,
+        const String & backup_id_,
+        std::shared_ptr<IBackupCoordination> backup_coordination_,
+        const ReadSettings & read_settings_,
+        const ContextPtr & context_,
+        ThreadPool & threadpool_);
     ~BackupEntriesCollector();
 
     /// Collects backup entries and returns the result.
@@ -44,10 +47,14 @@ public:
     BackupEntries run();
 
     const BackupSettings & getBackupSettings() const { return backup_settings; }
+    const String & getBackupId() const { return backup_id; }
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
+
+    /// Returns all access entities which can be put into a backup.
+    std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
 
     /// Adds a backup entry which will be later returned by run().
     /// These function can be called by implementations of IStorage::backupData() in inherited storage classes.
@@ -60,9 +67,6 @@ public:
     /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
-
-    /// Returns an incremental counter used to backup access control.
-    size_t getAccessCounter(AccessEntityType type);
 
 private:
     void calculateRootPathInBackup();
@@ -93,6 +97,10 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
+    bool shouldBackupTableData(
+        const QualifiedTableName & table_name,
+        const StoragePtr & storage,
+        const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
@@ -105,14 +113,11 @@ private:
 
     const ASTBackupQuery::Elements backup_query_elements;
     const BackupSettings backup_settings;
+    const String backup_id;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     const ReadSettings read_settings;
     ContextPtr context;
     QueryStatusPtr process_list_element;
-
-    /// The time a BACKUP ON CLUSTER or RESTORE ON CLUSTER command will wait until all the nodes receive the BACKUP (or RESTORE) query and start working.
-    /// This setting is similar to `distributed_ddl_task_timeout`.
-    const std::chrono::milliseconds on_cluster_first_sync_timeout;
 
     /// The time a BACKUP command will try to collect the metadata of tables & databases.
     const std::chrono::milliseconds collect_metadata_timeout;
@@ -132,7 +137,7 @@ private:
     LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
-    ZooKeeperRetriesInfo global_zookeeper_retries_info;
+    ZooKeeperRetriesInfo zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;
@@ -164,8 +169,9 @@ private:
         ASTPtr create_table_query;
         String metadata_path_in_backup;
         std::filesystem::path data_path_in_backup;
-        std::optional<String> replicated_table_shared_id;
+        std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
+        bool should_backup_data = true;
     };
 
     String current_stage;
@@ -177,9 +183,10 @@ private:
     std::vector<std::pair<String, String>> previous_databases_metadata;
     std::vector<std::pair<QualifiedTableName, String>> previous_tables_metadata;
 
+    std::optional<std::unordered_map<UUID, AccessEntityPtr>> all_access_entities;
+
     BackupEntries backup_entries;
     std::queue<std::function<void()>> post_tasks;
-    std::vector<size_t> access_counters;
 
     ThreadPool & threadpool;
     std::mutex mutex;

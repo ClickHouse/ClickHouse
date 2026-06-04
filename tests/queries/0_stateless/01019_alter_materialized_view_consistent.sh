@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 set -e
 
@@ -6,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT <<EOF
 DROP TABLE IF EXISTS src_a;
 DROP TABLE IF EXISTS src_b;
 
@@ -31,11 +32,13 @@ function insert_thread() {
     INSERT[0]="INSERT INTO TABLE src_a VALUES (1);"
     INSERT[1]="INSERT INTO TABLE src_b VALUES (2);"
 
-    while true; do
+    local TIMELIMIT=$((SECONDS+120))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         # trigger 50 concurrent inserts at a time
         for _ in {0..50}; do
             # ignore `Possible deadlock avoided. Client should retry`
-            $CLICKHOUSE_CLIENT -q "${INSERT[$RANDOM % 2]}" 2>/dev/null &
+            ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${INSERT[$RANDOM % 2]}" &>/dev/null &
         done
         wait
 
@@ -54,13 +57,15 @@ function alter_thread() {
     for i in {0..5}; do
         ALTER[$i]="ALTER TABLE mv MODIFY QUERY SELECT v == 1 as test, v as case FROM src_a;"
     done
-    # Insert 3 ALTERs to src_b, one in the first half of the array and two in arbitrary positions.
-    ALTER[$RANDOM % 3]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
-    ALTER[$RANDOM % 6]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
-    ALTER[$RANDOM % 6]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    # Insert 3 ALTERs to src_b randomly in each third of array.
+    ALTER[$RANDOM % 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 2]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
+    ALTER[$RANDOM % 2 + 4]="ALTER TABLE mv MODIFY QUERY SELECT v == 2 as test, v as case FROM src_b;"
 
     i=0
-    while true; do
+    local TIMELIMIT=$((SECONDS+120))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --allow_experimental_alter_materialized_view_structure=1 -q "${ALTER[$i % 6]}"
         ((i=i+1))
 
@@ -74,12 +79,8 @@ function alter_thread() {
     done
 }
 
-export -f insert_thread;
-export -f alter_thread;
-
-# finishes much faster with all builds, except debug with coverage
-timeout 120 bash -c insert_thread &
-timeout 120 bash -c alter_thread &
+insert_thread &
+alter_thread &
 
 wait
 

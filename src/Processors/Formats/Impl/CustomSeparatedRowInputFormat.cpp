@@ -1,6 +1,8 @@
+#include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/Operators.h>
@@ -11,10 +13,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+    /// Hard cap on the number of fields read per row in `CustomSeparated` when
+    /// the column count is unknown (header detection or
+    /// `input_format_custom_allow_variable_number_of_columns`). Without this
+    /// bound, an adversarial input in which `format_custom_row_after_delimiter`
+    /// never matches grows the `values` vector unboundedly and can request many
+    /// gigabytes of memory before anything detects the malformed input.
+    /// 1 million is comfortably above every realistic CustomSeparated schema.
+    constexpr size_t MAX_FIELDS_PER_ROW = 1'000'000;
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_buf_,
     const Params & params_,
     bool with_names_,
@@ -27,7 +42,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
 }
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::unique_ptr<PeekableReadBuffer> buf_,
     const Params & params_,
     bool with_names_,
@@ -43,7 +58,8 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<CustomSeparatedFormatReader>(*buf_, ignore_spaces_, format_settings_),
-        format_settings_.custom.try_detect_header)
+        format_settings_.custom.try_detect_header,
+        format_settings_.custom.allow_variable_number_of_columns)
     , buf(std::move(buf_)), ignore_spaces(ignore_spaces_)
 {
     /// In case of CustomSeparatedWithNames(AndTypes) formats and enabled setting input_format_with_names_use_header we don't know
@@ -204,10 +220,21 @@ std::vector<String> CustomSeparatedFormatReader::readRowImpl()
     std::vector<String> values;
     skipRowStartDelimiter();
 
-    if (columns == 0 || allowVariableNumberOfColumns())
+    if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
     {
+        /// Guard against pathological inputs (for example, fuzzer-generated data
+        /// where `format_custom_row_after_delimiter` never matches): without this
+        /// bound, the loop below can grow `values` unboundedly and allocate
+        /// many gigabytes of memory before anything detects the malformed input.
         do
         {
+            if (values.size() >= MAX_FIELDS_PER_ROW)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Too many fields in a single row of CustomSeparated input (limit: {}). "
+                    "The configured `format_custom_row_after_delimiter` was likely not found in the input data.",
+                    MAX_FIELDS_PER_ROW);
+
             values.push_back(readFieldIntoString<mode>(values.empty(), false, true));
         } while (!checkForEndOfRow());
         columns = values.size();
@@ -228,7 +255,7 @@ void CustomSeparatedFormatReader::skipRow()
 
     /// If the number of columns in row is unknown,
     /// we should check for end of row after each field.
-    if (columns == 0 || allowVariableNumberOfColumns())
+    if (columns == 0 || format_settings.custom.allow_variable_number_of_columns)
     {
         bool first = true;
         do
@@ -420,6 +447,7 @@ void CustomSeparatedSchemaReader::transformTypesIfNeeded(DataTypePtr & type, Dat
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, reader.getEscapingRule(), &json_inference_info);
 }
 
+void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})
@@ -432,7 +460,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
-                return std::make_shared<CustomSeparatedRowInputFormat>(sample, buf, params, with_names, with_types, ignore_spaces, settings);
+                return std::make_shared<CustomSeparatedRowInputFormat>(std::make_shared<const Block>(sample), buf, params, with_names, with_types, ignore_spaces, settings);
             });
         };
         registerWithNamesAndTypes(ignore_spaces ? "CustomSeparatedIgnoreSpaces" : "CustomSeparated", register_func);
@@ -440,6 +468,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
     }
 }
 
+void registerCustomSeparatedSchemaReader(FormatFactory & factory);
 void registerCustomSeparatedSchemaReader(FormatFactory & factory)
 {
     for (bool ignore_spaces : {false, true})

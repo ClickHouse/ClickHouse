@@ -12,7 +12,7 @@
 namespace DB
 {
 
-enum class MovePartsOutcome
+enum class MovePartsOutcome : uint8_t
 {
     PartsMoved,
     NothingToMove,
@@ -74,6 +74,9 @@ public:
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
     void swapClonedPart(TemporaryClonedPart & cloned_part) const;
+
+    /// Rename cloned part from `moving/` directory to the actual part storage
+    void renameClonedPart(IMergeTreeDataPart & part) const;
 
     /// Can stop background moves and moves from queries
     ActionBlocker moves_blocker;

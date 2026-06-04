@@ -1,16 +1,15 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/AuthenticationData.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
-#include <Parsers/IParser.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
+#include <Interpreters/ClientInfo.h>
 
-#include <atomic>
 #include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/noncopyable.hpp>
@@ -24,7 +23,7 @@ namespace DB
 struct User;
 class Credentials;
 class ExternalAuthenticators;
-enum class AuthenticationType;
+enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
 
@@ -34,6 +33,10 @@ struct AuthResult
     UUID user_id;
     /// Session settings received from authentication server (if any)
     SettingsChanges settings{};
+    AuthenticationData authentication_data {};
+    /// Username determined by the access storage during authentication,
+    /// should be treated as the authenticated user name
+    String user_name;
 };
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -43,6 +46,11 @@ class IAccessStorage : public boost::noncopyable
 public:
     explicit IAccessStorage(const String & storage_name_) : storage_name(storage_name_) {}
     virtual ~IAccessStorage() = default;
+
+    /// If the AccessStorage has to do some complicated work when destroying - do it in advance.
+    /// For example, if the AccessStorage contains any threads for background work - ask them to complete and wait for completion.
+    /// By default, does nothing.
+    virtual void shutdown() {}
 
     /// Returns the name of this storage.
     const String & getStorageName() const { return storage_name; }
@@ -56,6 +64,16 @@ public:
 
     /// Returns true if this entity is readonly.
     virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
+
+    /// Returns true if this storage is ephemeral.
+    virtual bool isEphemeral() const { return false; }
+
+    /// Returns true if this entity is ephemeral.
+    virtual bool isEphemeral(const UUID &) const { return isEphemeral(); }
+
+    /// Returns true if this storage is replicated.
+    virtual bool isReplicated() const { return false; }
+    virtual String getReplicationID() const { return ""; }
 
     /// Starts periodic reloading and updating of entities in this storage.
     virtual void startPeriodicReloading() {}
@@ -80,8 +98,9 @@ public:
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 
-    template <typename EntityClassT>
-    std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
+    /// Returns the identifiers of all the entities in the storage.
+    template <typename EntityClassT = IAccessEntity>
+    std::vector<UUID> findAll() const;
 
     /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
     std::optional<UUID> find(AccessEntityType type, const String & name) const;
@@ -129,16 +148,16 @@ public:
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
     std::optional<String> readName(const UUID & id, bool throw_if_not_exists) const;
-    Strings readNames(const std::vector<UUID> & ids, bool throw_if_not_exists = true) const;
+    Strings readNames(const UUIDs & ids, bool throw_if_not_exists = true) const;
     std::optional<String> tryReadName(const UUID & id) const;
-    Strings tryReadNames(const std::vector<UUID> & ids) const;
+    Strings tryReadNames(const UUIDs & ids) const;
 
     std::pair<String, AccessEntityType> readNameWithType(const UUID & id) const;
     std::optional<std::pair<String, AccessEntityType>> readNameWithType(const UUID & id, bool throw_if_not_exists) const;
     std::optional<std::pair<String, AccessEntityType>> tryReadNameWithType(const UUID & id) const;
 
     /// Reads all entities and returns them with their IDs.
-    template <typename EntityClassT>
+    template <typename EntityClassT = IAccessEntity>
     std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> readAllWithIDs() const;
 
     std::vector<std::pair<UUID, AccessEntityPtr>> readAllWithIDs(AccessEntityType type) const;
@@ -146,8 +165,8 @@ public:
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
-    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
+    bool insert(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id = nullptr);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
     std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, const std::vector<UUID> & ids, bool replace_if_exists = false, bool throw_if_exists = true);
 
@@ -161,6 +180,10 @@ public:
     std::vector<UUID> insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities);
 
     /// Removes an entity from the storage. Throws an exception if couldn't remove.
+    /// After a successful removal, references to the removed entity are stripped from
+    /// any other access entities that referenced it (e.g. a user's `DEFAULT ROLE` list,
+    /// a settings profile's `TO` list, a row policy's grantees, etc.). Affected entities
+    /// are re-serialized so the cleanup is persisted on disk.
     bool remove(const UUID & id, bool throw_if_not_exists = true);
     std::vector<UUID> remove(const std::vector<UUID> & ids, bool throw_if_not_exists = true);
 
@@ -170,7 +193,7 @@ public:
     /// Removes multiple entities from the storage. Returns the list of successfully dropped.
     std::vector<UUID> tryRemove(const std::vector<UUID> & ids);
 
-    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &)>;
+    using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &, const UUID &)>;
 
     /// Updates an entity stored in the storage. Throws an exception if couldn't update.
     bool update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists = true);
@@ -188,12 +211,14 @@ public:
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         bool allow_no_password,
         bool allow_plaintext_password) const;
     std::optional<AuthResult> authenticate(
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         bool throw_if_user_not_exists,
         bool allow_no_password,
         bool allow_plaintext_password) const;
@@ -204,46 +229,50 @@ public:
 
     /// Makes a backup of this access storage.
     virtual void backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, AccessEntityType type) const;
-    virtual void restoreFromBackup(RestorerFromBackup & restorer);
+    virtual void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup);
+
+    // Static versions for use in non-member functions (ZookeeperReplicator)
+    [[noreturn]] static void throwIDCollisionCannotInsert(
+        const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name, const String & storage_name);
+    [[noreturn]] static void throwNameCollisionCannotInsert(AccessEntityType type, const String & name, const String & storage_name);
+    [[noreturn]] static void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name, const String & storage_name);
+    [[noreturn]] static void throwNotFound(const UUID & id, const String & storage_name);
+    [[noreturn]] static void throwNotFound(AccessEntityType type, const String & name, const String & storage_name);
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
+    virtual std::vector<UUID> findAllImpl() const;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    virtual bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id);
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
     virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual std::optional<AuthResult> authenticateImpl(
         const Credentials & credentials,
         const Poco::Net::IPAddress & address,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         bool throw_if_user_not_exists,
         bool allow_no_password,
         bool allow_plaintext_password) const;
-    virtual bool areCredentialsValid(
-        const User & user,
-        const Credentials & credentials,
-        const ExternalAuthenticators & external_authenticators,
-        SettingsChanges & settings) const;
+
     virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
     static UUID generateRandomID();
     LoggerPtr getLogger() const;
+    /// Iterates over all access entities in this storage and strips any reference to
+    /// the given (already removed) IDs. Failures for individual entities are logged
+    /// and swallowed so a single broken or read-only entity cannot block the cascade.
+    /// Called automatically after a successful `remove`.
+    void removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids);
     static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
     static void clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_);
-    [[noreturn]] void throwNotFound(const UUID & id) const;
-    [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
+    virtual bool acquireReplicatedRestore(RestorerFromBackup &) const { return false; }
     [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
-    [[noreturn]] void throwIDCollisionCannotInsert(
-    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const;
-    [[noreturn]] void throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const;
-    [[noreturn]] void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const;
     [[noreturn]] void throwReadonlyCannotInsert(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const;
     [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidCredentials();
-    [[noreturn]] static void throwAuthenticationTypeNotAllowed(AuthenticationType auth_type);
     [[noreturn]] void throwBackupNotAllowed() const;
     [[noreturn]] void throwRestoreNotAllowed() const;
 
@@ -253,6 +282,16 @@ private:
     mutable OnceFlag log_initialized;
     mutable LoggerPtr log = nullptr;
 };
+
+
+template <typename EntityClassT>
+std::vector<UUID> IAccessStorage::findAll() const
+{
+    if constexpr (std::is_same_v<EntityClassT, IAccessEntity>)
+        return findAllImpl();
+    else
+        return findAllImpl(EntityClassT::TYPE);
+}
 
 
 template <typename EntityClassT>
@@ -278,7 +317,7 @@ std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name, bo
     if (auto id = find<EntityClassT>(name))
         return read<EntityClassT>(*id, throw_if_not_exists);
     if (throw_if_not_exists)
-        throwNotFound(EntityClassT::TYPE, name);
+        throwNotFound(EntityClassT::TYPE, name, storage_name);
     else
         return nullptr;
 }
@@ -322,9 +361,6 @@ std::vector<std::pair<UUID, std::shared_ptr<const EntityClassT>>> IAccessStorage
     return entities;
 }
 
-inline bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name)
-{
-    return parseIdentifierOrStringLiteral(pos, expected, storage_name);
-}
+bool parseAccessStorageName(IParser::Pos & pos, Expected & expected, String & storage_name);
 
 }

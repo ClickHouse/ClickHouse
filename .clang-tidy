@@ -7,40 +7,94 @@
 
 HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 
+# We don't want to use clang-tidy diagnostics in the "contrib" folder.
+ExcludeHeaderFilterRegex: '^.*/contrib/.*'
+
 Checks: [
   '*',
 
-  '-abseil-*',
+  '-abseil-string-find-str-contains', # disabled to avoid a misleading suggestion (obsolete absl::StrContains() instead of C++23 std::string::contains())
 
   '-altera-*',
 
   '-android-*',
 
+  '-boost-use-ranges',
+
   '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
-  '-bugprone-forward-declaration-namespace',
   '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
-  '-bugprone-not-null-terminated-result',
-  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
   '-bugprone-unchecked-optional-access',
+  '-bugprone-crtp-constructor-accessibility',
+  '-bugprone-not-null-terminated-result',
+  '-bugprone-forward-declaration-namespace',
+  '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-sizeof-expression', # too aggressive
 
   '-cert-dcl16-c',
-  '-cert-dcl37-c',
-  '-cert-dcl51-cpp',
+  '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
-  '-cert-msc32-c',
-  '-cert-msc51-cpp',
-  '-cert-oop54-cpp',
-  '-cert-oop57-cpp',
+
+  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
   '-clang-analyzer-optin.performance.Padding',
 
-  '-clang-analyzer-unix.Malloc',
+  '-clang-analyzer-security.ArrayBound', # only false positives
 
-  '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
+  '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
+  '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
+
+  # cppcoreguidelines-* checks are mostly impractical in a codebase as large as ClickHouse, also slow.
+  # Listed explicitly (instead of wildcard '-cppcoreguidelines-*') so newly added checks in future
+  # clang-tidy versions are not silently suppressed; only `init-variables` and `pro-type-member-init`
+  # are enabled.
+  '-cppcoreguidelines-avoid-capturing-lambda-coroutines',
+  '-cppcoreguidelines-avoid-const-or-ref-data-members',
+  '-cppcoreguidelines-avoid-do-while',
+  '-cppcoreguidelines-avoid-goto',
+  '-cppcoreguidelines-avoid-non-const-global-variables',
+  '-cppcoreguidelines-avoid-reference-coroutine-parameters',
+  '-cppcoreguidelines-interfaces-global-init',
+  '-cppcoreguidelines-macro-usage',
+  '-cppcoreguidelines-misleading-capture-default-by-value',
+  '-cppcoreguidelines-missing-std-forward',
+  '-cppcoreguidelines-no-malloc',
+  '-cppcoreguidelines-no-suspend-with-lock',
+  '-cppcoreguidelines-owning-memory',
+  '-cppcoreguidelines-prefer-member-initializer',
+  '-cppcoreguidelines-pro-bounds-array-to-pointer-decay',
+  '-cppcoreguidelines-pro-bounds-avoid-unchecked-container-access',
+  '-cppcoreguidelines-pro-bounds-constant-array-index',
+  '-cppcoreguidelines-pro-bounds-pointer-arithmetic',
+  '-cppcoreguidelines-pro-type-const-cast',
+  '-cppcoreguidelines-pro-type-cstyle-cast',
+  '-cppcoreguidelines-pro-type-reinterpret-cast',
+  '-cppcoreguidelines-pro-type-static-cast-downcast',
+  '-cppcoreguidelines-pro-type-union-access',
+  '-cppcoreguidelines-pro-type-vararg',
+  '-cppcoreguidelines-rvalue-reference-param-not-moved',
+  '-cppcoreguidelines-slicing',
+  '-cppcoreguidelines-special-member-functions',
+  '-cppcoreguidelines-use-enum-class',
+  '-cppcoreguidelines-virtual-class-destructor',
+  # Aliases for checks owned by other modules. Disabled here so they are not silently re-enabled
+  # now that the wildcard `-cppcoreguidelines-*` is gone; their canonical names are handled
+  # elsewhere in this file.
+  '-cppcoreguidelines-avoid-c-arrays',                          # alias of `modernize-avoid-c-arrays`
+  '-cppcoreguidelines-avoid-magic-numbers',                     # alias of `readability-magic-numbers`
+  '-cppcoreguidelines-c-copy-assignment-signature',             # alias of `misc-unconventional-assign-operator`
+  '-cppcoreguidelines-explicit-virtual-functions',              # alias of `modernize-use-override`
+  '-cppcoreguidelines-macro-to-enum',                           # alias of `modernize-macro-to-enum`
+  '-cppcoreguidelines-narrowing-conversions',                   # alias of `bugprone-narrowing-conversions`
+  '-cppcoreguidelines-noexcept-destructor',                     # alias of `performance-noexcept-destructor`
+  '-cppcoreguidelines-noexcept-move-operations',                # alias of `performance-noexcept-move-constructor`
+  '-cppcoreguidelines-noexcept-swap',                           # alias of `performance-noexcept-swap`
+  '-cppcoreguidelines-non-private-member-variables-in-classes', # alias of `misc-non-private-member-variables-in-classes`
+  '-cppcoreguidelines-use-default-member-init',                 # alias of `modernize-use-default-member-init`
 
   '-darwin-*',
 
@@ -58,7 +112,7 @@ Checks: [
   '-hicpp-braces-around-statements',
   '-hicpp-explicit-conversions',
   '-hicpp-function-size',
-  '-hicpp-member-init',
+  # '-hicpp-member-init', # alias of cppcoreguidelines-pro-type-member-init, enabled
   '-hicpp-move-const-arg',
   '-hicpp-multiway-paths-covered',
   '-hicpp-named-parameter',
@@ -72,40 +126,43 @@ Checks: [
   '-hicpp-use-emplace',
   '-hicpp-vararg',
 
-  '-linuxkernel-*',
-
   '-llvm-*',
 
   '-llvmlibc-*',
-
-  '-openmp-*',
 
   '-misc-const-correctness',
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
   '-misc-non-private-member-variables-in-classes',
-  '-misc-confusable-identifiers', # useful but slooo
   '-misc-use-anonymous-namespace',
+  '-misc-use-internal-linkage',
 
   '-modernize-avoid-c-arrays',
   '-modernize-concat-nested-namespaces',
-  '-modernize-macro-to-enum',
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
   '-modernize-use-auto',
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
-  '-modernize-use-override',
+  '-modernize-use-ranges',
   '-modernize-use-trailing-return-type',
+  '-modernize-use-designated-initializers',
+  '-modernize-use-scoped-lock',
+  '-modernize-use-integer-sign-comparison',
 
-  '-performance-inefficient-string-concatenation',
-  '-performance-no-int-to-ptr',
   '-performance-avoid-endl',
+  '-performance-enum-size',
+  '-performance-inefficient-string-concatenation',
+  '-performance-inefficient-vector-operation',
+  '-performance-no-int-to-ptr',
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
+  '-portability-avoid-pragma-once',
+  '-portability-template-virtual-member-function',
 
+  '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
   '-readability-braces-around-statements',
   '-readability-convert-member-functions-to-static',
@@ -115,15 +172,22 @@ Checks: [
   '-readability-identifier-length',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
-  '-readability-isolate-declaration',
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
+        # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
+  '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
+        # initializer S s{.s1 = [...], .s2 = [...], [...]}. In this case, compiler warning `missing-field-initializers` requires to specify all members which are not in-struct
+        # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
+        # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
+        # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
   '-readability-simplify-boolean-expr',
-  '-readability-static-accessed-through-instance',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
+  '-readability-math-missing-parentheses',
+  '-readability-use-concise-preprocessor-directives',
 
   '-zircon-*'
 ]

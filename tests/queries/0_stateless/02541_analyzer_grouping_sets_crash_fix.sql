@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 WITH pow(NULL, 256) AS four SELECT NULL AS two GROUP BY GROUPING SETS ((pow(two, 65536)));
 

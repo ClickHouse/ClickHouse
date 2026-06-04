@@ -17,7 +17,7 @@ echo -e "103" > "${CLICKHOUSE_TMP}"/test_infile_parallel_3
 
 gzip "${CLICKHOUSE_TMP}"/test_infile_parallel
 
-${CLICKHOUSE_CLIENT} --multiquery  <<EOF
+${CLICKHOUSE_CLIENT} <<EOF
 DROP TABLE IF EXISTS test_infile_parallel;
 CREATE TABLE test_infile_parallel (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 SET input_format_allow_errors_num=1;
@@ -27,13 +27,13 @@ SELECT count() FROM test_infile_parallel WHERE Value='second';
 EOF
 
 # Error code is 27 (DB::ParsingException). It is not ignored.
-${CLICKHOUSE_CLIENT}  -m --multiquery --query "DROP TABLE IF EXISTS test_infile_parallel;
+${CLICKHOUSE_CLIENT}  -m --query "DROP TABLE IF EXISTS test_infile_parallel;
 CREATE TABLE test_infile_parallel (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
 SET input_format_allow_errors_num=0;
 INSERT INTO test_infile_parallel FROM INFILE '${CLICKHOUSE_TMP}/test_infile_parallel*' FORMAT TSV;
 " 2>&1 | grep -q "27" && echo "Correct" || echo 'Fail'
 
-${CLICKHOUSE_LOCAL} --multiquery <<EOF
+${CLICKHOUSE_LOCAL} <<EOF
 DROP TABLE IF EXISTS test_infile_parallel; 
 SET input_format_allow_errors_num=1;
 CREATE TABLE test_infile_parallel (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory(); 

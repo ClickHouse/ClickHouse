@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# no-shared-merge-tree: SharedMergeTree doesn't load inactive parts to memory after restart
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS load_parts_refcounts SYNC;
 
     CREATE TABLE load_parts_refcounts (id UInt32)
     ENGINE = ReplicatedMergeTree('/test/02482_load_parts_refcounts/{database}/{table}', '1')
-    ORDER BY id;
+    ORDER BY id SETTINGS old_parts_lifetime=100500;
 
     SYSTEM STOP MERGES load_parts_refcounts;
 

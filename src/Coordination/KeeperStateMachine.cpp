@@ -1,80 +1,144 @@
+#include <atomic>
 #include <cerrno>
+#include <chrono>
+#include <exception>
+#include <optional>
+#include <string>
+#include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
+#include <Disks/IDisk.h>
+#include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperReconfiguration.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
+#include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
-#include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperStorage.h>
-#include <Coordination/KeeperReconfiguration.h>
+#include <Common/ProfiledLocks.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <boost/noncopyable.hpp>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
+#include <IO/copyData.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <base/move_extend.h>
+#include <base/scope_guard.h>
 #include <sys/mman.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
-#include <Disks/DiskLocal.h>
+#include <Interpreters/Context.h>
 
 
 namespace ProfileEvents
 {
     extern const Event KeeperCommits;
     extern const Event KeeperReconfigRequest;
-    extern const Event KeeperCommitsFailed;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
     extern const Event KeeperSnapshotApplys;
     extern const Event KeeperSnapshotApplysFailed;
     extern const Event KeeperReadSnapshot;
+    extern const Event KeeperReadSnapshotObject;
+    extern const Event KeeperReadSnapshotFailed;
+    extern const Event KeeperReadSnapshotDeferred;
+    extern const Event KeeperSnapshotRemoteLoaderErrors;
+    extern const Event KeeperSaveSnapshotObject;
+    extern const Event KeeperSaveSnapshotFailed;
     extern const Event KeeperSaveSnapshot;
+    extern const Event KeeperStorageLockWaitMicroseconds;
+    extern const Event KeeperStorageSharedLockWaitMicroseconds;
+    extern const Event KeeperProcessAndResponsesLockWaitMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperAliveConnections;
 }
 
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char keeper_save_snapshot_pause_mid_transfer[];
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
+    extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
+    extern const CoordinationSettingsUInt64 min_request_size_for_cache;
+    extern const CoordinationSettingsUInt64 snapshots_to_keep;
+    extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
-KeeperStateMachine::KeeperStateMachine(
-    ResponsesQueue & responses_queue_,
+/// nuraft::snapshot holds only Raft metadata (last_log_idx, last_log_term, size, cluster_config).
+static nuraft::ptr<nuraft::snapshot> cloneSnapshotMeta(nuraft::snapshot & s)
+{
+    auto buf = s.serialize();
+    return nuraft::snapshot::deserialize(*buf);
+}
+
+IKeeperStateMachine::IKeeperStateMachine(
+    KeeperResponseCallback response_callback_,
     SnapshotsQueue & snapshots_queue_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
     CommitCallback commit_callback_,
     const std::string & superdigest_)
     : commit_callback(commit_callback_)
-    , snapshot_manager(
-          keeper_context_->getCoordinationSettings()->snapshots_to_keep,
-          keeper_context_,
-          keeper_context_->getCoordinationSettings()->compress_snapshots_with_zstd_format,
-          superdigest_,
-          keeper_context_->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds())
-    , responses_queue(responses_queue_)
+    , response_callback(response_callback_)
     , snapshots_queue(snapshots_queue_)
-    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()->min_request_size_for_cache)
+    , min_request_size_to_cache(keeper_context_->getCoordinationSettings()[CoordinationSetting::min_request_size_for_cache])
     , log(getLogger("KeeperStateMachine"))
+    , read_pool(CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, CurrentMetrics::KeeperAliveConnections, 100, 10000, 10000)
     , superdigest(superdigest_)
     , keeper_context(keeper_context_)
     , snapshot_manager_s3(snapshot_manager_s3_)
 {
 }
 
-namespace
+template<typename Storage>
+KeeperStateMachine<Storage>::KeeperStateMachine(
+    KeeperResponseCallback response_callback_,
+    SnapshotsQueue & snapshots_queue_,
+    const KeeperContextPtr & keeper_context_,
+    KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+    IKeeperStateMachine::CommitCallback commit_callback_,
+    const std::string & superdigest_)
+    : IKeeperStateMachine(
+        response_callback_,
+        snapshots_queue_,
+        keeper_context_,
+        snapshot_manager_s3_,
+        commit_callback_,
+        superdigest_),
+        snapshot_manager(
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::snapshots_to_keep],
+          keeper_context_,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::compress_snapshots_with_zstd_format],
+          superdigest_,
+          keeper_context_->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds())
 {
-
-bool isLocalDisk(const IDisk & disk)
-{
-    return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
-}
 
-void KeeperStateMachine::init()
+template<typename Storage>
+void KeeperStateMachine<Storage>::init()
 {
     /// Do everything without mutexes, no other threads exist.
     LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
@@ -87,12 +151,23 @@ void KeeperStateMachine::init()
     {
         try
         {
-            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
-            latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+            std::lock_guard lock(snapshots_lock);
 
-            if (isLocalDisk(*latest_snapshot_info.disk))
-                latest_snapshot_buf = nullptr;
+            auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+            auto latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
+            chassert(latest_snapshot_info);
+
+            try
+            {
+                latest_snapshot_size.store(
+                    latest_snapshot_info->disk->getFileSize(latest_snapshot_info->path),
+                    std::memory_order_relaxed);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to get snapshot size during init");
+            }
 
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
@@ -101,14 +176,13 @@ void KeeperStateMachine::init()
         }
         catch (...)
         {
-            tryLogCurrentException(
-                log,
-                fmt::format(
-                    "Aborting because of failure to load from latest snapshot with index {}. Problematic snapshot can be removed but it will "
-                    "lead to data loss",
-                    latest_log_index));
-            std::abort();
-        }
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery. Problematic "
+                "snapshot can be removed but it will lead to data loss",
+                latest_log_index,
+                getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
+            }
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();
@@ -118,29 +192,31 @@ void KeeperStateMachine::init()
         LOG_DEBUG(log, "No existing snapshots, last committed log index {}", last_committed_idx);
 
     if (!storage)
-        storage = std::make_unique<KeeperStorage>(
-            keeper_context->getCoordinationSettings()->dead_session_check_period_ms.totalMilliseconds(), superdigest, keeper_context);
+        storage = std::make_unique<Storage>(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
 }
 
 namespace
 {
 
 void assertDigest(
-    const KeeperStorage::Digest & expected,
-    const KeeperStorage::Digest & actual,
+    const KeeperDigest & expected,
+    const KeeperDigest & actual,
     const Coordination::ZooKeeperRequest & request,
     uint64_t log_idx,
+    uint64_t session_id,
     bool committing)
 {
-    if (!KeeperStorage::checkDigest(expected, actual))
+    if (!KeeperStorageBase::checkDigest(expected, actual))
     {
         LOG_FATAL(
             getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {}.\nExpected digest - {}, actual digest - {} "
+            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
             "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
             request.getOpNum(),
             log_idx,
+            session_id,
             expected.value,
             actual.value,
             expected.version,
@@ -149,10 +225,43 @@ void assertDigest(
     }
 }
 
+/// Macros to construct timed lock guards for state_machine_storage_mutex with appropriate ProfileEvents.
+/// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
+#define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
+    ProfiledExclusiveLock name(state_machine_storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds)
+
+#define KEEPER_STORAGE_LOCK_SHARED(name) \
+    ProfiledSharedLock name(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds)
+
+union XidHelper
+{
+    struct
+    {
+        uint32_t lower;
+        uint32_t upper;
+    } parts;
+    int64_t xid;
+};
+
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nuraft::buffer & data)
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
+    double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
+    int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
+    if (sleep_ms != 0 && sleep_probability != 0)
+    {
+        std::uniform_real_distribution<double> distribution{0., 1.};
+        if (distribution(thread_local_rng) > (1 - sleep_probability))
+        {
+            LOG_WARNING(log, "Precommit sleep enabled, will pause for {} ms", sleep_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+        }
+    }
+
     auto result = nuraft::buffer::alloc(sizeof(log_idx));
     nuraft::buffer_serializer ss(result);
     ss.put_u64(log_idx);
@@ -168,63 +277,108 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
 
     request_for_session->log_idx = log_idx;
 
-    preprocess(*request_for_session);
+    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    {
+        request_for_session->request->spans.maybeInitialize(
+            KeeperSpan::PreCommit,
+            request_for_session->request->tracing_context.get(),
+            start_time_us);
+
+        request_for_session->request->spans.maybeFinalize(
+            KeeperSpan::PreCommit,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
+            },
+            status,
+            error_message);
+    };
+
+    try
+    {
+        preprocess(*request_for_session);
+    }
+    catch (...)
+    {
+        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+        throw;
+    }
+
+    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+
     return result;
 }
 
-std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseRequest(nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version)
+// Serialize the request for the log entry
+nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
 {
-    ReadBufferFromNuraftBuffer buffer(data);
-    auto request_for_session = std::make_shared<KeeperStorage::RequestForSession>();
-    readIntBinary(request_for_session->session_id, buffer);
+    DB::WriteBufferFromNuraftBuffer write_buf;
+    DB::writeIntBinary(request_for_session.session_id, write_buf);
 
-    int32_t length;
-    Coordination::read(length, buffer);
+    const auto & request = request_for_session.request;
+    size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
+    Coordination::write(static_cast<int32_t>(request_size), write_buf);
 
-    int32_t xid;
-    Coordination::read(xid, buffer);
+    XidHelper xid_helper{.xid = request->xid};
+    Coordination::write(xid_helper.parts.lower, write_buf);
 
-    static constexpr std::array non_cacheable_xids{
-        Coordination::WATCH_XID,
-        Coordination::PING_XID,
-        Coordination::AUTH_XID,
-        Coordination::CLOSE_XID,
-    };
+    Coordination::write(request->getOpNum(), write_buf);
+    request->writeImpl(write_buf);
 
-    const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
-        && std::all_of(
-              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+    DB::writeIntBinary(request_for_session.time, write_buf);
+    /// we fill with dummy values to eliminate unnecessary copy later on when we will write correct values
+    DB::writeIntBinary(static_cast<int64_t>(0), write_buf); /// zxid
+    DB::writeIntBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), write_buf); /// digest version or NO_DIGEST flag
+    DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
 
-    if (should_cache)
+    /// Write upper part of XID if either:
+    /// 1. use_xid_64
+    /// 2. !use_xid_64 && request->tracing_context -> pass zeroes
+    if (request_for_session.use_xid_64 || request->tracing_context)
     {
-        std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
-            xid_to_request_it != parsed_request_cache.end())
-        {
-            auto & xid_to_request = xid_to_request_it->second;
-            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
-            {
-                if (final)
-                {
-                    auto request = std::move(request_it->second);
-                    xid_to_request.erase(request_it);
-                    return request;
-                }
-                else
-                    return request_it->second;
-            }
-        }
+        Coordination::write(xid_helper.parts.upper, write_buf);
     }
 
+    if (request->tracing_context)
+    {
+        request->tracing_context->serialize(write_buf);
+    }
 
-    Coordination::OpNum opnum;
+    /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler
+    return write_buf.getBuffer();
+}
 
-    Coordination::read(opnum, buffer);
+std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
+{
+    ReadBufferFromNuraftBuffer buffer(data);
+    auto request_for_session = std::make_shared<KeeperRequestForSession>();
+    readIntBinary(request_for_session->session_id, buffer);
 
-    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_for_session->request->xid = xid;
-    request_for_session->request->readImpl(buffer);
+    int32_t length = 0;
+    Coordination::read(length, buffer);
+    /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
+    if (length < 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
+
+    /// because of backwards compatibility, only 32bit xid could be written
+    /// for that reason we serialize XID in 2 parts:
+    /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
+    /// - upper: 32 most significant bits of 64bit XID
+    XidHelper xid_helper{};
+    Coordination::read(xid_helper.parts.lower, buffer);
+
+    /// go to end of the buffer and read extra information including second part of XID
+    auto buffer_position = buffer.getPosition();
+    buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
+
+    if (request_end_position)
+        *request_end_position = buffer.getPosition();
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
@@ -248,12 +402,78 @@ std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseReque
 
         request_for_session->digest.emplace();
         readIntBinary(request_for_session->digest->version, buffer);
-        if (request_for_session->digest->version != KeeperStorage::DigestVersion::NO_DIGEST || !buffer.eof())
+        if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
             readIntBinary(request_for_session->digest->value, buffer);
+    }
+
+    if (!buffer.eof())
+    {
+        version = WITH_XID_64;
+        Coordination::read(xid_helper.parts.upper, buffer);
+    }
+    else
+    {
+        xid_helper.xid = static_cast<int32_t>(xid_helper.parts.lower);
+    }
+
+    std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
+    if (!buffer.eof())
+    {
+        version = WITH_OPTIONAL_TRACING_CONTEXT;
+
+        tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+        tracing_context->deserialize(buffer);
     }
 
     if (serialization_version)
         *serialization_version = version;
+
+    int64_t xid = xid_helper.xid;
+
+    buffer.seek(buffer_position, SEEK_SET);
+
+    static constexpr std::array non_cacheable_xids{
+        Coordination::WATCH_XID,
+        Coordination::PING_XID,
+        Coordination::AUTH_XID,
+        Coordination::CLOSE_XID,
+        Coordination::CLOSE_XID_64,
+    };
+
+    const bool should_cache
+        = min_request_size_to_cache != 0 && request_for_session->session_id != -1 && data.size() >= min_request_size_to_cache
+        && std::all_of(
+              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+
+    if (should_cache)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
+            xid_to_request_it != parsed_request_cache.end())
+        {
+            auto & xid_to_request = xid_to_request_it->second;
+            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
+            {
+                if (final)
+                {
+                    auto request = std::move(request_it->second);
+                    xid_to_request.erase(request_it);
+                    return request;
+                }
+                return request_it->second;
+            }
+        }
+    }
+
+    Coordination::OpNum opnum = {};
+    Coordination::read(opnum, buffer);
+
+    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session->request->xid = xid;
+    request_for_session->request->readImpl(buffer);
+
+    if (tracing_context)
+        request_for_session->request->tracing_context = std::move(tracing_context);
 
     if (should_cache && !final)
     {
@@ -264,20 +484,22 @@ std::shared_ptr<KeeperStorage::RequestForSession> KeeperStateMachine::parseReque
     return request_for_session;
 }
 
-bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & request_for_session)
+template<typename Storage>
+std::optional<KeeperDigest> KeeperStateMachine<Storage>::preprocess(const KeeperRequestForSession & request_for_session)
 {
     const auto op_num = request_for_session.request->getOpNum();
-    if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-        return true;
 
-    std::lock_guard lock(storage_and_responses_lock);
-
-    if (storage->isFinalized())
-        return false;
-
+    KeeperDigest digest_after_preprocessing;
     try
     {
-        storage->preprocessRequest(
+        KEEPER_STORAGE_LOCK_SHARED(lock);
+        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
+            return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
+
+        if (storage->isFinalized())
+            return std::nullopt;
+
+        digest_after_preprocessing = storage->preprocessRequest(
             request_for_session.request,
             request_for_session.session_id,
             request_for_session.time,
@@ -288,40 +510,48 @@ bool KeeperStateMachine::preprocess(const KeeperStorage::RequestForSession & req
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to preprocess stored log at index {}, aborting to avoid inconsistent state", request_for_session.log_idx));
-        std::abort();
+        LOG_FATAL(
+            log,
+            "Failed to preprocess stored log at index {}: {}",
+            request_for_session.log_idx,
+            getCurrentExceptionMessage(true, true, false));
+        LOG_FATAL(log, "Aborting to avoid inconsistent state");
+        abort();
     }
 
     if (keeper_context->digestEnabled() && request_for_session.digest)
-        assertDigest(*request_for_session.digest, storage->getNodesDigest(false), *request_for_session.request, request_for_session.log_idx, false);
+        assertDigest(
+            *request_for_session.digest,
+            digest_after_preprocessing,
+            *request_for_session.request,
+            request_for_session.log_idx,
+            request_for_session.session_id,
+            false);
 
-    return true;
+    return digest_after_preprocessing;
 }
 
-void KeeperStateMachine::reconfigure(const KeeperStorage::RequestForSession& request_for_session)
+template<typename Storage>
+void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession & request_for_session)
 {
-    std::lock_guard _(storage_and_responses_lock);
-    KeeperStorage::ResponseForSession response = processReconfiguration(request_for_session);
-    if (!responses_queue.push(response))
-    {
-        ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-        LOG_WARNING(log,
-            "Failed to push response with session id {} to the queue, probably because of shutdown",
-            response.session_id);
-    }
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    KeeperResponseForSession response = processReconfiguration(request_for_session);
+    if (response_callback)
+        response_callback(std::move(response));
 }
 
-KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
-    const KeeperStorage::RequestForSession & request_for_session)
+template<typename Storage>
+KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
+    const KeeperRequestForSession & request_for_session)
 {
     ProfileEvents::increment(ProfileEvents::KeeperReconfigRequest);
 
-    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest&>(*request_for_session.request);
+    const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest &>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
     const int64_t zxid = request_for_session.zxid;
 
     using enum Coordination::Error;
-    auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperStorage::ResponseForSession
+    auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperResponseForSession
     {
         auto res = std::make_shared<Coordination::ZooKeeperReconfigResponse>();
         res->xid = request.xid;
@@ -330,10 +560,10 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
         return { session_id, std::move(res) };
     };
 
-    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, true))
+    if (!storage->checkACL(keeper_config_path, Coordination::ACL::Write, session_id, /*is_local=*/ true, /*should_lock_storage=*/ true))
         return bad_request(ZNOAUTH);
 
-    KeeperDispatcher& dispatcher = *keeper_context->getDispatcher();
+    KeeperDispatcher & dispatcher = *keeper_context->getDispatcher();
     if (!dispatcher.reconfigEnabled())
         return bad_request(ZUNIMPLEMENTED);
     if (request.version != -1)
@@ -378,8 +608,11 @@ KeeperStorage::ResponseForSession KeeperStateMachine::processReconfiguration(
     return { session_id, std::move(response) };
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
+template<typename Storage>
+nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
+    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+
     auto request_for_session = parseRequest(data, true);
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
@@ -389,15 +622,26 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session))
         return nullptr;
 
-    auto try_push = [this](const KeeperStorage::ResponseForSession& response)
+    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
     {
-        if (!responses_queue.push(response))
-        {
-            ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-            LOG_WARNING(log,
-                "Failed to push response with session id {} to the queue, probably because of shutdown",
-                response.session_id);
-        }
+        request_for_session->request->spans.maybeInitialize(
+            KeeperSpan::Commit,
+            request_for_session->request->tracing_context.get(),
+            start_time_us);
+
+        request_for_session->request->spans.maybeFinalize(
+            KeeperSpan::Commit,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
+            },
+            status,
+            error_message);
     };
 
     try
@@ -407,36 +651,53 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         {
             const Coordination::ZooKeeperSessionIDRequest & session_id_request
                 = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-            int64_t session_id;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-            response->internal_id = session_id_request.internal_id;
-            response->server_id = session_id_request.server_id;
-            KeeperStorage::ResponseForSession response_for_session;
+            int64_t session_id = 0;
+            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
+            KeeperResponseForSession response_for_session;
             response_for_session.session_id = -1;
             response_for_session.response = response;
+            response_for_session.request = request_for_session->request;
 
-            std::lock_guard lock(storage_and_responses_lock);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             session_id = storage->getSessionID(session_id_request.session_timeout_ms);
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
-            try_push(response_for_session);
+            if (response_callback)
+                response_callback(std::move(response_for_session));
         }
         else
         {
             if (op_num == Coordination::OpNum::Close)
             {
-                std::lock_guard lock(request_cache_mutex);
+                std::lock_guard cache_lock(request_cache_mutex);
                 parsed_request_cache.erase(request_for_session->session_id);
             }
 
-            std::lock_guard lock(storage_and_responses_lock);
-            KeeperStorage::ResponsesForSessions responses_for_sessions
-                = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
-            for (auto & response_for_session : responses_for_sessions)
-                try_push(response_for_session);
+            {
+                KEEPER_STORAGE_LOCK_SHARED(lock);
+                {
+                    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                    KeeperResponsesForSessions responses_for_sessions
+                        = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
+                    for (auto & response_for_session : responses_for_sessions)
+                    {
+                        if (response_for_session.response->xid != Coordination::WATCH_XID)
+                            response_for_session.request = request_for_session->request;
 
-            if (keeper_context->digestEnabled() && request_for_session->digest)
-                assertDigest(*request_for_session->digest, storage->getNodesDigest(true), *request_for_session->request, request_for_session->log_idx, true);
+                        if (response_callback)
+                            response_callback(std::move(response_for_session));
+                    }
+                }
+
+                if (keeper_context->digestEnabled() && request_for_session->digest)
+                    assertDigest(
+                        *request_for_session->digest,
+                        storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
+                        *request_for_session->request,
+                        request_for_session->log_idx,
+                        request_for_session->session_id,
+                        true);
+            }
         }
 
         ProfileEvents::increment(ProfileEvents::KeeperCommits);
@@ -448,62 +709,197 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     }
     catch (...)
     {
+        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
     }
 
+    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+
     return nullptr;
 }
 
-bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
+template<typename Storage>
+bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
 {
     LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
-    nuraft::ptr<nuraft::buffer> latest_snapshot_ptr;
-    { /// save snapshot into memory
-        std::lock_guard lock(snapshots_lock);
-        if (s.get_last_log_idx() > latest_snapshot_meta->get_last_log_idx())
-        {
+
+    bool snapshot_apply_finished = false;
+    SCOPE_EXIT({
+        if (!snapshot_apply_finished)
             ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplysFailed);
+    });
+
+    const auto validate_snapshot_to_apply = [&](const SnapshotMetadataPtr & current_snapshot_meta)
+    {
+        if (!current_snapshot_meta)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {}, but no latest snapshot metadata is available",
+                s.get_last_log_idx());
+        }
+        if (s.get_last_log_idx() > current_snapshot_meta->get_last_log_idx())
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Required to apply snapshot with last log index {}, but last created snapshot was for smaller log index {}",
                 s.get_last_log_idx(),
-                latest_snapshot_meta->get_last_log_idx());
+                current_snapshot_meta->get_last_log_idx());
         }
-        else if (s.get_last_log_idx() < latest_snapshot_meta->get_last_log_idx())
+        if (s.get_last_log_idx() < current_snapshot_meta->get_last_log_idx())
         {
-            LOG_INFO(log, "A snapshot with a larger last log index ({}) was created, skipping applying this snapshot", latest_snapshot_meta->get_last_log_idx());
+            LOG_INFO(
+                log,
+                "A snapshot with a larger last log index ({}) was created, skipping applying snapshot with last log index {}",
+                current_snapshot_meta->get_last_log_idx(),
+                s.get_last_log_idx());
+            return false;
+        }
+
+        return true;
+    };
+
+    if constexpr (std::is_same_v<Storage, KeeperMemoryStorage>)
+    {
+        /// Apply received snapshots in three phases to reduce peak memory:
+        /// 1. Under `snapshots_lock`, validate metadata and pin the snapshot file.
+        /// 2. Outside locks, read the file and validate its metadata prefix.
+        /// 3. Under `snapshots_lock` and exclusive storage lock, detach the
+        ///    uncommitted tail, drop old storage, deserialize replacement
+        ///    storage, replay the tail, and publish it.
+        /// Any failure after `storage.reset` is not recoverable, so it terminates.
+        SnapshotFileInfoPtr snapshot_file_info;
+        {
+            std::lock_guard lock(snapshots_lock);
+            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            {
+                snapshot_apply_finished = true;
+                return true;
+            }
+
+            snapshot_file_info = getSnapshotPinUnlocked(s.get_last_log_idx());
+            if (!snapshot_file_info)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Required to apply snapshot with last log index {}, but snapshot file info is not available",
+                    s.get_last_log_idx());
+            }
+        }
+
+        auto snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(*snapshot_file_info);
+        auto snapshot_meta_from_buffer = snapshot_manager.deserializeSnapshotMetadataFromBuffer(snapshot_buf);
+        if (snapshot_meta_from_buffer->get_last_log_idx() != s.get_last_log_idx())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Required to apply snapshot with last log index {}, but snapshot buffer metadata has last log index {}",
+                s.get_last_log_idx(),
+                snapshot_meta_from_buffer->get_last_log_idx());
+        }
+
+        {
+            std::lock_guard lock(snapshots_lock);
+            if (!validate_snapshot_to_apply(latest_snapshot_meta))
+            {
+                snapshot_apply_finished = true;
+                return true;
+            }
+
+            {
+                KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
+
+                std::optional<uint64_t> latest_snapshot_meta_index_before_reset;
+                if (latest_snapshot_meta)
+                    latest_snapshot_meta_index_before_reset = latest_snapshot_meta->get_last_log_idx();
+
+                auto uncommitted_tail = storage->detachUncommittedStateAfter(s.get_last_log_idx());
+                storage.reset();
+
+                try
+                {
+                    auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_buf);
+                    /// This repeats the pre-reset prefix check deliberately. It
+                    /// catches future divergence between
+                    /// `deserializeSnapshotMetadataFromBuffer` and
+                    /// `deserializeSnapshotFromBuffer`.
+                    if (snapshot_deserialization_result.snapshot_meta->get_last_log_idx() != s.get_last_log_idx())
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Required to apply snapshot with last log index {}, but fully deserialized snapshot metadata has last log index {}",
+                            s.get_last_log_idx(),
+                            snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
+
+                    snapshot_buf = nullptr;
+                    snapshot_deserialization_result.storage->applyUncommittedState(std::move(uncommitted_tail));
+                    storage = std::move(snapshot_deserialization_result.storage);
+                    latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+
+                    {
+                        std::lock_guard cluster_config_guard(cluster_config_lock);
+                        cluster_config = snapshot_deserialization_result.cluster_config;
+                    }
+                }
+                catch (...)
+                {
+                    LOG_FATAL(
+                        log,
+                        "Failed to apply snapshot {} after dropping old `KeeperMemoryStorage` "
+                        "(latest snapshot metadata index before reset: {}): {}. Terminating to avoid inconsistent Keeper state",
+                        s.get_last_log_idx(),
+                        latest_snapshot_meta_index_before_reset ? std::to_string(*latest_snapshot_meta_index_before_reset) : "(None)",
+                        getCurrentExceptionMessage(true, true, false));
+                    std::terminate();
+                }
+            }
+
+            snapshot_loader_info.reset();
+            snapshot_loader_info_log_idx = 0;
+            cancelIfHasUnfinishedSnapshotReceive();
+        }
+    }
+    else
+    {
+        std::lock_guard lock(snapshots_lock);
+        if (!validate_snapshot_to_apply(latest_snapshot_meta))
+        {
+            snapshot_apply_finished = true;
             return true;
         }
 
-        latest_snapshot_ptr = latest_snapshot_buf;
-    }
+        SnapshotDeserializationResult<Storage> snapshot_deserialization_result
+            = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
 
-    { /// deserialize and apply snapshot to storage
-        std::lock_guard lock(storage_and_responses_lock);
+        {
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(storage_lock);
+            /// maybe some logs were preprocessed with log idx larger than the snapshot idx
+            /// we have to apply them to the new storage
+            storage->applyUncommittedState(
+                *snapshot_deserialization_result.storage,
+                snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
+            storage = std::move(snapshot_deserialization_result.storage);
+            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
 
-        SnapshotDeserializationResult snapshot_deserialization_result;
-        if (latest_snapshot_ptr)
-            snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
-        else
-            snapshot_deserialization_result
-                = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
+            {
+                std::lock_guard cluster_config_guard(cluster_config_lock);
+                cluster_config = snapshot_deserialization_result.cluster_config;
+            }
+        }
 
-        /// maybe some logs were preprocessed with log idx larger than the snapshot idx
-        /// we have to apply them to the new storage
-        storage->applyUncommittedState(*snapshot_deserialization_result.storage, snapshot_deserialization_result.snapshot_meta->get_last_log_idx());
-        storage = std::move(snapshot_deserialization_result.storage);
-        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
-        cluster_config = snapshot_deserialization_result.cluster_config;
+        snapshot_loader_info.reset();
+        snapshot_loader_info_log_idx = 0;
+        cancelIfHasUnfinishedSnapshotReceive();
     }
 
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotApplys);
     keeper_context->setLastCommitIndex(s.get_last_log_idx());
+    snapshot_apply_finished = true;
     return true;
 }
 
 
-void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
+void IKeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {
     std::lock_guard lock(cluster_config_lock);
     auto tmp = new_conf->serialize();
@@ -511,7 +907,7 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     keeper_context->setLastCommitIndex(log_idx);
 }
 
-void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
+void IKeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
     if (!keeper_context->localLogsPreprocessed())
@@ -527,47 +923,43 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     rollbackRequest(*request_for_session, false);
 }
 
-void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
+template<typename Storage>
+void KeeperStateMachine<Storage>::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
 {
     if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
         return;
 
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->rollbackRequest(request_for_session.zxid, allow_missing);
 }
 
-void KeeperStateMachine::rollbackRequestNoLock(const KeeperStorage::RequestForSession & request_for_session, bool allow_missing)
-{
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
-
-    storage->rollbackRequest(request_for_session.zxid, allow_missing);
-}
-
-nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
+nuraft::ptr<nuraft::snapshot> IKeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
     std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
-void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
+template<typename Storage>
+void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::async_result<bool>::handler_type & when_done)
 {
     LOG_DEBUG(log, "Creating snapshot {}", s.get_last_log_idx());
 
-    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    auto snapshot_meta_copy = nuraft::snapshot::deserialize(*snp_buf);
+    auto snapshot_meta_copy = cloneSnapshotMeta(s);
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
-        std::lock_guard lock(storage_and_responses_lock);
-        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy, getClusterConfig());
+        KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot<Storage>>(
+            storage.get(), snapshot_meta_copy, getClusterConfig(), keeper_context->getWriteSnapshotVersion());
     }
 
     /// create snapshot task for background execution (in snapshot thread)
-    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot, bool execute_only_cleanup)
+    snapshot_task.create_snapshot = [this, when_done](KeeperStorageSnapshotPtr && snapshot_, bool execute_only_cleanup)
     {
         nuraft::ptr<std::exception> exception(nullptr);
-        bool ret = true;
+        bool ret = false;
+        SnapshotFileInfoPtr snapshot_file_info;
+        auto && snapshot = std::get<std::shared_ptr<KeeperStorageSnapshot<Storage>>>(std::move(snapshot_));
         if (!execute_only_cleanup)
         {
             try
@@ -577,6 +969,7 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
 
                     if (latest_snapshot_meta && snapshot->snapshot_meta->get_last_log_idx() <= latest_snapshot_meta->get_last_log_idx())
                     {
+                        snapshot_file_info = snapshot_manager.getLatestSnapshotInfo();
                         LOG_INFO(
                             log,
                             "Will not create a snapshot with last log idx {} because a snapshot with bigger last log idx ({}) is already "
@@ -586,48 +979,68 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
                     }
                     else
                     {
-                        latest_snapshot_meta = snapshot->snapshot_meta;
-                        /// we rely on the fact that the snapshot disk cannot be changed during runtime
+                        /// Drop the cached loader before retiring snapshots; transfer
+                        /// contexts keep their own loaders alive.
+                        snapshot_loader_info.reset();
+                        snapshot_loader_info_log_idx = 0;
+
+                        /// Write new snapshots to the configured latest snapshot disk.
                         if (isLocalDisk(*keeper_context->getLatestSnapshotDisk()))
                         {
-                            auto snapshot_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
-                            latest_snapshot_info = std::move(snapshot_info);
-                            latest_snapshot_buf = nullptr;
+                            snapshot_file_info = snapshot_manager.serializeSnapshotToDisk(*snapshot);
                         }
                         else
                         {
                             auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                            auto snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                            latest_snapshot_info = std::move(snapshot_info);
-                            latest_snapshot_buf = std::move(snapshot_buf);
+                            snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(
+                                *snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
                         }
 
+                        latest_snapshot_meta = snapshot->snapshot_meta;
+                        cancelIfHasUnfinishedSnapshotReceive();
+
                         ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreations);
-                        LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), latest_snapshot_info.path);
+                        LOG_DEBUG(
+                            log,
+                            "Created persistent snapshot {} with path {}",
+                            latest_snapshot_meta->get_last_log_idx(),
+                            snapshot_file_info->path);
+
+                        try
+                        {
+                            latest_snapshot_size.store(
+                                snapshot_file_info->disk->getFileSize(snapshot_file_info->path),
+                                std::memory_order_relaxed);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, "Failed to get snapshot size after creation");
+                        }
                     }
                 }
+
+                ret = true;
             }
             catch (...)
             {
                 ProfileEvents::increment(ProfileEvents::KeeperSnapshotCreationsFailed);
                 LOG_TRACE(log, "Exception happened during snapshot");
                 tryLogCurrentException(log);
-                ret = false;
             }
         }
         {
             /// Destroy snapshot with lock
-            std::lock_guard lock(storage_and_responses_lock);
+            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
             LOG_TRACE(log, "Clearing garbage after snapshot");
             /// Turn off "snapshot mode" and clear outdate part of storage state
+            snapshot.reset();
             storage->clearGarbageAfterSnapshot();
             LOG_TRACE(log, "Cleared garbage after snapshot");
-            snapshot.reset();
         }
 
         when_done(ret, exception);
 
-        return ret ? latest_snapshot_info : SnapshotFileInfo{};
+        return ret ? snapshot_file_info : nullptr;
     };
 
     if (keeper_context->getServerState() == KeeperContext::Phase::SHUTDOWN)
@@ -635,9 +1048,9 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         LOG_INFO(log, "Creating a snapshot during shutdown because 'create_snapshot_on_exit' is enabled.");
         auto snapshot_file_info = snapshot_task.create_snapshot(std::move(snapshot_task.snapshot), /*execute_only_cleanup=*/false);
 
-        if (!snapshot_file_info.path.empty() && snapshot_manager_s3)
+        if (snapshot_file_info && snapshot_manager_s3)
         {
-            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info.path);
+            LOG_INFO(log, "Uploading snapshot {} during shutdown because 'upload_snapshot_on_exit' is enabled.", snapshot_file_info->path);
             snapshot_manager_s3->uploadSnapshot(snapshot_file_info, /* asnyc_upload */ false);
         }
 
@@ -650,227 +1063,716 @@ void KeeperStateMachine::create_snapshot(nuraft::snapshot & s, nuraft::async_res
         LOG_WARNING(log, "Cannot push snapshot task into queue");
 }
 
-void KeeperStateMachine::save_logical_snp_obj(
-    nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool /*is_first_obj*/, bool /*is_last_obj*/)
+template<typename Storage>
+void KeeperStateMachine<Storage>::save_logical_snp_obj(
+    nuraft::snapshot & s, uint64_t & obj_id, nuraft::buffer & data, bool is_first_obj, bool is_last_obj)
 {
     LOG_DEBUG(log, "Saving snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
 
-    /// copy snapshot meta into memory
-    nuraft::ptr<nuraft::buffer> snp_buf = s.serialize();
-    nuraft::ptr<nuraft::snapshot> cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
+    std::lock_guard lock(snapshots_lock);
+    try
+    {
+        SnapshotFileInfoPtr snapshot_file_info;
 
-    nuraft::ptr<nuraft::buffer> cloned_buffer;
+        if (is_first_obj && is_last_obj)
+        {
+            /// If there is non-finalized state from previous call - clean it up.
+            cancelIfHasUnfinishedSnapshotReceive();
+            /// Drop the cached loader before `serializeSnapshotBufferToDisk` retires snapshots.
+            snapshot_loader_info.reset();
+            snapshot_loader_info_log_idx = 0;
+            snapshot_file_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
+            ++obj_id;
+        }
+        else
+        {
+            if (is_first_obj)
+            {
+                /// If there is non-finalized state from previous call - clean it up.
+                cancelIfHasUnfinishedSnapshotReceive();
+                snapshot_receive_ctx = snapshot_manager.beginSnapshotReceiveToDisk(s.get_last_log_idx());
+            }
 
-    /// we rely on the fact that the snapshot disk cannot be changed during runtime
-    if (!isLocalDisk(*keeper_context->getSnapshotDisk()))
-        cloned_buffer = nuraft::buffer::clone(data);
+            if (!snapshot_receive_ctx || snapshot_receive_ctx->log_idx != s.get_last_log_idx())
+            {
+                /// Stale context — ask leader to restart.
+                LOG_WARNING(
+                    log,
+                    "Snapshot receive context is missing or stale for snapshot {} obj_id {} "
+                    "(context log_idx: {}). Resetting to obj_id=0 to restart transfer.",
+                    s.get_last_log_idx(),
+                    obj_id,
+                    snapshot_receive_ctx ? snapshot_receive_ctx->log_idx : 0);
+                cancelIfHasUnfinishedSnapshotReceive();
+                obj_id = 0;
+                return;
+            }
+
+            if (!is_first_obj && obj_id != snapshot_receive_ctx->expected_obj_id)
+            {
+                if (obj_id < snapshot_receive_ctx->expected_obj_id)
+                {
+                    /// Duplicate — skip, advance leader.
+                    LOG_WARNING(
+                        log,
+                        "Snapshot {} received duplicate chunk {} (expected {}), skipping.",
+                        s.get_last_log_idx(),
+                        obj_id,
+                        snapshot_receive_ctx->expected_obj_id);
+                    obj_id = snapshot_receive_ctx->expected_obj_id;
+                }
+                else
+                {
+                    /// Gap — restart.
+                    LOG_WARNING(
+                        log,
+                        "Snapshot {} received out-of-order chunk {} (expected {}), restarting.",
+                        s.get_last_log_idx(),
+                        obj_id,
+                        snapshot_receive_ctx->expected_obj_id);
+                    obj_id = 0;
+                }
+                if (!obj_id)
+                    cancelIfHasUnfinishedSnapshotReceive();
+                return;
+            }
+
+            ReadBufferFromNuraftBuffer reader(data);
+            copyData(reader, *snapshot_receive_ctx->write_buf);
+            /// Advance obj_id to the next chunk we want; NuRaft forwards it to the leader as the next offset.
+            obj_id = ++snapshot_receive_ctx->expected_obj_id;
+
+            if (!is_first_obj && !is_last_obj)
+                FailPointInjection::pauseFailPoint(FailPoints::keeper_save_snapshot_pause_mid_transfer);
+
+            if (is_last_obj)
+            {
+                /// Drop the cached loader before `finalizeSnapshotReceiveToDisk` retires snapshots.
+                snapshot_loader_info.reset();
+                snapshot_loader_info_log_idx = 0;
+                snapshot_file_info = snapshot_manager.finalizeSnapshotReceiveToDisk(*snapshot_receive_ctx);
+            }
+        }
+
+        ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotObject);
+        if (is_last_obj)
+        {
+            latest_snapshot_meta = cloneSnapshotMeta(s);
+            snapshot_receive_ctx.reset();
+
+            uint64_t snp_size = 0;
+            try
+            {
+                if (snapshot_file_info)
+                {
+                    snp_size = snapshot_file_info->disk->getFileSize(snapshot_file_info->path);
+                    latest_snapshot_size.store(snp_size, std::memory_order_relaxed);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to get snapshot size after save");
+            }
+
+            ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
+            LOG_DEBUG(log, "Saved snapshot {} ({} chunks, {} bytes)", s.get_last_log_idx(), obj_id, snp_size);
+        }
+    }
+    catch (...)
+    {
+        cancelIfHasUnfinishedSnapshotReceive();
+        tryLogCurrentException(log);
+        ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshotFailed);
+        if (is_last_obj)
+            throw; /// NuRaft would call apply_snapshot regardless of obj_id; re-throw so it aborts instead.
+        obj_id = 0; /// Ask leader to restart the transfer from the beginning.
+    }
+}
+
+
+/// Shared buffer for serving a remote-disk snapshot to lagging
+/// followers without re-reading from remote storage.
+/// Abstract interface for reading snapshot chunks. Implementations for local (mmap) and remote (buffered read) disks.
+struct ISnapshotLoader
+{
+    virtual ~ISnapshotLoader() = default;
+
+    /// Initialize the loader. Safe to call concurrently — implementations serialize internally.
+    /// Returns false on any error; the caller is responsible for invalidating the cached loader.
+    virtual bool init(uint64_t log_idx, const SnapshotFileInfo & info, LoggerPtr log) = 0;
+
+    virtual uint64_t fileSize() const = 0;
+
+    /// Return a stable pointer to bytes [offset, offset+length).
+    /// For remote disk: loads data on demand under an internal mutex.
+    /// Returns nullptr on any error; call getLastError() to retrieve the exception.
+    virtual nuraft::byte * getChunk(uint64_t offset, uint64_t length, LoggerPtr log) = 0;
+
+    /// Returns the stored exception if a previous getChunk call failed, nullptr otherwise.
+    virtual std::exception_ptr getLastError() const { return nullptr; }
+};
+
+/// Remote disk loader: reads the snapshot file from remote storage into a shared in-memory buffer,
+/// serving chunks to concurrent followers without re-reading from remote storage.
+/// All fields are protected by load_mutex; init() and getChunk() acquire it internally.
+struct RemoteSnapshotLoader : public ISnapshotLoader
+{
+    uint64_t snapshot_id = 0;
+    uint64_t file_size = 0;
+    nuraft::ptr<nuraft::buffer> buf; /// pre-allocated full-size buffer; chunks are served from it
+    std::unique_ptr<ReadBufferFromFileBase> reader; /// null until initialized, null again once fully loaded
+    std::atomic<uint64_t> loaded_bytes = 0;
+    std::atomic<bool> has_error = false; /// set on readStrict failure; prevents retrying a broken reader
+    std::exception_ptr last_error;
+    mutable std::mutex load_mutex;
+
+    void onException(LoggerPtr log_, const std::string & message)
+    {
+        last_error = std::current_exception();
+        has_error.store(true, std::memory_order_release);
+        tryLogCurrentException(log_, message);
+    }
+
+    bool init(uint64_t log_idx, const SnapshotFileInfo & info, LoggerPtr log_) override
+    {
+        if (has_error.load(std::memory_order_relaxed))
+            return false;
+        std::lock_guard lock(load_mutex);
+        if (has_error.load(std::memory_order_relaxed))
+            return false;
+        if (buf)
+        {
+            /// Already initialized by a previous follower — just verify it's the same snapshot.
+            chassert(snapshot_id == log_idx);
+            return true;
+        }
+        snapshot_id = log_idx;
+        try
+        {
+            file_size = info.disk->getFileSize(info.path);
+        }
+        catch (...) /// Ok: exception is saved and logged via onException
+        {
+            onException(log_, "Failed to get snapshot size for transfer");
+            return false;
+        }
+        if (file_size == 0)
+        {
+            LOG_WARNING(log_, "Snapshot {} on remote disk has zero size", log_idx);
+            return false;
+        }
+        try
+        {
+            reader = info.disk->readFile(info.path, getReadSettings(), file_size);
+        }
+        catch (...) /// Ok: exception is saved and logged via onException
+        {
+            onException(log_, "Failed to open snapshot for transfer");
+            return false;
+        }
+        try
+        {
+            buf = nuraft::buffer::alloc(file_size);
+        }
+        catch (...) /// Ok: exception is saved and logged via onException
+        {
+            reader.reset();
+            onException(log_, fmt::format("Failed to allocate {} bytes for snapshot {} transfer", file_size, log_idx));
+            return false;
+        }
+        return true;
+    }
+
+    uint64_t fileSize() const override
+    {
+        std::lock_guard lock(load_mutex);
+        return file_size;
+    }
+
+    std::exception_ptr getLastError() const override
+    {
+        if (has_error.load(std::memory_order_acquire))
+            return last_error;
+        return nullptr;
+    }
+
+    nuraft::byte * getChunk(uint64_t offset, uint64_t length, LoggerPtr log_) override
+    {
+        if (has_error.load(std::memory_order_relaxed))
+            return nullptr;
+
+        const uint64_t needed = offset + length;
+
+        /// Once bytes [0, needed) are written into buf they are never modified,
+        /// so an acquire-load of loaded_bytes is sufficient to observe them without the mutex.
+        if (loaded_bytes.load(std::memory_order_acquire) >= needed)
+        {
+            LOG_TEST(log_, "Snapshot at offset {} is already loaded (lock-free)", offset);
+            return buf->data_begin() + offset;
+        }
+
+        std::lock_guard lock(load_mutex);
+        if (has_error.load(std::memory_order_relaxed))
+            return nullptr;
+        const uint64_t current = loaded_bytes.load(std::memory_order_relaxed);
+        if (current < needed)
+        {
+            chassert(reader != nullptr);
+            try
+            {
+                LOG_TEST(log_, "Loading at offset {} size {}", offset, length);
+                reader->readStrict(
+                    reinterpret_cast<char *>(buf->data_begin()) + current,
+                    needed - current);
+            }
+            catch (...) /// Ok: exception is saved and logged via onException
+            {
+                onException(log_, "Failed to read snapshot chunk");
+                ProfileEvents::increment(ProfileEvents::KeeperSnapshotRemoteLoaderErrors);
+                return nullptr;
+            }
+            loaded_bytes.store(needed, std::memory_order_release);
+            if (needed == file_size)
+            {
+                LOG_DEBUG(log_, "Snapshot {} fully loaded into memory, closing reader", snapshot_id);
+                reader.reset();
+            }
+        }
+        else
+            LOG_TEST(log_, "Snapshot at offset {} is already loaded", offset);
+        return buf->data_begin() + offset;
+    }
+};
+
+namespace
+{
+
+/// Local disk loader: owns fd + mmap for a single follower, RAII cleanup on destruction.
+struct LocalSnapshotLoader : private boost::noncopyable, public ISnapshotLoader
+{
+    int fd = -1;
+    nuraft::byte * mmap_ptr = nullptr;
+    uint64_t file_size = 0;
+
+    LocalSnapshotLoader() = default;
+
+    bool init(uint64_t /*log_idx*/, const SnapshotFileInfo & info, LoggerPtr log_) override
+    {
+        const auto full_path = fs::path(info.disk->getPath()) / info.path;
+        if (!std::filesystem::exists(full_path))
+        {
+            LOG_WARNING(log_, "Snapshot file {} does not exist", full_path);
+            return false;
+        }
+
+        LOG_INFO(log_, "Opening snapshot file {} for chunked transfer", full_path);
+        fd = ::open(full_path.string().c_str(), O_RDONLY);
+        if (fd < 0)
+        {
+            LOG_WARNING(log_, "Error opening {}, error: {}, errno: {}", full_path, errnoToString(), errno);
+            return false;
+        }
+
+        auto raw_file_size = ::lseek(fd, 0, SEEK_END);
+        if (raw_file_size < 0)
+        {
+            LOG_WARNING(log_, "Error getting size of {}, error: {}, errno: {}", full_path, errnoToString(), errno);
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+            fd = -1;
+            return false;
+        }
+
+        file_size = static_cast<uint64_t>(raw_file_size);
+        if (file_size == 0)
+        {
+            LOG_WARNING(log_, "Snapshot file {} is empty", full_path);
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+            fd = -1;
+            return false;
+        }
+
+        mmap_ptr = reinterpret_cast<nuraft::byte *>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
+        if (mmap_ptr == MAP_FAILED)
+        {
+            LOG_WARNING(log_, "Error mmapping {}, error: {}, errno: {}", full_path, errnoToString(), errno);
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+            fd = -1;
+            mmap_ptr = nullptr;
+            return false;
+        }
+
+        return true;
+    }
+
+    uint64_t fileSize() const override { return file_size; }
+
+    nuraft::byte * getChunk(uint64_t offset, uint64_t /*length*/, LoggerPtr /*log_*/) override
+    {
+        return mmap_ptr + offset;
+    }
+
+    ~LocalSnapshotLoader() override
+    {
+        if (mmap_ptr)
+        {
+            ::munmap(mmap_ptr, file_size);
+            [[maybe_unused]] int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+        }
+    }
+
+};
+
+/// Per-follower state kept alive across chunked snapshot transfer on the leader.
+struct SnapshotTransferCtx
+{
+    uint64_t chunk_size = 0;
+    /// Holds the snapshot file alive for this transfer. Declared before
+    /// `loader` so destruction closes loader handles before the pin may unlink.
+    SnapshotFileInfoPtr pin;
+    std::shared_ptr<ISnapshotLoader> loader;
+};
+
+}
+
+int IKeeperStateMachine::read_logical_snp_obj(
+    nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj)
+{
+    LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
+
+    /// Release leftover context before locking; the pin deleter can perform disk I/O.
+    if (obj_id == 0 && user_snp_ctx)
+        free_user_snp_ctx(user_snp_ctx);
+
+    bool success = false;
+    SCOPE_EXIT({
+        if (!success)
+            ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotFailed);
+    });
+
+    SnapshotFileInfoPtr pin;  // populated under the lock for obj_id == 0
+    std::shared_ptr<ISnapshotLoader> remote_loader;
+    const uint64_t configured_chunk_size = keeper_context->getCoordinationSettings()[CoordinationSetting::snapshot_transfer_chunk_size];
+
+    if (obj_id == 0)
+    {
+        std::lock_guard lock(snapshots_lock);
+
+        /// Cached remote loaders must always have a nonzero `log_idx` key.
+        chassert(!snapshot_loader_info || snapshot_loader_info_log_idx != 0);
+
+        /// Pin the requested snapshot so removal and moves wait for this transfer.
+        /// Missing snapshots are deferred to NuRaft; loader and chunk errors still fail.
+        pin = getSnapshotPinUnlocked(s.get_last_log_idx());
+        if (!pin)
+        {
+            LOG_WARNING(log,
+                "Snapshot with last log index {} is no longer available locally; declining transfer",
+                s.get_last_log_idx());
+            /// NuRaft will retry against `latest_snapshot_meta`; this is a
+            /// deferral, not a loader or chunk-read failure.
+            ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotDeferred);
+            success = true;
+            return -1;
+        }
+
+        /// Cache one remote loader. A request for another `log_idx` replaces
+        /// the cache, while active transfers keep their own `shared_ptr`.
+        if (!isLocalDisk(*pin->disk))
+        {
+            /// The remote loader cache is valid for exactly one `log_idx`.
+            /// Drop it before serving a different retained snapshot.
+            if (snapshot_loader_info && snapshot_loader_info_log_idx != s.get_last_log_idx())
+            {
+                LOG_DEBUG(log,
+                    "Dropping cached remote snapshot loader for log_idx {} - request is for log_idx {}",
+                    snapshot_loader_info_log_idx, s.get_last_log_idx());
+                snapshot_loader_info.reset();
+                snapshot_loader_info_log_idx = 0;
+            }
+            if (!snapshot_loader_info)
+            {
+                snapshot_loader_info = std::make_shared<RemoteSnapshotLoader>();
+                snapshot_loader_info_log_idx = s.get_last_log_idx();
+            }
+            remote_loader = snapshot_loader_info;
+        }
+    }
+
+    if (obj_id == 0)
+    {
+        const bool is_local_disk = !remote_loader;
+        LOG_DEBUG(log, "Opening snapshot {} on {} disk for transfer",
+                  s.get_last_log_idx(), is_local_disk ? "local" : "remote");
+
+        std::shared_ptr<ISnapshotLoader> loader;
+        if (is_local_disk)
+            loader = std::make_shared<LocalSnapshotLoader>();
+        else
+            loader = remote_loader;
+
+        /// Initialize against the pinned `SnapshotFileInfo`.
+        if (!loader->init(s.get_last_log_idx(), *pin, log))
+        {
+            if (remote_loader)
+            {
+                std::lock_guard lock(snapshots_lock);
+                if (snapshot_loader_info == remote_loader)
+                {
+                    snapshot_loader_info.reset();
+                    snapshot_loader_info_log_idx = 0;
+                }
+            }
+            /// Release the pin outside `snapshots_lock`; the deleter may unlink.
+            return -1;
+        }
+
+        const uint64_t file_size = loader->fileSize();
+        /// `chunk_size == 0` sends the whole file in one object.
+        const uint64_t effective_chunk_size = configured_chunk_size == 0 ? file_size : configured_chunk_size;
+        /// Member order makes `loader` close handles before `pin` may unlink.
+        user_snp_ctx = new SnapshotTransferCtx{
+            .chunk_size = effective_chunk_size,
+            .pin = std::move(pin),
+            .loader = std::move(loader),
+        };
+    }
+
+    auto * ctx = reinterpret_cast<SnapshotTransferCtx *>(user_snp_ctx);
+    if (!ctx)
+    {
+        LOG_WARNING(log, "Snapshot transfer context is null for obj_id {}", obj_id);
+        free_user_snp_ctx(user_snp_ctx);
+        chassert(false); /// This should not happen, catch in CI.
+        return -1;
+    }
+
+    const uint64_t file_size = ctx->loader->fileSize();
+
+    /// Guard against multiplication overflow before computing offset.
+    if (ctx->chunk_size != 0 && obj_id > file_size / ctx->chunk_size)
+    {
+        LOG_WARNING(log, "Snapshot obj_id {} would overflow offset computation (file_size={}, chunk_size={})",
+            obj_id, file_size, ctx->chunk_size);
+        free_user_snp_ctx(user_snp_ctx);
+        return -1;
+    }
+    const auto offset = obj_id * ctx->chunk_size;
+    if (offset >= file_size)
+    {
+        LOG_WARNING(log, "Snapshot obj_id {} is out of range (file_size={})", obj_id, file_size);
+        free_user_snp_ctx(user_snp_ctx);
+        chassert(false); /// This should not happen, catch in CI.
+        return -1;
+    }
+
+    chassert(ctx->chunk_size != 0);
+    const auto chunk_size = std::min(ctx->chunk_size, file_size - offset);
+    is_last_obj = (offset + chunk_size == file_size);
+
+    nuraft::byte * src_ptr = ctx->loader->getChunk(offset, chunk_size, log);
+    if (!src_ptr)
+    {
+        {
+            std::lock_guard lock(snapshots_lock);
+            /// Only reset if this is the same loader instance that's currently cached
+            /// — a concurrent follower may have already replaced snapshot_loader_info.
+            if (snapshot_loader_info == ctx->loader)
+            {
+                snapshot_loader_info.reset();
+                snapshot_loader_info_log_idx = 0;
+            }
+        }
+        auto err = ctx->loader->getLastError();
+        free_user_snp_ctx(user_snp_ctx);
+        if (err)
+            LOG_ERROR(log, "RemoteSnapshotLoader failed to read chunk: {}", getExceptionMessage(err, /*with_stacktrace=*/false));
+        return -1;
+    }
 
     try
     {
-        std::lock_guard lock(snapshots_lock);
-        /// Serialize snapshot to disk
-        latest_snapshot_info = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
-        latest_snapshot_meta = cloned_meta;
-        latest_snapshot_buf = std::move(cloned_buffer);
-        LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), latest_snapshot_info.path);
-        obj_id++;
-        ProfileEvents::increment(ProfileEvents::KeeperSaveSnapshot);
+        data_out = nuraft::buffer::alloc(chunk_size);
+        data_out->put_raw(src_ptr, chunk_size);
     }
     catch (...)
     {
         tryLogCurrentException(log);
-    }
-}
-
-static int bufferFromFile(LoggerPtr log, const std::string & path, nuraft::ptr<nuraft::buffer> & data_out)
-{
-    if (path.empty() || !std::filesystem::exists(path))
-    {
-        LOG_WARNING(log, "Snapshot file {} does not exist", path);
-        return -1;
-    }
-
-    int fd = ::open(path.c_str(), O_RDONLY);
-    LOG_INFO(log, "Opening file {} for read_logical_snp_obj", path);
-    if (fd < 0)
-    {
-        LOG_WARNING(log, "Error opening {}, error: {}, errno: {}", path, errnoToString(), errno);
-        return errno;
-    }
-    auto file_size = ::lseek(fd, 0, SEEK_END);
-    ::lseek(fd, 0, SEEK_SET);
-    auto * chunk = reinterpret_cast<nuraft::byte *>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
-    if (chunk == MAP_FAILED)
-    {
-        LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        int err = ::close(fd);
-        chassert(!err || errno == EINTR);
-        return errno;
-    }
-    data_out = nuraft::buffer::alloc(file_size);
-    data_out->put_raw(chunk, file_size);
-    ::munmap(chunk, file_size);
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
-    return 0;
-}
-
-int KeeperStateMachine::read_logical_snp_obj(
-    nuraft::snapshot & s, void *& /*user_snp_ctx*/, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj)
-{
-    LOG_DEBUG(log, "Reading snapshot {} obj_id {}", s.get_last_log_idx(), obj_id);
-
-    std::lock_guard lock(snapshots_lock);
-    /// Our snapshot is not equal to required. Maybe we still creating it in the background.
-    /// Let's wait and NuRaft will retry this call.
-    if (s.get_last_log_idx() != latest_snapshot_meta->get_last_log_idx())
-    {
-        LOG_WARNING(
-            log,
-            "Required to apply snapshot with last log index {}, but our last log index is {}. Will ignore this one and retry",
-            s.get_last_log_idx(),
-            latest_snapshot_meta->get_last_log_idx());
-        return -1;
-    }
-
-    const auto & [path, disk] = latest_snapshot_info;
-    if (isLocalDisk(*disk))
-    {
-        auto full_path = fs::path(disk->getPath()) / path;
-        if (bufferFromFile(log, full_path, data_out))
         {
-            LOG_WARNING(log, "Error reading snapshot {} from {}", s.get_last_log_idx(), full_path);
-            return -1;
+            std::lock_guard lock(snapshots_lock);
+            if (snapshot_loader_info == ctx->loader)
+            {
+                snapshot_loader_info.reset();
+                snapshot_loader_info_log_idx = 0;
+            }
         }
-    }
-    else
-    {
-        chassert(latest_snapshot_buf);
-        data_out = nuraft::buffer::clone(*latest_snapshot_buf);
+        free_user_snp_ctx(user_snp_ctx);
+        return -1;
     }
 
-    is_last_obj = true;
-    ProfileEvents::increment(ProfileEvents::KeeperReadSnapshot);
-
+    success = true;
+    ProfileEvents::increment(ProfileEvents::KeeperReadSnapshotObject);
+    if (is_last_obj)
+        ProfileEvents::increment(ProfileEvents::KeeperReadSnapshot);
     return 1;
 }
 
-void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)
+void IKeeperStateMachine::free_user_snp_ctx(void *& user_snp_ctx)
 {
-    /// Pure local request, just process it with storage
-    std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(
-        request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
-    for (const auto & response : responses)
-        if (!responses_queue.push(response))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
+    if (!user_snp_ctx)
+        return;
+
+    delete reinterpret_cast<SnapshotTransferCtx *>(user_snp_ctx);
+    user_snp_ctx = nullptr;
 }
 
-void KeeperStateMachine::shutdownStorage()
+template<typename Storage>
+void KeeperStateMachine<Storage>::processReadRequests(const KeeperRequestsForSessions & requests)
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    /// Pure local request, just process them with storage
+    KEEPER_STORAGE_LOCK_SHARED(storage_lock);
+    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+
+    auto responses = storage->processLocalRequests(requests, /*check_acl=*/ true);
+
+    for (auto & response_for_session : responses)
+    {
+        if (response_callback)
+            response_callback(std::move(response_for_session));
+    }
+}
+
+template<typename Storage>
+void KeeperStateMachine<Storage>::shutdownStorage()
+{
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    if (!storage)
+        return;
     storage->finalize();
 }
 
-std::vector<int64_t> KeeperStateMachine::getDeadSessions()
+template<typename Storage>
+std::vector<int64_t> KeeperStateMachine<Storage>::getDeadSessions()
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getDeadSessions();
 }
 
-int64_t KeeperStateMachine::getNextZxid() const
+template<typename Storage>
+int64_t KeeperStateMachine<Storage>::getNextZxid() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getNextZXID();
 }
 
-KeeperStorage::Digest KeeperStateMachine::getNodesDigest() const
+template<typename Storage>
+KeeperDigest KeeperStateMachine<Storage>::getNodesDigest() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getNodesDigest(false);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+    return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
 }
 
-uint64_t KeeperStateMachine::getLastProcessedZxid() const
+template<typename Storage>
+int64_t KeeperStateMachine<Storage>::getLastProcessedZxid() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
     return storage->getZXID();
 }
 
-uint64_t KeeperStateMachine::getNodesCount() const
+template<typename Storage>
+KeeperStorageStats KeeperStateMachine<Storage>::getStorageStats() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->getStorageStats();
+}
+
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getNodesCount() const
+{
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getNodesCount();
 }
 
-uint64_t KeeperStateMachine::getTotalWatchesCount() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getTotalWatchesCount() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalWatchesCount();
 }
 
-uint64_t KeeperStateMachine::getWatchedPathsCount() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getWatchedPathsCount() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getWatchedPathsCount();
 }
 
-uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getSessionsWithWatchesCount() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionsWithWatchesCount();
 }
 
-uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getTotalEphemeralNodesCount() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getTotalEphemeralNodesCount();
 }
 
-uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getSessionWithEphemeralNodesCount() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getSessionWithEphemeralNodesCount();
 }
 
-void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
+template<typename Storage>
+void KeeperStateMachine<Storage>::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatches(buf);
 }
 
-void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+template<typename Storage>
+void KeeperStateMachine<Storage>::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpWatchesByPath(buf);
 }
 
-void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+template<typename Storage>
+void KeeperStateMachine<Storage>::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     storage->dumpSessionsAndEphemerals(buf);
 }
 
-uint64_t KeeperStateMachine::getApproximateDataSize() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getApproximateDataSize() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getApproximateDataSize();
 }
 
-uint64_t KeeperStateMachine::getKeyArenaSize() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getKeyArenaSize() const
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     return storage->getArenaDataSize();
 }
 
-uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
+template<typename Storage>
+uint64_t KeeperStateMachine<Storage>::getLatestSnapshotSize() const
 {
-    std::lock_guard lock(snapshots_lock);
-    if (latest_snapshot_buf)
-        return latest_snapshot_buf->size();
-    return 0;
+    return latest_snapshot_size.load(std::memory_order_relaxed);
 }
 
-ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
+ClusterConfigPtr IKeeperStateMachine::getClusterConfig() const
 {
     std::lock_guard lock(cluster_config_lock);
     if (cluster_config)
@@ -882,11 +1784,48 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
     return nullptr;
 }
 
-void KeeperStateMachine::recalculateStorageStats()
+template<typename Storage>
+void KeeperStateMachine<Storage>::recalculateStorageStats()
 {
-    std::lock_guard lock(storage_and_responses_lock);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Recalculating storage stats");
     storage->recalculateStats();
     LOG_INFO(log, "Done recalculating storage stats");
 }
+
+template<typename Storage>
+SnapshotFileInfoPtr KeeperStateMachine<Storage>::getSnapshotPinUnlocked(uint64_t log_idx) const
+{
+    return snapshot_manager.getSnapshotPin(log_idx);
+}
+
+template<typename Storage>
+void KeeperStateMachine<Storage>::cancelIfHasUnfinishedSnapshotReceive()
+{
+    if (!snapshot_receive_ctx)
+        return;
+
+    /// Cancel the write buffer before removing the file.
+    const auto disk = snapshot_receive_ctx->disk;
+    const auto snapshot_file_name = snapshot_receive_ctx->snapshot_file_name;
+    snapshot_receive_ctx.reset();
+
+    try
+    {
+        const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
+        LOG_INFO(log, "Canceling unfinished snapshot receive, removing partial files {} and {}", snapshot_file_name, tmp_snapshot_file_name);
+        disk->removeFileIfExists(snapshot_file_name);
+        disk->removeFileIfExists(tmp_snapshot_file_name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to remove partial snapshot files");
+    }
+}
+
+template class KeeperStateMachine<KeeperMemoryStorage>;
+#if USE_ROCKSDB
+template class KeeperStateMachine<KeeperRocksStorage>;
+#endif
+
 }

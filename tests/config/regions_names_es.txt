@@ -1,0 +1,12 @@
+1	Mundo
+2	Estados Unidos
+3	Colorado
+4	Boulder County
+5	Boulder
+6	China
+7	Sichuan
+8	Chengdú
+9	América
+10	América del Norte
+11	Eurasia
+12	Asia

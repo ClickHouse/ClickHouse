@@ -22,12 +22,12 @@ public:
     {
     }
 
-    bool isEqualImpl(const IQueryTreeNode &) const override
+    bool isEqualImpl(const IQueryTreeNode &, CompareOptions) const override
     {
         return true;
     }
 
-    void updateTreeHashImpl(HashState &) const override
+    void updateTreeHashImpl(HashState &, CompareOptions) const override
     {
     }
 

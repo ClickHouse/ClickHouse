@@ -1,0 +1,13 @@
+The Default for query_cache_system_table_handling is = throw
+0
+Check behavior of query_cache_system_table_handling = throw
+0
+Check behavior of query_cache_system_table_handling = save
+0
+1
+Check behavior of query_cache_system_table_handling = ignore
+0
+0
+Other tests
+0
+0

@@ -111,7 +111,7 @@ BlockIO InterpreterCreateQuotaQuery::execute()
 
     if (query.alter)
     {
-        auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
+        auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated_quota = typeid_cast<std::shared_ptr<Quota>>(entity->clone());
             updateQuotaFromQueryImpl(*updated_quota, query, {}, roles_from_query);
@@ -161,6 +161,7 @@ void InterpreterCreateQuotaQuery::updateQuotaFromQuery(Quota & quota, const ASTC
     updateQuotaFromQueryImpl(quota, query, {}, {});
 }
 
+void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

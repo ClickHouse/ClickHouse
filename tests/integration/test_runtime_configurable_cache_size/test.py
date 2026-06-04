@@ -1,7 +1,8 @@
 import os
-import pytest
-import shutil
 import time
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 # Tests that sizes of in-memory caches (mark / uncompressed / index mark / index uncompressed / mmapped file / query cache) can be changed
@@ -32,7 +33,7 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 # temporarily disabled due to https://github.com/ClickHouse/ClickHouse/pull/51446#issuecomment-1687066351
 # def test_mark_cache_size_is_runtime_configurable(start_cluster):
 #     # the initial config specifies the mark cache size as 496 bytes, just enough to hold two marks
-#     node.query("SYSTEM DROP MARK CACHE")
+#     node.query("SYSTEM CLEAR MARK CACHE")
 #
 #     node.query("CREATE TABLE test1 (val String) ENGINE=MergeTree ORDER BY val")
 #     node.query("INSERT INTO test1 VALUES ('abc') ('def') ('ghi')")
@@ -95,51 +96,102 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 
 def test_query_cache_size_is_runtime_configurable(start_cluster):
-    # the initial config specifies the maximum query cache size as 2, run 3 queries, expect 2 cache entries
-    node.query("SYSTEM DROP QUERY CACHE")
+    node.query("SYSTEM CLEAR QUERY CACHE")
+
+    # The initial config allows at most two query cache entries but we don't mind
     node.query("SELECT 1 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
 
-    res = node.query_with_retry(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "2\n",
+    time.sleep(2)
+    # At this point, the query cache contains one entry and it is stale
+
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
     )
-    assert res == "2\n"
+    assert res == "1\n"
 
-    # switch to a config with a maximum query cache size of 1
+    # switch to a config with a maximum query cache size of _0_
     node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "smaller_query_cache.xml"),
+        os.path.join(CONFIG_DIR, "empty_query_cache.xml"),
         "/etc/clickhouse-server/config.d/default.xml",
     )
 
     node.query("SYSTEM RELOAD CONFIG")
 
-    # check that eviction worked as expected
-    res = node.query_with_retry(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "2\n",
-    )
-    assert (
-        res == "2\n"
-    )  # "Why not 1?", you think. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
-    # Not a real issue, can be changed later, at least there's a test now.
-
-    # Also, you may also wonder "why query_cache_ttl = 1"? Reason is that TTLCachePolicy only removes *stale* entries. With the default TTL
-    # (60 sec), no entries would be removed at all. Again: not a real issue, can be changed later and there's at least a test now.
-
-    # check that the new query cache maximum size is respected when more queries run
-    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-    node.query("SELECT 5 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
-
-    res = node.query_with_retry(
-        "SELECT value FROM system.asynchronous_metrics WHERE metric = 'QueryCacheEntries'",
-        check_callback=lambda result: result == "1\n",
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
     )
     assert res == "1\n"
+    # "Why not 0?", I hear you say. Reason is that QC uses the TTLCachePolicy that evicts lazily only upon insert.
+    # Not a real issue, can be changed later, at least there's a test now.
 
-    # restore the original config
+    # The next SELECT will find a single stale entry which is one entry too much according to the new config.
+    # This triggers the eviction of all stale entries, in this case the 'SELECT 1' result.
+    # Then, it tries to insert the 'SELECT 2' result but it also cannot be added according to the config.
+    node.query("SELECT 2 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # The new maximum cache size is respected when more queries run
+    node.query("SELECT 3 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "0\n"
+
+    # Restore the original config
     node.copy_file_to_container(
         os.path.join(CONFIG_DIR, "default.xml"),
         "/etc/clickhouse-server/config.d/default.xml",
     )
+
+    node.query("SYSTEM RELOAD CONFIG")
+
+    # It is possible to insert entries again
+    node.query("SELECT 4 SETTINGS use_query_cache = 1, query_cache_ttl = 1")
+    res = node.query(
+        "SELECT count(*) FROM system.query_cache",
+    )
+    assert res == "1\n"
+
+
+def test_cache_size_capped_by_ram_ratio(start_cluster):
+    """
+    Test that cache sizes are capped by `cache_size_to_ram_max_ratio * RAM` when config
+    is reloaded with oversized values.
+    """
+    oversized_cache_size = 1098437885952000  # 999 TiB - much larger than any real machine's RAM
+
+    node.query("SYSTEM CLEAR MARK CACHE")
+    node.query("SYSTEM CLEAR QUERY CACHE")
+
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, "oversized_caches.xml"),
+        "/etc/clickhouse-server/config.d/oversized_caches.xml",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+    try:
+        mark_cache_size = int(
+            node.query(
+                "SELECT toUInt64(value) FROM system.server_settings WHERE name = 'mark_cache_size'"
+            ).strip()
+        )
+        assert mark_cache_size < oversized_cache_size, (
+            f"mark_cache_size was not capped: got {mark_cache_size}, expected < {oversized_cache_size}"
+        )
+
+        query_cache_size = int(
+            node.query(
+                "SELECT toUInt64(value) FROM system.server_settings WHERE name = 'query_cache.max_size_in_bytes'"
+            ).strip()
+        )
+        assert query_cache_size < oversized_cache_size, (
+            f"query_cache.max_size_in_bytes was not capped: got {query_cache_size}, expected < {oversized_cache_size}"
+        )
+    finally:
+        node.exec_in_container(
+            ["rm", "-f", "/etc/clickhouse-server/config.d/oversized_caches.xml"]
+        )
+        node.query("SYSTEM RELOAD CONFIG")

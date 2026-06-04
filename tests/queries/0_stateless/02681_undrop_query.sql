@@ -17,7 +17,7 @@ drop table if exists 02681_undrop_detach sync;
 create table 02681_undrop_detach (id Int32, num Int32) Engine=MergeTree() order by id;
 insert into 02681_undrop_detach values (1, 1);
 detach table 02681_undrop_detach sync;
-undrop table 02681_undrop_detach; -- { serverError 57 }
+undrop table 02681_undrop_detach; -- { serverError TABLE_ALREADY_EXISTS }
 attach table 02681_undrop_detach;
 alter table 02681_undrop_detach update num = 2 where id = 1;
 select command from system.mutations where table='02681_undrop_detach' and database=currentDatabase() limit 1;
@@ -85,5 +85,5 @@ drop table 02681_undrop_multiple;
 select table from system.dropped_tables where table = '02681_undrop_multiple' limit 1;
 undrop table 02681_undrop_multiple;
 select * from 02681_undrop_multiple order by id;
-undrop table 02681_undrop_multiple; -- { serverError 57 }
+undrop table 02681_undrop_multiple; -- { serverError TABLE_ALREADY_EXISTS }
 drop table 02681_undrop_multiple sync;

@@ -1,12 +1,40 @@
-#include "PrometheusMetricsWriter.h"
+#include <Server/PrometheusMetricsWriter.h>
 
-#include <IO/WriteHelpers.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/DimensionalMetrics.h>
+#include <Common/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/re2.h>
-
-#include <algorithm>
+#include <Common/config_version.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include "config.h"
+
+
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+
+namespace CurrentMetrics
+{
+    extern const std::vector<Metric> keeper_metrics;
+}
+
+namespace HistogramMetrics
+{
+    extern std::vector<MetricFamily *> keeper_histograms;
+}
+
+namespace DimensionalMetrics
+{
+    extern std::vector<MetricFamily *> keeper_dimensional_metrics;
+}
+#endif
+
 
 namespace
 {
@@ -46,6 +74,8 @@ constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
 constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
 constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
 constexpr auto error_metrics_prefix = "ClickHouseErrorMetric_";
+constexpr auto histogram_prefix = "ClickHouseHistogramMetrics_";
+constexpr auto dimensional_metrics_prefix = "ClickHouseDimensionalMetrics_";
 
 void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event)
 {
@@ -107,100 +137,246 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 
 }
 
-#if USE_NURAFT
-namespace ProfileEvents
-{
-    extern const std::vector<Event> keeper_profile_events;
-}
-
-namespace CurrentMetrics
-{
-    extern const std::vector<Metric> keeper_metrics;
-}
-#endif
-
 
 namespace DB
 {
 
-PrometheusMetricsWriter::PrometheusMetricsWriter(
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_name,
-    const AsynchronousMetrics & async_metrics_)
-    : async_metrics(async_metrics_)
-    , send_events(config.getBool(config_name + ".events", true))
-    , send_metrics(config.getBool(config_name + ".metrics", true))
-    , send_asynchronous_metrics(config.getBool(config_name + ".asynchronous_metrics", true))
-    , send_errors(config.getBool(config_name + ".errors", true))
+void PrometheusMetricsWriter::writeEvents(WriteBuffer & wb) const
 {
+    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
+        writeEvent(wb, i);
 }
 
-void PrometheusMetricsWriter::write(WriteBuffer & wb) const
+void PrometheusMetricsWriter::writeMetrics(WriteBuffer & wb) const
 {
-    if (send_events)
+    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        writeMetric(wb, i);
+}
+
+void PrometheusMetricsWriter::writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const
+{
+    writeAsyncMetrics(wb, async_metrics.getValues());
+}
+
+void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
+{
+    size_t total_count = 0;
+
+    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
-        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-            writeEvent(wb, i);
+        const auto & error = ErrorCodes::values[i].get();
+        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+
+        if (name.empty())
+            continue;
+
+        std::string key{error_metrics_prefix + toString(name)};
+        std::string help = fmt::format("The number of {} errors since last server restart", name);
+
+        writeOutLine(wb, "# HELP", key, help);
+        writeOutLine(wb, "# TYPE", key, "counter");
+        /// We are interested in errors which are happened only on this server.
+        writeOutLine(wb, key, error.local.count);
+
+        total_count += error.local.count;
     }
 
-    if (send_metrics)
+    /// Write the total number of errors as a separate metric
+    std::string key{error_metrics_prefix + toString("ALL")};
+    writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
+    writeOutLine(wb, "# TYPE", key, "counter");
+    writeOutLine(wb, key, total_count);
+}
+
+void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family)
+{
+    std::string base_name = histogram_prefix + family.getName();
+    if (!replaceInvalidChars(base_name))
+        return;
+
+    std::string help_text = family.getDocumentation();
+    convertHelpToSingleLine(help_text);
+
+    writeOutLine(wb, "# HELP", base_name, help_text);
+    writeOutLine(wb, "# TYPE", base_name, "histogram");
+
+    family.forEachMetric([&wb, &family, &base_name](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
     {
-        for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-            writeMetric(wb, i);
-    }
+        const auto & buckets = family.getBuckets();
+        const auto & labels = family.getLabels();
+        HistogramMetrics::Metric::Counter cumulative_count = 0;
 
-    if (send_asynchronous_metrics)
-        writeAsyncMetrics(wb, async_metrics.getValues());
-
-    if (send_errors)
-    {
-        size_t total_count = 0;
-
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+        for (size_t i = 0; i < buckets.size() + 1; ++i)
         {
-            const auto & error = ErrorCodes::values[i].get();
-            std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+            cumulative_count += metric.getCounter(i);
 
-            if (name.empty())
-                continue;
+            wb << base_name << "_bucket{";
 
-            std::string key{error_metrics_prefix + toString(name)};
-            std::string help = fmt::format("The number of {} errors since last server restart", name);
+            for (size_t j = 0; j < labels.size(); ++j)
+            {
+                wb << labels[j] << "=\"" << label_values[j] << "\",";
+            }
 
-            writeOutLine(wb, "# HELP", key, help);
-            writeOutLine(wb, "# TYPE", key, "counter");
-            /// We are interested in errors which are happened only on this server.
-            writeOutLine(wb, key, error.local.count);
+            wb << "le=\"";
+            if (i != buckets.size())
+            {
+                wb << buckets[i];
+            }
+            else
+            {
+                wb << "+Inf";
+            }
 
-            total_count += error.local.count;
+            wb << "\"}" << ' ' << cumulative_count << '\n';
         }
 
-        /// Write the total number of errors as a separate metric
-        std::string key{error_metrics_prefix + toString("ALL")};
-        writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
-        writeOutLine(wb, "# TYPE", key, "counter");
-        writeOutLine(wb, key, total_count);
-    }
+        wb << base_name << "_count";
+        if (!labels.empty())
+        {
+            wb << '{';
+            for (size_t j = 0; j < labels.size(); ++j)
+            {
+                if (j != 0)
+                {
+                    wb << ',';
+                }
+                wb << labels[j] << "=\"" << label_values[j] << '"';
+            }
+            wb << '}';
+        }
+        wb << ' ' << cumulative_count << '\n';
 
+        wb << base_name << "_sum";
+        if (!labels.empty())
+        {
+            wb << '{';
+            for (size_t j = 0; j < labels.size(); ++j)
+            {
+                if (j > 0)
+                {
+                    wb << ',';
+                }
+                wb << labels[j] << "=\"" << label_values[j] << '"';
+            }
+            wb << '}';
+        }
+        wb << ' ' << metric.getSum() << '\n';
+    });
 }
 
-void KeeperPrometheusMetricsWriter::write([[maybe_unused]] WriteBuffer & wb) const
+void PrometheusMetricsWriter::writeHistogramMetrics(WriteBuffer & wb) const
+{
+    HistogramMetrics::Factory::instance().forEachFamily([&wb](const HistogramMetrics::MetricFamily & family)
+    {
+        writeHistogramMetric(wb, family);
+    });
+}
+
+void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const DimensionalMetrics::MetricFamily & family)
+{
+    std::string base_name = dimensional_metrics_prefix + family.getName();
+    if (!replaceInvalidChars(base_name))
+        return;
+
+    std::string help_text = family.getDocumentation();
+    convertHelpToSingleLine(help_text);
+
+    writeOutLine(wb, "# HELP", base_name, help_text);
+    writeOutLine(wb, "# TYPE", base_name, "gauge");
+
+    family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
+    {
+        wb << base_name;
+        const auto & labels = family.getLabels();
+        if (!labels.empty())
+        {
+            wb << '{';
+            for (size_t i = 0; i < labels.size(); ++i)
+            {
+                if (i != 0)
+                {
+                    wb << ',';
+                }
+                wb << labels[i] << "=\"" << label_values[i] << '"';
+            }
+            wb << '}';
+        }
+        wb << ' ' << metric.get() << '\n';
+    });
+}
+
+void PrometheusMetricsWriter::writeDimensionalMetrics(WriteBuffer & wb) const
+{
+    DimensionalMetrics::Factory::instance().forEachFamily([&wb](const DimensionalMetrics::MetricFamily & family)
+    {
+        writeDimensionalMetric(wb, family);
+    });
+}
+
+void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
+{
+    std::string key{"ClickHouse_Info"};
+
+    writeOutLine(wb, "# HELP", key, "ClickHouse server information");
+    writeOutLine(wb, "# TYPE", key, "gauge");
+
+    wb << key << '{';
+    wb << "name=\"" << VERSION_NAME << "\"";
+    wb << ",version=\"" << VERSION_STRING << "\"";
+    wb << ",version_describe=\"" << VERSION_DESCRIBE << "\"";
+    wb << ",version_major=\"" << VERSION_MAJOR << "\"";
+    wb << ",version_minor=\"" << VERSION_MINOR << "\"";
+    wb << ",version_patch=\"" << VERSION_PATCH << "\"";
+    wb << '}' << " 1" << '\n';
+}
+
+
+void KeeperPrometheusMetricsWriter::writeEvents([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
-    if (send_events)
-    {
-        for (auto event : ProfileEvents::keeper_profile_events)
-            writeEvent(wb, event);
-    }
-
-    if (send_metrics)
-    {
-        for (auto metric : CurrentMetrics::keeper_metrics)
-            writeMetric(wb, metric);
-    }
-
-    if (send_asynchronous_metrics)
-        writeAsyncMetrics(wb, async_metrics.getValues());
+    for (auto event : ProfileEvents::keeper_profile_events)
+        writeEvent(wb, event);
 #endif
+}
+
+void KeeperPrometheusMetricsWriter::writeMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    for (auto metric : CurrentMetrics::keeper_metrics)
+        writeMetric(wb, metric);
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] WriteBuffer & wb,
+                                                             [[maybe_unused]] const AsynchronousMetrics & async_metrics) const
+{
+#if USE_NURAFT
+    writeAsyncMetrics(wb, async_metrics.getValues());
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeHistogramMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    for (const auto * histogram : HistogramMetrics::keeper_histograms)
+    {
+        writeHistogramMetric(wb, *histogram);
+    }
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeDimensionalMetrics([[maybe_unused]] WriteBuffer & wb) const
+{
+#if USE_NURAFT
+    for (const auto * metric : DimensionalMetrics::keeper_dimensional_metrics)
+    {
+        writeDimensionalMetric(wb, *metric);
+    }
+#endif
+}
+
+void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
+{
 }
 
 }

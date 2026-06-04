@@ -1,32 +1,3 @@
-// Based on https://github.com/amdn/itoa and combined with our optimizations
-//
-//=== itoa.cpp - Fast integer to ascii conversion                 --*- C++ -*-//
-//
-// The MIT License (MIT)
-// Copyright (c) 2016 Arturo Martin-de-Nicolas
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-//     The above copyright notice and this permission notice shall be included
-//     in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-//===----------------------------------------------------------------------===//
-
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
 #include <type_traits>
 #include <base/defines.h>
 #include <base/extended_types.h>
@@ -34,110 +5,25 @@
 
 namespace
 {
-template <typename T>
-ALWAYS_INLINE inline constexpr T pow10(size_t x)
-{
-    return x ? 10 * pow10<T>(x - 1) : 1;
-}
-
-// Division by a power of 10 is implemented using a multiplicative inverse.
-// This strength reduction is also done by optimizing compilers, but
-// presently the fastest results are produced by using the values
-// for the multiplication and the shift as given by the algorithm
-// described by Agner Fog in "Optimizing Subroutines in Assembly Language"
-//
-// http://www.agner.org/optimize/optimizing_assembly.pdf
-//
-// "Integer division by a constant (all processors)
-// A floating point number can be divided by a constant by multiplying
-// with the reciprocal. If we want to do the same with integers, we have
-// to scale the reciprocal by 2n and then shift the product to the right
-// by n. There are various algorithms for finding a suitable value of n
-// and compensating for rounding errors. The algorithm described below
-// was invented by Terje Mathisen, Norway, and not published elsewhere."
-
-/// Division by constant is performed by:
-/// 1. Adding 1 if needed;
-/// 2. Multiplying by another constant;
-/// 3. Shifting right by another constant.
-template <typename UInt, bool add_, UInt multiplier_, unsigned shift_>
-struct Division
-{
-    static constexpr bool add{add_};
-    static constexpr UInt multiplier{multiplier_};
-    static constexpr unsigned shift{shift_};
-};
-
-/// Select a type with appropriate number of bytes from the list of types.
-/// First parameter is the number of bytes requested. Then goes a list of types with 1, 2, 4, ... number of bytes.
-/// Example: SelectType<4, uint8_t, uint16_t, uint32_t, uint64_t> will select uint32_t.
-template <size_t N, typename T, typename... Ts>
-struct SelectType
-{
-    using Result = typename SelectType<N / 2, Ts...>::Result;
-};
-
-template <typename T, typename... Ts>
-struct SelectType<1, T, Ts...>
-{
-    using Result = T;
-};
-
-
-/// Division by 10^N where N is the size of the type.
-template <size_t N>
-using DivisionBy10PowN = typename SelectType<
-    N,
-    Division<uint8_t, false, 205U, 11>, /// divide by 10
-    Division<uint16_t, true, 41943U, 22>, /// divide by 100
-    Division<uint32_t, false, 3518437209U, 45>, /// divide by 10000
-    Division<uint64_t, false, 12379400392853802749ULL, 90> /// divide by 100000000
-    >::Result;
-
-template <size_t N>
-using UnsignedOfSize = typename SelectType<N, uint8_t, uint16_t, uint32_t, uint64_t, __uint128_t>::Result;
-
-/// Holds the result of dividing an unsigned N-byte variable by 10^N resulting in
-template <size_t N>
-struct QuotientAndRemainder
-{
-    UnsignedOfSize<N> quotient; // quotient with fewer than 2*N decimal digits
-    UnsignedOfSize<N / 2> remainder; // remainder with at most N decimal digits
-};
-
-template <size_t N>
-QuotientAndRemainder<N> inline split(UnsignedOfSize<N> value)
-{
-    constexpr DivisionBy10PowN<N> division;
-
-    UnsignedOfSize<N> quotient = (division.multiplier * (UnsignedOfSize<2 * N>(value) + division.add)) >> division.shift;
-    UnsignedOfSize<N / 2> remainder = static_cast<UnsignedOfSize<N / 2>>(value - quotient * pow10<UnsignedOfSize<N / 2>>(N));
-
-    return {quotient, remainder};
-}
-
-ALWAYS_INLINE inline char * outDigit(char * p, uint8_t value)
+ALWAYS_INLINE inline char * outOneDigit(char * p, uint8_t value)
 {
     *p = '0' + value;
-    ++p;
-    return p;
+    return p + 1;
 }
 
 // Using a lookup table to convert binary numbers from 0 to 99
 // into ascii characters as described by Andrei Alexandrescu in
 // https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
-
-const char digits[201] = "00010203040506070809"
-                         "10111213141516171819"
-                         "20212223242526272829"
-                         "30313233343536373839"
-                         "40414243444546474849"
-                         "50515253545556575859"
-                         "60616263646566676869"
-                         "70717273747576777879"
-                         "80818283848586878889"
-                         "90919293949596979899";
-
+constexpr char digits[201] = "00010203040506070809"
+                             "10111213141516171819"
+                             "20212223242526272829"
+                             "30313233343536373839"
+                             "40414243444546474849"
+                             "50515253545556575859"
+                             "60616263646566676869"
+                             "70717273747576777879"
+                             "80818283848586878889"
+                             "90919293949596979899";
 ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
 {
     memcpy(p, &digits[value * 2], 2);
@@ -145,207 +31,387 @@ ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
     return p;
 }
 
-namespace convert
+namespace jeaiii
 {
-template <typename UInt, size_t N = sizeof(UInt)>
-char * head(char * p, UInt u);
-template <typename UInt, size_t N = sizeof(UInt)>
-char * tail(char * p, UInt u);
+/*
+    MIT License
 
-//===----------------------------------------------------------===//
-//     head: find most significant digit, skip leading zeros
-//===----------------------------------------------------------===//
+    Copyright (c) 2022 James Edward Anhalt III - https://github.com/jeaiii/itoa
 
-// "x" contains quotient and remainder after division by 10^N
-// quotient is less than 10^N
-template <size_t N>
-ALWAYS_INLINE inline char * head(char * p, QuotientAndRemainder<N> x)
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/
+struct pair
 {
-    p = head(p, UnsignedOfSize<N / 2>(x.quotient));
-    p = tail(p, x.remainder);
-    return p;
-}
+    char dd[2];
+    constexpr pair(char c) : dd{c, '\0'} { } /// NOLINT(google-explicit-constructor)
+    constexpr pair(int n) : dd{"0123456789"[n / 10], "0123456789"[n % 10]} { } /// NOLINT(google-explicit-constructor)
+};
 
-// "u" is less than 10^2*N
-template <typename UInt, size_t N>
-ALWAYS_INLINE inline char * head(char * p, UInt u)
+constexpr struct
 {
-    return u < pow10<UnsignedOfSize<N>>(N) ? head(p, UnsignedOfSize<N / 2>(u)) : head<N>(p, split<N>(u));
-}
+    pair dd[100]{
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, //
+        10, 11, 12, 13, 14, 15, 16, 17, 18, 19, //
+        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, //
+        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, //
+        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, //
+        50, 51, 52, 53, 54, 55, 56, 57, 58, 59, //
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, //
+        70, 71, 72, 73, 74, 75, 76, 77, 78, 79, //
+        80, 81, 82, 83, 84, 85, 86, 87, 88, 89, //
+        90, 91, 92, 93, 94, 95, 96, 97, 98, 99, //
+    };
+    pair fd[100]{
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', //
+        10,  11,  12,  13,  14,  15,  16,  17,  18,  19, //
+        20,  21,  22,  23,  24,  25,  26,  27,  28,  29, //
+        30,  31,  32,  33,  34,  35,  36,  37,  38,  39, //
+        40,  41,  42,  43,  44,  45,  46,  47,  48,  49, //
+        50,  51,  52,  53,  54,  55,  56,  57,  58,  59, //
+        60,  61,  62,  63,  64,  65,  66,  67,  68,  69, //
+        70,  71,  72,  73,  74,  75,  76,  77,  78,  79, //
+        80,  81,  82,  83,  84,  85,  86,  87,  88,  89, //
+        90,  91,  92,  93,  94,  95,  96,  97,  98,  99, //
+    };
+} digits;
 
-// recursion base case, selected when "u" is one byte
-template <>
-ALWAYS_INLINE inline char * head<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+constexpr UInt64 mask24 = (UInt64(1) << 24) - 1;
+constexpr UInt64 mask32 = (UInt64(1) << 32) - 1;
+constexpr UInt64 mask57 = (UInt64(1) << 57) - 1;
+
+template <bool, class, class F>
+struct _cond
 {
-    return u < 10 ? outDigit(p, u) : outTwoDigits(p, u);
-}
-
-//===----------------------------------------------------------===//
-//     tail: produce all digits including leading zeros
-//===----------------------------------------------------------===//
-
-// recursive step, "u" is less than 10^2*N
-template <typename UInt, size_t N>
-ALWAYS_INLINE inline char * tail(char * p, UInt u)
+    using type = F;
+};
+template <class T, class F>
+struct _cond<true, T, F>
 {
-    QuotientAndRemainder<N> x = split<N>(u);
-    p = tail(p, UnsignedOfSize<N / 2>(x.quotient));
-    p = tail(p, x.remainder);
-    return p;
-}
+    using type = T;
+};
+template <bool B, class T, class F>
+using cond = typename _cond<B, T, F>::type;
 
-// recursion base case, selected when "u" is one byte
-template <>
-ALWAYS_INLINE inline char * tail<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+template <class T>
+inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 {
-    return outTwoDigits(p, u);
-}
+    constexpr auto q = sizeof(T);
+    using U = cond<q == 1, char8_t, cond<q <= sizeof(UInt16), UInt16, cond<q <= sizeof(UInt32), UInt32, UInt64>>>;
 
-//===----------------------------------------------------------===//
-// large values are >= 10^2*N
-// where x contains quotient and remainder after division by 10^N
-//===----------------------------------------------------------===//
-template <size_t N>
-ALWAYS_INLINE inline char * large(char * p, QuotientAndRemainder<N> x)
-{
-    QuotientAndRemainder<N> y = split<N>(x.quotient);
-    p = head(p, UnsignedOfSize<N / 2>(y.quotient));
-    p = tail(p, y.remainder);
-    p = tail(p, x.remainder);
-    return p;
-}
+    // convert bool to int before test with unary + to silence warning if T happens to be bool
+    U const n = +i < 0 ? *b++ = '-', U(0) - U(i) : U(i);
 
-//===----------------------------------------------------------===//
-// handle values of "u" that might be >= 10^2*N
-// where N is the size of "u" in bytes
-//===----------------------------------------------------------===//
-template <typename UInt, size_t N = sizeof(UInt)>
-ALWAYS_INLINE inline char * uitoa(char * p, UInt u)
-{
-    if (u < pow10<UnsignedOfSize<N>>(N))
-        return head(p, UnsignedOfSize<N / 2>(u));
-    QuotientAndRemainder<N> x = split<N>(u);
+    if (n < U(1e2))
+    {
+        /// This is changed from the original jeaiii implementation
+        /// For small numbers the extra branch to call outOneDigit() is worth it as it saves some instructions
+        /// and a memory access (no need to read digits.fd[n])
+        /// This is not true for pure random numbers, but that's not the common use case of a database
+        /// Original jeaii code
+        //      *reinterpret_cast<pair *>(b) = digits.fd[n];
+        //      return n < 10 ? b + 1 : b + 2;
+        return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
+    }
+    if (n < UInt32(1e6))
+    {
+        if (sizeof(U) == 1 || n < U(1e4))
+        {
+            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * n;
+            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
+            if constexpr (sizeof(U) == 1)
+                b -= 1;
+            else
+                b -= n < U(1e3);
+            auto f2 = (f0 & mask24) * 100;
+            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
+            return b + 4;
+        }
+        auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * n;
+        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
+        if constexpr (sizeof(U) == 2)
+            b -= 1;
+        else
+            b -= n < U(1e5);
+        auto f2 = (f0 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+        auto f4 = (f2 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+        return b + 6;
+    }
+    if (sizeof(U) == 4 || n < UInt64(1ull << 32ull))
+    {
+        if (n < U(1e8))
+        {
+            auto f0 = UInt64(10 * (1ull << 48ull) / 1e7 + 1) * n >> 16;
+            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
+            b -= n < U(1e7);
+            auto f2 = (f0 & mask32) * 100;
+            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+            auto f4 = (f2 & mask32) * 100;
+            *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+            auto f6 = (f4 & mask32) * 100;
+            *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
+            return b + 8;
+        }
+        auto f0 = UInt64(10 * (1ull << 57ull) / 1e9 + 1) * n;
+        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 57];
+        b -= n < UInt32(1e9);
+        auto f2 = (f0 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 57];
+        auto f4 = (f2 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 57];
+        auto f6 = (f4 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 57];
+        auto f8 = (f6 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 8) = digits.dd[f8 >> 57];
+        return b + 10;
+    }
 
-    return u < pow10<UnsignedOfSize<N>>(2 * N) ? head<N>(p, x) : large<N>(p, x);
-}
+    // if we get here U must be UInt64 but some compilers don't know that, so reassign n to a UInt64 to avoid warnings
+    UInt32 z = n % UInt32(1e8);
+    UInt64 u = n / UInt32(1e8);
 
-// selected when "u" is one byte
-template <>
-ALWAYS_INLINE inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
-{
-    if (u < 10)
-        return outDigit(p, u);
-    else if (u < 100)
-        return outTwoDigits(p, u);
+    if (u < UInt32(1e2))
+    {
+        // u can't be 1 digit (if u < 10 it would have been handled above as a 9 digit 32bit number)
+        *reinterpret_cast<pair *>(b) = digits.dd[u];
+        b += 2;
+    }
+    else if (u < UInt32(1e6))
+    {
+        if (u < UInt32(1e4))
+        {
+            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * u;
+            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
+            b -= u < UInt32(1e3);
+            auto f2 = (f0 & mask24) * 100;
+            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
+            b += 4;
+        }
+        else
+        {
+            auto f0 = UInt64(10 * (1ull << 32ull) / 1e5 + 1) * u;
+            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
+            b -= u < UInt32(1e5);
+            auto f2 = (f0 & mask32) * 100;
+            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+            auto f4 = (f2 & mask32) * 100;
+            *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+            b += 6;
+        }
+    }
+    else if (u < UInt32(1e8))
+    {
+        auto f0 = UInt64(10 * (1ull << 48ull) / 1e7 + 1) * u >> 16;
+        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 32];
+        b -= u < UInt32(1e7);
+        auto f2 = (f0 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+        auto f4 = (f2 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+        auto f6 = (f4 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
+        b += 8;
+    }
+    else if (u < UInt64(1ull << 32ull))
+    {
+        auto f0 = UInt64(10 * (1ull << 57ull) / 1e9 + 1) * u;
+        *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 57];
+        b -= u < UInt32(1e9);
+        auto f2 = (f0 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 57];
+        auto f4 = (f2 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 57];
+        auto f6 = (f4 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 57];
+        auto f8 = (f6 & mask57) * 100;
+        *reinterpret_cast<pair *>(b + 8) = digits.dd[f8 >> 57];
+        b += 10;
+    }
     else
     {
-        p = outDigit(p, u / 100);
-        p = outTwoDigits(p, u % 100);
-        return p;
+        UInt32 y = u % UInt32(1e8);
+        u /= UInt32(1e8);
+
+        // u is 2, 3, or 4 digits (if u < 10 it would have been handled above)
+        if (u < UInt32(1e2))
+        {
+            *reinterpret_cast<pair *>(b) = digits.dd[u];
+            b += 2;
+        }
+        else
+        {
+            auto f0 = UInt32(10 * (1 << 24) / 1e3 + 1) * u;
+            *reinterpret_cast<pair *>(b) = digits.fd[f0 >> 24];
+            b -= u < UInt32(1e3);
+            auto f2 = (f0 & mask24) * 100;
+            *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 24];
+            b += 4;
+        }
+        // do 8 digits
+        auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * y >> 16) + 1;
+        *reinterpret_cast<pair *>(b) = digits.dd[f0 >> 32];
+        auto f2 = (f0 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+        auto f4 = (f2 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+        auto f6 = (f4 & mask32) * 100;
+        *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
+        b += 8;
+    }
+    // do 8 digits
+    auto f0 = (UInt64((1ull << 48ull) / 1e6 + 1) * z >> 16) + 1;
+    *reinterpret_cast<pair *>(b) = digits.dd[f0 >> 32];
+    auto f2 = (f0 & mask32) * 100;
+    *reinterpret_cast<pair *>(b + 2) = digits.dd[f2 >> 32];
+    auto f4 = (f2 & mask32) * 100;
+    *reinterpret_cast<pair *>(b + 4) = digits.dd[f4 >> 32];
+    auto f6 = (f4 & mask32) * 100;
+    *reinterpret_cast<pair *>(b + 6) = digits.dd[f6 >> 32];
+    return b + 8;
+}
+}
+
+constexpr uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
+constexpr int max_multiple_of_hundred_blocks = 9;
+static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
+
+/// Divide a 128-bit unsigned integer by 10^18 using Barrett reduction.
+/// Returns the quotient and stores the remainder in `remainder`.
+/// This replaces the expensive `__udivti3` compiler runtime call with
+/// a few multiplications and one correction step.
+///
+/// Barrett reduction: q ≈ floor(n * M / 2^128) where M = floor(2^128 / 10^18).
+/// The approximation may be off by 1, corrected by checking the remainder.
+ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t & remainder)
+{
+    /// M = floor(2^128 / 10^18) = 340282366920938463463 (69 bits)
+    /// Split as M_hi:M_lo where M = M_hi * 2^64 + M_lo.
+    constexpr uint64_t M_lo = 0x725DD1D243ABA0E7ULL;
+    constexpr uint64_t M_hi = 0x12ULL;
+
+    /// Compute q = (n * M) >> 128 using schoolbook 64-bit multiplication.
+    ///
+    /// n * M = (n_hi * 2^64 + n_lo) * (M_hi * 2^64 + M_lo)
+    ///       = n_hi*M_hi * 2^128 + (n_hi*M_lo + n_lo*M_hi) * 2^64 + n_lo*M_lo
+    ///
+    /// We need the bits at position 128 and above.
+    uint64_t n_lo = static_cast<uint64_t>(n);
+    uint64_t n_hi = static_cast<uint64_t>(n >> 64);
+
+    /// Carry from n_lo * M_lo (upper 64 bits of 128-bit product)
+    unsigned __int128 c = static_cast<unsigned __int128>(n_lo) * M_lo;
+    uint64_t c_hi = static_cast<uint64_t>(c >> 64);
+
+    /// Middle terms + carry, computed in 128 bits to capture overflow
+    unsigned __int128 mid = static_cast<unsigned __int128>(n_hi) * M_lo
+                          + static_cast<unsigned __int128>(n_lo) * M_hi
+                          + c_hi;
+
+    /// High part: n_hi * M_hi + carry from mid. This is the quotient approximation.
+    /// n_hi * M_hi can exceed 64 bits (up to 68 bits), so use 128-bit arithmetic.
+    unsigned __int128 q = static_cast<unsigned __int128>(n_hi) * M_hi
+                        + static_cast<uint64_t>(mid >> 64);
+
+    /// Correct: Barrett approximation may be off by 1.
+    unsigned __int128 r = n - q * max_multiple_of_hundred_that_fits_in_64_bits;
+    if (r >= max_multiple_of_hundred_that_fits_in_64_bits)
+    {
+        q++;
+        r -= max_multiple_of_hundred_that_fits_in_64_bits;
+    }
+    remainder = static_cast<uint64_t>(r);
+    return q;
+}
+
+/// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
+ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
+{
+    for (int i = 0; i < max_multiple_of_hundred_blocks; ++i)
+    {
+        two_values[i] = uint8_t(remainder % 100);
+        remainder /= 100;
     }
 }
 
-//===----------------------------------------------------------===//
-//     handle unsigned and signed integral operands
-//===----------------------------------------------------------===//
-
-// itoa: handle unsigned integral operands (selected by SFINAE)
-template <typename U, std::enable_if_t<!std::is_signed_v<U> && std::is_integral_v<U>> * = nullptr>
-ALWAYS_INLINE inline char * itoa(U u, char * p)
+/// Write `count` digit pairs from `two_values` (in reverse order) to the output buffer.
+template <int count>
+ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values)
 {
-    return convert::uitoa(p, u);
-}
-
-// itoa: handle signed integral operands (selected by SFINAE)
-template <typename I, size_t N = sizeof(I), std::enable_if_t<std::is_signed_v<I> && std::is_integral_v<I>> * = nullptr>
-ALWAYS_INLINE inline char * itoa(I i, char * p)
-{
-    // Need "mask" to be filled with a copy of the sign bit.
-    // If "i" is a negative value, then the result of "operator >>"
-    // is implementation-defined, though usually it is an arithmetic
-    // right shift that replicates the sign bit.
-    // Use a conditional expression to be portable,
-    // a good optimizing compiler generates an arithmetic right shift
-    // and avoids the conditional branch.
-    UnsignedOfSize<N> mask = i < 0 ? ~UnsignedOfSize<N>(0) : 0;
-    // Now get the absolute value of "i" and cast to unsigned type UnsignedOfSize<N>.
-    // Cannot use std::abs() because the result is undefined
-    // in 2's complement systems for the most-negative value.
-    // Want to avoid conditional branch for performance reasons since
-    // CPU branch prediction will be ineffective when negative values
-    // occur randomly.
-    // Let "u" be "i" cast to unsigned type UnsignedOfSize<N>.
-    // Subtract "u" from 2*u if "i" is positive or 0 if "i" is negative.
-    // This yields the absolute value with the desired type without
-    // using a conditional branch and without invoking undefined or
-    // implementation defined behavior:
-    UnsignedOfSize<N> u = ((2 * UnsignedOfSize<N>(i)) & ~mask) - UnsignedOfSize<N>(i);
-    // Unconditionally store a minus sign when producing digits
-    // in a forward direction and increment the pointer only if
-    // the value is in fact negative.
-    // This avoids a conditional branch and is safe because we will
-    // always produce at least one digit and it will overwrite the
-    // minus sign when the value is not negative.
-    *p = '-';
-    p += (mask & 1);
-    p = convert::uitoa(p, u);
+    for (int i = count - 1; i >= 0; --i)
+    {
+        outTwoDigits(p, two_values[i]);
+        p += 2;
+    }
     return p;
 }
-}
 
-const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
-const int max_multiple_of_hundred_blocks = 9;
-static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
+ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values, int count)
+{
+    for (int i = count - 1; i >= 0; --i)
+    {
+        outTwoDigits(p, two_values[i]);
+        p += 2;
+    }
+    return p;
+}
 
 ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
 {
-    /// If we the highest 64bit item is empty, we can print just the lowest item as u64
-    if (_x.items[UInt128::_impl::little(1)] == 0)
-        return convert::itoa(_x.items[UInt128::_impl::little(0)], p);
+    /// If the highest 64-bit item is empty, we can print just the lowest item as u64.
+    /// Even though technically there are more numbers in the range where this isn't true, in real-life data this isn't the case
+    if (likely(_x.items[UInt128::_impl::little(1)] == 0))
+        return jeaiii::to_text_from_integer(p, _x.items[UInt128::_impl::little(0)]);
 
-    /// Doing operations using __int128 is faster and we already rely on this feature
+    /// Doing operations using __int128 is faster and we already rely on this feature.
     using T = unsigned __int128;
     T x = (T(_x.items[UInt128::_impl::little(1)]) << 64) + T(_x.items[UInt128::_impl::little(0)]);
 
-    /// We are going to accumulate blocks of 2 digits to print until the number is small enough to be printed as u64
-    /// To do this we could do: x / 100, x % 100
-    /// But these would mean doing many iterations with long integers, so instead we divide by a much longer integer
-    /// multiple of 100 (100^9) and then get the blocks out of it (as u64)
-    /// Once we reach u64::max we can stop and use the fast method to print that in the front
-    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    static const T largest_uint64 = std::numeric_limits<uint64_t>::max();
-    uint8_t two_values[20] = {0}; // 39 Max characters / 2
+    /// Split into blocks of up to 18 digits (10^18 per block) using Barrett reduction.
+    /// UInt128 max is ~3.4e38, so at most 2 divisions are needed.
+    /// Unrolled: first division always needed (x > uint64 max since high item != 0),
+    /// second division only if quotient still exceeds uint64 max.
+    uint8_t two_values[18] = {0};
 
-    int current_block = 0;
-    while (x > largest_uint64)
+    uint64_t r1 = 0;
+    x = divmod_1e18(x, r1);
+    extractDigitPairs(r1, two_values);
+
+    constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
+    if (unlikely(x > largest_uint64))
     {
-        uint64_t u64_remainder = uint64_t(x % large_divisor);
-        x /= large_divisor;
+        uint64_t r2 = 0;
+        x = divmod_1e18(x, r2);
+        extractDigitPairs(r2, two_values + max_multiple_of_hundred_blocks);
 
-        int pos = current_block;
-        while (u64_remainder)
-        {
-            two_values[pos] = uint8_t(u64_remainder % 100);
-            pos++;
-            u64_remainder /= 100;
-        }
-        current_block += max_multiple_of_hundred_blocks;
+        char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+        return writeDigitPairs<2 * max_multiple_of_hundred_blocks>(out, two_values);
     }
 
-    char * highest_part_print = convert::itoa(uint64_t(x), p);
-    for (int i = 0; i < current_block; i++)
-    {
-        outTwoDigits(highest_part_print, two_values[current_block - 1 - i]);
-        highest_part_print += 2;
-    }
-
-    return highest_part_print;
+    char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+    return writeDigitPairs<max_multiple_of_hundred_blocks>(out, two_values);
 }
 
 ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
 {
     /// If possible, treat it as a smaller integer as they are much faster to print
-    if (_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0)
+    if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
         return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
 
     /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
@@ -373,21 +439,14 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
 
-    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    static const T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
+    constexpr T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    constexpr T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
 
     while (x > largest_uint128)
     {
         uint64_t u64_remainder = uint64_t(x % large_divisor);
         x /= large_divisor;
-
-        int pos = current_pos;
-        while (u64_remainder)
-        {
-            two_values[pos] = uint8_t(u64_remainder % 100);
-            pos++;
-            u64_remainder /= 100;
-        }
+        extractDigitPairs(u64_remainder, two_values + current_pos);
         current_pos += max_multiple_of_hundred_blocks;
     }
 
@@ -397,14 +456,8 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
 #endif
 
-    char * highest_part_print = writeUIntText(pending, p);
-    for (int i = 0; i < current_pos; i++)
-    {
-        outTwoDigits(highest_part_print, two_values[current_pos - 1 - i]);
-        highest_part_print += 2;
-    }
-
-    return highest_part_print;
+    char * out = writeUIntText(pending, p);
+    return writeDigitPairs(out, two_values, current_pos);
 }
 
 ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
@@ -419,20 +472,20 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
     static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
 
     using UnsignedT = make_unsigned_t<T>;
-    static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
+    constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
 
     if (unlikely(x == min_int))
     {
         if constexpr (std::is_same_v<T, Int128>)
         {
             const char * res = "-170141183460469231731687303715884105728";
-            memcpy(pos, res, strlen(res));
+            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
             return pos + strlen(res);
         }
         else if constexpr (std::is_same_v<T, Int256>)
         {
             const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-            memcpy(pos, res, strlen(res));
+            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
             return pos + strlen(res);
         }
     }
@@ -448,12 +501,12 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
 
 char * itoa(UInt8 i, char * p)
 {
-    return convert::itoa(uint8_t(i), p);
+    return jeaiii::to_text_from_integer(p, uint8_t(i));
 }
 
 char * itoa(Int8 i, char * p)
 {
-    return convert::itoa(int8_t(i), p);
+    return jeaiii::to_text_from_integer(p, int8_t(i));
 }
 
 char * itoa(UInt128 i, char * p)
@@ -479,7 +532,7 @@ char * itoa(Int256 i, char * p)
 #define DEFAULT_ITOA(T) \
     char * itoa(T i, char * p) \
     { \
-        return convert::itoa(i, p); \
+        return jeaiii::to_text_from_integer(p, i); \
     }
 
 #define FOR_MISSING_INTEGER_TYPES(M) \

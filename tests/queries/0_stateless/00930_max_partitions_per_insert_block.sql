@@ -9,6 +9,6 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 SET max_partitions_per_insert_block = 1;
 
 INSERT INTO partitions SELECT * FROM system.numbers LIMIT 1;
-INSERT INTO partitions SELECT * FROM system.numbers LIMIT 2; -- { serverError 252 }
+INSERT INTO partitions SELECT * FROM system.numbers LIMIT 2; -- { serverError TOO_MANY_PARTS }
 
 DROP TABLE partitions;

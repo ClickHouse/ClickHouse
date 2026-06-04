@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <Parsers/IAST.h>

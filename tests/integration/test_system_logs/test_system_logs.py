@@ -3,6 +3,7 @@
 # pylint: disable=redefined-outer-name
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -35,6 +36,18 @@ node3 = cluster.add_instance(
 )
 
 
+node4 = cluster.add_instance(
+    "node4",
+    base_config_dir="configs",
+    main_configs=[
+        "configs/config.d/system_logs_engine_s3_plain_rewritable_policy.xml",
+        "configs/config.d/disks.xml",
+    ],
+    with_minio=True,
+    stay_alive=True,
+)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -59,8 +72,9 @@ def test_system_logs_order_by_expr(start_cluster):
 
     # Check 'sorting_key' of  system.query_thread_log.
     assert (
-        node1.query(
-            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'"
+        node1.query_with_retry(
+            "SELECT sorting_key FROM system.tables WHERE database='system' and name='query_thread_log'",
+            check_callback=lambda x: len(x) > 0
         )
         == "event_date, event_time, query_id\n"
     )
@@ -74,6 +88,22 @@ def test_system_logs_engine_expr(start_cluster):
     # Check 'engine_full' of system.query_log.
     expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'policy2\\', ttl_only_drop_parts = 1"
     assert expected in node2.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
+
+
+def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
+    node4.query("SET log_query_threads = 1")
+    node4.query("SELECT count() FROM system.tables")
+    node4.query("SYSTEM FLUSH LOGS")
+
+    # Check 'engine_full' of system.query_log.
+    expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'s3_plain_rewritable\\', ttl_only_drop_parts = 1"
+    assert expected in node4.query(
+        "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
+    )
+    node4.restart_clickhouse()
+    assert expected in node4.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
     )
 
@@ -98,7 +128,7 @@ def test_max_size_0(start_cluster):
             f"""echo "
         <clickhouse>
             <query_log>
-                <max_size_rows replace=\\"replace\\">0</max_size_rows> 
+                <max_size_rows replace=\\"replace\\">0</max_size_rows>
                 <reserved_size_rows replace=\\"replace\\">0</reserved_size_rows>
             </query_log>
         </clickhouse>
@@ -114,7 +144,6 @@ def test_max_size_0(start_cluster):
     )
     node1.restart_clickhouse()
 
-
 def test_reserved_size_greater_max_size(start_cluster):
     node1.exec_in_container(
         [
@@ -124,7 +153,7 @@ def test_reserved_size_greater_max_size(start_cluster):
         <clickhouse>
             <query_log>
                 <max_size_rows replace=\\"replace\\">10</max_size_rows>
-                <reserved_size_rows replace=\\"replace\\">11</reserved_size_rows> 
+                <reserved_size_rows replace=\\"replace\\">11</reserved_size_rows>
             </query_log>
         </clickhouse>
         " > /etc/clickhouse-server/config.d/yyy-override-query_log.xml

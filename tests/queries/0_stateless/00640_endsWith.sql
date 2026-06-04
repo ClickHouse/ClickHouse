@@ -13,5 +13,5 @@ SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S1);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S2);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S2, S3);
 
-SELECT endsWith([], 'str'); -- { serverError 43 }
+SELECT endsWith([], 'str'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE endsWith_test;

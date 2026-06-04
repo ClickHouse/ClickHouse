@@ -1,9 +1,11 @@
-#include "FlatDictionary.h"
+#include <memory>
+#include <Dictionaries/FlatDictionary.h>
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ArenaUtils.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -56,7 +58,7 @@ ColumnPtr FlatDictionary::getColumn(
     DefaultOrFilter default_or_filter) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefault>(default_or_filter));
 
     ColumnPtr result;
 
@@ -92,45 +94,63 @@ ColumnPtr FlatDictionary::getColumn(
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    ids,
-                    [&](size_t, const Array & value, bool) { out->insert(value); },
-                    default_mask);
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, ids, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
             {
                 auto * out = column.get();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, const Object & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insert(value);
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, ids, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t row, std::string_view value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insertData(value.data(), value.size());
+                        },
                         default_mask);
+                else
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, ids, [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); }, default_mask);
             }
             else
             {
                 auto & out = column->getData();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         ids,
                         [&](size_t row, const auto value, bool is_null)
@@ -140,17 +160,9 @@ ColumnPtr FlatDictionary::getColumn(
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        ids,
-                        [&](size_t row, const auto value, bool) { out[row] = value; },
-                        default_mask);
-
-                out.resize(keys_found);
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, ids, [&](size_t row, const auto value, bool) { out[row] = value; }, default_mask);
             }
-
-            if (attribute.is_nullable_set)
-                vec_null_map_to->resize(keys_found);
         }
         else
         {
@@ -169,7 +181,17 @@ ColumnPtr FlatDictionary::getColumn(
                     [&](size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
             }
-            else if constexpr (std::is_same_v<ValueType, StringRef>)
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    ids,
+                    [&](size_t, const Map & value, bool) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
             {
                 auto * out = column.get();
 
@@ -177,17 +199,38 @@ ColumnPtr FlatDictionary::getColumn(
                     getItemsImpl<ValueType, true>(
                         attribute,
                         ids,
-                        [&](size_t row, StringRef value, bool is_null)
+                        [&](size_t row, const Object & value, bool is_null)
                         {
                             (*vec_null_map_to)[row] = is_null;
-                            out->insertData(value.data, value.size);
+                            out->insert(value);
                         },
                         default_value_extractor);
                 else
                     getItemsImpl<ValueType, false>(
                         attribute,
                         ids,
-                        [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
+                        [&](size_t, const Object & value, bool) { out->insert(value); },
+                        default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, std::string_view>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        ids,
+                        [&](size_t row, std::string_view value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insertData(value.data(), value.size());
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        ids,
+                        [&](size_t, std::string_view value, bool) { out->insertData(value.data(), value.size()); },
                         default_value_extractor);
             }
             else
@@ -260,7 +303,7 @@ ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -315,7 +358,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     std::optional<UInt64> null_value;
 
     if (!dictionary_attribute.null_value.isNull())
-        null_value = dictionary_attribute.null_value.get<UInt64>();
+        null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.container);
 
@@ -390,7 +433,7 @@ ColumnPtr FlatDictionary::getDescendants(
     PaddedPODArray<UInt64> keys_backup;
     const auto & keys = getColumnVectorData(this, key_column, keys_backup);
 
-    size_t keys_found;
+    size_t keys_found = 0;
     auto result = getKeysDescendantsArray(keys, *parent_to_child_index, level, keys_found);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
@@ -413,7 +456,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
     const auto keys_column = block.safeGetByPosition(0).column;
 
     DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
-    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena()); /// NOLINT(readability-static-accessed-through-instance)
     size_t keys_size = keys_extractor.getKeysSize();
 
     static constexpr size_t key_offset = 1;
@@ -465,39 +508,44 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
 void FlatDictionary::updateData()
 {
+    BlockIO io = source_ptr->loadUpdatedAll();
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
         update_field_loaded_block.reset();
-        Block block;
 
-        while (executor.pull(block))
+        io.executeWithCallbacks([&]()
         {
-            if (!block.rows())
-                continue;
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
 
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
-
-            for (size_t column_index = 0; column_index < block.columns(); ++column_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(column_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                removeSpecialColumnRepresentations(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+
+                for (size_t column_index = 0; column_index < block.columns(); ++column_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(column_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        });
     }
     else
     {
-        auto pipeline(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::Simple>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipeline));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)
@@ -508,12 +556,17 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        BlockIO io = source_ptr->loadAll();
 
-        Block block;
-        while (executor.pull(block))
-            blockToAttributes(block);
+        io.executeWithCallbacks([&]()
+        {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
+            Block block;
+            while (executor.pull(block))
+                blockToAttributes(block);
+        });
     }
     else
         updateData();
@@ -557,6 +610,16 @@ void FlatDictionary::calculateBytesAllocated()
                 /// It is not accurate calculations
                 bytes_allocated += sizeof(Array) * container.size();
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                /// It is not accurate calculations
+                bytes_allocated += sizeof(Map) * container.size();
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                /// It is not accurate calculations
+                bytes_allocated += sizeof(Object) * container.size();
+            }
             else
             {
                 bytes_allocated += container.allocated_bytes();
@@ -570,7 +633,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += sizeof(attribute.is_nullable_set);
 
         if (attribute.is_nullable_set.has_value())
-            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
+            bytes_allocated += attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)
@@ -588,7 +651,7 @@ void FlatDictionary::calculateBytesAllocated()
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
     auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-    Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}};
+    Attribute attribute{.is_nullable_set = std::move(is_nullable_set), .container = {}, .type = dictionary_attribute.underlying_type};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
@@ -643,11 +706,8 @@ void FlatDictionary::getItemsImpl(
 }
 
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-size_t FlatDictionary::getItemsShortCircuitImpl(
-    const Attribute & attribute,
-    const PaddedPODArray<UInt64> & keys,
-    ValueSetter && set_value,
-    IColumn::Filter & default_mask) const
+void FlatDictionary::getItemsShortCircuitImpl(
+    const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const
 {
     const auto rows = keys.size();
     default_mask.resize(rows);
@@ -660,22 +720,23 @@ size_t FlatDictionary::getItemsShortCircuitImpl(
 
         if (key < loaded_keys.size() && loaded_keys[key])
         {
+            keys_found++;
             default_mask[row] = 0;
 
             if constexpr (is_nullable)
-                set_value(keys_found, container[key], attribute.is_nullable_set->find(key) != nullptr);
+                set_value(row, container[key], attribute.is_nullable_set->find(key) != nullptr);
             else
-                set_value(keys_found, container[key], false);
-
-            ++keys_found;
+                set_value(row, container[key], false);
         }
         else
+        {
             default_mask[row] = 1;
+            set_value(row, AttributeType{}, true);
+        }
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    return keys_found;
 }
 
 template <typename T>
@@ -694,7 +755,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         const size_t elements_count = key + 1; //id=0 -> elements_count=1
         loaded_keys.resize(elements_count, false);
 
-        if constexpr (std::is_same_v<T, Array>)
+        if constexpr (std::is_same_v<T, Array> || std::is_same_v<T, Map> || std::is_same_v<T, Object>)
             container.resize(elements_count, T{});
         else
             container.resize_fill(elements_count, T{});
@@ -718,12 +779,12 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
             return;
         }
 
-        auto & attribute_value = value.get<AttributeType>();
+        auto & attribute_value = value.safeGet<AttributeType>();
 
         auto & container = std::get<ContainerType<ValueType>>(attribute.container);
         loaded_keys[key] = true;
 
-        if constexpr (std::is_same_v<ValueType, StringRef>)
+        if constexpr (std::is_same_v<ValueType, std::string_view>)
         {
             auto arena_value = copyStringInArena(string_arena, attribute_value);
             container[key] = arena_value;
@@ -758,6 +819,7 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
     return result;
 }
 
+void registerDictionaryFlat(DictionaryFactory & factory);
 void registerDictionaryFlat(DictionaryFactory & factory)
 {
     auto create_layout = [=](const std::string & full_name,

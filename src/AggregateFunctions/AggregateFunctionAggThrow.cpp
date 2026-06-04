@@ -16,7 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int AGGREGATE_FUNCTION_THROW;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -108,18 +108,45 @@ public:
 
 }
 
+void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        FunctionDocumentation::Description description_aggThrow = R"(
+This function can be used for the purpose of testing exception safety. It will throw an exception on creation with the specified probability.
+    )";
+    FunctionDocumentation::Syntax syntax_aggThrow = R"(
+aggThrow(throw_prob)
+    )";
+    FunctionDocumentation::Arguments arguments_aggThrow = {
+        {"throw_prob", "Probability to throw on creation.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_aggThrow = {"Returns an exception: `Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully`.", {}};
+    FunctionDocumentation::Examples examples_aggThrow = {
+    {
+        "Usage example",
+        R"(
+SELECT number % 2 AS even, aggThrow(number) FROM numbers(10) GROUP BY even;
+        )",
+        R"(
+Received exception:
+Code: 503. DB::Exception: Aggregate function aggThrow has thrown exception successfully: While executing AggregatingTransform. (AGGREGATE_FUNCTION_THROW)
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_aggThrow = {20, 1};
+    FunctionDocumentation::Category category_aggThrow = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_aggThrow = {description_aggThrow, syntax_aggThrow, arguments_aggThrow, {}, returned_value_aggThrow, examples_aggThrow, introduced_in_aggThrow, category_aggThrow};
+
+    factory.registerFunction("aggThrow", {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         Float64 throw_probability = 1.0;
         if (parameters.size() == 1)
             throw_probability = parameters[0].safeGet<Float64>();
         else if (parameters.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} cannot have more than one parameter", name);
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} cannot have more than one parameter", name);
 
         return std::make_shared<AggregateFunctionThrow>(argument_types, parameters, throw_probability);
-    });
+    }, documentation_aggThrow});
 }
 
 }

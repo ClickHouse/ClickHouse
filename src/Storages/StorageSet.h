@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage.h>
-#include <Storages/SetSettings.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -17,11 +16,13 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : public IStorage
+class StorageSetOrJoinBase : public StorageWithCommonVirtualColumns
 {
     friend class SetOrJoinSink;
 
 public:
+    static VirtualColumnsDescription createVirtuals();
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
@@ -83,8 +84,8 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows(const Settings & settings) const override;
-    std::optional<UInt64> totalBytes(const Settings & settings) const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
 private:
     /// Allows to concurrently truncate the set and work (read/fill) the existing set.

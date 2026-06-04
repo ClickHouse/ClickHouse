@@ -53,10 +53,10 @@ namespace DB
  *             max - the maximum column of the column chunk
  * */
 
-class ParquetMetadataInputFormat : public IInputFormat
+class ParquetMetadataInputFormat final : public IInputFormat
 {
 public:
-    ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ParquetMetadataInputFormat"; }
 
@@ -65,7 +65,7 @@ public:
 private:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -80,7 +80,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class ParquetMetadataSchemaReader : public ISchemaReader
+class ParquetMetadataSchemaReader final : public ISchemaReader
 {
 public:
     explicit ParquetMetadataSchemaReader(ReadBuffer & in_);

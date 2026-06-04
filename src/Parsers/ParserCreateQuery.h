@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
@@ -13,17 +14,9 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Poco/String.h>
 
+
 namespace DB
 {
-
-/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  */
-class ParserNestedTable : public IParserBase
-{
-protected:
-    const char * getName() const override { return "nested table"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /** Parses sql security option. DEFINER = user_name SQL SECURITY DEFINER
  */
@@ -68,7 +61,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
-        auto name_type_pair = std::make_shared<ASTNameTypePair>();
+        auto name_type_pair = make_intrusive<ASTNameTypePair>();
         tryGetIdentifierNameInto(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
@@ -87,6 +80,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** List of types. */
+class ParserTypeList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "type list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+    }
+};
+
 /** List of table names. */
 class ParserNameList : public IParserBase
 {
@@ -95,23 +99,32 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserStorageOrderByClause : public IParserBase
+{
+public:
+    explicit ParserStorageOrderByClause(bool allow_order_) : allow_order(allow_order_) {}
+
+protected:
+    bool allow_order;
+
+    const char * getName() const override { return "storage order by clause"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
     explicit IParserColumnDeclaration(bool require_type_ = true, bool allow_null_modifiers_ = false, bool check_keywords_after_name_ = false)
-    : require_type(require_type_)
-    , allow_null_modifiers(allow_null_modifiers_)
-    , check_keywords_after_name(check_keywords_after_name_)
+        : require_type(require_type_)
+        , allow_null_modifiers(allow_null_modifiers_)
+        , check_keywords_after_name(check_keywords_after_name_)
     {
     }
 
     void enableCheckTypeKeyword() { check_type_keyword = true; }
 
 protected:
-    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
-
     const char * getName() const  override{ return "column declaration"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -138,7 +151,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
     ParserKeyword s_comment{Keyword::COMMENT};
     ParserKeyword s_codec{Keyword::CODEC};
-    ParserKeyword s_stat{Keyword::STATISTIC};
+    ParserKeyword s_stat{Keyword::STATISTICS};
     ParserKeyword s_ttl{Keyword::TTL};
     ParserKeyword s_remove{Keyword::REMOVE};
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
@@ -155,7 +168,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserLiteral literal_parser;
     ParserCodec codec_parser;
     ParserCollation collation_parser;
-    ParserStatisticType stat_type_parser;
+    ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
     ParserSetQuery settings_parser(true);
 
@@ -164,7 +177,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (!name_parser.parse(pos, name, expected))
         return false;
 
-    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+    const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
@@ -187,13 +200,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
-    String default_specifier;
+    ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
     std::optional<bool> null_modifier;
     bool ephemeral_default = false;
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
-    ASTPtr stat_type_expression;
+    ASTPtr statistics_desc_expression;
     ASTPtr ttl_expression;
     ASTPtr collation_expression;
     ASTPtr settings;
@@ -213,12 +226,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return res;
     };
 
+    /// Keep this list of keywords in sync with ParserDataType::parseImpl().
     if (!null_check_without_moving()
         && !s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
+        && !s_ttl.checkWithoutMoving(pos, expected)
         && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
@@ -245,15 +260,31 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             null_modifier.emplace(true);
     }
 
+    bool is_comment = false;
     /// Collate is also allowed after NULL/NOT NULL
     if (!collation_expression && s_collate.ignore(pos, expected)
         && !collation_parser.parse(pos, collation_expression, expected))
         return false;
 
-    Pos pos_before_specifier = pos;
-    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
+    if (s_default.ignore(pos, expected))
     {
-        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
+        default_specifier = ColumnDefaultSpecifier::Default;
+
+        /// should be followed by an expression
+        if (!expr_parser.parse(pos, default_expression, expected))
+            return false;
+    }
+    else if (s_materialized.ignore(pos, expected))
+    {
+        default_specifier = ColumnDefaultSpecifier::Materialized;
+
+        /// should be followed by an expression
+        if (!expr_parser.parse(pos, default_expression, expected))
+            return false;
+    }
+    else if (s_alias.ignore(pos, expected))
+    {
+        default_specifier = ColumnDefaultSpecifier::Alias;
 
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))
@@ -261,17 +292,19 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        default_specifier = s_ephemeral.getName();
-        if (!expr_parser.parse(pos, default_expression, expected) && type)
+        default_specifier = ColumnDefaultSpecifier::Ephemeral;
+        if (s_comment.ignore(pos, expected))
+            is_comment = true;
+        if ((is_comment || !expr_parser.parse(pos, default_expression, expected)) && type)
         {
             ephemeral_default = true;
 
-            auto default_function = std::make_shared<ASTFunction>();
+            auto default_function = make_intrusive<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
-            default_function->arguments = std::make_shared<ASTExpressionList>();
-            // Ephemeral columns don't really have secrets but we need to format
-            // into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTFunction>()->formatForLogging()));
+            default_function->arguments = make_intrusive<ASTExpressionList>();
+            default_function->children.push_back(default_function->arguments);
+            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
             default_expression = default_function;
         }
 
@@ -280,7 +313,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_auto_increment.ignore(pos, expected))
     {
-        default_specifier = s_auto_increment.getName();
+        default_specifier = ColumnDefaultSpecifier::AutoIncrement;
         /// if type is not provided for a column with AUTO_INCREMENT then using INT by default
         if (!type)
         {
@@ -298,19 +331,22 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-    if ((type || default_expression) && allow_null_modifiers && !null_modifier.has_value())
+    if (!is_comment)
     {
-        if (s_not.ignore(pos, expected))
+        if ((type || default_expression) && allow_null_modifiers && !null_modifier.has_value())
         {
-            if (!s_null.ignore(pos, expected))
-                return false;
-            null_modifier.emplace(false);
+            if (s_not.ignore(pos, expected))
+            {
+                if (!s_null.ignore(pos, expected))
+                    return false;
+                null_modifier.emplace(false);
+            }
+            else if (s_null.ignore(pos, expected))
+                null_modifier.emplace(true);
         }
-        else if (s_null.ignore(pos, expected))
-            null_modifier.emplace(true);
     }
 
-    if (s_comment.ignore(pos, expected))
+    if (is_comment || s_comment.ignore(pos, expected))
     {
         /// should be followed by a string literal
         if (!string_literal_parser.parse(pos, comment_expression, expected))
@@ -325,7 +361,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (s_stat.ignore(pos, expected))
     {
-        if (!stat_type_parser.parse(pos, stat_type_expression, expected))
+        if (!stat_type_parser.parse(pos, statistics_desc_expression, expected))
             return false;
     }
 
@@ -365,10 +401,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     node = column_declaration;
 
     if (type)
-    {
-        column_declaration->type = type;
-        column_declaration->children.push_back(std::move(type));
-    }
+        column_declaration->setType(std::move(type));
 
     column_declaration->null_modifier = null_modifier;
 
@@ -376,45 +409,26 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (default_expression)
     {
         column_declaration->ephemeral_default = ephemeral_default;
-        column_declaration->default_expression = default_expression;
-        column_declaration->children.push_back(std::move(default_expression));
+        column_declaration->setDefaultExpression(std::move(default_expression));
     }
 
     if (comment_expression)
-    {
-        column_declaration->comment = comment_expression;
-        column_declaration->children.push_back(std::move(comment_expression));
-    }
+        column_declaration->setComment(std::move(comment_expression));
 
     if (codec_expression)
-    {
-        column_declaration->codec = codec_expression;
-        column_declaration->children.push_back(std::move(codec_expression));
-    }
+        column_declaration->setCodec(std::move(codec_expression));
 
     if (settings)
-    {
-        column_declaration->settings = settings;
-        column_declaration->children.push_back(std::move(settings));
-    }
+        column_declaration->setSettings(std::move(settings));
 
-    if (stat_type_expression)
-    {
-        column_declaration->stat_type = stat_type_expression;
-        column_declaration->children.push_back(std::move(stat_type_expression));
-    }
+    if (statistics_desc_expression)
+        column_declaration->setStatisticsDesc(std::move(statistics_desc_expression));
 
     if (ttl_expression)
-    {
-        column_declaration->ttl = ttl_expression;
-        column_declaration->children.push_back(std::move(ttl_expression));
-    }
+        column_declaration->setTTL(std::move(ttl_expression));
 
     if (collation_expression)
-    {
-        column_declaration->collation = collation_expression;
-        column_declaration->children.push_back(std::move(collation_expression));
-    }
+        column_declaration->setCollation(std::move(collation_expression));
 
     column_declaration->primary_key_specifier = primary_key_specifier;
 
@@ -452,15 +466,26 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserStatisticDeclaration : public IParserBase
+class ParserStatisticsDeclaration : public IParserBase
 {
 public:
-    ParserStatisticDeclaration() = default;
+    ParserStatisticsDeclaration() = default;
 
 protected:
     const char * getName() const override { return "statistics declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
+class ParserStatisticsDeclarationWithoutTypes : public IParserBase
+{
+public:
+    ParserStatisticsDeclarationWithoutTypes() = default;
+
+protected:
+    const char * getName() const override { return "statistics declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 class ParserConstraintDeclaration : public IParserBase
 {
@@ -565,14 +590,6 @@ class ParserCreateTableQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [UUID 'uuid'] [TO [db.]name] AS SELECT ...
-class ParserCreateLiveViewQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE LIVE VIEW query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

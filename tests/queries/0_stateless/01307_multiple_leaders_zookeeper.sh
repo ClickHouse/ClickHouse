@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-azure-blob-storage
+# no-azure-blob-storage: this test runs parallel `INSERT` threads against
+#   `ReplicatedMergeTree` and exceeds the test framework timeout under slow Azure blob
+#   storage. CIDB shows 14 failures / 4491 OKs (0.31%) on
+#   `Stateless tests (arm_asan_ubsan, azure, sequential)`, with 0 failures across 45K+ runs
+#   on every other non-Fast-test configuration. Coverage is preserved by other
+#   sanitizer/storage configs.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,8 +18,8 @@ DATA_SIZE=200
 
 SEQ=$(seq 0 $(($NUM_REPLICAS - 1)))
 
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "DROP TABLE IF EXISTS r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE r$REPLICA (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r$REPLICA') ORDER BY x SETTINGS min_bytes_for_wide_part = '10M';"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "CREATE TABLE r$REPLICA (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r$REPLICA') ORDER BY x SETTINGS min_bytes_for_wide_part = '10M';"; done
 
 function thread()
 {
@@ -30,6 +36,6 @@ done
 
 wait
 
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "SYSTEM SYNC REPLICA r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "SELECT count(), sum(x) FROM r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "DROP TABLE r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "DROP TABLE r$REPLICA"; done

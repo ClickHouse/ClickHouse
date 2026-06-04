@@ -2,21 +2,10 @@
 
 #include <type_traits>
 #include <typeinfo>
-#include <typeindex>
 #include <memory>
-#include <string>
-
-#include <Common/Exception.h>
-#include <base/demangle.h>
 
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-    }
-}
+[[noreturn]] void throwBadTypeidCast(const std::type_info & from, const std::type_info & to);
 
 
 /** Checks type by comparing typeid.
@@ -30,8 +19,7 @@ To typeid_cast(From & from) noexcept(false)
     if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
         return static_cast<To>(from);
 
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Bad cast from type {} to {}",
-                        demangle(typeid(from).name()), demangle(typeid(To).name()));
+    throwBadTypeidCast(typeid(from), typeid(To));
 }
 
 
@@ -41,8 +29,7 @@ To typeid_cast(From * from) noexcept
 {
     if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
         return static_cast<To>(from);
-    else
-        return nullptr;
+    return nullptr;
 }
 
 namespace detail
@@ -69,6 +56,5 @@ To typeid_cast(const std::shared_ptr<From> & from) noexcept
 {
     if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
         return std::static_pointer_cast<typename To::element_type>(from);
-    else
-        return nullptr;
+    return nullptr;
 }

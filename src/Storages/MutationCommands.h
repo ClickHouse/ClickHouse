@@ -5,14 +5,16 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Parsers/ASTAlterQuery.h>
-#include <Storages/IStorage_fwd.h>
-#include <DataTypes/IDataType.h>
+#include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
+class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
@@ -21,7 +23,14 @@ class ReadBuffer;
 /// to values from set of columns which satisfy predicate.
 struct MutationCommand
 {
-    ASTPtr ast = {}; /// The AST of the whole command
+    /// Serialized text of the command (output of `formatWithSecretsOneLine`),
+    /// used for on-disk / ZooKeeper persistence.
+    String ast_text = {};
+
+    /// Parser limits used when `ast_text` was produced. Re-applied if the
+    /// AST has to be reparsed from `ast_text`.
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 
     enum Type
     {
@@ -30,34 +39,67 @@ struct MutationCommand
         UPDATE,
         MATERIALIZE_INDEX,
         MATERIALIZE_PROJECTION,
-        MATERIALIZE_STATISTIC,
+        MATERIALIZE_STATISTICS,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
         DROP_PROJECTION,
-        DROP_STATISTIC,
+        DROP_STATISTICS,
         MATERIALIZE_TTL,
+        REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,
-        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
+        APPLY_PATCHES,
+        ALTER_WITHOUT_MUTATION, /// pure metadata command
     };
 
     Type type = EMPTY;
 
-    /// WHERE part of mutation
-    ASTPtr predicate = {};
+    /// Parses `ast_text` and returns the resulting alter command (shareable,
+    /// const). The parsed AST is *not* cached on the `MutationCommand`, so
+    /// callers that access several sub-trees of the same command should hoist
+    /// the result into a local. Returns nullptr if `ast_text` is empty.
+    boost::intrusive_ptr<const ASTAlterCommand> ast() const;
 
-    /// Columns with corresponding actions
-    std::unordered_map<String, ASTPtr> column_to_update_expression = {};
+    /// RAII handle for editing the AST of a `MutationCommand` in place. The
+    /// constructor parses a mutable copy of `ast_text`. To publish edits, call
+    /// `commit` (it serializes the AST back into `ast_text` and may throw);
+    /// otherwise the destructor discards them.
+    /// Neither copyable nor movable.
+    class MutableAst
+    {
+    public:
+        explicit MutableAst(MutationCommand & owner);
+        ~MutableAst() noexcept;
 
-    /// For MATERIALIZE INDEX and PROJECTION and STATISTIC
+        MutableAst(const MutableAst &) = delete;
+        MutableAst & operator=(const MutableAst &) = delete;
+        MutableAst(MutableAst &&) = delete;
+        MutableAst & operator=(MutableAst &&) = delete;
+
+        ASTAlterCommand & operator*() const { return *ast; }
+        ASTAlterCommand * operator->() const { return ast.get(); }
+        ASTAlterCommand * get() const { return ast.get(); }
+
+        /// Serialize the (possibly modified) AST back into `owner.ast_text`.
+        /// May throw.
+        void commit();
+
+    private:
+        MutationCommand & owner;
+        boost::intrusive_ptr<ASTAlterCommand> ast;
+        bool committed = false;
+    };
+
+    /// Open a mutating scope on the AST. See `MutableAst` for the semantics.
+    MutableAst mutateAst() { return MutableAst(*this); }
+
+    /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};
     String projection_name = {};
-    std::vector<String> statistic_columns = {};
-
-    /// For MATERIALIZE INDEX, UPDATE and DELETE.
-    ASTPtr partition = {};
+    std::vector<String> statistics_columns = {};
+    std::vector<String> statistics_types = {};
 
     /// For reads, drops and etc.
     String column_name = {};
@@ -69,30 +111,69 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
-    /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+    /// A version of mutation to which command corresponds.
+    std::optional<UInt64> mutation_version = {};
+
+    /// True if column is read by mutation command to apply patch.
+    /// Required to distinguish read command used for MODIFY COLUMN.
+    bool read_for_patch = false;
+
+    /// If `parse_alter_commands` is true, more alter commands are accepted as
+    /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
+    /// captured into the returned command so subsequent on-demand re-parsing
+    /// uses the same limits as this initial parse.
+    static std::optional<MutationCommand> parse(
+        const ASTAlterCommand & command,
+        bool parse_alter_commands = false,
+        bool with_pure_metadata_commands = false,
+        UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
+    bool isPureMetadataCommand() const;
+    bool isEmptyCommand() const;
+    bool isDropOrRename() const;
+    bool affectsAllColumns() const;
 };
 
-/// Multiple mutation commands, possible from different ALTER queries
+/// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
+/// command into a `column -> expression` map. The returned `ASTPtr`s point
+/// into the assignment subtrees of `alter`, so the map is valid for as long
+/// as `alter` is.
+std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter);
+
+/// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
+    boost::intrusive_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
-    void readText(ReadBuffer & in);
-    std::string toString() const;
+    void readText(ReadBuffer & in, bool with_pure_metadata_commands);
+    std::string toString(bool with_pure_metadata_commands) const;
     bool hasNonEmptyMutationCommands() const;
+
+    bool hasAnyUpdateCommand() const;
+    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
+    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
+
+/// A pair of Actions DAG that is required to execute one step
+/// of mutation and the name of filter column if it's a filtering step.
+struct MutationActions
+{
+    ActionsDAG dag;
+    String filter_column_name;
+    bool project_input;
+    std::optional<UInt64> mutation_version;
+};
 
 }

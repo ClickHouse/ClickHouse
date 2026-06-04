@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -25,7 +26,7 @@
 namespace DB
 {
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Visitors consist of functions with unified interface 'void visit(Cast & x, ASTPtr & y)', there x is y, successfully cast to Cast.
 /// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// Visits AST nodes, add default database to tables if not set. There's different logic for DDLs and selects.
@@ -53,12 +54,18 @@ public:
 
     void visitDDL(ASTPtr & ast) const
     {
+        visitDDLWithParent(nullptr, ast);
+    }
+
+    /// TODO: Add `parent` to the IAST
+    void visitDDLWithParent(ASTPtr parent, ASTPtr & ast) const
+    {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTAlterQuery>(ast) &&
-            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
-            !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
-            !tryVisitDynamicCast<ASTFunction>(ast))
+        if (!tryVisitDynamicCast<ASTAlterQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(parent, ast) &&
+            !tryVisitDynamicCast<ASTRenameQuery>(parent, ast) &&
+            !tryVisitDynamicCast<ASTFunction>(parent, ast))
         {}
     }
 
@@ -66,7 +73,8 @@ public:
     {
         if (!tryVisit<ASTSelectQuery>(ast) &&
             !tryVisit<ASTSelectWithUnionQuery>(ast) &&
-            !tryVisit<ASTFunction>(ast))
+            !tryVisit<ASTFunction>(ast) &&
+            !tryVisit<ASTRefreshStrategy>(ast))
             visitChildren(*ast);
     }
 
@@ -100,6 +108,7 @@ private:
 
     const String database_name;
     std::set<String> external_tables;
+    mutable std::unordered_set<String> with_aliases;
 
     bool only_replace_current_database_function = false;
     bool only_replace_in_join = false;
@@ -117,6 +126,13 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        if (select.recursive_with)
+            for (const auto & child : select.with()->children)
+            {
+                if (typeid_cast<ASTWithElement *>(child.get()))
+                    with_aliases.insert(child->as<ASTWithElement>()->name);
+            }
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
@@ -165,8 +181,11 @@ private:
         /// There is temporary table with such name, should not be rewritten.
         if (external_tables.contains(identifier.shortName()))
             return;
+        /// This is WITH RECURSIVE alias.
+        if (with_aliases.contains(identifier.name()))
+            return;
 
-        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
         ast = qualified_identifier;
@@ -192,7 +211,7 @@ private:
                                 continue;
 
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), context);
-                            child->children[i] = std::make_shared<ASTIdentifier>(qualified_dictionary_name.getParts());
+                            child->children[i] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                         }
                         else if (auto * literal = child->children[i]->as<ASTLiteral>())
                         {
@@ -201,7 +220,7 @@ private:
                             if (literal_value.getType() != Field::Types::String)
                                 continue;
 
-                            auto dictionary_name = literal_value.get<String>();
+                            auto dictionary_name = literal_value.safeGet<String>();
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
                         }
@@ -261,7 +280,7 @@ private:
     }
 
 
-    void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTQueryWithTableAndOutput & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -270,7 +289,7 @@ private:
             node.setDatabase(database_name);
     }
 
-    void visitDDL(ASTRenameQuery & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTRenameQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -278,7 +297,7 @@ private:
         node.setDatabaseIfNotExists(database_name);
     }
 
-    void visitDDL(ASTAlterQuery & node, ASTPtr &) const
+    void visitDDL(ASTPtr & /* parent */, ASTAlterQuery & node, ASTPtr &) const
     {
         if (only_replace_current_database_function)
             return;
@@ -296,27 +315,34 @@ private:
         }
     }
 
-    void visitDDL(ASTFunction & function, ASTPtr & node) const
+    void visitDDL(ASTPtr & parent, ASTFunction & function, ASTPtr & node) const
     {
         if (function.name == "currentDatabase")
         {
-            node = std::make_shared<ASTLiteral>(database_name);
-            return;
+            /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
+            /// However, just for safety, let's store the old node for a little longer.
+            ASTPtr old_node = node;
+            node = make_intrusive<ASTLiteral>(database_name);
+
+            if (parent)
+            {
+                parent->updatePointerToChild(old_node.get(), node.get());
+            }
         }
     }
 
     void visitDDLChildren(ASTPtr & ast) const
     {
         for (auto & child : ast->children)
-            visitDDL(child);
+            visitDDLWithParent(ast, child);
     }
 
     template <typename T>
-    bool tryVisitDynamicCast(ASTPtr & ast) const
+    bool tryVisitDynamicCast(ASTPtr & parent, ASTPtr & ast) const
     {
         if (T * t = dynamic_cast<T *>(ast.get()))
         {
-            visitDDL(*t, ast);
+            visitDDL(parent, *t, ast);
             return true;
         }
         return false;

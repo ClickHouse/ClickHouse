@@ -11,16 +11,16 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Common/Elf.h>
-#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Columns/ColumnVector.h>
 
 namespace DB
 {
 
-class DWARFBlockInputFormat : public IInputFormat
+class DWARFBlockInputFormat final : public IInputFormat
 {
 public:
-    DWARFBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_, size_t num_threads_);
+    DWARFBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, size_t num_threads_);
     ~DWARFBlockInputFormat() override;
 
     String getName() const override { return "DWARFBlockInputFormat"; }
@@ -32,7 +32,7 @@ public:
 protected:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -79,7 +79,7 @@ private:
     std::atomic<int> is_stopped{0};
     size_t approx_bytes_read_for_chunk = 0;
 
-    std::optional<ThreadPool> pool;
+    std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
@@ -121,7 +121,7 @@ private:
         const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const;
 };
 
-class DWARFSchemaReader : public ISchemaReader
+class DWARFSchemaReader final : public ISchemaReader
 {
 public:
     explicit DWARFSchemaReader(ReadBuffer & in_);

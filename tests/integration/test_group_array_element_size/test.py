@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
 import pytest
+
 from helpers.cluster import ClickHouseCluster
+
+ORIGINAL_CONFIG = """<clickhouse>
+    <aggregate_function_group_array_max_element_size>10</aggregate_function_group_array_max_element_size>
+    <aggregate_function_group_array_action_when_limit_is_reached>throw</aggregate_function_group_array_action_when_limit_is_reached>
+</clickhouse>"""
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
+    main_configs=["configs/group_array_max_element_size.xml"],
+    stay_alive=True,
+)
+
+node2 = cluster.add_instance(
+    "node2",
     main_configs=["configs/group_array_max_element_size.xml"],
     stay_alive=True,
 )
@@ -22,6 +34,13 @@ def started_cluster():
 
 
 def test_max_exement_size(started_cluster):
+    # Restore original config in case a previous run left it modified.
+    node1.replace_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        ORIGINAL_CONFIG,
+    )
+    node1.restart_clickhouse()
+    node1.query("DROP TABLE IF EXISTS tab3")
     node1.query(
         "CREATE TABLE tab3 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
     )
@@ -63,3 +82,40 @@ def test_max_exement_size(started_cluster):
     node1.restart_clickhouse()
 
     assert node1.query("select length(groupArrayMerge(x)) from tab3") == "21\n"
+
+
+def test_limit_size(started_cluster):
+    # Restore original config in case a previous run left it modified.
+    node2.replace_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        ORIGINAL_CONFIG,
+    )
+    node2.restart_clickhouse()
+    node2.query("DROP TABLE IF EXISTS tab4")
+    node2.query(
+        "CREATE TABLE tab4 (x AggregateFunction(groupArray, Array(UInt8))) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node2.query("insert into tab4 select groupArrayState([zero]) from zeros(10)")
+    assert node2.query("select length(groupArrayMerge(x)) from tab4") == "10\n"
+
+    node2.replace_in_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        "throw",
+        "discard",
+    )
+
+    node2.restart_clickhouse()
+
+    node2.query("insert into tab4 select groupArrayState([zero]) from zeros(100)")
+    assert node2.query("select length(groupArrayMerge(x)) from tab4") == "10\n"
+
+    node2.replace_in_config(
+        "/etc/clickhouse-server/config.d/group_array_max_element_size.xml",
+        "discard",
+        "throw",
+    )
+
+    node2.restart_clickhouse()
+
+    with pytest.raises(Exception, match=r"Too large array size"):
+        node2.query("insert into tab4 select groupArrayState([zero]) from zeros(11)")

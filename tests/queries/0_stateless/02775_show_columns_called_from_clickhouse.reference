@@ -44,7 +44,7 @@ nested.col1	Array(String)	NO		\N
 nested.col2	Array(UInt32)	NO		\N	
 nfs	Nullable(FixedString(3))	YES		\N	
 ns	Nullable(String)	YES		\N	
-o	Object(\'json\')	NO		\N	
+o	JSON	NO		\N	
 p	Point	NO		\N	
 pg	Polygon	NO		\N	
 r	Ring	NO		\N	

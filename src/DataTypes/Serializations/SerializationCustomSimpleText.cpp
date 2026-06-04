@@ -47,7 +47,7 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
         deserializeText(column, istr, settings, whole);
         return true;
     }
-    catch (...)
+    catch (...) // Ok: tryDeserializeText is a try-pattern
     {
         return false;
     }
@@ -75,7 +75,7 @@ void SerializationCustomSimpleText::serializeTextEscaped(const IColumn & column,
 void SerializationCustomSimpleText::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readEscapedString(str, istr);
+    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(str, istr) : readEscapedString(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
@@ -88,20 +88,27 @@ bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, 
 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
+    auto str = serializeToString(*this, column, row_num, settings);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(str, ostr);
+    else
+        writeQuotedString(str, ostr);
 }
 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readQuotedString(str, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a value written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadQuotedString(str, istr))
+    if (!tryReadQuotedStringWithSQLStyle(str, istr))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }
@@ -133,14 +140,14 @@ void SerializationCustomSimpleText::serializeTextJSON(const IColumn & column, si
 void SerializationCustomSimpleText::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readJSONString(str, istr);
+    readJSONString(str, istr, settings.json);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadJSONStringInto(str, istr))
+    if (!tryReadJSONStringInto(str, istr, settings.json))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }

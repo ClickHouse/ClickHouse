@@ -1,6 +1,4 @@
--- Tags: no-parallel
-
-SET allow_experimental_database_replicated=1;
+-- Tags: no-parallel, no-flaky-check
 
 DROP DATABASE IF EXISTS replicated_database_params;
 

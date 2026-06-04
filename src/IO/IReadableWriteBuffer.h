@@ -8,7 +8,7 @@ namespace DB
 struct IReadableWriteBuffer
 {
     /// At the first time returns getReadBufferImpl(). Next calls return nullptr.
-    inline std::unique_ptr<ReadBuffer> tryGetReadBuffer()
+    std::unique_ptr<ReadBuffer> tryGetReadBuffer()
     {
         if (!can_reread)
             return nullptr;

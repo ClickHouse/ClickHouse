@@ -36,14 +36,14 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_ilike(Keyword::ILIKE);
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
-    ParserStringLiteral like_p;
+    ParserStringLiteral like_p(Highlight::string_like);
     ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
     ASTPtr database;
 
-    auto query = std::make_shared<ASTShowTablesQuery>();
+    auto query = make_intrusive<ASTShowTablesQuery>();
 
     if (!s_show.ignore(pos, expected))
         return false;
@@ -161,7 +161,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
     else
     {
-        if (s_temporary.ignore(pos))
+        if (s_temporary.ignore(pos, expected))
             query->temporary = true;
 
         if (!s_tables.ignore(pos, expected))
@@ -201,7 +201,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->set(query->from, database);
 
     if (like)
-        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
+        query->like = like->as<ASTLiteral &>().value.safeGet<String>();
 
     node = query;
 

@@ -1,7 +1,9 @@
 Arrow
 ArrowStream
 Avro
+AvroConfluent
 BSONEachRow
+Buffers
 CSV
 CSVWithNames
 CSVWithNamesAndTypes
@@ -28,6 +30,9 @@ NDJSON
 Native
 ORC
 Parquet
+Raw
+RawWithNames
+RawWithNamesAndTypes
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes

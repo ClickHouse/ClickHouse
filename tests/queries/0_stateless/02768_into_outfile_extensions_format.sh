@@ -9,4 +9,4 @@ select * from numbers(1) into outfile '/dev/null';
 select * from numbers(1) into outfile '/dev/null' and stdout;
 select * from numbers(1) into outfile '/dev/null' append;
 select * from numbers(1) into outfile '/dev/null' append and stdout;
-" | clickhouse-format -n
+" | ${CLICKHOUSE_FORMAT} -n

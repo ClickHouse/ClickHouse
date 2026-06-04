@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 
 
 namespace DB
@@ -53,7 +54,7 @@ class InterruptListener
 {
 private:
     bool active;
-    sigset_t sig_set;
+    sigset_t sig_set{};
 
 public:
     InterruptListener() : active(false)
@@ -80,8 +81,7 @@ public:
         {
             if (errno == EAGAIN)
                 return false;
-            else
-                throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
+            throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
         }
 
         return true;

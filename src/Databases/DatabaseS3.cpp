@@ -5,6 +5,9 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
+#include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <IO/S3/URI.h>
@@ -25,6 +28,11 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 static const std::unordered_set<std::string_view> optional_configuration_keys = {
     "url",
@@ -91,7 +99,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.find(name) != loaded_tables.end())
+    if (loaded_tables.contains(name))
         return true;
 
     return checkUrl(getFullUrl(name), context_, false);
@@ -110,20 +118,20 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
-    auto function = std::make_shared<ASTFunction>();
+    auto function = make_intrusive<ASTFunction>();
     function->name = "s3";
-    function->arguments = std::make_shared<ASTExpressionList>();
+    function->arguments = make_intrusive<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
-    function->arguments->children.push_back(std::make_shared<ASTLiteral>(url));
+    function->arguments->children.push_back(make_intrusive<ASTLiteral>(url));
     if (config.no_sign_request)
     {
-        function->arguments->children.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>("NOSIGN"));
     }
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
-        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.secret_access_key.value()));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
     }
 
     auto table_function = TableFunctionFactory::instance().get(function, context_);
@@ -131,7 +139,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name);
+    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
     if (table_storage)
         addTable(name, table_storage);
 
@@ -178,7 +186,7 @@ bool DatabaseS3::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseS3::getCreateDatabaseQuery() const
+ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
@@ -190,13 +198,14 @@ ASTPtr DatabaseS3::getCreateDatabaseQuery() const
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth, settings.max_parser_backtracks);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(database_name), creation_args);
+    ASTPtr ast
+        = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -303,11 +312,12 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseS3::getTablesForBackup(const 
  * Returns an empty iterator because the database does not have its own tables
  * But only caches them for quick access
  */
-DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
+void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseS3(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -325,7 +335,11 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn);
+    factory.registerDatabase("S3", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::S3,
+    });
 }
 }
 #endif

@@ -33,5 +33,9 @@
                 <start_as_follower>true</start_as_follower>
             </server>
         </raft_configuration>
+
+        <feature_flags>
+            <create_with_stats>1</create_with_stats>
+        </feature_flags>
     </keeper_server>
 </clickhouse>

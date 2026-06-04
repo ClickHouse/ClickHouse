@@ -1,5 +1,16 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
+include(cmake/utils.cmake)
+
+set(CHCACHE_EXECUTABLE_PATH "" CACHE STRING "Path to chcache executable to use. If the compiler cache is set to use chcache, chcache will be used from here instead of building it.")
+
+# Defensive programming: early return to avoid configuring any cache after we've set dummy launchers.
+# If something includes this file by mistake after the first setup, it'd override the dummy launchers.
+if(USING_DUMMY_LAUNCHERS)
+    message(STATUS "Skipping cache integration a second time because dummy launchers are in use")
+    return()
+endif()
+
 # Matches both ccache and sccache
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
@@ -9,19 +20,27 @@ if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MA
     return()
 endif()
 
-set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (sccache, then ccache), 'ccache', 'sccache', or 'disabled'")
+set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (sccache, then ccache), 'ccache', 'sccache', 'chcache', or 'disabled'")
 
 if(COMPILER_CACHE STREQUAL "auto")
     find_program (CCACHE_EXECUTABLE NAMES sccache ccache)
-elseif (COMPILER_CACHE STREQUAL "ccache")
+elseif(COMPILER_CACHE STREQUAL "ccache")
     find_program (CCACHE_EXECUTABLE ccache)
 elseif(COMPILER_CACHE STREQUAL "sccache")
     find_program (CCACHE_EXECUTABLE sccache)
+elseif(COMPILER_CACHE STREQUAL "chcache")
+    if(CHCACHE_EXECUTABLE_PATH STREQUAL "")
+        message(STATUS "Using self-built chcache")
+        set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/rust/chcache/chcache)
+    else()
+        message(STATUS "Using already built chcache from ${CHCACHE_EXECUTABLE_PATH}")
+        set(CCACHE_EXECUTABLE ${CHCACHE_EXECUTABLE_PATH})
+    endif()
 elseif(COMPILER_CACHE STREQUAL "disabled")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()
 else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|sccache|ccache|disabled), value: '${COMPILER_CACHE}'")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|sccache|ccache|chcache|disabled), value: '${COMPILER_CACHE}'")
 endif()
 
 
@@ -42,7 +61,17 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     endif()
 
     message(STATUS "Using ccache: ${CCACHE_EXECUTABLE} (version ${CCACHE_VERSION})")
-    set(LAUNCHER ${CCACHE_EXECUTABLE})
+
+    # Enable depend mode (available since ccache 4.0). In this mode, ccache uses the compiler's
+    # dependency file (.d) to track input files instead of its own source parser.
+    # This is needed because ccache's built-in parser does not recognize C23 #embed directives,
+    # so changes to files included via #embed would not invalidate the cache in direct mode.
+    if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
+        message(STATUS "Enabling ccache depend mode for correct #embed tracking")
+        set(LAUNCHER env CCACHE_DEPEND=true ${CCACHE_EXECUTABLE})
+    else()
+        set(LAUNCHER ${CCACHE_EXECUTABLE})
+    endif()
 
     # Work around a well-intended but unfortunate behavior of ccache 4.0 & 4.1 with
     # environment variable SOURCE_DATE_EPOCH. This variable provides an alternative
@@ -55,10 +84,13 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     # (*) https://reproducible-builds.org/specs/source-date-epoch/
     if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.2")
         message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache 4.0 / 4.1")
-        set(LAUNCHER env -u SOURCE_DATE_EPOCH ${CCACHE_EXECUTABLE})
+        set(LAUNCHER env -u SOURCE_DATE_EPOCH ${LAUNCHER})
     endif()
 elseif(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using sccache: ${CCACHE_EXECUTABLE}")
+    set(LAUNCHER ${CCACHE_EXECUTABLE})
+elseif(CCACHE_EXECUTABLE MATCHES "/chcache$")
+    message(STATUS "Using chcache: ${CCACHE_EXECUTABLE}")
     set(LAUNCHER ${CCACHE_EXECUTABLE})
 endif()
 

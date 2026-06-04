@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-flaky-check
 
 DROP DATABASE IF EXISTS database_for_dict_01268;
 
@@ -116,7 +116,7 @@ SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(8), 'NON
 SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(9), 'NONE');
 SELECT dictGetStringOrDefault('db_01268.dict2', 'region_name', toUInt64(10), 'NONE');
 
-SELECT dictGetUInt64('db_01268.dict1', 'second_column', toUInt64(100500)); -- { serverError 396 }
+SELECT dictGetUInt64('db_01268.dict1', 'second_column', toUInt64(100500)); -- { serverError TOO_MANY_ROWS_OR_BYTES }
 
 SELECT 'END';
 

@@ -1,67 +1,91 @@
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/ConnectionTimeouts.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds connect_timeout;
+    extern const SettingsSeconds send_timeout;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds tcp_keep_alive_timeout;
+    extern const SettingsMilliseconds handshake_timeout_ms;
+    extern const SettingsMilliseconds hedged_connection_timeout_ms;
+    extern const SettingsMilliseconds receive_data_timeout_ms;
+    extern const SettingsMilliseconds connect_timeout_with_failover_ms;
+    extern const SettingsMilliseconds connect_timeout_with_failover_secure_ms;
+    extern const SettingsSeconds http_connection_timeout;
+    extern const SettingsSeconds http_send_timeout;
+    extern const SettingsSeconds http_receive_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_connection_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_receive_timeout;
+    extern const ServerSettingsSeconds replicated_fetches_http_send_timeout;
+}
 
 Poco::Timespan ConnectionTimeouts::saturate(Poco::Timespan timespan, Poco::Timespan limit)
 {
     if (limit.totalMicroseconds() == 0)
         return timespan;
-    else
-        return (timespan > limit) ? limit : timespan;
+    return (timespan > limit) ? limit : timespan;
 }
 
 /// Timeouts for the case when we have just single attempt to connect.
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(const Settings & settings)
 {
     return ConnectionTimeouts()
-        .withConnectionTimeout(settings.connect_timeout)
-        .withSendTimeout(settings.send_timeout)
-        .withReceiveTimeout(settings.receive_timeout)
-        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
-        .withHandshakeTimeout(settings.handshake_timeout_ms)
-        .withHedgedConnectionTimeout(settings.hedged_connection_timeout_ms)
-        .withReceiveDataTimeout(settings.receive_data_timeout_ms);
+        .withConnectionTimeout(settings[Setting::connect_timeout])
+        .withSendTimeout(settings[Setting::send_timeout])
+        .withReceiveTimeout(settings[Setting::receive_timeout])
+        .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
+        .withHandshakeTimeout(settings[Setting::handshake_timeout_ms])
+        .withHedgedConnectionTimeout(settings[Setting::hedged_connection_timeout_ms])
+        .withReceiveDataTimeout(settings[Setting::receive_data_timeout_ms]);
 }
 
 /// Timeouts for the case when we will try many addresses in a loop.
 ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings & settings)
 {
     return getTCPTimeoutsWithoutFailover(settings)
-        .withUnsecureConnectionTimeout(settings.connect_timeout_with_failover_ms)
-        .withSecureConnectionTimeout(settings.connect_timeout_with_failover_secure_ms);
+        .withUnsecureConnectionTimeout(settings[Setting::connect_timeout_with_failover_ms])
+        .withSecureConnectionTimeout(settings[Setting::connect_timeout_with_failover_secure_ms]);
 }
 
-ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, Poco::Timespan http_keep_alive_timeout)
+ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Settings & settings, const ServerSettings & server_settings)
 {
     return ConnectionTimeouts()
-        .withConnectionTimeout(settings.http_connection_timeout)
-        .withSendTimeout(settings.http_send_timeout)
-        .withReceiveTimeout(settings.http_receive_timeout)
-        .withHTTPKeepAliveTimeout(http_keep_alive_timeout)
-        .withTCPKeepAliveTimeout(settings.tcp_keep_alive_timeout)
-        .withHandshakeTimeout(settings.handshake_timeout_ms);
+        .withConnectionTimeout(settings[Setting::http_connection_timeout])
+        .withSendTimeout(settings[Setting::http_send_timeout])
+        .withReceiveTimeout(settings[Setting::http_receive_timeout])
+        .withHTTPKeepAliveTimeout(server_settings[ServerSetting::keep_alive_timeout])
+        .withTCPKeepAliveTimeout(settings[Setting::tcp_keep_alive_timeout])
+        .withHandshakeTimeout(settings[Setting::handshake_timeout_ms]);
 }
 
 ConnectionTimeouts ConnectionTimeouts::getFetchPartHTTPTimeouts(const ServerSettings & server_settings, const Settings & user_settings)
 {
-    auto timeouts = getHTTPTimeouts(user_settings, server_settings.keep_alive_timeout);
+    auto timeouts = getHTTPTimeouts(user_settings, server_settings);
 
-    if (server_settings.replicated_fetches_http_connection_timeout.changed)
-        timeouts.connection_timeout = server_settings.replicated_fetches_http_connection_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_connection_timeout].changed)
+        timeouts.connection_timeout = server_settings[ServerSetting::replicated_fetches_http_connection_timeout];
 
-    if (server_settings.replicated_fetches_http_send_timeout.changed)
-        timeouts.send_timeout = server_settings.replicated_fetches_http_send_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_send_timeout].changed)
+        timeouts.send_timeout = server_settings[ServerSetting::replicated_fetches_http_send_timeout];
 
-    if (server_settings.replicated_fetches_http_receive_timeout.changed)
-        timeouts.receive_timeout = server_settings.replicated_fetches_http_receive_timeout;
+    if (server_settings[ServerSetting::replicated_fetches_http_receive_timeout].changed)
+        timeouts.receive_timeout = server_settings[ServerSetting::replicated_fetches_http_receive_timeout];
 
     return timeouts;
 }
 
-class SendReceiveTimeoutsForFirstAttempt
+class TimeoutsForFirstAttempt
 {
 private:
     static constexpr size_t known_methods_count = 6;
@@ -96,6 +120,11 @@ private:
     static_assert(sizeof(first_byte_ms) == sizeof(rest_bytes_ms));
     static_assert(sizeof(first_byte_ms) == known_methods_count * sizeof(Poco::Timestamp::TimeDiff) * 2);
 
+    /// These timeouts are specifically important for Azure blob storage.
+    /// For Azure first byte latency is usually very good, but connection to Azure blob storage can take a long time.
+    static constexpr auto CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS = 500;
+    static constexpr auto CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS = 3000;
+
     static size_t getMethodIndex(const String & method)
     {
         KnownMethodsArray::const_iterator it = std::find(known_methods.begin(), known_methods.end(), method);
@@ -121,22 +150,43 @@ public:
             Poco::Timespan(rest_bytes_ms[idx][1] * 1000)
         );
     }
+
+    static std::pair<Poco::Timespan, Poco::Timespan> getConnectTimeouts(bool first_attempt)
+    {
+        if (first_attempt)
+        {
+            /// It is important for Azure blob storage, where connection can take a long time.
+            /// If the connection is not established in this time, we will try to connect to another endpoint.
+            return std::make_pair(
+                Poco::Timespan(CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS * 1000),
+                Poco::Timespan(CONNECT_TIMEOUT_FOR_FIRST_ATTEMPT_MS * 1000)
+            );
+        }
+
+        return std::make_pair(
+            Poco::Timespan(CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS * 1000),
+            Poco::Timespan(CONNECT_TIMEOUT_FOR_N_ATTEMPT_MS * 1000)
+        );
+    }
 };
 
-const SendReceiveTimeoutsForFirstAttempt::KnownMethodsArray SendReceiveTimeoutsForFirstAttempt::known_methods =
+const TimeoutsForFirstAttempt::KnownMethodsArray TimeoutsForFirstAttempt::known_methods =
 {
         "GET", "POST", "DELETE", "PUT", "HEAD", "PATCH"
 };
-
 
 ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method, bool first_attempt, bool first_byte) const
 {
     if (!first_attempt)
         return *this;
 
-    auto [send, recv] = SendReceiveTimeoutsForFirstAttempt::getSendReceiveTimeout(method, first_byte);
+    auto [send, recv] = TimeoutsForFirstAttempt::getSendReceiveTimeout(method, first_byte);
+
+    auto [unsecure_connect, secure_connect] = TimeoutsForFirstAttempt::getConnectTimeouts(first_attempt);
 
     return ConnectionTimeouts(*this)
+        .withConnectionTimeout(saturate(unsecure_connect, connection_timeout))
+        .withSecureConnectionTimeout(saturate(secure_connect, secure_connection_timeout))
         .withSendTimeout(saturate(send, send_timeout))
         .withReceiveTimeout(saturate(recv, receive_timeout));
 }
@@ -144,7 +194,12 @@ ConnectionTimeouts ConnectionTimeouts::getAdaptiveTimeouts(const String & method
 void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
 {
     session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-    session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+    /// we can not change keep alive timeout for already initiated connections
+    if (!session.connected())
+    {
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
+        session.setKeepAliveMaxRequests(int(timeouts.http_keep_alive_max_requests));
+    }
 }
 
 ConnectionTimeouts getTimeouts(const Poco::Net::HTTPClientSession & session)

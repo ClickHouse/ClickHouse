@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -15,6 +16,9 @@
 
 namespace DB
 {
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 namespace ErrorCodes
 {
@@ -98,7 +102,7 @@ public:
     }
 
     /// Resolve table function with table function, storage and context
-    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_);
+    void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_);
 
     /// Get storage id, throws exception if function node is not resolved
     const StorageID & getStorageID() const;
@@ -106,7 +110,7 @@ public:
     /// Get storage snapshot, throws exception if function node is not resolved
     const StorageSnapshotPtr & getStorageSnapshot() const;
 
-    const std::vector<size_t> & getUnresolvedArgumentIndexes() const
+    const VectorWithMemoryTracking<size_t> & getUnresolvedArgumentIndexes() const
     {
         return unresolved_arguments_indexes;
     }
@@ -155,9 +159,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState & state) const override;
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -169,7 +173,7 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     StorageSnapshotPtr storage_snapshot;
-    std::vector<size_t> unresolved_arguments_indexes;
+    VectorWithMemoryTracking<size_t> unresolved_arguments_indexes;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     SettingsChanges settings_changes;
 

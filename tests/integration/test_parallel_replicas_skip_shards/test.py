@@ -1,7 +1,7 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
@@ -25,7 +25,7 @@ def test_skip_unavailable_shards(start_cluster):
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 0,
+                "enable_parallel_replicas": 0,
                 "skip_unavailable_shards": 1,
             },
         )
@@ -36,7 +36,7 @@ def test_skip_unavailable_shards(start_cluster):
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "skip_unavailable_shards": 1,
                 # "async_socket_for_remote" : 0,
@@ -53,7 +53,7 @@ def test_error_on_unavailable_shards(start_cluster):
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 0,
+                "enable_parallel_replicas": 0,
                 "skip_unavailable_shards": 0,
             },
         )
@@ -62,7 +62,7 @@ def test_error_on_unavailable_shards(start_cluster):
         node1.query(
             "SELECT hostName() as h FROM clusterAllReplicas('two_shards', system.one) order by h",
             settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
+                "enable_parallel_replicas": 2,
                 "max_parallel_replicas": 3,
                 "skip_unavailable_shards": 0,
             },

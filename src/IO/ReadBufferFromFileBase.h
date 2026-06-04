@@ -50,7 +50,7 @@ public:
         clock_type = clock_type_;
     }
 
-    size_t getFileSize() override;
+    std::optional<size_t> tryGetFileSize() override;
 
     void setProgressCallback(ContextPtr context);
 
@@ -59,6 +59,15 @@ public:
     /// file, *out_view_offset is set to the start of that subrange, i.e. the difference between actual
     /// file offset and what getPosition() returns.
     virtual bool isRegularLocalFile(size_t * /*out_view_offsee*/) { return false; }
+
+    virtual bool isCached() const { return false; }
+
+    /// Query the actual object size directly from remote storage.
+    /// Unlike tryGetFileSize(), which typically returns a pre-known cached value passed at construction time,
+    /// this method issues a real metadata request (e.g. S3 HeadObject, Azure GetProperties) and reflects
+    /// the current state of the object. Useful for detecting mismatches between the expected and actual size.
+    /// Returns std::nullopt for non-remote or local file buffers.
+    virtual std::optional<size_t> getRemoteFileSize() const { return std::nullopt; }
 
 protected:
     std::optional<size_t> file_size;

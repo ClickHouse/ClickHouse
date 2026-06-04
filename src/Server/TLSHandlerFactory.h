@@ -35,21 +35,21 @@ public:
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         TCPProtocolStackData stack_data;
         return createConnection(socket, tcp_server, stack_data);
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
     {
         try
         {
             LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
             return new TLSHandler(
                 socket,
-                server.config().getString(conf_name + ".privateKeyFile", ""),
-                server.config().getString(conf_name + ".certificateFile", ""),
+                server.config(),
+                conf_name + ".",
                 stack_data);
         }
         catch (const Poco::Net::NetException &)

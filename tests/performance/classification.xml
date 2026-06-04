@@ -3,14 +3,19 @@
         <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
     </settings>
 
-    <query>SELECT detectLanguage(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
-    <query>SELECT detectLanguageMixed(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
+    <!-- A plain LIMIT without ORDER BY returns a different set of rows on each server (the read race between
+         parts and threads decides which rows win), and because the detect* functions' cost depends on the input,
+         the two servers ended up with different workloads and the comparison was reported as noisy. Sampling on
+         cityHash64(WatchID) is reproducible: it depends only on the row contents, so both servers process exactly
+         the same rows. The modulus keeps roughly the original row counts (LIMIT 10000000 -> % 10, 500000 -> % 200). -->
+
+    <query>SELECT detectLanguage(SearchPhrase) FROM hits_100m_single WHERE cityHash64(WatchID) % 10 = 0 FORMAT Null</query>
+    <query>SELECT detectLanguageMixed(SearchPhrase) FROM hits_100m_single WHERE cityHash64(WatchID) % 10 = 0 FORMAT Null</query>
     <query>SELECT detectTonality(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
 
     <!-- Input is not really correct for these functions,
     but at least it gives us some idea about their performance -->
-    <query>SELECT detectProgrammingLanguage(SearchPhrase) FROM hits_100m_single LIMIT 10000000 FORMAT Null</query>
-    <query>SELECT detectLanguageUnknown(SearchPhrase) FROM hits_100m_single LIMIT 500000 FORMAT Null</query>
-    <query>SELECT detectCharset(SearchPhrase) FROM hits_100m_single LIMIT 500000 FORMAT Null</query>
+    <query>SELECT detectLanguageUnknown(SearchPhrase) FROM hits_100m_single WHERE cityHash64(WatchID) % 200 = 0 FORMAT Null</query>
+    <query>SELECT detectCharset(SearchPhrase) FROM hits_100m_single WHERE cityHash64(WatchID) % 200 = 0 FORMAT Null</query>
 
 </test>

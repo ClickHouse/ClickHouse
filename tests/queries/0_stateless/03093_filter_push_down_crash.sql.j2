@@ -1,0 +1,11 @@
+{% for join_algorithm in ['default', 'full_sorting_merge', 'hash', 'partial_merge', 'grace_hash'] -%}
+
+SET join_algorithm = '{{ join_algorithm }}';
+
+SELECT *
+FROM (SELECT 1 AS key) AS t1
+JOIN (SELECT NULL, 1 AS key) AS t2
+ON t1.key = t2.key
+WHERE t1.key ORDER BY key;
+
+{% endfor -%}

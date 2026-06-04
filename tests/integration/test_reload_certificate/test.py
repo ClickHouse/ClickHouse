@@ -1,5 +1,7 @@
-import pytest
 import os
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -13,6 +15,8 @@ node = cluster.add_instance(
         "configs/second.key",
         "configs/ECcert.crt",
         "configs/ECcert.key",
+        "configs/WithChain.crt",
+        "configs/WithChain.key",
         "configs/WithPassPhrase.crt",
         "configs/WithPassPhrase.key",
         "configs/cert.xml",
@@ -157,4 +161,19 @@ def test_cert_with_pass_phrase():
     pass_phrase_for_cert = PASS_PHRASE_TEMPLATE.format(pass_phrase="test")
     check_certificate_switch(
         "first", "WithPassPhrase", pass_phrase_second=pass_phrase_for_cert
+    )
+
+
+def test_chain_reload():
+    """Check cert chain reload"""
+    check_certificate_switch("first", "WithChain")
+    assert (
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "openssl s_client -showcerts -servername localhost -connect localhost:8443 </dev/null 2>/dev/null | grep 'BEGIN CERTIFICATE' | wc -l",
+            ]
+        )
+        == "2\n"
     )

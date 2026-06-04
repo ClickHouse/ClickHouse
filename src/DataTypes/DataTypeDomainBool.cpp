@@ -12,11 +12,11 @@ void registerDataTypeDomainBool(DataTypeFactory & factory)
     {
         auto type = DataTypeFactory::instance().get("UInt8");
         return std::make_pair(type, std::make_unique<DataTypeCustomDesc>(
-                std::make_unique<DataTypeCustomFixedName>("Bool"), std::make_unique<SerializationBool>(type->getDefaultSerialization())));
+                std::make_unique<DataTypeCustomFixedName>("Bool"), SerializationBool::create(type->getDefaultSerialization())));
     });
 
-    factory.registerAlias("bool", "Bool", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("boolean", "Bool", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("bool", "Bool", DataTypeFactory::Case::Insensitive);
+    factory.registerAlias("boolean", "Bool", DataTypeFactory::Case::Insensitive);
 }
 
 }

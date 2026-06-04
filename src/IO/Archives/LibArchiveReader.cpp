@@ -18,20 +18,70 @@ extern const int CANNOT_READ_ALL_DATA;
 extern const int UNSUPPORTED_METHOD;
 }
 
+/// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
+/// The callback catches exceptions and stores them for later re-throwing in C++ code.
 class LibArchiveReader::StreamInfo
 {
 public:
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_) : read_buffer(std::move(read_buffer_)) { }
+    /// `buf` is intentionally left uninitialized — it is filled by `read` before use.
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        : read_buffer(std::move(read_buffer_)), archive_size(archive_size_) { }
 
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
     {
         auto * read_stream = reinterpret_cast<StreamInfo *>(client_data);
-        *buff = reinterpret_cast<void *>(read_stream->buf);
-        return read_stream->read_buffer->read(read_stream->buf, DBMS_DEFAULT_BUFFER_SIZE);
+        try
+        {
+            *buff = reinterpret_cast<void *>(read_stream->buf);
+            return read_stream->read_buffer->read(read_stream->buf, DBMS_DEFAULT_BUFFER_SIZE);
+        }
+        catch (...)
+        {
+            if (!read_stream->stored_exception)
+                read_stream->stored_exception = std::current_exception();
+            return -1;
+        }
+    }
+
+    static la_int64_t seek(struct archive *, void * client_data, la_int64_t offset, int whence)
+    {
+        auto * read_stream = reinterpret_cast<StreamInfo *>(client_data);
+        try
+        {
+            if (whence == SEEK_END)
+            {
+                /// Convert SEEK_END to SEEK_SET because not all SeekableReadBuffer
+                /// implementations support SEEK_END (e.g. ReadBufferFromMemory).
+                /// When archive_size is known, compute the absolute position;
+                /// otherwise fall back to the buffer's native SEEK_END support.
+                if (read_stream->archive_size > 0)
+                    return read_stream->read_buffer->seek(static_cast<la_int64_t>(read_stream->archive_size) + offset, SEEK_SET);
+                return read_stream->read_buffer->seek(offset, SEEK_END);
+            }
+            return read_stream->read_buffer->seek(offset, whence);
+        }
+        catch (...)
+        {
+            if (!read_stream->stored_exception)
+                read_stream->stored_exception = std::current_exception();
+            return ARCHIVE_FATAL;
+        }
+    }
+
+    void rethrowIfNeeded()
+    {
+        if (stored_exception)
+        {
+            auto ex = stored_exception;
+            stored_exception = nullptr;
+            std::rethrow_exception(ex);
+        }
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE];
+    size_t archive_size;
+    char buf[DBMS_DEFAULT_BUFFER_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by `read` before use
+    std::exception_ptr stored_exception;
 };
 
 class LibArchiveReader::Handle
@@ -43,10 +93,10 @@ public:
         current_archive = openWithPath(path_to_archive);
     }
 
-    explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_)
-        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_)
+    explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_, size_t archive_size_)
+        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), archive_size(archive_size_), lock_on_reading(lock_on_reading_)
     {
-        read_stream = std::make_unique<StreamInfo>(archive_read_function());
+        read_stream = std::make_unique<StreamInfo>(archive_read_function(), archive_size);
         current_archive = openWithReader(read_stream.get());
     }
 
@@ -56,6 +106,7 @@ public:
         , current_archive(other.current_archive)
         , current_entry(other.current_entry)
         , archive_read_function(std::move(other.archive_read_function))
+        , archive_size(other.archive_size)
         , lock_on_reading(other.lock_on_reading)
 
     {
@@ -110,18 +161,18 @@ public:
         return valid;
     }
 
-    std::vector<std::string> getAllFiles(NameFilter filter)
+    Strings getAllFiles(NameFilter filter)
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
-            = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
+            = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function(), archive_size) : nullptr;
         auto * archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
 
         SCOPE_EXIT(close(archive););
 
         Entry entry = nullptr;
 
-        std::vector<std::string> files;
-        int error = readNextHeader(archive, &entry);
+        Strings files;
+        int error = readNextHeader(archive, &entry, rs.get());
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
             chassert(entry != nullptr);
@@ -129,7 +180,7 @@ public:
             if (!filter || filter(name))
                 files.push_back(std::move(name));
 
-            error = readNextHeader(archive, &entry);
+            error = readNextHeader(archive, &entry, rs.get());
         }
 
         checkError(error);
@@ -157,15 +208,28 @@ public:
             file_info.emplace();
             file_info->uncompressed_size = archive_entry_size(current_entry);
             file_info->compressed_size = archive_entry_size(current_entry);
+            file_info->last_modified = archive_entry_mtime(current_entry);
             file_info->is_encrypted = false;
         }
 
         return *file_info;
     }
 
-    la_ssize_t readData(void * buf, size_t len) { return archive_read_data(current_archive, buf, len); }
+    la_ssize_t readData(void * buf, size_t len)
+    {
+        auto result = archive_read_data(current_archive, buf, len);
+        rethrowStreamException();
+        return result;
+    }
 
     const char * getArchiveError() { return archive_error_string(current_archive); }
+
+    /// Re-throws a stored exception from the stream's C callback, if any.
+    void rethrowStreamException()
+    {
+        if (read_stream)
+            read_stream->rethrowIfNeeded();
+    }
 
 private:
     using Archive = struct archive *;
@@ -189,6 +253,8 @@ private:
     Archive openWithReader(StreamInfo * read_stream_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -203,12 +269,16 @@ private:
             archive_read_support_format_7zip(archive);
             archive_read_support_format_zip(archive);
 
+            archive_read_set_seek_callback(archive, StreamInfo::seek);
             if (archive_read_open(archive, read_stream_, nullptr, StreamInfo::read, nullptr) != ARCHIVE_OK)
+            {
+                read_stream_->rethrowIfNeeded();
                 throw Exception(
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
                     archive_error_string(archive));
+            }
         }
         catch (...)
         {
@@ -222,6 +292,8 @@ private:
     Archive openWithPath(const String & path_to_archive_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -260,13 +332,18 @@ private:
         }
     }
 
-    int readNextHeader(struct archive * archive, struct archive_entry ** entry) const
+    int readNextHeader(struct archive * archive, struct archive_entry ** entry, StreamInfo * stream_to_check = nullptr)
     {
         std::unique_lock lock(Handle::read_lock, std::defer_lock);
         if (lock_on_reading)
             lock.lock();
 
-        return archive_read_next_header(archive, entry);
+        int result = archive_read_next_header(archive, entry);
+        if (stream_to_check)
+            stream_to_check->rethrowIfNeeded();
+        else
+            rethrowStreamException();
+        return result;
     }
 
     String path_to_archive;
@@ -275,6 +352,7 @@ private:
     Entry current_entry = nullptr;
     bool valid = true;
     IArchiveReader::ReadArchiveFunction archive_read_function;
+    size_t archive_size = 0;
 
     /// for some archive types when we are reading headers static variables are used
     /// which are not thread-safe
@@ -320,7 +398,7 @@ public:
     off_t getPosition() override { throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getPosition not supported when reading from archive"); }
     String getFileName() const override { return handle.getFileName(); }
 
-    size_t getFileSize() override { return handle.getFileInfo().uncompressed_size; }
+    std::optional<size_t> tryGetFileSize() override { return handle.getFileInfo().uncompressed_size; }
 
     Handle releaseHandle() && { return std::move(handle); }
 
@@ -352,16 +430,18 @@ private:
 };
 
 LibArchiveReader::LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_)
-    : archive_name(std::move(archive_name_)), lock_on_reading(lock_on_reading_), path_to_archive(std::move(path_to_archive_))
+    : archive_name(std::move(archive_name_)), lock_on_reading(lock_on_reading_), path_to_archive(std::move(path_to_archive_)), archive_size(0)
 {
 }
 
 LibArchiveReader::LibArchiveReader(
-    std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_)
+    std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_,
+    const ReadArchiveFunction & archive_read_function_, size_t archive_size_)
     : archive_name(std::move(archive_name_))
     , lock_on_reading(lock_on_reading_)
     , path_to_archive(std::move(path_to_archive_))
     , archive_read_function(archive_read_function_)
+    , archive_size(archive_size_)
 {
 }
 
@@ -459,12 +539,12 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::vector<std::string> LibArchiveReader::getAllFiles()
+Strings LibArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
+Strings LibArchiveReader::getAllFiles(NameFilter filter)
 {
     Handle handle = acquireHandle();
     return handle.getAllFiles(filter);
@@ -480,7 +560,7 @@ void LibArchiveReader::setPassword(const String & password_)
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()
 {
     std::lock_guard lock{mutex};
-    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function}
+    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function, archive_size}
                                  : Handle{path_to_archive, lock_on_reading};
 }
 

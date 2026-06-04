@@ -16,7 +16,7 @@ namespace DB
 static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
 static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
-enum class RedisStorageType
+enum class RedisStorageType : uint8_t
 {
     SIMPLE,
     HASH_MAP,
@@ -33,11 +33,11 @@ String serializeStorageType(RedisStorageType storage_type);
 struct RedisConfiguration
 {
     String host;
-    uint32_t port;
-    uint32_t db_index;
+    uint32_t port{};
+    uint32_t db_index{};
     String password;
-    RedisStorageType storage_type;
-    uint32_t pool_size;
+    RedisStorageType storage_type{};
+    uint32_t pool_size{};
 };
 
 static uint32_t DEFAULT_REDIS_DB_INDEX = 0;

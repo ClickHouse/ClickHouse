@@ -6,10 +6,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -24,13 +27,10 @@
 #include <map>
 #include <mutex>
 #include <chrono>
-#include <vector>
 #include <memory>
-#include <thread>
 #include <atomic>
 #include <cstdint>
 #include <optional>
-#include <functional>
 #include <random>
 
 
@@ -90,6 +90,12 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+    class AggregatedZooKeeperLog;
+}
+
+namespace HistogramMetrics
+{
+    struct Metric;
 }
 
 namespace Coordination
@@ -102,44 +108,36 @@ using namespace DB;
 class ZooKeeper final : public IKeeper
 {
 public:
-    struct Node
-    {
-        Poco::Net::SocketAddress address;
-        UInt8 original_index;
-        bool secure;
-    };
-
-    using Nodes = std::vector<Node>;
-
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
 
     ~ZooKeeper() override;
-
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
 
-    Int8 getConnectedNodeIdx() const override { return original_index; }
-    String getConnectedHostPort() const override { return (original_index == -1) ? "" : args.hosts[original_index]; }
-    int32_t getConnectionXid() const override { return next_xid.load(); }
+    std::optional<int8_t> getConnectedNodeIdx() const override;
+    String getConnectedHostPort() const override;
+    int64_t getConnectionXid() const override;
 
-    /// A ZooKeeper session can have an optional deadline set on it.
-    /// After it has been reached, the session needs to be finalized.
-    bool hasReachedDeadline() const override;
+    String tryGetAvailabilityZone() override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    WatchesSnapshot getWatchesSnapshot() const;
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
+        ResponseCallback callback,
+        WatchCallbackPtrOrEventPtr watch = {});
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -156,15 +154,25 @@ public:
         int32_t version,
         RemoveCallback callback) override;
 
+    void removeRecursive(
+        const String &path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) override;
+
+    void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) override;
+
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -176,7 +184,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallbackPtr watch) override;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) override;
 
     void check(
         const String & path,
@@ -202,6 +212,8 @@ public:
         const Requests & requests,
         MultiCallback callback) override;
 
+    void getACL(const String & path, GetACLCallback callback) override;
+
     bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
@@ -218,17 +230,28 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
+    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
 
     void setServerCompletelyStarted();
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
+
+    Int64 getLastReceivedTimestamp() const override
+    {
+        return last_received_timestamp_us.load(std::memory_order_relaxed);
+    }
+
 private:
+    const Int32 send_receive_os_threads_nice_value;
+
     ACLs default_acls;
+    zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
     zkutil::ZooKeeperArgs args;
-    Int8 original_index = -1;
+    std::atomic<int8_t> original_index{-1};
 
     /// Fault injection
     void maybeInjectSendFault();
@@ -252,6 +275,11 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     bool use_compression = false;
+    bool use_xid_64 = false;
+    bool pass_opentelemetry_tracing_context = false;
+    bool enforce_component_tracking = false;
+
+    int64_t close_xid = CLOSE_XID;
 
     int64_t session_id = 0;
 
@@ -266,11 +294,10 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtr watch;
-        clock::time_point time;
+        WatchCallbackPtrOrEventPtr watch;
+        StaticString component;
     };
 
-    std::optional<clock::time_point> client_session_deadline {};
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1024};
@@ -281,11 +308,11 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
+    using WatchCallbacksWithCreateInfo = std::unordered_map<WatchCallbackPtrOrEventPtr, WatchCreateInfo>;
+    using WatchesWithCreateInfo = std::unordered_map<String, WatchCallbacksWithCreateInfo>;
 
-    Watches watches TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
+    WatchesWithCreateInfo watches TSA_GUARDED_BY(watches_mutex);
+    WatchesWithCreateInfo list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
@@ -315,7 +342,7 @@ private:
     LoggerPtr log;
 
     void connect(
-        const Nodes & node,
+        const zkutil::ShuffleHosts & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -341,16 +368,29 @@ private:
 
     WriteBuffer & getWriteBuffer();
     void flushWriteBuffer();
+    void cancelWriteBuffer() noexcept;
     ReadBuffer & getReadBuffer();
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
+
+    /// Observes the operation in Aggregated ZooKeeper Log.
+    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest = false);
+
+    std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
     void initFeatureFlags();
 
-    void checkSessionDeadline() const;
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
+
+    std::atomic<int64_t> last_zxid_seen;
+
+    /// Timestamp of the last data received from the server (any kind: response,
+    /// heartbeat, or watch event), in microseconds since `steady_clock` epoch.
+    /// Updated by `receiveThread` after each `receiveEvent` call.
+    /// Read by sync wrappers via `getLastReceivedTimestamp` for progress-based timeout.
+    std::atomic<Int64> last_received_timestamp_us{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

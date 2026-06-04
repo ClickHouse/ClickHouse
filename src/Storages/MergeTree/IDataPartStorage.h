@@ -1,24 +1,28 @@
 #pragma once
-#include <IO/ReadSettings.h>
-#include <IO/WriteSettings.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <base/types.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/TransactionVersionMetadata.h>
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
-#include <boost/core/noncopyable.hpp>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteSettings.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <base/types.h>
+#include <Common/TransactionID.h>
+
 #include <memory>
 #include <optional>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
-
+struct ReadSettings;
 class ReadBufferFromFileBase;
+class ReadPipeline;
 class WriteBufferFromFileBase;
+
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 struct CanRemoveDescription
 {
@@ -96,11 +100,12 @@ public:
     virtual MergeTreeDataPartStorageType getType() const = 0;
 
     /// Methods to get path components of a data part.
-    virtual std::string getFullPath() const = 0;      /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
-    virtual std::string getRelativePath() const = 0;  ///                          'database/table/moving/all_1_5_1'
-    virtual std::string getPartDirectory() const = 0; ///                                                'all_1_5_1'
-    virtual std::string getFullRootPath() const = 0;  /// '/var/lib/clickhouse/data/database/table/moving'
-    /// Can add it if needed                          ///                          'database/table/moving'
+    virtual std::string getFullPath() const = 0;         /// '/var/lib/clickhouse/data/database/table/moving/all_1_5_1'
+    virtual std::string getRelativePath() const = 0;     ///                          'database/table/moving/all_1_5_1'
+    virtual std::string getPartDirectory() const = 0;    ///                                                'all_1_5_1'
+    virtual std::string getFullRootPath() const = 0;     /// '/var/lib/clickhouse/data/database/table/moving'
+    virtual std::string getParentDirectory() const = 0;  ///                                                '' (or 'detached' for 'detached/all_1_5_1')
+    /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
     /// Get a storage for projection.
@@ -111,8 +116,8 @@ public:
     virtual bool exists() const = 0;
 
     /// File inside part directory exists. Specified path is relative to the part path.
-    virtual bool exists(const std::string & name) const = 0;
-    virtual bool isDirectory(const std::string & name) const = 0;
+    virtual bool existsFile(const std::string & name) const = 0;
+    virtual bool existsDirectory(const std::string & name) const = 0;
 
     /// Modification time for part directory.
     virtual Poco::Timestamp getLastModified() const = 0;
@@ -126,16 +131,34 @@ public:
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.
-    virtual std::string getRemotePath(const std::string & file_name) const = 0;
+    virtual std::vector<std::string> getRemotePaths(const std::string & file_name) const = 0;
 
     virtual UInt64 calculateTotalSizeOnDisk() const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this part storage.
+    /// Every implementation must override this method.
+    virtual void prepareRead(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const = 0;
+        ReadPipeline & pipeline) const = 0;
+
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const
+    {
+        if (existsFile(name))
+            return readFile(name, settings, read_hint);
+        return {};
+    }
 
     struct ProjectionChecksums
     {
@@ -172,10 +195,6 @@ public:
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
 
-    /// TODO: remove or at least remove const.
-    virtual void syncRevision(UInt64 revision) const = 0;
-    virtual UInt64 getRevision() const = 0;
-
     /// Get a path for internal disk if relevant. It is used mainly for logging.
     virtual std::string getDiskPath() const = 0;
 
@@ -198,7 +217,7 @@ public:
         struct ReplicatedFileDescription
         {
             InputBufferGetter input_buffer_getter;
-            size_t file_size;
+            size_t file_size{};
         };
 
         std::map<String, ReplicatedFileDescription> files;
@@ -220,13 +239,13 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs) const = 0;
+        TemporaryFilesOnDisks * temp_dirs,
+        bool is_projection_part,
+        bool allow_backup_broken_projection) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
-    /// Callback is called after hardlinks are created, but before 'delete-on-destroy.txt' marker is removed.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
     /// implementation which relies on paths of some blobs in S3. For example if we want to hardlink
     /// the whole part during mutation we shouldn't hardlink checksums.txt, because otherwise
@@ -255,6 +274,15 @@ public:
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const = 0;
+
+    virtual std::shared_ptr<IDataPartStorage> freezeRemote(
+    const std::string & to,
+    const std::string & dir_path,
+    const DiskPtr & dst_disk,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    std::function<void(const DiskPtr &)> save_metadata_callback,
+    const ClonePartParams & params) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
@@ -291,7 +319,7 @@ public:
     /// A special const method to write transaction file.
     /// It's const, because file with transaction metadata
     /// can be modified after part creation.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(WriteMode mode) const = 0;
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeTransactionFile(const String & txn_file_name, WriteMode mode) const = 0;
 
     virtual void createFile(const String & name) = 0;
     virtual void moveFile(const String & from_name, const String & to_name) = 0;
@@ -326,6 +354,10 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    /// Returns true if underlying filesystem is case-insensitive,
+    /// e.g. file_name and FILE_NAME are the same files.
+    virtual bool isCaseInsensitive() const = 0;
 };
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;

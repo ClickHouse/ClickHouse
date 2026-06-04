@@ -31,7 +31,7 @@ insert into mt1 values (3);
 insert into mt2 values (30);
 select 'on exception before start', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
 -- rollback on exception before start
-select functionThatDoesNotExist(); -- { serverError 46 }
+select functionThatDoesNotExist(); -- { serverError UNKNOWN_FUNCTION }
 -- cannot commit after exception
 commit; -- { serverError INVALID_TRANSACTION } -- after 46
 begin transaction; -- { serverError INVALID_TRANSACTION }
@@ -42,7 +42,7 @@ insert into mt1 values (4);
 insert into mt2 values (40);
 select 'on exception while processing', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
 -- rollback on exception while processing
-select throwIf(100 < number) from numbers(1000); -- { serverError 395 }
+select throwIf(100 < number) from numbers(1000); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 -- cannot commit after exception
 commit; -- { serverError INVALID_TRANSACTION } -- after 395
 insert into mt1 values (5); -- { serverError INVALID_TRANSACTION }
@@ -54,7 +54,7 @@ begin transaction;
 insert into mt1 values (6);
 insert into mt2 values (60);
 select 'on session close', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
-insert into mt1 values ([1]); -- { clientError 43 }
+insert into mt1 values ([1]); -- { clientError ILLEGAL_TYPE_OF_ARGUMENT }
 -- INSERT failures does not produce client reconnect anymore, so rollback can be done
 rollback;
 
@@ -82,19 +82,19 @@ set transaction snapshot 5; -- { serverError INVALID_TRANSACTION }
 rollback;
 
 begin transaction;
-create table m (n int) engine=Memory; -- { serverError 48 }
+create table m (n int) engine=Memory; -- { serverError NOT_IMPLEMENTED }
 commit; -- { serverError INVALID_TRANSACTION } -- after 48
 rollback;
 
 create table m (n int) engine=Memory;
 begin transaction;
-insert into m values (1); -- { serverError 48 }
+insert into m values (1); -- { serverError NOT_IMPLEMENTED }
 select * from m; -- { serverError INVALID_TRANSACTION }
 commit; -- { serverError INVALID_TRANSACTION } -- after 48
 rollback;
 
 begin transaction;
-select * from m; -- { serverError 48 }
+select * from m; -- { serverError NOT_IMPLEMENTED }
 commit; -- { serverError INVALID_TRANSACTION } -- after 48
 rollback;
 

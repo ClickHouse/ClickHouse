@@ -1,8 +1,9 @@
 #pragma once
 
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -22,41 +23,64 @@ using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
 /// After formatting, created message is propagated to IMessageProducer::produce() method.
 /// To use MessageQueueSink for specific streaming engine, you should implement
 /// IMessageProducer for it.
-class MessageQueueSink : public SinkToStorage
+///
+/// If `format_header` differs from `header`, only a subset of input columns is
+/// written into the formatted payload. The remaining input columns are still
+/// passed to the producer (e.g. so a storage can turn them into message
+/// metadata — Kafka key, timestamp, headers). `format_column_indices`
+/// describes which columns of `header` map onto `format_header`, in order.
+class MessageQueueSink final : public SinkToStorage
 {
 public:
     MessageQueueSink(
-        const Block & header,
+        SharedHeader header,
         const String & format_name_,
         size_t max_rows_per_message_,
         std::unique_ptr<IMessageProducer> producer_,
         const String & storage_name_,
         const ContextPtr & context_);
 
+    MessageQueueSink(
+        SharedHeader header,
+        SharedHeader format_header_,
+        std::vector<size_t> format_column_indices_,
+        const String & format_name_,
+        size_t max_rows_per_message_,
+        std::unique_ptr<IMessageProducer> producer_,
+        const String & storage_name_,
+        const ContextPtr & context_);
+
+    ~MessageQueueSink() override;
+
     String getName() const override { return storage_name + "Sink"; }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
 
     void onStart() override;
     void onFinish() override;
-    void onCancel() override { onFinish(); }
-    void onException(std::exception_ptr /* exception */) override { onFinish(); }
+    void onException(std::exception_ptr /* exception */) override;
 
 protected:
     /// Do some specific initialization before consuming data.
-    virtual void initialize() {}
+    void initialize() {}
 
 private:
     const String format_name;
     size_t max_rows_per_message;
 
+    SharedHeader format_header;
+    std::vector<size_t> format_column_indices;
+
     std::unique_ptr<WriteBufferFromOwnString> buffer;
     IOutputFormatPtr format;
-    IRowOutputFormat * row_format;
+    IRowOutputFormat * row_format{};
     std::unique_ptr<IMessageProducer> producer;
 
     const String storage_name;
     const ContextPtr context;
+
+    /// Given the full set of input columns, returns the columns used by the formatter.
+    Columns extractFormatColumns(const Columns & columns) const;
 };
 
 }

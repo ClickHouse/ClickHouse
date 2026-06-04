@@ -11,18 +11,22 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn_fwd.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/IFunction.h>
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -31,11 +35,21 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
-#include <deque>
+#include <vector>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_unrestricted_reads_from_keeper;
+    extern const SettingsFloat insert_keeper_fault_injection_probability;
+    extern const SettingsUInt64 insert_keeper_fault_injection_seed;
+    extern const SettingsUInt64 insert_keeper_max_retries;
+    extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsMaxThreads max_download_threads;
+}
 
 namespace ErrorCodes
 {
@@ -96,7 +110,10 @@ struct ZkNodeCache
           */
         if (!exists)
         {
-            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
+            /// For intermediate nodes that are created as parents (not explicitly changed by the user),
+            /// use ignore_if_exists to handle concurrent creation by other sessions.
+            bool ignore_if_exists = !changed;
+            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent, ignore_if_exists);
             requests.push_back(request);
         }
         else if (changed)
@@ -104,33 +121,56 @@ struct ZkNodeCache
             auto request = zkutil::makeSetRequest(path, value, -1);
             requests.push_back(request);
         }
-        for (auto [_, child] : children)
+        for (const auto & [_, child] : children)
             child->generateRequests(requests);
     }
 };
 
-class ZooKeeperSink : public SinkToStorage
+class ZooKeeperSink final : public SinkToStorage
 {
-    zkutil::ZooKeeperPtr zookeeper;
-
-    ZkNodeCache cache;
+    ContextPtr context;
+    std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
+    std::unordered_map<String, ZkNodeCache> caches;
 
 public:
-    ZooKeeperSink(const Block & header, ContextPtr context) : SinkToStorage(header), zookeeper(context->getZooKeeper()) { }
+    ZooKeeperSink(SharedHeader header, ContextPtr context_)
+        : SinkToStorage(header), context(context_)
+    {}
+
     String getName() const override { return "ZooKeeperSink"; }
 
-    void consume(Chunk chunk) override
+    zkutil::ZooKeeperPtr getZooKeeper(const String & zookeeper_name)
     {
+        auto it = zookeepers.find(zookeeper_name);
+        if (it == zookeepers.end() || it->second->expired())
+        {
+            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+            zookeepers[zookeeper_name] = zookeeper;
+            return zookeeper;
+        }
+        return it->second;
+    }
+
+    void consume(Chunk & chunk) override
+    {
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::consume");
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        ColumnPtr name_column = block.getByName("name").column;
+        ColumnPtr value_column = block.getByName("value").column;
+        ColumnPtr path_column = block.getByName("path").column;
+        ColumnPtr zookeeper_name_column = block.getByName("zookeeperName").column;
+
         size_t rows = block.rows();
         for (size_t i = 0; i < rows; i++)
         {
-            String name = block.getByPosition(0).column->getDataAt(i).toString();
-            String value = block.getByPosition(1).column->getDataAt(i).toString();
-            String path = block.getByPosition(2).column->getDataAt(i).toString();
+            String name{name_column->getDataAt(i)};
+            String value{value_column->getDataAt(i)};
+            String path{path_column->getDataAt(i)};
+            String zookeeper_name{zookeeper_name_column->getDataAt(i)};
 
             /// We don't expect a "name" contains a path.
-            if (name.find('/') != std::string::npos)
+            if (name.contains('/'))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }
@@ -150,23 +190,33 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of `name` length and `path` length should not exceed PATH_MAX");
             }
 
+            if (zookeeper_name.empty())
+                zookeeper_name = zkutil::DEFAULT_ZOOKEEPER_NAME;
+
             std::vector<String> path_vec;
             boost::split(path_vec, path, boost::is_any_of("/"));
             path_vec.push_back(name);
+            auto zookeeper = getZooKeeper(zookeeper_name);
+            auto & cache = caches[zookeeper_name];
             cache.insert(path_vec, zookeeper, value, 0);
         }
     }
 
     void onFinish() override
     {
-        Coordination::Requests requests;
-        cache.generateRequests(requests);
-        zookeeper->multi(requests);
+        auto component_guard = Coordination::setCurrentComponent("ZooKeeperSink::onFinish");
+        for (auto & [zookeeper_name, cache] : caches)
+        {
+            Coordination::Requests requests;
+            auto zookeeper = getZooKeeper(zookeeper_name);
+            cache.generateRequests(requests);
+            zookeeper->multi(requests);
+        }
     }
 };
 
 /// Type of path to be fetched
-enum class ZkPathType
+enum class ZkPathType : uint8_t
 {
     Exact, /// Fetch all nodes under this path
     Prefix, /// Fetch all nodes starting with this prefix, recursively (multiple paths may match prefix)
@@ -196,20 +246,23 @@ public:
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
+    String name;
     Paths paths;
 };
 
 
-class SystemZooKeeperSource : public ISource
+class SystemZooKeeperSource final : public ISource
 {
 public:
     SystemZooKeeperSource(
+        String && zookeeper_name_,
         Paths && paths_,
-        Block header_,
+        SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
         : ISource(header_)
         , max_block_size(max_block_size_)
+        , name(std::move(zookeeper_name_))
         , paths(std::move(paths_))
         , context(std::move(context_))
     {
@@ -222,23 +275,33 @@ protected:
 
 private:
     const UInt64 max_block_size;
+    String name;
     Paths paths;
     ContextPtr context;
-    ZooKeeperWithFaultInjection::Ptr zookeeper;
+    std::map<String, ZooKeeperWithFaultInjection::Ptr> zookeepers;
     bool started = false;
     std::unordered_set<String> visited;
 };
 
 
 StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
-        : IStorage(table_id_)
+        : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemZooKeeper::read(
+VirtualColumnsDescription StorageSystemZooKeeper::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemZooKeeper::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -248,7 +311,7 @@ void StorageSystemZooKeeper::read(
     size_t max_block_size,
     size_t /*num_streams*/)
 {
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     auto read_step = std::make_unique<ReadFromSystemZooKeeper>(
         column_names,
         query_info,
@@ -259,15 +322,12 @@ void StorageSystemZooKeeper::read(
     query_plan.addStep(std::move(read_step));
 }
 
-SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, bool /*async_insert*/)
+SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr & metadata, ContextPtr context, bool /*async_insert*/)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
-    Block write_header;
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
-    write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "path"));
-    return std::make_shared<ZooKeeperSink>(write_header, context);
+
+    return std::make_shared<ZooKeeperSink>(std::make_shared<const Block>(metadata->getSampleBlock()), context);
 }
 
 ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
@@ -276,6 +336,7 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
     {
         {"name",           std::make_shared<DataTypeString>(), "The name of the node."},
         {"value",          std::make_shared<DataTypeString>(), "Node value."},
+        {"zookeeperName",  std::make_shared<DataTypeString>(), "The name of default or one of auxiliary ZooKeeper cluster."},
         {"czxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that created the node."},
         {"mzxid",          std::make_shared<DataTypeInt64>(), "ID of the transaction that last changed the node."},
         {"ctime",          std::make_shared<DataTypeDateTime>(), "Time of node creation."},
@@ -290,13 +351,20 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         {"path",           std::make_shared<DataTypeString>(), "The path to the node."},
     };
 
+    /// Mark read-only columns as MATERIALIZED with a constant expression to block INSERT
+    /// and ensure the attribute survives DDL serialization.
     for (auto & name : description.getAllRegisteredNames())
     {
         description.modify(name, [&](ColumnDescription & column)
         {
-            /// We only allow column `name`, `path`, `value` to insert.
-            if (column.name != "name" && column.name != "path" && column.name != "value")
+            if (column.name != "name"
+                && column.name != "path"
+                && column.name != "value"
+                && column.name != "zookeeperName")
+            {
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
+                column.default_desc.expression = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
+            }
         });
     }
 
@@ -317,12 +385,65 @@ static String pathCorrected(const String & path)
     return path_corrected;
 }
 
+static bool isNameNode(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+
+    return node->result_name == "zookeeperName";
+}
+
 static bool isPathNode(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.at(0);
 
     return node->result_name == "path";
+}
+
+static void extractNameImpl(const ActionsDAG::Node & node, String & res, ContextPtr context)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return;
+
+    auto function_name = node.function_base->getName();
+    if (function_name == "and")
+    {
+        for (const auto * child : node.children)
+            extractNameImpl(*child, res, context);
+
+        return;
+    }
+
+    if (node.children.size() != 2)
+        return;
+
+    if (function_name == "equals")
+    {
+        const ActionsDAG::Node * value = nullptr;
+
+        if (isNameNode(node.children.at(0)))
+            value = node.children.at(1);
+        else if (isNameNode(node.children.at(1)))
+            value = node.children.at(0);
+
+        if (!value || !value->column)
+            return;
+
+        if (!isString(removeNullable(removeLowCardinality(value->result_type))))
+            return;
+
+        if (value->column->size() != 1)
+            return;
+
+        /// Only inserted if the key doesn't exists already
+        auto candidate = value->column->getDataAt(0);
+        /// Only one name is allowed
+        if (!res.empty() && res != candidate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SELECT from system.zookeeper table cannot have multiple different filters by zookeeperName.");
+        res = candidate;
+    }
 }
 
 static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextPtr context, bool allow_unrestricted)
@@ -377,7 +498,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
 
         for (size_t row = 0; row < size; ++row)
             /// Only inserted if the key doesn't exists already
-            res.insert({values->getDataAt(row).toString(), ZkPathType::Exact});
+            res.insert({std::string{values->getDataAt(row)}, ZkPathType::Exact});
     }
     else if (function_name == "equals")
     {
@@ -398,7 +519,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         /// Only inserted if the key doesn't exists already
-        res.insert({value->column->getDataAt(0).toString(), ZkPathType::Exact});
+        res.insert({std::string{value->column->getDataAt(0)}, ZkPathType::Exact});
     }
     else if (allow_unrestricted && function_name == "like")
     {
@@ -415,7 +536,7 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (value->column->size() != 1)
             return;
 
-        String pattern = value->column->getDataAt(0).toString();
+        String pattern{value->column->getDataAt(0)};
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
         for (size_t i = 0; i < pattern.size(); i++)
@@ -447,6 +568,20 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
     }
 }
 
+/** Retrieve from the query a condition of the form `zookeeperName = 'name`, from conjunctions in the WHERE clause.
+  */
+static String extractName(const ActionsDAG::NodeRawConstPtrs & filter_nodes, ContextPtr context)
+{
+    String res;
+    for (const auto * node : filter_nodes)
+        extractNameImpl(*node, res, context);
+
+    if (res.empty())
+        return {String(zkutil::DEFAULT_ZOOKEEPER_NAME)};
+
+    return res;
+}
+
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
@@ -474,13 +609,22 @@ static Paths extractPath(const ActionsDAG::NodeRawConstPtrs & filter_nodes, Cont
 
 void ReadFromSystemZooKeeper::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
-    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef().allow_unrestricted_reads_from_keeper);
+    SourceStepWithFilter::applyFilters(added_filter_nodes);
+
+    name = extractName(added_filter_nodes.nodes, context);
+    paths = extractPath(added_filter_nodes.nodes, context, context->getSettingsRef()[Setting::allow_unrestricted_reads_from_keeper]);
 }
 
 
 Chunk SystemZooKeeperSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemZooKeeperSource::generate");
+    if (name.empty())
+    {
+        chassert(0); // In fact, it must always have a default value.
+        name = zkutil::DEFAULT_ZOOKEEPER_NAME;
+    }
+
     if (paths.empty())
     {
         if (!started)
@@ -504,30 +648,33 @@ Chunk SystemZooKeeperSource::generate()
     /// Use insert settings for now in order not to introduce new settings.
     /// Hopefully insert settings will also be unified and replaced with some generic retry settings.
     ZooKeeperRetriesInfo retries_seetings(
-        settings.insert_keeper_max_retries,
-        settings.insert_keeper_retry_initial_backoff_ms,
-        settings.insert_keeper_retry_max_backoff_ms);
+        settings[Setting::insert_keeper_max_retries],
+        settings[Setting::insert_keeper_retry_initial_backoff_ms],
+        settings[Setting::insert_keeper_retry_max_backoff_ms],
+        query_status);
 
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
     {
-        if (!zookeeper || zookeeper->expired())
+        auto zookeeper = zookeepers.find(name);
+        if (zookeeper == zookeepers.end() || zookeeper->second->expired())
         {
-            zookeeper = ZooKeeperWithFaultInjection::createInstance(
-                settings.insert_keeper_fault_injection_probability,
-                settings.insert_keeper_fault_injection_seed,
-                context->getZooKeeper(),
-                "", nullptr);
+            zookeepers[name] = ZooKeeperWithFaultInjection::createInstance(
+                static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
+                settings[Setting::insert_keeper_fault_injection_seed],
+                context->getDefaultOrAuxiliaryZooKeeper(name),
+                "",
+                nullptr);
         }
-        return zookeeper;
+        return zookeepers[name];
     };
 
-    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef().max_download_threads.value);
+    const Int64 max_inflight_requests = std::max<Int64>(1, context->getSettingsRef()[Setting::max_download_threads].value);
 
     struct ListTask
     {
         String path;
-        ZkPathType path_type;
+        ZkPathType path_type{};
         String prefix;
         String path_corrected;
         String path_part;
@@ -573,7 +720,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
             [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
@@ -606,7 +753,7 @@ Chunk SystemZooKeeperSource::generate()
                 // Remove nodes that do not match specified prefix
                 std::erase_if(nodes, [&task] (const String & node)
                 {
-                    return (task.path_part + '/' + node).substr(0, task.prefix.size()) != task.prefix;
+                    return !(task.path_part + '/' + node).starts_with(task.prefix);
                 });
             }
 
@@ -619,8 +766,22 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
+
+        /// Add children count to query total rows. We can not get total rows in advance,
+        /// because it is too heavy to get row count for non exact paths.
+        /// Please be aware that there might be minor setbacks in the query progress,
+        /// but overall it should reflect the advancement of the query.
+        size_t children_count = 0;
+        for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
+        {
+            auto & res = get_responses[i];
+            if (res.error == Coordination::Error::ZNONODE)
+                continue; /// Node was deleted meanwhile.
+            children_count += res.stat.numChildren;
+        }
+        addTotalRowsApprox(children_count);
 
         for (size_t i = 0, size = get_tasks.size(); i < size; ++i)
         {
@@ -643,6 +804,7 @@ Chunk SystemZooKeeperSource::generate()
             size_t col_num = 0;
             res_columns[col_num++]->insert(get_task.node);
             res_columns[col_num++]->insert(res.data);
+            res_columns[col_num++]->insert(name);
             res_columns[col_num++]->insert(stat.czxid);
             res_columns[col_num++]->insert(stat.mzxid);
             res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
@@ -677,7 +839,7 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
     const Block & header,
     UInt64 max_block_size_)
     : SourceStepWithFilter(
-        {.header = header},
+        std::make_shared<const Block>(header),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -689,8 +851,9 @@ ReadFromSystemZooKeeper::ReadFromSystemZooKeeper(
 
 void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & header = getOutputStream().header;
-    auto source = std::make_shared<SystemZooKeeperSource>(std::move(paths), header, max_block_size, context);
+    const auto & header = getOutputHeader();
+
+    auto source = std::make_shared<SystemZooKeeperSource>(std::move(name), std::move(paths), header, max_block_size, context);
     source->setStorageLimits(storage_limits);
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));

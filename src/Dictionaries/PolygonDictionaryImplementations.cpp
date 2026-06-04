@@ -1,18 +1,22 @@
-#include "PolygonDictionaryImplementations.h"
-#include "DictionaryFactory.h"
+#include <Core/NamesAndTypes.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/PolygonDictionaryImplementations.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-
+#include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
-
-#include <numeric>
+#include <Core/Settings.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+}
 
 namespace ErrorCodes
 {
@@ -27,6 +31,7 @@ PolygonDictionarySimple::PolygonDictionarySimple(
         Configuration configuration_)
     : IPolygonDictionary(dict_id_, dict_struct_, std::move(source_ptr_), dict_lifetime_, configuration_)
 {
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionarySimple::clone() const
@@ -70,10 +75,11 @@ PolygonDictionaryIndexEach::PolygonDictionaryIndexEach(
     buckets.reserve(polygons.size());
     for (const auto & polygon : polygons)
     {
-        std::vector<Polygon> single;
+        VectorWithMemoryTracking<Polygon> single;
         single.emplace_back(polygon);
         buckets.emplace_back(single);
     }
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
@@ -88,6 +94,15 @@ std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexEach::clone() const
             this->max_depth);
 }
 
+size_t PolygonDictionaryIndexEach::getIndexBytesAllocated() const
+{
+    size_t total = grid.getBytesAllocated();
+    total += buckets.capacity() * sizeof(SlabsPolygonIndex);
+    for (const auto & bucket : buckets)
+        total += bucket.getBytesAllocated();
+    return total;
+}
+
 bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_index) const
 {
     const auto * cell = grid.find(point.x(), point.y());
@@ -95,7 +110,7 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
     {
         for (const auto & candidate : cell->polygon_ids)
         {
-            size_t unused;
+            size_t unused = 0;
             if (buckets[candidate].find(point, unused))
             {
                 polygon_index = candidate;
@@ -124,6 +139,7 @@ PolygonDictionaryIndexCell::PolygonDictionaryIndexCell(
       min_intersections(min_intersections_),
       max_depth(max_depth_)
 {
+    calculateBytesAllocated();
 }
 
 std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
@@ -136,6 +152,11 @@ std::shared_ptr<IExternalLoadable> PolygonDictionaryIndexCell::clone() const
             this->configuration,
             this->min_intersections,
             this->max_depth);
+}
+
+size_t PolygonDictionaryIndexCell::getIndexBytesAllocated() const
+{
+    return index.getBytesAllocated();
 }
 
 bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_index) const
@@ -158,7 +179,7 @@ bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_inde
 }
 
 template <class PolygonDictionary>
-DictionaryPtr createLayout(const std::string & ,
+DictionaryPtr createLayout(const std::string & /*name*/,
                            const DictionaryStructure & dict_struct,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
@@ -166,7 +187,6 @@ DictionaryPtr createLayout(const std::string & ,
                            ContextPtr global_context,
                            bool /*created_from_ddl*/)
 {
-    const String database = config.getString(config_prefix + ".database", "");
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
@@ -178,12 +198,13 @@ DictionaryPtr createLayout(const std::string & ,
     const auto key_type = (*dict_struct.key)[0].type;
     const auto f64 = std::make_shared<DataTypeFloat64>();
     const auto multi_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(f64))));
-    const auto multi_polygon_tuple = DataTypeArray(std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}))));
+    const auto multi_polygon_tuple = DataTypeArray(
+        std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}))));
     const auto simple_polygon_array = DataTypeArray(std::make_shared<DataTypeArray>(f64));
-    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(std::vector<DataTypePtr>{f64, f64}));
+    const auto simple_polygon_tuple = DataTypeArray(std::make_shared<DataTypeTuple>(DataTypes{f64, f64}));
 
-    IPolygonDictionary::InputType input_type;
-    IPolygonDictionary::PointType point_type;
+    IPolygonDictionary::InputType input_type = {};
+    IPolygonDictionary::PointType point_type = {};
 
     if (key_type->equals(multi_polygon_array))
     {
@@ -223,7 +244,7 @@ DictionaryPtr createLayout(const std::string & ,
 
     ContextMutablePtr context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
     const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
+    bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
 
     IPolygonDictionary::Configuration configuration
     {
@@ -253,6 +274,7 @@ DictionaryPtr createLayout(const std::string & ,
         return std::make_unique<PolygonDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, configuration);
 }
 
+void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryPolygon(DictionaryFactory & factory)
 {
     factory.registerLayout("polygon_simple", createLayout<PolygonDictionarySimple>, true);

@@ -4,8 +4,8 @@
 #include <mutex>
 
 #include <Core/Names.h>
-#include <Columns/ColumnsNumber.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/UUID.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/IKeyValueEntity.h>
@@ -37,7 +37,7 @@ using DictionaryHierarchicalParentToChildIndexPtr = std::shared_ptr<DictionaryHi
   *
   * Complex is for dictionaries that support any combination of key columns.
   */
-enum class DictionaryKeyType
+enum class DictionaryKeyType : uint8_t
 {
     Simple,
     Complex
@@ -46,7 +46,7 @@ enum class DictionaryKeyType
 /** DictionarySpecialKeyType provides IDictionary client information about
   * which special key type is supported by dictionary.
   */
-enum class DictionarySpecialKeyType
+enum class DictionarySpecialKeyType : uint8_t
 {
     None,
     Range
@@ -67,6 +67,15 @@ public:
     {
         std::lock_guard lock{mutex};
         return dictionary_id.getNameForLogs();
+    }
+
+    /// Returns fully qualified unquoted dictionary name
+    std::string getQualifiedName() const
+    {
+        std::lock_guard lock{mutex};
+        if (dictionary_id.database_name.empty())
+            return dictionary_id.table_name;
+        return dictionary_id.database_name + "." + dictionary_id.table_name;
     }
 
     StorageID getDictionaryID() const
@@ -154,8 +163,8 @@ public:
 
             auto & key_column_to_cast = key_columns[key_attribute_type_index];
             ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(column_to_cast, key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
+            auto cast_column = castColumnAccurate(column_to_cast, key_attribute_type);
+            key_column_to_cast = std::move(cast_column);
             key_type = key_attribute_type;
         }
     }
@@ -193,7 +202,7 @@ public:
         DefaultsOrFilter defaults_or_filter) const
     {
         bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-        assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+        chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -341,7 +350,7 @@ public:
     /// IKeyValueEntity implementation
     Names getPrimaryKey() const  override { return getStructure().getKeysNames(); }
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & out_null_map, const Names & result_names) const override
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names & result_names, PaddedPODArray<UInt8> & out_null_map, IColumn::Offsets & /* out_offsets */) const override
     {
         if (keys.empty())
             return Chunk(getSampleBlock(result_names).cloneEmpty().getColumns(), 0);
@@ -444,7 +453,7 @@ public:
     void updateDictionaryID(const StorageID & new_dictionary_id)
     {
         std::lock_guard lock{mutex};
-        assert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
+        chassert((new_dictionary_id.uuid == dictionary_id.uuid) && (dictionary_id.uuid != UUIDHelpers::Nil));
         dictionary_id = new_dictionary_id;
     }
 

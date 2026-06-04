@@ -1,16 +1,16 @@
-#include "ProgressIndication.h"
+#include <Common/ProgressIndication.h>
 #include <algorithm>
 #include <cstddef>
+#include <mutex>
 #include <numeric>
-#include <filesystem>
-#include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <base/types.h>
-#include "Common/formatReadable.h"
+#include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Interpreters/Context.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define CLEAR_TO_END_OF_LINE "\033[K"
@@ -33,24 +33,28 @@ bool ProgressIndication::updateProgress(const Progress & value)
 
 void ProgressIndication::resetProgress()
 {
-    watch.restart();
-    progress.reset();
-    show_progress_bar = false;
-    written_progress_chars = 0;
-    write_progress_on_update = false;
+    {
+        std::lock_guard lock(progress_mutex);
+        progress.reset();
+        show_progress_bar = false;
+        written_progress_chars = 0;
+        write_progress_on_update = false;
+    }
     {
         std::lock_guard lock(profile_events_mutex);
-        cpu_usage_meter.reset(getElapsedNanoseconds());
+        watch.restart();
+        cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
     }
 }
 
-void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message)
+void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message, std::mutex & message_mutex)
 {
     context->setFileProgressCallback([&](const FileProgress & file_progress)
     {
         progress.incrementPiecewiseAtomically(Progress(file_progress));
-        writeProgress(message);
+        std::unique_lock message_lock(message_mutex);
+        writeProgress(message, message_lock);
     });
 }
 
@@ -66,13 +70,13 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
         total_cpu_ns += us_to_ns * new_host.second.time();
         hosts_data[new_host.first] = new_host.second;
     }
-    cpu_usage_meter.add(getElapsedNanoseconds(), total_cpu_ns);
+    cpu_usage_meter.add(static_cast<double>(getElapsedNanoseconds()), static_cast<double>(total_cpu_ns));
 }
 
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
-    return cpu_usage_meter.rate(getElapsedNanoseconds());
+    return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -87,27 +91,41 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
         });
 }
 
+ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsage() const
+{
+    std::lock_guard lock(profile_events_mutex);
+
+    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), TempDataOnDiskUsage{},
+        [](TempDataOnDiskUsage const & acc, auto const & host_data)
+        {
+            UInt64 host_usage = host_data.second.temp_data_on_disk_usage;
+            return TempDataOnDiskUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
+        });
+}
+
 void ProgressIndication::writeFinalProgress()
 {
+    std::lock_guard lock(progress_mutex);
+
     if (progress.read_rows < 1000)
         return;
 
-    std::cout << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+    output_stream << "Processed " << formatReadableQuantity(progress.read_rows.load()) << " rows, "
+                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        std::cout << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                    << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+        output_stream << " (" << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
+                    << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.)";
     else
-        std::cout << ". ";
+        output_stream << ". ";
 
     auto peak_memory_usage = getMemoryUsage().peak;
     if (peak_memory_usage >= 0)
-        std::cout << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
+        output_stream << "\nPeak memory usage: " << formatReadableSizeWithBinarySuffix(peak_memory_usage) << ".";
 }
 
-void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
     std::lock_guard lock(progress_mutex);
 
@@ -125,7 +143,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth();
+    auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
 
     if (!written_progress_chars)
     {
@@ -139,14 +157,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     message << indicator << " Progress: ";
     message
-        << formatReadableQuantity(progress.read_rows) << " rows, "
-        << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+        << formatReadableQuantity(progress.read_rows.load()) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
         message << " ("
-                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.) ";
     else
         message << ". ";
 
@@ -157,14 +175,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
     double cpu_usage = getCPUUsage();
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
+    auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
 
-    if (cpu_usage > 0 || memory_usage > 0)
+    if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
         /// We don't want -0. that can appear due to rounding errors.
-        if (cpu_usage <= 0)
-            cpu_usage = 0;
+        cpu_usage = std::max(cpu_usage, 0.);
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
@@ -172,6 +190,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
+        if (temp_data_on_disk_usage > 0)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
+        if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_temp_data_on_disk_usage) << " max/host";
 
         profiling_msg_builder << ")";
         profiling_msg = profiling_msg_builder.str();
@@ -182,7 +204,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_bytes_to_read)
     {
-        size_t current_count, max_count;
+        size_t current_count = 0;
+        size_t max_count = 0;
         if (progress.total_rows_to_read)
         {
             current_count = progress.read_rows;
@@ -215,7 +238,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
 
                 if (width_of_progress_bar > 0)
                 {
-                    double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
+                    double bar_width = UnicodeBar::getWidth(static_cast<double>(current_count), 0, static_cast<double>(max_count), static_cast<double>(width_of_progress_bar));
                     std::string bar = UnicodeBar::render(bar_width);
                     size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
 
@@ -269,8 +292,10 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message)
     message.next();
 }
 
-void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message)
+void ProgressIndication::clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> &)
 {
+    std::lock_guard lock(progress_mutex);
+
     if (written_progress_chars)
     {
         written_progress_chars = 0;
