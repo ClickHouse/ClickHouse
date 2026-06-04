@@ -1115,7 +1115,9 @@ std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 namespace FormatTokens
 {
     static constexpr std::string_view format_version_txt = "format_version.txt";
-    static constexpr uint32_t current_version = 1;
+    /// Version 2: entry file name encodes `is_subquery` (`<low64>_<high64>_<is_subquery>`) and `query_string`/`tag` are
+    /// length-prefixed instead of newline-delimited.
+    static constexpr uint32_t current_version = 2;
 
     static constexpr auto * token_user_id = "user_id: ";
     static constexpr auto * token_current_user_roles = "current_user_roles: ";
@@ -1170,7 +1172,7 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData()
 
         fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
         ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
-        uint32_t version;
+        uint32_t version = 0;
 
         readIntText(version, format_version_file);
         if (version != FormatTokens::current_version)
@@ -1205,12 +1207,15 @@ void QueryResultCache::OnDiskCache::readCacheEntriesMetaData()
     }
 }
 
+String QueryResultCache::OnDiskCache::makeEntryFileName(const Key & key)
+{
+    const IASTHash & ast_hash = key.ast_hash;
+    return std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64) + '_' + (key.is_subquery ? "1" : "0");
+}
+
 std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::getWithKey(const Key & key)
 {
     std::lock_guard lock(mutex);
-
-    IASTHash ast_hash = key.ast_hash;
-    String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
     if (!cache_policy->contains(key))
     {
@@ -1218,15 +1223,12 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         return std::nullopt;
     }
 
-    return readCacheEntry(ast_hash_str);
+    return readCacheEntry(makeEntryFileName(key));
 }
 
 void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mapped)
 {
     std::lock_guard lock(mutex);
-
-    IASTHash ast_hash = key.ast_hash;
-    String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
 
     Chunks & chunks = mapped->chunks;
 
@@ -1251,7 +1253,7 @@ void QueryResultCache::OnDiskCache::set(const Key & key, const MappedPtr & mappe
         return;
     }
 
-    std::filesystem::path entry_file_path = query_cache_path / ast_hash_str;
+    std::filesystem::path entry_file_path = query_cache_path / makeEntryFileName(key);
 
     auto entry_weight = EntryWeight()(*mapped);
     auto metadata = std::make_shared<DiskEntryMetadata>(entry_weight, entry_file_path);
@@ -1271,10 +1273,7 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         // check format version again in case of format_version.txt changed
         checkFormatVersion();
 
-        IASTHash ast_hash = entry_key.ast_hash;
-        String ast_hash_str = std::to_string(ast_hash.low64) + '_' + std::to_string(ast_hash.high64);
-
-        fs::path entry_file_path = query_cache_path / ast_hash_str;
+        fs::path entry_file_path = query_cache_path / makeEntryFileName(entry_key);
         WriteBufferFromFile entry_file(entry_file_path.string());
 
         writeText(FormatTokens::token_user_id, entry_file);
@@ -1313,13 +1312,14 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
         writeBoolText(entry_key.is_compressed, entry_file);
         writeText("\n", entry_file);
 
+        /// `query_string` and `tag` are arbitrary user strings that may contain newlines (e.g. a multi-line `SELECT`), so they
+        /// are serialized length-prefixed (`writeStringBinary`) rather than newline-delimited. Otherwise a newline inside the
+        /// value would desynchronize the reader and the persisted entry would be silently dropped after restart.
         writeText(FormatTokens::token_query_string, entry_file);
-        writeText(entry_key.query_string, entry_file);
-        writeText("\n", entry_file);
+        writeStringBinary(entry_key.query_string, entry_file);
 
         writeText(FormatTokens::token_tag, entry_file);
-        writeText(entry_key.tag, entry_file);
-        writeText("\n", entry_file);
+        writeStringBinary(entry_key.tag, entry_file);
 
         /// `is_subquery` is part of `Key::operator==` and `KeyHasher`, so it must round-trip through the on-disk format.
         /// Otherwise a persisted subquery entry would be loaded as a top-level entry and could collide with unrelated entries.
@@ -1386,7 +1386,7 @@ void QueryResultCache::OnDiskCache::writeCacheEntry(const Key & entry_key, const
     }
 }
 
-std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::readCacheEntry(String ast_hash_str)
+std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDiskCache::readCacheEntry(const String & entry_file_name)
 {
     try
     {
@@ -1394,13 +1394,17 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
 
         checkFormatVersion();
 
-        fs::path entry_file_path = query_cache_path / ast_hash_str;
+        fs::path entry_file_path = query_cache_path / entry_file_name;
         ReadBufferFromFile entry_file(entry_file_path.string());
 
-        size_t separator_pos = ast_hash_str.find('_');
-        chassert(separator_pos != String::npos);
-        String low64_str = ast_hash_str.substr(0, separator_pos);
-        String high64_str = ast_hash_str.substr(separator_pos + 1, ast_hash_str.size());
+        /// File name layout is `<low64>_<high64>_<is_subquery>` (see `makeEntryFileName`). Only the AST hash is recovered
+        /// here; `is_subquery` and the other key fields are restored from the file contents below.
+        size_t low_high_separator_pos = entry_file_name.find('_');
+        chassert(low_high_separator_pos != String::npos);
+        size_t high_subquery_separator_pos = entry_file_name.find('_', low_high_separator_pos + 1);
+        chassert(high_subquery_separator_pos != String::npos);
+        String low64_str = entry_file_name.substr(0, low_high_separator_pos);
+        String high64_str = entry_file_name.substr(low_high_separator_pos + 1, high_subquery_separator_pos - low_high_separator_pos - 1);
         IASTHash ast_hash(std::stoull(low64_str), std::stoull(high64_str));
 
         assertString(FormatTokens::token_user_id, entry_file);
@@ -1421,19 +1425,19 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         }
 
         assertString(FormatTokens::token_is_shared, entry_file);
-        bool is_shared;
+        bool is_shared = false;
         readBoolText(is_shared, entry_file);
         assertChar('\n', entry_file);
 
         assertString(FormatTokens::token_created_at, entry_file);
-        int64_t created_at_raw;
+        int64_t created_at_raw = 0;
         readIntText(created_at_raw, entry_file);
         std::chrono::time_point<std::chrono::system_clock> created_at{
             std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(created_at_raw))};
         assertChar('\n', entry_file);
 
         assertString(FormatTokens::token_expires_at, entry_file);
-        int64_t duration;
+        int64_t duration = 0;
         readIntText(duration, entry_file);
         std::chrono::nanoseconds nanoseconds(duration);
         std::chrono::time_point<std::chrono::system_clock> expires_at{
@@ -1441,22 +1445,20 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         assertChar('\n', entry_file);
 
         assertString(FormatTokens::token_is_compressed, entry_file);
-        bool is_compressed;
+        bool is_compressed = false;
         readBoolText(is_compressed, entry_file);
         assertChar('\n', entry_file);
 
         assertString(FormatTokens::token_query_string, entry_file);
         String query_string;
-        readStringUntilNewlineInto(query_string, entry_file);
-        assertChar('\n', entry_file);
+        readStringBinary(query_string, entry_file);
 
         assertString(FormatTokens::token_tag, entry_file);
         String tag;
-        readStringUntilNewlineInto(tag, entry_file);
-        assertChar('\n', entry_file);
+        readStringBinary(tag, entry_file);
 
         assertString(FormatTokens::token_is_subquery, entry_file);
-        bool is_subquery;
+        bool is_subquery = false;
         readBoolText(is_subquery, entry_file);
         assertChar('\n', entry_file);
 
@@ -1471,7 +1473,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         chunks.push_back(std::move(chunk));
 
         assertString(FormatTokens::token_has_totals, entry_file);
-        bool has_totals;
+        bool has_totals = false;
         readBoolText(has_totals, entry_file);
         assertChar('\n', entry_file);
 
@@ -1486,7 +1488,7 @@ std::optional<QueryResultCache::OnDiskCache::KeyMapped> QueryResultCache::OnDisk
         }
 
         assertString(FormatTokens::token_has_extremes, entry_file);
-        bool has_extremes;
+        bool has_extremes = false;
         readBoolText(has_extremes, entry_file);
         assertChar('\n', entry_file);
 
@@ -1524,7 +1526,7 @@ void QueryResultCache::OnDiskCache::checkFormatVersion()
     namespace fs = std::filesystem;
     fs::path format_version_path = query_cache_path / FormatTokens::format_version_txt;
     ReadBufferFromFile format_version_file(format_version_path); /// throws if file can't be opened
-    uint32_t version;
+    uint32_t version = 0;
 
     readIntText(version, format_version_file);
     if (version != FormatTokens::current_version)

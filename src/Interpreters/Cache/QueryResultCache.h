@@ -214,7 +214,12 @@ public:
         void setMaxCount(size_t max_count);
 
     private:
-        std::optional<KeyMapped> readCacheEntry(String ast_hash_str);
+        /// On-disk file name for an entry. It must encode every dimension that participates in `Key::operator==` /
+        /// `KeyHasher` besides the AST hash (currently `is_subquery`), otherwise two distinct keys that share the same AST
+        /// hash (e.g. a top-level query and a subquery) would map to the same file and overwrite each other.
+        static String makeEntryFileName(const Key & key);
+
+        std::optional<KeyMapped> readCacheEntry(const String & entry_file_name);
 
         void writeCacheEntry(const Key & key, const MappedPtr & mapped);
 
