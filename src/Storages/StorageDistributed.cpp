@@ -52,7 +52,6 @@
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Functions/FunctionFactory.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -935,36 +934,6 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
     ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
     replace_alias_columns_visitor.visit(query_tree_to_modify);
-
-    /// After inlining ALIAS columns, the projection may contain structurally identical
-    /// expressions (e.g. two ALIAS columns both defined as `toString(x)`).  The planner
-    /// assigns action-node names by expression structure, so duplicates get the same name
-    /// and are later deduplicated — shrinking the column count and causing
-    /// NUMBER_OF_COLUMNS_DOESNT_MATCH on the initiator.  Wrap subsequent duplicates in
-    /// identity() to make their action-node names unique.
-    auto * query_node_ptr = query_tree_to_modify->as<QueryNode>();
-    if (query_node_ptr)
-    {
-        auto & projection_nodes = query_node_ptr->getProjection().getNodes();
-        struct TreeHashHash { size_t operator()(const IQueryTreeNode::Hash & h) const { return h.low64 ^ h.high64; } };
-        std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
-        auto identity_resolver = FunctionFactory::instance().get("identity", query_context);
-
-        for (auto & proj_node : projection_nodes)
-        {
-            auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
-            while (!seen_hashes.emplace(tree_hash).second)
-            {
-                auto alias = proj_node->getAlias();
-                auto wrapper = std::make_shared<FunctionNode>("identity");
-                wrapper->getArguments().getNodes().push_back(std::move(proj_node));
-                wrapper->resolveAsFunction(identity_resolver);
-                wrapper->setAlias(alias);
-                proj_node = std::move(wrapper);
-                tree_hash = proj_node->getTreeHash({.compare_aliases = false});
-            }
-        }
-    }
 
     const auto & settings = query_context->getSettingsRef();
 
