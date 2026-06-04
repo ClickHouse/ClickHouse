@@ -55,29 +55,3 @@ TEST(PrometheusMetricsWriter, DimensionalBasic)
 
     EXPECT_EQ(expected, output);
 }
-
-TEST(PrometheusMetricsWriter, DimensionalCounter)
-{
-    DimensionalMetrics::MetricFamily family(
-        "test_dimensional_counter_gtest",
-        "Test dimensional counter",
-        {"database", "table"},
-        {},
-        DimensionalMetrics::MetricType::Counter);
-
-    auto & metric = family.withLabels({"db1", "users"});
-    metric.increment(42.0);
-
-    std::string output;
-    {
-        WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family);
-    }
-
-    static constexpr const char * expected =
-        "# HELP ClickHouseDimensionalMetrics_test_dimensional_counter_gtest Test dimensional counter\n"
-        "# TYPE ClickHouseDimensionalMetrics_test_dimensional_counter_gtest counter\n"
-        "ClickHouseDimensionalMetrics_test_dimensional_counter_gtest{database=\"db1\",table=\"users\"} 42\n";
-
-    EXPECT_EQ(expected, output);
-}

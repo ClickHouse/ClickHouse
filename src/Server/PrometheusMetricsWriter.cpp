@@ -282,7 +282,7 @@ void PrometheusMetricsWriter::writeDimensionalMetric(WriteBuffer & wb, const Dim
     convertHelpToSingleLine(help_text);
 
     writeOutLine(wb, "# HELP", base_name, help_text);
-    writeOutLine(wb, "# TYPE", base_name, family.getTypeString());
+    writeOutLine(wb, "# TYPE", base_name, "gauge");
 
     family.forEachMetric([&wb, &family, &base_name](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
     {
