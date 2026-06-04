@@ -69,6 +69,7 @@ void registerInterpreterCreateRewriteRuleQuery(InterpreterFactory & factory);
 void registerInterpreterAlterRewriteRuleQuery(InterpreterFactory & factory);
 void registerInterpreterDropRewriteRuleQuery(InterpreterFactory & factory);
 
+void registerInterpreters();
 void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
