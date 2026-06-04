@@ -711,6 +711,82 @@ CONV_FN(SpecialVal, val)
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_STAR:
             ret += "*";
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_OVERLONG:
+            ret += R"('\xC0\xAF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_CONTINUATION:
+            ret += R"('\x80\xBF\xC3\x28')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_TRUNCATED:
+            ret += R"('\xE2\x82')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_SURROGATE:
+            ret += R"('\xED\xA0\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_BEYOND_RANGE:
+            ret += R"('\xF4\x90\x80\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_INVALID_FE_FF:
+            ret += R"('\xFE\xFF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_UTF8_BOM:
+            ret += R"('\xEF\xBB\xBF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BAD_UTF8_MIXED:
+            ret += R"('hello\xC0\xAFworld\xED\xA0\x80\xF4\x90\x80\x80')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_CONTROL_CHARS:
+            ret += R"('\x01\x02\x03\x04\x05\x06\x07\x08\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1C\x1D\x1E\x1F')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ANSI_ESCAPE:
+            ret += R"('\x1B[31mRED\x1B[0m')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_SPACE:
+            ret += R"('a\xE2\x80\x8Bb')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO_WIDTH_JOINER:
+            // Split so \x8D and b are in separate literals (style check)
+            ret += R"('a\xE2\x80\x8D)"
+                   "b'";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BIDI_OVERRIDE:
+            ret += R"('\xE2\x80\xAEabc\xE2\x80\xAC')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_MAX_CODEPOINT:
+            ret += R"('\xF4\x8F\xBF\xBF')";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_NULL:
+            ret += "[NULL]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TUPLE_NULL:
+            ret += "(NULL)";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NESTED_EMPTY_ARRAY:
+            ret += "[[]]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ARRAY_EMPTY_MAP:
+            ret += "[map()]";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_LEAP_DAY:
+            ret += "'2024-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NON_LEAP_DAY:
+            ret += "'2023-02-29'";
+            if (val.paren())
+            {
+                ret += "::Date32";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_BEYOND_INT256:
+            ret += "115792089237316195423570985008687907853269984665640564039457584007913129639936";
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_FLOAT64_MAX_SCIENTIFIC:
+            ret += "1e308";
+            break;
     }
     ret += val.paren() ? ")" : "";
 }
@@ -1291,12 +1367,26 @@ CONV_FN(CondExpr, econd)
     ret += econd.paren() ? ")" : "";
 }
 
-CONV_FN(ExprNullTests, ent)
+CONV_FN(ExprTruthTests, ent)
 {
     ExprToString(ret, ent.expr());
     ret += " IS";
     ret += ent.not_() ? " NOT" : "";
-    ret += " NULL";
+    switch (ent.truth_value())
+    {
+        case ExprTruthTests::IS_TRUE:
+            ret += " TRUE";
+            break;
+        case ExprTruthTests::IS_FALSE:
+            ret += " FALSE";
+            break;
+        case ExprTruthTests::IS_UNKNOWN:
+            ret += " UNKNOWN";
+            break;
+        default:
+            ret += " NULL";
+            break;
+    }
 }
 
 CONV_FN(ExprBetween, ebetween)
@@ -1781,8 +1871,8 @@ CONV_FN(ComplicatedExpr, expr)
         case ExprType::kExprAny:
             ExprAnyToString(ret, expr.expr_any());
             break;
-        case ExprType::kExprNullTests:
-            ExprNullTestsToString(ret, expr.expr_null_tests());
+        case ExprType::kExprTruthTests:
+            ExprTruthTestsToString(ret, expr.expr_truth_tests());
             break;
         case ExprType::kExprCase:
             ExprCaseToString(ret, expr.expr_case());

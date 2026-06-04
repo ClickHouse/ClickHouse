@@ -414,8 +414,6 @@ public:
     uint32_t constr_counter = 0;
     std::unordered_map<String, SQLColumn> cols;
     std::unordered_map<String, SQLColumn> staged_cols;
-    std::unordered_set<String> constrs;
-    std::unordered_set<String> staged_constrs;
     std::unordered_map<String, String> frozen_partitions;
 
     SQLTable()

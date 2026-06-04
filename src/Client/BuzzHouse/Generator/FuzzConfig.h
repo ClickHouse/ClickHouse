@@ -10,19 +10,19 @@
 #include "config.h"
 
 #if USE_SIMDJSON
-#    include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::SimdJSONParser;
 }
 #elif USE_RAPIDJSON
-#    include <Common/JSONParsers/RapidJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::RapidJSONParser;
 }
 #else
-#    include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
 namespace BuzzHouse
 {
 using JSONParserImpl = DB::DummyJSONParser;
@@ -455,6 +455,10 @@ public:
     uint32_t tableCountProjections(const String & database, const String & table);
 
     String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
+
+    uint32_t tableCountConstraints(const String & database, const String & table);
+
+    String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 

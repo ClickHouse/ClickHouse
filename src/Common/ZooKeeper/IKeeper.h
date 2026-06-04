@@ -2,6 +2,7 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
@@ -26,6 +27,11 @@
   * - fake ZooKeeper client for testing;
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredOther;
+}
 
 namespace Coordination
 {
@@ -179,6 +185,7 @@ using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
 struct TestKeeperRequest;
+
 struct WatchCallbackPtrOrEventPtr
 {
 private:
@@ -189,6 +196,8 @@ private:
 
     WatchCallbackPtr callback;
     EventPtr event;
+    /// The ProfileEvent incremented when this watch is triggered, identifying the subsystem that owns the callback.
+    ProfileEvents::Event triggered_event = ProfileEvents::ZooKeeperWatchTriggeredOther;
 
     void operator()(WatchResponse response) const
     {
@@ -203,6 +212,15 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
     WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, ProfileEvents::Event triggered_event_)
+        : callback(std::move(callback_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_, ProfileEvents::Event triggered_event_)
+        : event(std::move(event_)), triggered_event(triggered_event_) {} // NOLINT(google-explicit-constructor)
+
+    ProfileEvents::Event getTriggeredEvent() const { return triggered_event; }
+    void setTriggeredEvent(ProfileEvents::Event triggered_event_) { triggered_event = triggered_event_; }
+
+    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;

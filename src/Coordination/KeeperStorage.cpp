@@ -52,6 +52,11 @@ namespace ProfileEvents
     extern const Event KeeperCheckWatchRequest;
     extern const Event KeeperRemoveWatchRequest;
     extern const Event KeeperAddWatchRequest;
+    extern const Event KeeperWatchesTriggered;
+    extern const Event KeeperWatchTriggeredNodeCreated;
+    extern const Event KeeperWatchTriggeredNodeDeleted;
+    extern const Event KeeperWatchTriggeredNodeDataChanged;
+    extern const Event KeeperWatchTriggeredNodeChildrenChanged;
 }
 
 
@@ -153,6 +158,30 @@ void unregisterEphemeralPath(KeeperStorageBase::Ephemerals & ephemerals, int64_t
         ephemerals.erase(ephemerals_it);
 }
 
+void incrementTriggeredWatchProfileEvent(Coordination::Event event_type, size_t count)
+{
+    if (count == 0)
+        return;
+    ProfileEvents::increment(ProfileEvents::KeeperWatchesTriggered, count);
+    switch (event_type)
+    {
+        case Coordination::Event::CREATED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeCreated, count);
+            break;
+        case Coordination::Event::DELETED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeDeleted, count);
+            break;
+        case Coordination::Event::CHANGED:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeDataChanged, count);
+            break;
+        case Coordination::Event::CHILD:
+            ProfileEvents::increment(ProfileEvents::KeeperWatchTriggeredNodeChildrenChanged, count);
+            break;
+        default:
+            break;
+    }
+}
+
 KeeperResponsesForSessions processWatchesImplBase(
     const String & path,
     KeeperStorageBase::Watches & watches,
@@ -182,6 +211,7 @@ KeeperResponsesForSessions processWatchesImplBase(
             }
             result.push_back(KeeperResponseForSession{watcher_session, watch_response});
         }
+        incrementTriggeredWatchProfileEvent(event_type, watch_it->second.size());
 
         if (should_delete)
             watches.erase(watch_it);
@@ -227,6 +257,9 @@ KeeperResponsesForSessions processWatchesImplBase(
                 }
                 result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
             }
+            incrementTriggeredWatchProfileEvent(
+                static_cast<Coordination::Event>(watch_list_response->type),
+                watch_it->second.size());
 
             if (should_delete)
                 list_watches.erase(watch_it);
@@ -263,6 +296,7 @@ std::pair<KeeperResponsesForSessions, Int64> processWatchesImpl(
                 watch_list_response->state = Coordination::State::CONNECTED;
                 for (auto watcher_session : watch_it->second)
                     result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
+                incrementTriggeredWatchProfileEvent(event_type, watch_it->second.size());
             }
 
             if (current_path == "/")

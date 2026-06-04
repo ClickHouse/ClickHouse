@@ -1459,6 +1459,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
+    /// The connection may already be torn down — e.g. `sendQuery` failed to
+    /// write the query to a server that died mid-transfer and called
+    /// `disconnect()`, after which `processOrdinaryQuery` calls us in a
+    /// best-effort attempt to drain remaining data. With the receive side
+    /// gone there is nothing to poll for; bail out so we don't call
+    /// `connection->poll()` (and friends) on a disconnected connection.
+    if (!connection->isConnected())
+        return;
+
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds

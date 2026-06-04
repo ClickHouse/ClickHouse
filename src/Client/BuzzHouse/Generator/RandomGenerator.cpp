@@ -433,10 +433,11 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
                                 : (allow_nasty && this->nextSmallNumber() < 3 ? nasty_strings
                                                                               : (this->nextBool() ? common_english : common_chinese)));
 
-                        len += ((use_space ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
+                        len += (((use_space && !use_bad_utf8) ? 1 : 0) + (npick.length() >> (use_bad_utf8 ? 1 : 0)));
                         if (len < limit)
                         {
-                            ret += use_space ? " " : "";
+                            if (use_space && !use_bad_utf8)
+                                ret += " ";
                             ret += npick;
                         }
                         else
