@@ -2015,36 +2015,6 @@ namespace ErrorCodes
     - `true`
     - `false`
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_reverse_key, false, R"(
-    Enables support for descending sort order in MergeTree sorting keys. This
-    setting is particularly useful for time series analysis and Top-N queries,
-    allowing data to be stored in reverse chronological order to optimize query
-    performance.
-
-    With `allow_experimental_reverse_key` enabled, you can define descending sort
-    orders within the `ORDER BY` clause of a MergeTree table. This enables the
-    use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder`
-    for descending queries.
-
-    **Example**
-
-    ```sql
-    CREATE TABLE example
-    (
-    time DateTime,
-    key Int32,
-    value String
-    ) ENGINE = MergeTree
-    ORDER BY (time DESC, key)  -- Descending order on 'time' field
-    SETTINGS allow_experimental_reverse_key = 1;
-
-    SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-    ```
-
-    By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-    **Default Value:** false
-    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_commit_order_projection, false, R"(
     Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
     Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
@@ -2235,6 +2205,7 @@ namespace ErrorCodes
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_delay_period_random_add, 10) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
