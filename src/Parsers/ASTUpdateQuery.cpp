@@ -68,6 +68,8 @@ void ASTUpdateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 void ASTUpdateQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "UpdateQuery");
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
     w.writeChild("database", database);
     w.writeChild("table", table);
     w.writeChild("assignments", assignments);
@@ -79,6 +81,7 @@ void ASTUpdateQuery::writeJSON(WriteBuffer & out) const
 void ASTUpdateQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    cluster = r.getString("cluster");
     database = r.readChild("database");
     if (database)
         children.push_back(database);

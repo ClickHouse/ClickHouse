@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTSelectIntersectExceptQuery::clone() const
 {
     auto res = make_intrusive<ASTSelectIntersectExceptQuery>(*this);
@@ -96,7 +101,20 @@ void ASTSelectIntersectExceptQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    final_operator = parseOperator(r.getString("final_operator"));
+    if (!r.has("final_operator"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'final_operator' field in `SelectIntersectExceptQuery` during AST JSON deserialization");
+
+    const String final_operator_str = r.getString("final_operator");
+    final_operator = parseOperator(final_operator_str);
+    if (final_operator == Operator::UNKNOWN)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown 'final_operator' value '{}' in `SelectIntersectExceptQuery` during AST JSON deserialization", final_operator_str);
+
     children = r.readChildren();
+
+    /// An `INTERSECT`/`EXCEPT` query requires at least two select operands.
+    if (children.size() < 2)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected at least two select operands in `SelectIntersectExceptQuery`, got {}, during AST JSON deserialization", children.size());
 }
 }

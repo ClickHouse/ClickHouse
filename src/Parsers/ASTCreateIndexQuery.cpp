@@ -3,10 +3,17 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 /** Get the text that identifies this element. */
 String ASTCreateIndexQuery::getID(char delim) const
@@ -28,6 +35,71 @@ ASTPtr ASTCreateIndexQuery::clone() const
     cloneTableOptions(*res);
 
     return res;
+}
+
+void ASTCreateIndexQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "CreateIndexQuery");
+
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("unique", unique);
+
+    /// The plain database/table names. These are sufficient for ordinary
+    /// (non-parameterized) identifiers.
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    /// Serialize the index name and declaration ASTs (required by `formatQueryImpl`).
+    w.writeChild("index_name", index_name);
+    w.writeChild("index_decl", index_decl);
+
+    /// Serialize the database/table identifier ASTs as well, so that parameterized
+    /// names like `{tbl:Identifier}` survive the round-trip. The plain `database`/`table`
+    /// strings above cannot represent query parameters.
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+}
+
+void ASTCreateIndexQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    if_not_exists = r.getBool("if_not_exists");
+    unique = r.getBool("unique");
+
+    cluster = r.getString("cluster");
+
+    index_name = r.readChild("index_name");
+    if (!index_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_name' during AST JSON deserialization");
+    children.push_back(index_name);
+
+    index_decl = r.readChild("index_decl");
+    if (!index_decl)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateIndexQuery` must specify 'index_decl' during AST JSON deserialization");
+    children.push_back(index_decl);
+
+    /// Prefer the parameterized identifier ASTs (which can represent query parameters);
+    /// otherwise fall back to the plain string names. `setDatabase`/`setTable` register
+    /// the created identifier in `children`, so do not push again on that path.
+    if (auto database_child = r.readChild("database_ast"))
+    {
+        database = database_child;
+        children.push_back(database);
+    }
+    else
+        setDatabase(r.getString("database"));
+
+    if (auto table_child = r.readChild("table_ast"))
+    {
+        table = table_child;
+        children.push_back(table);
+    }
+    else
+        setTable(r.getString("table"));
 }
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

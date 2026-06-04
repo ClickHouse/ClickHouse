@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 String ASTPair::getID(char) const
 {
     return "pair";
@@ -38,11 +43,15 @@ void ASTPair::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     first = r.getString("first");
+    if (first.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
+
     second_with_brackets = r.getBool("second_with_brackets");
 
     auto child = r.readChild("second");
-    if (child)
-        set(second, child);
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+    set(second, child);
 }
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -128,11 +137,15 @@ void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+
     has_brackets = r.getBool("has_brackets");
 
     elements = r.readChild("elements");
-    if (elements)
-        children.push_back(elements);
+    if (!elements)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    children.push_back(elements);
 }
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

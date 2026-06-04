@@ -440,6 +440,18 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     lambda = r.readChild("lambda");
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
+
+    /// `formatImpl`, `appendColumnName`, `updateTreeHashImpl`, and `transform`
+    /// all branch on either a lambda or a function name; one of them must be present.
+    if (!lambda && func_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsApplyTransformer requires either a function name or a lambda during AST JSON deserialization");
+
+    /// `transform` substitutes the current column for `lambda_arg` inside the lambda body,
+    /// so a lambda without its argument name would be meaningless.
+    if (lambda && lambda_arg.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsApplyTransformer with a lambda requires a non-empty lambda argument during AST JSON deserialization");
 }
 
 void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)
@@ -450,6 +462,16 @@ void ASTColumnsExceptTransformer::readJSON(const Poco::JSON::Object & json)
     if (!pattern_str.empty())
         setPattern(std::move(pattern_str));
     children = r.readChildren();
+
+    /// `formatImpl`, `appendColumnName`, and `transform` rely on exactly one of the two
+    /// mutually exclusive shapes: a regexp `pattern` or an explicit list of column children.
+    if (pattern && !children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsExceptTransformer must have either a pattern or an explicit list of columns, not both, during AST JSON deserialization");
+
+    if (!pattern && children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ColumnsExceptTransformer requires either a non-empty pattern or an explicit list of columns during AST JSON deserialization");
 }
 
 void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Object & json)

@@ -216,7 +216,27 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     primary_key_specifier = r.getBool("primary_key_specifier");
 
     setType(r.readChild("data_type"));
-    setDefaultExpression(r.readChild("default_expression"));
+
+    ASTPtr default_expression = r.readChild("default_expression");
+
+    /// Validate the (default_specifier, default_expression) pair so that it mirrors what the parser and `formatImpl` allow.
+    /// `formatImpl` emits the default clause only when a `default_expression` is present, prefixing it with the specifier keyword.
+    /// Therefore a `default_expression` without a specifier would be formatted with no keyword (e.g. `DEFAULT`/`MATERIALIZED`/`ALIAS`),
+    /// and a specifier without an expression would be silently dropped.
+    /// The only specifier the parser allows without an expression is `AUTO_INCREMENT`; for `EPHEMERAL` the parser always synthesizes
+    /// an expression (and sets `ephemeral_default`), so it requires an expression here as well.
+    if (default_expression && default_specifier == ColumnDefaultSpecifier::Empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A 'default_expression' was provided without a 'default_specifier' during AST JSON deserialization");
+
+    if (!default_expression
+        && default_specifier != ColumnDefaultSpecifier::Empty
+        && default_specifier != ColumnDefaultSpecifier::AutoIncrement)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A 'default_specifier' '{}' was provided without a 'default_expression' during AST JSON deserialization",
+            toString(default_specifier));
+
+    setDefaultExpression(std::move(default_expression));
     setComment(r.readChild("comment"));
     setCodec(r.readChild("codec"));
     setStatisticsDesc(r.readChild("statistics_desc"));

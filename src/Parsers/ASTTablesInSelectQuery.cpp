@@ -463,6 +463,17 @@ void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
         array_join = child;
         children.push_back(array_join);
     }
+
+    /// The formatter handles two mutually exclusive shapes: either `table_expression` (optionally with `table_join`)
+    /// or `array_join`. Exactly one of `table_expression`/`array_join` must be present, and `table_join` is only
+    /// meaningful alongside `table_expression`.
+    if (static_cast<size_t>(table_expression != nullptr) + static_cast<size_t>(array_join != nullptr) != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTablesInSelectQueryElement must have exactly one of 'table_expression' or 'array_join' "
+            "during AST JSON deserialization");
+    if (table_join && !table_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTablesInSelectQueryElement has 'table_join' without 'table_expression' during AST JSON deserialization");
 }
 
 void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
@@ -518,6 +529,16 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         stream_settings = child;
         children.push_back(stream_settings);
     }
+
+    /// The formatter chooses exactly one source: `database_and_table_name`, else `table_function`, else `subquery`.
+    /// A table expression with no source (carrying only FINAL/SAMPLE/stream_settings) is invalid, as are multiple sources.
+    size_t num_sources = static_cast<size_t>(database_and_table_name != nullptr)
+        + static_cast<size_t>(table_function != nullptr)
+        + static_cast<size_t>(subquery != nullptr);
+    if (num_sources != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableExpression must have exactly one of 'database_and_table_name', 'table_function' or 'subquery', "
+            "but has {} during AST JSON deserialization", num_sources);
 }
 
 void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
@@ -554,14 +575,20 @@ void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     String kind_str = r.getString("kind");
-    kind = (kind_str == "Left") ? Kind::Left : Kind::Inner;
+    if (kind_str == "Left")
+        kind = Kind::Left;
+    else if (kind_str == "Inner")
+        kind = Kind::Inner;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin has invalid 'kind' value '{}' (expected 'Left' or 'Inner') during AST JSON deserialization", kind_str);
 
     auto child = r.readChild("expression_list");
-    if (child)
-    {
-        expression_list = child;
-        children.push_back(expression_list);
-    }
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin is missing required 'expression_list' child during AST JSON deserialization");
+    expression_list = child;
+    children.push_back(expression_list);
 }
 
 }

@@ -142,6 +142,23 @@ void ASTShowTablesQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("from", from);
     w.writeChild("where_expression", where_expression);
     w.writeChild("limit_length", limit_length);
+
+    /// Output options inherited from `ASTQueryWithOutput`. `ASTShowTablesQuery` is a
+    /// `ASTQueryWithOutput`, so the `INTO OUTFILE`, `FORMAT`, and `SETTINGS` suffixes are
+    /// semantics-bearing children/flags formatted by the base class. Without persisting them,
+    /// e.g. `SHOW TABLES FORMAT JSON` or `SHOW TABLES SETTINGS x=1` would round-trip as plain
+    /// `SHOW TABLES`.
+    w.writeChild("out_file", out_file);
+    w.writeChild("format_ast", format_ast);
+    w.writeChild("settings_ast", settings_ast);
+    w.writeChild("compression", compression);
+    w.writeChild("compression_level", compression_level);
+
+    /// Output-option flags from `ASTQueryWithOutput`: without these, `INTO OUTFILE ... APPEND`,
+    /// `INTO OUTFILE ... TRUNCATE`, and `INTO OUTFILE ... AND STDOUT` would be silently lost on round-trip.
+    w.writeBool("is_outfile_append", isOutfileAppend());
+    w.writeBool("is_outfile_truncate", isOutfileTruncate());
+    w.writeBool("is_into_outfile_with_stdout", isIntoOutfileWithStdout());
 }
 
 void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
@@ -170,6 +187,32 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     limit_length = r.readChild("limit_length");
     if (limit_length)
         children.push_back(limit_length);
+
+    /// Restore output options inherited from `ASTQueryWithOutput` (see `writeJSON`).
+    out_file = r.readChild("out_file");
+    if (out_file)
+        children.push_back(out_file);
+
+    format_ast = r.readChild("format_ast");
+    if (format_ast)
+        children.push_back(format_ast);
+
+    settings_ast = r.readChild("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
+
+    compression = r.readChild("compression");
+    if (compression)
+        children.push_back(compression);
+
+    compression_level = r.readChild("compression_level");
+    if (compression_level)
+        children.push_back(compression_level);
+
+    /// Restore output-option flags from `ASTQueryWithOutput` (see `writeJSON`).
+    setIsOutfileAppend(r.getBool("is_outfile_append"));
+    setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
+    setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
 }
 
 }

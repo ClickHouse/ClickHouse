@@ -139,6 +139,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
+
+            if (with_tables)
+                print_keyword(" WITH TABLES");
         }
     };
 
@@ -915,6 +918,14 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::SYNC_DATABASE_REPLICA:
             if (!database)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SYNC_DATABASE_REPLICA` requires 'database' during AST JSON deserialization");
+            break;
+        case Type::START_LISTEN:
+        case Type::STOP_LISTEN:
+            /// `formatImpl` unconditionally reads `server_type.type` for these queries.
+            /// Without a 'server_type' field the AST would carry a default-constructed
+            /// `ServerType` and silently format as an unrelated server type, so require it.
+            if (!r.has("server_type"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'server_type' during AST JSON deserialization", typeToString(type));
             break;
         default:
             break;

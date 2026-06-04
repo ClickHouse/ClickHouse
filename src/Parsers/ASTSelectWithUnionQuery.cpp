@@ -1,5 +1,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/SelectUnionMode.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -211,6 +212,12 @@ void ASTSelectWithUnionQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("compression", compression);
     w.writeChild("compression_level", compression_level);
+
+    /// Output-option flags from `ASTQueryWithOutput`: without these, `INTO OUTFILE ... APPEND`,
+    /// `INTO OUTFILE ... TRUNCATE`, and `INTO OUTFILE ... AND STDOUT` would be silently lost on round-trip.
+    w.writeBool("is_outfile_append", isOutfileAppend());
+    w.writeBool("is_outfile_truncate", isOutfileTruncate());
+    w.writeBool("is_into_outfile_with_stdout", isIntoOutfileWithStdout());
 }
 
 void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
@@ -225,12 +232,28 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `list_of_selects` is a required invariant: `clone`, `formatQueryImpl`, and the interpreters
     /// dereference it unconditionally. Reject malformed JSON that omits it instead of producing an
-    /// AST that crashes later.
+    /// AST that crashes later. It must be a non-empty `ASTExpressionList`, because `formatQueryImpl`
+    /// iterates its children and dereferences each element.
     list_of_selects = r.readChild("list_of_selects");
     if (!list_of_selects)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`SelectWithUnionQuery` AST requires 'list_of_selects' during AST JSON deserialization");
+    if (!list_of_selects->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST requires 'list_of_selects' to be an `ASTExpressionList` during AST JSON deserialization");
+    if (list_of_selects->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST requires a non-empty 'list_of_selects' during AST JSON deserialization");
     children.push_back(list_of_selects);
+
+    /// `list_of_modes` describes the separators between adjacent selects, so its cardinality must be
+    /// exactly one less than the number of selects. `formatQueryImpl` indexes `list_of_modes` by
+    /// `(position - 1)`, so a mismatch would either read stale modes or leave gaps; reject it.
+    if (!list_of_modes.empty() && list_of_modes.size() != list_of_selects->children.size() - 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`SelectWithUnionQuery` AST has {} entries in 'list_of_modes' but expected {} for {} selects "
+            "during AST JSON deserialization",
+            list_of_modes.size(), list_of_selects->children.size() - 1, list_of_selects->children.size());
 
     out_file = r.readChild("out_file");
     if (out_file)
@@ -251,6 +274,11 @@ void ASTSelectWithUnionQuery::readJSON(const Poco::JSON::Object & json)
     compression_level = r.readChild("compression_level");
     if (compression_level)
         children.push_back(compression_level);
+
+    /// Restore output-option flags from `ASTQueryWithOutput` (see `writeJSON`).
+    setIsOutfileAppend(r.getBool("is_outfile_append"));
+    setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
+    setIsIntoOutfileWithStdout(r.getBool("is_into_outfile_with_stdout"));
 }
 
 }

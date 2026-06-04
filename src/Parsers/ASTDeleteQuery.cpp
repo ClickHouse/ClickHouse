@@ -72,6 +72,8 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "DeleteQuery");
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
     w.writeChild("database", database);
     w.writeChild("table", table);
     w.writeChild("partition", partition);
@@ -82,6 +84,7 @@ void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
 void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    cluster = r.getString("cluster");
     database = r.readChild("database");
     if (database)
         children.push_back(database);

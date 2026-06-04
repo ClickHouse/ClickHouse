@@ -15,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -71,6 +72,8 @@ void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "IndexDeclaration");
     w.writeString("name", name);
     w.writeUInt("granularity", granularity);
+    if (part_of_create_index_query)
+        w.writeBool("part_of_create_index_query", true);
     w.writeChild("expression", getExpression());
     w.writeChild("index_type", getType());
 }
@@ -81,14 +84,20 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
     granularity = r.getUInt("granularity");
+    part_of_create_index_query = r.getBool("part_of_create_index_query");
 
     auto expression = r.readChild("expression");
-    if (expression)
-        children.push_back(expression);
+    if (!expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
+    children.push_back(expression);
 
     auto index_type = r.readChild("index_type");
     if (index_type)
+    {
+        if (!dynamic_cast<const ASTFunction *>(index_type.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration type must be a function during AST JSON deserialization");
         children.push_back(index_type);
+    }
 }
 
 void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

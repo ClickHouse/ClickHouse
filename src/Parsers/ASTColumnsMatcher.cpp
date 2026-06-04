@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
     auto clone = make_intrusive<ASTColumnsRegexpMatcher>(*this);
@@ -281,8 +286,9 @@ void ASTColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
     if (expression)
         children.push_back(expression);
     column_list = r.readChild("column_list");
-    if (column_list)
-        children.push_back(column_list);
+    if (!column_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `ColumnsListMatcher` during AST JSON deserialization");
+    children.push_back(column_list);
     transformers = r.readChild("transformers");
     if (transformers)
         children.push_back(transformers);
@@ -293,8 +299,9 @@ void ASTQualifiedColumnsRegexpMatcher::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     setPattern(r.getString("pattern"));
     qualifier = r.readChild("qualifier");
-    if (qualifier)
-        children.push_back(qualifier);
+    if (!qualifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsRegexpMatcher` during AST JSON deserialization");
+    children.push_back(qualifier);
     transformers = r.readChild("transformers");
     if (transformers)
         children.push_back(transformers);
@@ -304,11 +311,13 @@ void ASTQualifiedColumnsListMatcher::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     qualifier = r.readChild("qualifier");
-    if (qualifier)
-        children.push_back(qualifier);
+    if (!qualifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
+    children.push_back(qualifier);
     column_list = r.readChild("column_list");
-    if (column_list)
-        children.push_back(column_list);
+    if (!column_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'column_list' field in `QualifiedColumnsListMatcher` during AST JSON deserialization");
+    children.push_back(column_list);
     transformers = r.readChild("transformers");
     if (transformers)
         children.push_back(transformers);

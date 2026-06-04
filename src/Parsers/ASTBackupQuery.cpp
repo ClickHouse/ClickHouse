@@ -335,7 +335,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(ostr, fs);
 
-    if (settings || base_backup_name)
+    if (settings || base_backup_name || cluster_host_ids)
         formatSettings(settings, base_backup_name, cluster_host_ids, ostr, fs);
 }
 
@@ -484,6 +484,24 @@ namespace
                 e.except_databases.insert(var.extract<String>());
             }
         }
+
+        /// Validate that the required fields for each element type are present,
+        /// otherwise a malformed JSON could produce an AST that cannot be formatted back.
+        switch (e.type)
+        {
+            case ElementType::TABLE:
+            case ElementType::TEMPORARY_TABLE:
+                if (e.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                break;
+            case ElementType::DATABASE:
+                if (e.database_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'database_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                break;
+            case ElementType::ALL:
+                break;
+        }
+
         return e;
     }
 }
@@ -541,19 +559,21 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     if (cluster_host_ids)
         children.push_back(cluster_host_ids);
     cluster = r.getString("cluster");
-    if (r.has("elements"))
+
+    if (!r.has("elements"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `BackupQuery` during AST JSON deserialization");
+    auto arr = r.getArray("elements");
+    if (!arr)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'elements' is not a JSON array during AST JSON deserialization");
+    if (arr->size() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `BackupQuery` during AST JSON deserialization");
+    elements.reserve(arr->size());
+    for (unsigned int i = 0; i < arr->size(); ++i)
     {
-        auto arr = r.getArray("elements");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'elements' is not a JSON array during AST JSON deserialization");
-        elements.reserve(arr->size());
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto elem_obj = arr->getObject(i);
-            if (!elem_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
-            elements.push_back(readElementJSON(*elem_obj, i));
-        }
+        auto elem_obj = arr->getObject(i);
+        if (!elem_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
+        elements.push_back(readElementJSON(*elem_obj, i));
     }
 }
 

@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTShowColumnsQuery::clone() const
 {
     auto res = make_intrusive<ASTShowColumnsQuery>(*this);
@@ -81,6 +86,8 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     full = r.getBool("full");
     database = r.getString("database");
     table = r.getString("table");
+    if (table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW COLUMNS requires a non-empty 'table' field during AST JSON deserialization");
     like = r.getString("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");

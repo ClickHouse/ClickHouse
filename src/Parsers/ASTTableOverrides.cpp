@@ -121,6 +121,7 @@ void ASTTableOverride::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     table_name = r.getString("table_name");
+    is_standalone = r.getBool("is_standalone", true);
     auto columns_child = r.readChild("columns");
     if (columns_child)
         set(columns, columns_child);
@@ -133,6 +134,7 @@ void ASTTableOverride::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "TableOverride");
     w.writeString("table_name", table_name);
+    w.writeBool("is_standalone", is_standalone);
     w.writeChild("columns", columns);
     w.writeChild("storage", storage);
 }

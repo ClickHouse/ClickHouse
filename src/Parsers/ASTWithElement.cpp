@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTWithElement::clone() const
 {
     const auto res = make_intrusive<ASTWithElement>(*this);
@@ -34,11 +39,15 @@ void ASTWithElement::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' during AST JSON deserialization");
     is_materialized = r.getBool("is_materialized");
 
+    /// `clone` and `formatImpl` both dereference `subquery` unconditionally.
     subquery = r.readChild("subquery");
-    if (subquery)
-        children.push_back(subquery);
+    if (!subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'subquery' during AST JSON deserialization");
+    children.push_back(subquery);
 
     aliases = r.readChild("aliases");
     if (aliases)

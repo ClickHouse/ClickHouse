@@ -52,6 +52,13 @@ void ASTInsertQuery::setTable(const String & name)
 
 void ASTInsertQuery::writeJSON(WriteBuffer & out) const
 {
+    /// Inline data (`INSERT INTO t VALUES (1)`, `INSERT ... FORMAT ... <payload>`) is represented as a
+    /// non-owning `data`..`end` view into the original query buffer and/or an external streaming `tail`
+    /// `ReadBuffer`. None of it is reproduced by `formatImpl` (which only prints `FORMAT <format>`/`VALUES`),
+    /// and `tail` cannot be serialized at all. Rather than emit lossy JSON, reject such queries.
+    if (data || tail)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "INSERT with inline data is not supported by parseQueryToJSON during AST JSON deserialization");
+
     JSONObjectWriter w(out, "InsertQuery");
 
     if (!table_id.database_name.empty())

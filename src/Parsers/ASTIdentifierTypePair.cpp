@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTIdentifierTypePair::clone() const
 {
     auto res = make_intrusive<ASTIdentifierTypePair>();
@@ -47,11 +52,13 @@ void ASTIdentifierTypePair::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     identifier = r.readChild("identifier");
-    if (identifier)
-        children.push_back(identifier);
+    if (!identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'identifier' during AST JSON deserialization");
+    children.push_back(identifier);
     type = r.readChild("data_type");
-    if (type)
-        children.push_back(type);
+    if (!type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'data_type' during AST JSON deserialization");
+    children.push_back(type);
 }
 
 }

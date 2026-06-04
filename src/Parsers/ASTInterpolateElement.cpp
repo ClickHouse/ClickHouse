@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTInterpolateElement::clone() const
 {
     auto clone = make_intrusive<ASTInterpolateElement>(*this);
@@ -53,13 +58,14 @@ void ASTInterpolateElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     column = r.getString("column");
+    if (column.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have a non-empty column during AST JSON deserialization");
 
     auto child = r.readChild("expr");
-    if (child)
-    {
-        expr = child;
-        children.push_back(expr);
-    }
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have an expression during AST JSON deserialization");
+    expr = child;
+    children.push_back(expr);
 }
 
 }

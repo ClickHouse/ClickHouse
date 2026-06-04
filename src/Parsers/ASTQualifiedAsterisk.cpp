@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTQualifiedAsterisk::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "QualifiedAsterisk");
@@ -18,11 +23,10 @@ void ASTQualifiedAsterisk::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     auto child = r.readChild("qualifier");
-    if (child)
-    {
-        this->qualifier = child;
-        this->children.push_back(this->qualifier);
-    }
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'qualifier' field in `QualifiedAsterisk` during AST JSON deserialization");
+    this->qualifier = child;
+    this->children.push_back(this->qualifier);
     child = r.readChild("transformers");
     if (child)
     {

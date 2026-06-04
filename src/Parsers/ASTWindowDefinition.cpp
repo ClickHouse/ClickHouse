@@ -292,6 +292,8 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             frame_begin_offset = child;
             children.push_back(frame_begin_offset);
         }
+        if (frame_begin_type == WindowFrame::BoundaryType::Offset && !frame_begin_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_offset' for Offset frame boundary during AST JSON deserialization");
 
         frame_begin_preceding = r.getBool("frame_begin_preceding");
 
@@ -305,6 +307,8 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
             frame_end_offset = child;
             children.push_back(frame_end_offset);
         }
+        if (frame_end_type == WindowFrame::BoundaryType::Offset && !frame_end_offset)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_offset' for Offset frame boundary during AST JSON deserialization");
 
         frame_end_preceding = r.getBool("frame_end_preceding");
     }
@@ -314,13 +318,16 @@ void ASTWindowListElement::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'name' for WindowListElement during AST JSON deserialization");
 
     auto child = r.readChild("definition");
-    if (child)
-    {
-        definition = child;
-        children.push_back(definition);
-    }
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'definition' for WindowListElement during AST JSON deserialization");
+    if (!child->as<ASTWindowDefinition>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTWindowDefinition for 'definition' of WindowListElement during AST JSON deserialization");
+    definition = child;
+    children.push_back(definition);
 }
 
 }

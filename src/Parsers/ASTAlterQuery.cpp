@@ -222,6 +222,114 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readRawChild("execute_args", execute_args);
 
     readRawChild("refresh", refresh);
+
+    /// Validate that all children required by `formatImpl` for this command type are present.
+    /// Without this, a malformed JSON could produce a command whose `formatImpl` dereferences a null member.
+    auto require = [&](const IAST * field, const char * field_name)
+    {
+        if (!field)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Missing required '{}' field for ALTER command of type '{}' during AST JSON deserialization",
+                field_name, magic_enum::enum_name(type));
+    };
+
+    switch (type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+            require(col_decl, "col_decl");
+            break;
+        case ASTAlterCommand::DROP_COLUMN:
+            require(column, "column");
+            break;
+        case ASTAlterCommand::MODIFY_COLUMN:
+            require(col_decl, "col_decl");
+            break;
+        case ASTAlterCommand::MATERIALIZE_COLUMN:
+            require(column, "column");
+            break;
+        case ASTAlterCommand::COMMENT_COLUMN:
+            require(column, "column");
+            require(comment, "comment");
+            break;
+        case ASTAlterCommand::MODIFY_COMMENT:
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+            require(comment, "comment");
+            break;
+        case ASTAlterCommand::MODIFY_ORDER_BY:
+            require(order_by, "order_by");
+            break;
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+            require(sample_by, "sample_by");
+            break;
+        case ASTAlterCommand::ADD_INDEX:
+            require(index_decl, "index_decl");
+            break;
+        case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::MATERIALIZE_INDEX:
+            require(index, "index");
+            break;
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+            require(statistics_decl, "statistics_decl");
+            break;
+        case ASTAlterCommand::ADD_CONSTRAINT:
+            require(constraint_decl, "constraint_decl");
+            break;
+        case ASTAlterCommand::DROP_CONSTRAINT:
+            require(constraint, "constraint");
+            break;
+        case ASTAlterCommand::ADD_PROJECTION:
+            require(projection_decl, "projection_decl");
+            break;
+        case ASTAlterCommand::DROP_PROJECTION:
+        case ASTAlterCommand::MATERIALIZE_PROJECTION:
+            require(projection, "projection");
+            break;
+        case ASTAlterCommand::DROP_PARTITION:
+        case ASTAlterCommand::DROP_DETACHED_PARTITION:
+        case ASTAlterCommand::FORGET_PARTITION:
+        case ASTAlterCommand::ATTACH_PARTITION:
+        case ASTAlterCommand::MOVE_PARTITION:
+        case ASTAlterCommand::REPLACE_PARTITION:
+        case ASTAlterCommand::FETCH_PARTITION:
+        case ASTAlterCommand::FREEZE_PARTITION:
+        case ASTAlterCommand::UNFREEZE_PARTITION:
+            require(partition, "partition");
+            break;
+        case ASTAlterCommand::DELETE:
+            require(predicate, "predicate");
+            break;
+        case ASTAlterCommand::UPDATE:
+            require(update_assignments, "update_assignments");
+            require(predicate, "predicate");
+            break;
+        case ASTAlterCommand::MODIFY_TTL:
+            require(ttl, "ttl");
+            break;
+        case ASTAlterCommand::MODIFY_SETTING:
+        case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+            require(settings_changes, "settings_changes");
+            break;
+        case ASTAlterCommand::RESET_SETTING:
+            require(settings_resets, "settings_resets");
+            break;
+        case ASTAlterCommand::MODIFY_QUERY:
+            require(select, "select");
+            break;
+        case ASTAlterCommand::MODIFY_REFRESH:
+            require(refresh, "refresh");
+            break;
+        case ASTAlterCommand::RENAME_COLUMN:
+            require(column, "column");
+            require(rename_to, "rename_to");
+            break;
+        case ASTAlterCommand::MODIFY_SQL_SECURITY:
+            require(sql_security, "sql_security");
+            break;
+        default:
+            break;
+    }
 }
 
 
@@ -847,6 +955,12 @@ void ASTAlterQuery::writeJSON(WriteBuffer & out) const
     w.writeString("database", getDatabase());
     w.writeString("table", getTable());
 
+    /// Also serialize the database/table ASTPtr members so that parameterized targets
+    /// such as `ALTER TABLE {tbl:Identifier} ...` are preserved (the string form above
+    /// only captures plain identifiers).
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+
     if (!cluster.empty())
         w.writeString("cluster", cluster);
 
@@ -864,12 +978,26 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
 
-    String db = r.getString("database");
-    if (!db.empty())
-        setDatabase(db);
-    String tbl = r.getString("table");
-    if (!tbl.empty())
-        setTable(tbl);
+    /// Prefer the full AST form of the database/table targets when present, so that
+    /// parameterized targets such as `ALTER TABLE {tbl:Identifier} ...` are preserved.
+    /// Fall back to the plain-identifier string form otherwise.
+    if (auto database_ast = r.readChild("database_ast"))
+        set(database, database_ast);
+    else
+    {
+        String db = r.getString("database");
+        if (!db.empty())
+            setDatabase(db);
+    }
+
+    if (auto table_ast = r.readChild("table_ast"))
+        set(table, table_ast);
+    else
+    {
+        String tbl = r.getString("table");
+        if (!tbl.empty())
+            setTable(tbl);
+    }
 
     cluster = r.getString("cluster");
 

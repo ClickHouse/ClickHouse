@@ -2,6 +2,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Common/Exception.h>
@@ -14,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
@@ -117,6 +120,18 @@ Strings ASTUserNamesWithHost::toStrings() const
     return res;
 }
 
+void ASTUserNamesWithHost::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "UserNamesWithHost");
+    w.writeChildren(children);
+}
+
+void ASTUserNamesWithHost::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildren();
+}
+
 bool ASTUserNamesWithHost::getHostPatternIfCommon(String & out_common_host_pattern) const
 {
     out_common_host_pattern.clear();
@@ -168,6 +183,31 @@ ASTPtr ASTUserNameWithHost::clone() const
     }
 
     return clone;
+}
+
+void ASTUserNameWithHost::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "UserNameWithHost");
+    w.writeChild("username", username);
+    w.writeChild("host_pattern", host_pattern);
+}
+
+void ASTUserNameWithHost::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    children.clear();
+    username.reset();
+    host_pattern.reset();
+
+    username = r.readChild("username");
+    if (!username)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required field 'username' during AST JSON deserialization");
+    children.emplace_back(username);
+
+    host_pattern = r.readChild("host_pattern");
+    if (host_pattern)
+        children.emplace_back(host_pattern);
 }
 
 }

@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -186,7 +187,16 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     };
 
     setExpr("with", Expression::WITH);
-    setExpr("select", Expression::SELECT);
+
+    /// `formatImpl` always formats the SELECT expression list and unconditionally
+    /// casts it to `ASTExpressionList`, so it must be present and of the right type.
+    auto select_child = r.readChild("select");
+    if (!select_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
+    if (!select_child->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
+    setExpression(Expression::SELECT, std::move(select_child));
+
     setExpr("group_by", Expression::GROUP_BY);
     setExpr("order_by", Expression::ORDER_BY);
 }

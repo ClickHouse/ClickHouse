@@ -73,8 +73,9 @@ void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown KILL kill_type: {}", type_value);
     type = *type_opt;
     where_expression = r.readChild("where_expression");
-    if (where_expression)
-        children.push_back(where_expression);
+    if (!where_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'where_expression' in `KillQueryQuery` during AST JSON deserialization");
+    children.push_back(where_expression);
     sync = r.getBool("sync");
     test = r.getBool("test");
     cluster = r.getString("cluster");

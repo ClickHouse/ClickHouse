@@ -4,6 +4,7 @@
 
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
@@ -372,7 +373,29 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             if (!engine_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
             target.inner_engine = IAST::createFromJSON(*engine_obj);
+            if (!target.inner_engine->as<ASTStorage>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not a storage definition at index {} in 'targets' array during AST JSON deserialization", i);
             children.push_back(target.inner_engine);
+        }
+        if (target_obj->has("inner_columns"))
+        {
+            auto columns_obj = target_obj->getObject("inner_columns");
+            if (!columns_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.inner_columns = IAST::createFromJSON(*columns_obj);
+            if (!target.inner_columns->as<ASTColumns>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not a columns definition at index {} in 'targets' array during AST JSON deserialization", i);
+            children.push_back(target.inner_columns);
+        }
+        if (target_obj->has("table_ast"))
+        {
+            auto table_ast_obj = target_obj->getObject("table_ast");
+            if (!table_ast_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.table_ast = IAST::createFromJSON(*table_ast_obj);
+            if (!target.table_ast->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not a table identifier at index {} in 'targets' array during AST JSON deserialization", i);
+            children.push_back(target.table_ast);
         }
         targets.push_back(std::move(target));
     }
@@ -408,6 +431,16 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
             {
                 out << ",\"inner_engine\":";
                 target.inner_engine->writeJSON(out);
+            }
+            if (target.inner_columns)
+            {
+                out << ",\"inner_columns\":";
+                target.inner_columns->writeJSON(out);
+            }
+            if (target.table_ast)
+            {
+                out << ",\"table_ast\":";
+                target.table_ast->writeJSON(out);
             }
             out << '}';
         }

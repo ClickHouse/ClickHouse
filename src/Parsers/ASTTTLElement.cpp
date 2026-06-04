@@ -116,6 +116,8 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     }
 
     recompression_codec = r.readChild("recompression_codec");
+    if (mode == TTLMode::RECOMPRESS && !recompression_codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
 }
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

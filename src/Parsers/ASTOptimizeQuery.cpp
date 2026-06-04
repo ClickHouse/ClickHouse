@@ -62,6 +62,8 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 void ASTOptimizeQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "OptimizeQuery");
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
     w.writeChild("database", database);
     w.writeChild("table", table);
     w.writeChild("partition", partition);
@@ -80,6 +82,7 @@ void ASTOptimizeQuery::writeJSON(WriteBuffer & out) const
 void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
+    cluster = r.getString("cluster");
     database = r.readChild("database");
     if (database)
         children.push_back(database);

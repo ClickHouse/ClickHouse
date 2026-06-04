@@ -71,6 +71,12 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("permanently", permanently);
 
     w.writeChild("database_and_tables", database_and_tables);
+
+    /// Serialize the database/table identifier ASTs as well so that parameterized
+    /// names like `{tbl:Identifier}` survive the round-trip. The plain `database`/`table`
+    /// strings above lose them (they stringify to empty), so we restore from these on read.
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
 }
 
 void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
@@ -83,6 +89,19 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     String tbl = r.getString("table");
     if (!tbl.empty())
         setTable(tbl);
+
+    /// Prefer the full identifier ASTs when present (they preserve parameterized names
+    /// like `{tbl:Identifier}` that the string form above cannot represent).
+    if (auto database_child = r.readChild("database_ast"))
+    {
+        database = database_child;
+        children.push_back(database);
+    }
+    if (auto table_child = r.readChild("table_ast"))
+    {
+        table = table_child;
+        children.push_back(table);
+    }
 
     cluster = r.getString("cluster");
 
@@ -121,6 +140,13 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// Require at least one valid target so we cannot construct an AST that crashes on formatting.
     if (!table && !database && !database_and_tables)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` must specify at least one of 'database', 'table', or 'database_and_tables' during AST JSON deserialization");
+
+    /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
+    /// as `DROP DATABASE`, ignoring the `is_view`/`is_dictionary` flags. Such a combination
+    /// cannot be produced by the parser and, left unchecked, would let a JSON that claims to
+    /// name a view or dictionary silently execute as `DROP DATABASE`. Reject it.
+    if (!table && !database_and_tables && (is_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` with 'is_view' or 'is_dictionary' set must specify a table target ('table' or 'database_and_tables') during AST JSON deserialization");
 }
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

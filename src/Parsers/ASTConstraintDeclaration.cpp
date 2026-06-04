@@ -41,8 +41,17 @@ void ASTConstraintDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
 
-    String constraint_type_str = r.getString("constraint_type");
-    type = (constraint_type_str == "ASSUME") ? Type::ASSUME : Type::CHECK;
+    if (!r.has("constraint_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'constraint_type' field in `ConstraintDeclaration` during AST JSON deserialization");
+
+    const String constraint_type_str = r.getString("constraint_type");
+    if (constraint_type_str == "CHECK")
+        type = Type::CHECK;
+    else if (constraint_type_str == "ASSUME")
+        type = Type::ASSUME;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown 'constraint_type' value '{}' in `ConstraintDeclaration` during AST JSON deserialization", constraint_type_str);
 
     auto child = r.readChild("expr");
     if (!child)

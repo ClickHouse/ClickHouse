@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTCheckTableQuery::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "CheckTableQuery");
@@ -22,8 +27,9 @@ void ASTCheckTableQuery::readJSON(const Poco::JSON::Object & json)
     if (database)
         children.push_back(database);
     table = r.readChild("table");
-    if (table)
-        children.push_back(table);
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in `CheckTableQuery` during AST JSON deserialization");
+    children.push_back(table);
     partition = r.readChild("partition");
     if (partition)
         children.push_back(partition);

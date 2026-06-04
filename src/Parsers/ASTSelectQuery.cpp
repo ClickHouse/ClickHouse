@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -642,6 +643,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("with", with());
     w.writeChild("select", select());
     w.writeChild("tables", tables());
+    w.writeChild("aliases", aliases());
+    w.writeChild("cte_aliases", cteAliases());
     w.writeChild("prewhere", prewhere());
     w.writeChild("where", where());
     w.writeChild("group_by", groupBy());
@@ -684,6 +687,8 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExpr("with", Expression::WITH);
     setExpr("select", Expression::SELECT);
     setExpr("tables", Expression::TABLES);
+    setExpr("aliases", Expression::ALIASES);
+    setExpr("cte_aliases", Expression::CTE_ALIASES);
     setExpr("prewhere", Expression::PREWHERE);
     setExpr("where", Expression::WHERE);
     setExpr("group_by", Expression::GROUP_BY);
@@ -698,6 +703,26 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExpr("limit_length", Expression::LIMIT_LENGTH);
     setExpr("settings", Expression::SETTINGS);
     setExpr("interpolate", Expression::INTERPOLATE);
+
+    /// A SELECT query must always have a SELECT list, and `formatImpl` relies on it
+    /// being an `ASTExpressionList` (it is unconditionally cast and formatted).
+    ASTPtr select_list = select();
+    if (!select_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing SELECT list during AST JSON deserialization");
+    if (!select_list->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT list must be an expression list during AST JSON deserialization");
+
+    /// `order_by_all` is only meaningful together with an ORDER BY clause, because
+    /// `formatImpl` recovers the sort direction and null ordering from the first
+    /// element of the ORDER BY list (which must be an `ASTOrderByElement`).
+    if (order_by_all)
+    {
+        ASTPtr order_by_list = orderBy();
+        if (!order_by_list || order_by_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "order_by_all requires a non-empty ORDER BY clause during AST JSON deserialization");
+        if (!order_by_list->children[0]->as<ASTOrderByElement>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first ORDER BY element must be an order-by element when order_by_all is set during AST JSON deserialization");
+    }
 }
 
 }

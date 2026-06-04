@@ -115,6 +115,7 @@ void ASTStorage::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("primary_key", primary_key);
     w.writeChild("order_by", order_by);
+    w.writeChild("unique_key", unique_key);
     w.writeChild("sample_by", sample_by);
     w.writeChild("ttl_table", ttl_table);
     w.writeChild("settings", settings);
@@ -139,6 +140,10 @@ void ASTStorage::readJSON(const Poco::JSON::Object & json)
     child = r.readChild("order_by");
     if (child)
         set(order_by, child);
+
+    child = r.readChild("unique_key");
+    if (child)
+        set(unique_key, child);
 
     child = r.readChild("sample_by");
     if (child)
@@ -420,6 +425,15 @@ void ASTCreateQuery::writeJSON(WriteBuffer & out) const
     w.writeString("database", getDatabase());
     w.writeString("table", getTable());
 
+    /// Preserve the full `database`/`table` ASTs so parameterized targets like `{tbl:Identifier}`
+    /// (whose `getTable()` is empty) survive the round-trip. The string form above is kept for
+    /// backward compatibility and readability; the AST form takes precedence on read.
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+
+    if (isTemporary())
+        w.writeBool("is_temporary", true);
+
     if (!cluster.empty())
         w.writeString("cluster", cluster);
 
@@ -483,6 +497,18 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     String tbl = r.getString("table");
     if (!tbl.empty())
         setTable(tbl);
+
+    /// The full ASTs take precedence over the string form: parameterized targets like
+    /// `{tbl:Identifier}` have an empty `getTable()` and can only be restored from the AST.
+    /// `setOrReplace` keeps `children` consistent regardless of whether the string form above
+    /// already populated the member.
+    if (auto database_ast = r.readChild("database_ast"))
+        setOrReplace(database, database_ast);
+    if (auto table_ast = r.readChild("table_ast"))
+        setOrReplace(table, table_ast);
+
+    if (r.getBool("is_temporary"))
+        setIsTemporary(true);
 
     cluster = r.getString("cluster");
     as_database = r.getString("as_database");
@@ -596,6 +622,17 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (requires_table && !table)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` is missing 'table' during AST JSON deserialization, but the surrounding flags indicate a non-database form");
+
+    /// `formatQueryImpl` unconditionally dereferences `lateness_function` when `allowed_lateness` is set,
+    /// and `watermark_function` when the bounded watermark strategy is selected. Without the child
+    /// expression present, formatting would null-deref. Reject such inconsistent JSON up front.
+    if (allowed_lateness && !lateness_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'allowed_lateness' set but is missing 'lateness_function' during AST JSON deserialization");
+
+    if (is_watermark_bounded && !watermark_function)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has a bounded watermark strategy set but is missing 'watermark_function' during AST JSON deserialization");
 }
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

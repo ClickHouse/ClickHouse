@@ -108,8 +108,15 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
         /// (see the parametrised-identifier ctor). If they don't match, the AST is malformed.
         if (empty_parts != children.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ASTIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s)",
+                "ASTIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s) during AST JSON deserialization",
                 empty_parts, children.size());
+        /// Every placeholder child must be an `ASTQueryParameter`: visitors such as
+        /// `ReplaceQueryParameterVisitor::visitIdentifier` cast children to `ASTQueryParameter`
+        /// unconditionally, so a non-parameter child here would later throw a logical error.
+        for (const auto & child : children)
+            if (!child->as<ASTQueryParameter>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
         name_parts = std::move(parts);
         /// Match the parametrised-compound ctor: leave `full_name` empty when there are
         /// query-parameter children, otherwise compute it from `name_parts`.
@@ -117,6 +124,16 @@ void ASTIdentifier::readJSON(const Poco::JSON::Object & json)
             resetFullName();
         else
             full_name.clear();
+        /// Restore the semantic invariants the compound `ASTIdentifier` ctor establishes:
+        /// a compound identifier (>= 2 parts) is a legacy compound, and for the
+        /// non-parametrised case the qualifier (`table`) is the second-to-last part.
+        /// Visitors rely on this via `supposedToBeCompound`/`restoreTable`/`IdentifierSemantic`.
+        if (name_parts.size() >= 2)
+        {
+            semantic->legacy_compound = true;
+            if (children.empty())
+                semantic->table = name_parts.end()[-2];
+        }
     }
     else
     {
@@ -319,13 +336,22 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
                 ++empty_parts;
         if (empty_parts != children.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ASTTableIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s)",
+                "ASTTableIdentifier JSON has {} empty 'name_parts' placeholder(s) but {} child parameter(s) during AST JSON deserialization",
                 empty_parts, children.size());
+        /// Every placeholder child must be an `ASTQueryParameter` (see `ASTIdentifier::readJSON`).
+        for (const auto & child : children)
+            if (!child->as<ASTQueryParameter>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTTableIdentifier JSON 'name_parts' placeholder child must be an ASTQueryParameter during AST JSON deserialization");
         name_parts = std::move(parts);
         if (children.empty())
             resetFullName();
         else
             full_name.clear();
+        /// Mirror the compound ctor: a table identifier is always `special`, so it is a
+        /// legacy compound when it has >= 2 parts, but the `table` qualifier is not stored.
+        if (name_parts.size() >= 2)
+            semantic->legacy_compound = true;
     }
     else
     {

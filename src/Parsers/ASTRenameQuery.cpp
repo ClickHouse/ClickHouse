@@ -45,38 +45,52 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
             String to_tbl = elem_obj->getValue<String>("to_table");
             elem.if_exists = elem_obj->getValue<bool>("if_exists");
 
-            /// `formatQueryImpl` unconditionally dereferences these pointers,
-            /// so require the names the chosen rename form actually needs.
+            /// Prefer the full identifier ASTs when present (they preserve parameterized
+            /// names like `{tbl:Identifier}` that the string fields above cannot represent),
+            /// and fall back to building plain identifiers from the strings otherwise.
+            JSONObjectReader elem_reader(*elem_obj);
+
+            if (auto ast = elem_reader.readChild("from_database_ast"))
+                elem.from.database = ast;
+            else if (!from_db.empty())
+                elem.from.database = make_intrusive<ASTIdentifier>(from_db);
+            if (elem.from.database)
+                children.push_back(elem.from.database);
+
+            if (auto ast = elem_reader.readChild("from_table_ast"))
+                elem.from.table = ast;
+            else if (!from_tbl.empty())
+                elem.from.table = make_intrusive<ASTIdentifier>(from_tbl);
+            if (elem.from.table)
+                children.push_back(elem.from.table);
+
+            if (auto ast = elem_reader.readChild("to_database_ast"))
+                elem.to.database = ast;
+            else if (!to_db.empty())
+                elem.to.database = make_intrusive<ASTIdentifier>(to_db);
+            if (elem.to.database)
+                children.push_back(elem.to.database);
+
+            if (auto ast = elem_reader.readChild("to_table_ast"))
+                elem.to.table = ast;
+            else if (!to_tbl.empty())
+                elem.to.table = make_intrusive<ASTIdentifier>(to_tbl);
+            if (elem.to.table)
+                children.push_back(elem.to.table);
+
+            /// `formatQueryImpl` unconditionally dereferences these pointers, so require the
+            /// identifier ASTs the chosen rename form actually needs. We validate the pointers
+            /// (not the strings) because a parameterized identifier like `{tbl:Identifier}`
+            /// stringifies to an empty name but is still a valid, non-null target.
             if (database)
             {
-                if (from_db.empty() || to_db.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify non-empty 'from_database' and 'to_database' for `RENAME DATABASE` during AST JSON deserialization", i);
+                if (!elem.from.database || !elem.to.database)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify 'from_database' and 'to_database' for `RENAME DATABASE` during AST JSON deserialization", i);
             }
             else
             {
-                if (from_tbl.empty() || to_tbl.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify non-empty 'from_table' and 'to_table' during AST JSON deserialization", i);
-            }
-
-            if (!from_db.empty())
-            {
-                elem.from.database = make_intrusive<ASTIdentifier>(from_db);
-                children.push_back(elem.from.database);
-            }
-            if (!from_tbl.empty())
-            {
-                elem.from.table = make_intrusive<ASTIdentifier>(from_tbl);
-                children.push_back(elem.from.table);
-            }
-            if (!to_db.empty())
-            {
-                elem.to.database = make_intrusive<ASTIdentifier>(to_db);
-                children.push_back(elem.to.database);
-            }
-            if (!to_tbl.empty())
-            {
-                elem.to.table = make_intrusive<ASTIdentifier>(to_tbl);
-                children.push_back(elem.to.table);
+                if (!elem.from.table || !elem.to.table)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify 'from_table' and 'to_table' during AST JSON deserialization", i);
             }
 
             elements.push_back(std::move(elem));
@@ -117,6 +131,31 @@ void ASTRenameQuery::writeJSON(WriteBuffer & out) const
         writeJSONString(elements[i].to.getTable(), out, w.getFormatSettings());
         out << ",\"if_exists\":";
         out << (elements[i].if_exists ? "true" : "false");
+
+        /// Also serialize the identifier ASTs so that parameterized names like
+        /// `{tbl:Identifier}` survive the round-trip. The string fields above stringify
+        /// such identifiers to empty, so on read we prefer these AST fields when present.
+        if (elements[i].from.database)
+        {
+            out << ",\"from_database_ast\":";
+            elements[i].from.database->writeJSON(out);
+        }
+        if (elements[i].from.table)
+        {
+            out << ",\"from_table_ast\":";
+            elements[i].from.table->writeJSON(out);
+        }
+        if (elements[i].to.database)
+        {
+            out << ",\"to_database_ast\":";
+            elements[i].to.database->writeJSON(out);
+        }
+        if (elements[i].to.table)
+        {
+            out << ",\"to_table_ast\":";
+            elements[i].to.table->writeJSON(out);
+        }
+
         out << '}';
     }
     out << ']';

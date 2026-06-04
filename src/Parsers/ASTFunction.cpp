@@ -197,6 +197,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         setNullsAction(NullsAction::RESPECT_NULLS);
     else if (nulls_action_str == "IGNORE_NULLS")
         setNullsAction(NullsAction::IGNORE_NULLS);
+    else if (!nulls_action_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'nulls_action' value '{}' during AST JSON deserialization", nulls_action_str);
 
     String kind_str = r.getString("kind");
     if (kind_str == "WINDOW_FUNCTION")
@@ -213,6 +215,8 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         setKind(Kind::CODEC);
     else if (kind_str == "STATISTICS")
         setKind(Kind::STATISTICS);
+    else if (!kind_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'kind' value '{}' during AST JSON deserialization", kind_str);
 
     arguments = r.readChild("arguments");
     if (arguments)
@@ -227,6 +231,10 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     window_definition = r.readChild("window_definition");
     if (window_definition)
         children.push_back(window_definition);
+
+    if (isWindowFunction() && window_name.empty() && !window_definition)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
     r.readAlias(*this);
 }

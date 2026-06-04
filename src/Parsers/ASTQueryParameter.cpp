@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTQueryParameter::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "QueryParameter");
@@ -22,6 +27,18 @@ void ASTQueryParameter::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
     name = r.getString("name");
     type = r.getString("param_type");
+
+    /// A query parameter is formatted as `{name:type}` (see `formatImplWithoutAlias`). Both parts are mandatory:
+    /// with the defaults an empty object would format as `{:}`, which is not a valid query parameter and could flow
+    /// into identifier placeholders. Require both fields to be non-empty.
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A query parameter must have a non-empty 'name' during AST JSON deserialization");
+
+    if (type.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A query parameter must have a non-empty 'param_type' during AST JSON deserialization");
+
     r.readAlias(*this);
 }
 
