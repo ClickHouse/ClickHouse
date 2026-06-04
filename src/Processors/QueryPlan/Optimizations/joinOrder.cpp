@@ -904,7 +904,10 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     if (current_best != dp_table.end() && new_cost >= current_best->second->cost)
         return nullptr;
 
-    auto effective_kind = (!predicates.empty() && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
+    /// Transitively connected pairs are inner joins; their predicate is synthesized later.
+    bool connected = !predicates.empty()
+        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+    auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
