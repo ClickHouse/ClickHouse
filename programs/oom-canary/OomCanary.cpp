@@ -1,7 +1,5 @@
 #include <Common/OOMCanaryExitCodes.h>
 
-int mainEntryClickHouseOomCanary(int argc, char ** argv);
-
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
@@ -116,6 +114,7 @@ void writeStderr(std::string_view message)
 }
 
 
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
 int mainEntryClickHouseOomCanary(int argc, char ** argv)
 {
     if (argc != 3)
@@ -133,6 +132,7 @@ int mainEntryClickHouseOomCanary(int argc, char ** argv)
 
 #else
 
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
 int mainEntryClickHouseOomCanary(int /*argc*/, char ** /*argv*/)
 {
     return DB::OOMCanaryExitCodes::PERMANENT;
