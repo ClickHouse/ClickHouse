@@ -181,6 +181,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root);
+bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -296,12 +297,17 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// WITH TOTALS / ROLLUP / CUBE produce extra streams the exchange protocol does not carry, so
+    /// such plans are not distributed (they run single-node and correctly).
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !planHasUnsupportedDistributedStep(root);
+
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (optimization_settings.make_distributed_plan)
+            if (make_distributed_plan)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);

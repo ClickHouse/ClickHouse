@@ -6,6 +6,9 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/RollupStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -39,9 +42,31 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
+bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
+/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry, and
+/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support. Such plans stay single-node.
+bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        const auto * step = node->step.get();
+        if (typeid_cast<const TotalsHavingStep *>(step)
+            || typeid_cast<const RollupStep *>(step)
+            || typeid_cast<const CubeStep *>(step))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
 
 /// Replaces LogicalJoin step with a subtree like this:
 ///
@@ -478,6 +503,16 @@ void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node)
     node->children = std::move(node->children[0]->children);
 }
 
+/// True if `column_name` is produced by `dag` as the unchanged input column of the same name (only
+/// possibly aliased). Such a column keeps its value, so a merge by it stays sort-preserving.
+static bool isSortColumnPreserved(const ActionsDAG & dag, const String & column_name)
+{
+    const auto * node = &dag.findInOutputs(column_name);
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node->type == ActionsDAG::ActionType::INPUT && node->result_name == column_name;
+}
+
 /// 1. Moves exchanges where possible to parallelize more work. Example: if there is a Filter step on top of an GatherExchange step
 /// then filter step can be moved below the exchange step to allow parallel processing.
 /// 2. Removes unnecessary exchanges. Example: if there is a ShuffleExchange step on top of another exchange step then child
@@ -513,14 +548,24 @@ void optimizeExchanges(QueryPlan::Node & root)
                 {
                     SharedHeader expression_header = frame.node->step->getOutputHeader();
 
-                    /// If Gather step has maintain_sort_description then we need to check that all those columns are present in Expression step results.
+                    /// Moving the sorted GatherExchange above the step is only valid if every sort column
+                    /// survives the step unchanged - otherwise GatherReceive would merge by a sort
+                    /// description that no longer matches the data. Expression/Filter may recompute or
+                    /// rename columns, so check their DAG; BuildRuntimeFilter leaves column values intact.
                     bool can_move_gather_up = true;
                     if (gather_step->getMaintainSortDescription())
                     {
+                        const ActionsDAG * dag = nullptr;
+                        if (auto * expr = typeid_cast<ExpressionStep *>(frame.node->step.get()))
+                            dag = &expr->getExpression();
+                        else if (auto * filter = typeid_cast<FilterStep *>(frame.node->step.get()))
+                            dag = &filter->getExpression();
+
                         const auto & sort_description = gather_step->getMaintainSortDescription().value();
                         for (const auto & column : sort_description)
                         {
-                            if (!expression_header->has(column.column_name))
+                            if (!expression_header->has(column.column_name)
+                                || (dag && !isSortColumnPreserved(*dag, column.column_name)))
                             {
                                 can_move_gather_up = false;
                                 break;
