@@ -10,6 +10,9 @@ namespace DB
 {
 struct Base32EncodeTraits
 {
+    /// Base32 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
+
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
@@ -29,6 +32,8 @@ struct Base32EncodeTraits
 struct Base32DecodeTraits
 {
     static constexpr bool has_size_optimization = false;
+    /// Base32 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
 
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)

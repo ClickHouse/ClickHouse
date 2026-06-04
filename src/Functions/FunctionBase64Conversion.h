@@ -91,6 +91,9 @@ inline size_t postprocessBase64URL(UInt8 * dst, size_t out_len)
 template<Base64Variant variant>
 struct Base64EncodeTraits
 {
+    /// Base64 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
+
     template<typename Col>
     static size_t getBufferSize(Col const& src_column)
     {
@@ -120,6 +123,8 @@ template<Base64Variant variant>
 struct Base64DecodeTraits
 {
     static constexpr bool has_size_optimization = false;
+    /// Base64 conversion is linear, so there is no size limit.
+    static constexpr size_t max_input_size = 0;
 
     template<typename Col>
     static size_t getBufferSize(Col const& src_column)

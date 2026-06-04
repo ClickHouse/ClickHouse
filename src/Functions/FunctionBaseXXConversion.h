@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int INCORRECT_DATA;
+extern const int TOO_LARGE_STRING_SIZE;
 }
 
 template <typename Traits, typename Name>
@@ -50,6 +51,12 @@ struct BaseXXEncode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
+            if constexpr (Traits::max_input_size != 0)
+                if (src_length > Traits::max_input_size)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "Too large input for function {}: {} bytes, maximum is {} bytes",
+                        name, src_length, Traits::max_input_size);
             size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset], check_cancellation);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
@@ -74,6 +81,13 @@ struct BaseXXEncode
 
         size_t const N = src_column.getN();
         size_t current_dst_offset = 0;
+
+        if constexpr (Traits::max_input_size != 0)
+            if (N > Traits::max_input_size)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_STRING_SIZE,
+                    "Too large input for function {}: {} bytes, maximum is {} bytes",
+                    name, N, Traits::max_input_size);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -120,6 +134,21 @@ struct BaseXXDecode
         {
             size_t current_src_offset = src_offsets[row];
             size_t src_length = current_src_offset - prev_src_offset;
+            if constexpr (Traits::max_input_size != 0)
+            {
+                if (src_length > Traits::max_input_size)
+                {
+                    if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
+                        throw Exception(
+                            ErrorCodes::TOO_LARGE_STRING_SIZE,
+                            "Too large input for function {}: {} bytes, maximum is {} bytes",
+                            name, src_length, Traits::max_input_size);
+                    /// ReturnEmptyString: emit an empty result for this row.
+                    prev_src_offset = current_src_offset;
+                    dst_offsets[row] = current_dst_offset;
+                    continue;
+                }
+            }
             std::optional<size_t> decoded_size = [&]{
                 if constexpr (with_size_optimization)
                     return Traits::performWithSizeHint({&src[prev_src_offset], src_length}, &dst[current_dst_offset], expected_size, check_cancellation);
@@ -160,6 +189,23 @@ struct BaseXXDecode
 
         size_t N = src_column.getN();
         size_t current_dst_offset = 0;
+
+        if constexpr (Traits::max_input_size != 0)
+        {
+            if (N > Traits::max_input_size)
+            {
+                if constexpr (ErrorHandling == BaseXXDecodeErrorHandling::ThrowException)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "Too large input for function {}: {} bytes, maximum is {} bytes",
+                        name, N, Traits::max_input_size);
+                /// ReturnEmptyString: every row decodes to an empty result.
+                for (size_t row = 0; row < input_rows_count; ++row)
+                    dst_offsets[row] = 0;
+                dst_data.resize(0);
+                return;
+            }
+        }
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {

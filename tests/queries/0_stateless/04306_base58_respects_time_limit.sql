@@ -4,11 +4,21 @@
 -- The server-side AST fuzzer (serverfuzz stress test) repeatedly hit this, blocking the connection
 -- handler and triggering "Hung check failed, possible deadlock found".
 --
--- These queries must terminate quickly with TIMEOUT_EXCEEDED instead of hanging.
+-- This is fixed in two complementary ways: base58 inputs are limited to 10 KB (base58 is meant for short
+-- data such as keys, hashes and addresses), and the conversion now checks for cancellation periodically.
 
-SET max_execution_time = 3;
+-- 1. Oversized inputs are rejected outright.
+SELECT base58Encode(randomString(10001)); -- { serverError TOO_LARGE_STRING_SIZE }
+SELECT base58Decode(repeat('z', 10001)); -- { serverError TOO_LARGE_STRING_SIZE }
 
-SELECT length(base58Encode(randomString(20000000))) FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
-SELECT length(base58Decode(repeat('z', 1000000))) FORMAT Null; -- { serverError TIMEOUT_EXCEEDED }
+-- 2. tryBase58Decode keeps its "empty string on error" contract for oversized input.
+SELECT tryBase58Decode(repeat('z', 10001)) = '';
+
+-- 3. Inputs within the limit still round-trip (the encoded form is also within the limit).
+SELECT base58Decode(base58Encode(repeat('a', 5000))) = repeat('a', 5000);
+
+-- 4. Many in-limit values in a single block must still respect the time limit: cancellation is checked
+--    inside the conversion, not only between pipeline blocks.
+SELECT base58Encode(randomString(10000)) FROM numbers(1000) FORMAT Null SETTINGS max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 SELECT 'ok';
