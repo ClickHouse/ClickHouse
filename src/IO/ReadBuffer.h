@@ -117,9 +117,9 @@ public:
         return bytes_ignored;
     }
 
-    size_t ignoreAll()
+    void ignoreAll()
     {
-        return tryIgnore(std::numeric_limits<size_t>::max());
+        tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.
@@ -183,10 +183,6 @@ public:
       * Lower value means higher priority.
       */
     virtual void prefetch(Priority) {}
-
-    /// Wait until reading more data from this buffer is expected to complete without blocking.
-    /// The default implementation keeps the previous behavior for buffers that cannot expose readiness.
-    virtual bool poll(size_t /* timeout_microseconds */) { return true; }
 
     /**
      * Set upper bound for read range [..., position).

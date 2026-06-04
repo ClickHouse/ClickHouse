@@ -12,9 +12,7 @@ enum class ColumnSpecial
     NONE = 0,
     SIGN = 1,
     IS_DELETED = 2,
-    VERSION = 3,
-    TTL_COL = 4,
-    ID_COL = 5
+    VERSION = 3
 };
 
 enum class DetachStatus
@@ -22,20 +20,6 @@ enum class DetachStatus
     ATTACHED = 0,
     DETACHED = 1,
     PERM_DETACHED = 2
-};
-
-enum class IntegrationCall
-{
-    None = 0,
-    MySQL = 1,
-    PostgreSQL = 2,
-    SQLite = 3,
-    Redis = 4,
-    MongoDB = 5,
-    MinIO = 6,
-    Azurite = 7,
-    HTTP = 8,
-    Dolor = 9
 };
 
 enum class PeerTableDatabase
@@ -54,40 +38,19 @@ enum class PeerQuery
     AllPeers = 2
 };
 
-enum class LakeFormat
-{
-    All = 0,
-    Iceberg = 1,
-    DeltaLake = 2,
-    Paimon = 3
-};
-
-enum class LakeStorage
-{
-    All = 0,
-    S3 = 1,
-    Azure = 2,
-    Local = 3
-};
-
-enum class LakeCatalog
+enum class CatalogTable
 {
     None = 0,
     Glue = 1,
     Hive = 2,
-    REST = 3,
-    Unity = 4
+    REST = 3
 };
-
-extern const std::vector<std::vector<OutFormat>> outFormats;
-extern const std::unordered_map<OutFormat, InFormat> outIn;
-extern const std::vector<std::vector<InOutFormat>> inOutFormats;
 
 struct SQLColumn
 {
 public:
-    String cname;
-    std::unique_ptr<SQLType> tp;
+    uint32_t cname = 0;
+    SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
     std::optional<bool> nullable;
     std::optional<DModifier> dmod;
@@ -96,18 +59,18 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
     }
     SQLColumn(SQLColumn && c) noexcept
     {
-        this->cname = std::move(c.cname);
-        this->tp = std::move(c.tp);
+        this->cname = c.cname;
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
-        this->nullable = c.nullable;
-        this->dmod = c.dmod;
+        this->nullable = std::optional<bool>(c.nullable);
+        this->dmod = std::optional<DModifier>(c.dmod);
     }
     SQLColumn & operator=(const SQLColumn & c)
     {
@@ -116,7 +79,8 @@ public:
             return *this;
         }
         this->cname = c.cname;
-        this->tp = c.tp ? c.tp->typeDeepCopy() : nullptr;
+        delete this->tp;
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -128,235 +92,185 @@ public:
         {
             return *this;
         }
-        this->cname = std::move(c.cname);
-        this->tp = std::move(c.tp);
+        this->cname = c.cname;
+        delete this->tp;
+        this->tp = c.tp;
+        c.tp = nullptr;
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
         return *this;
     }
-    ~SQLColumn() = default;
+    ~SQLColumn() { delete tp; }
 
-    bool canBeInserted() const;
-
-    String getColumnName() const;
+    bool canBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
 };
 
-struct WithCluster
+struct SQLIndex
 {
 public:
-    String name;
+    uint32_t iname = 0;
+};
+
+struct SQLDatabase
+{
+public:
+    uint32_t dname = 0;
+    DatabaseEngineValues deng;
     std::optional<String> cluster;
+    DetachStatus attached = DetachStatus::ATTACHED;
+
+    static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
+
+    bool isAtomicDatabase() const { return deng == DatabaseEngineValues::DAtomic; }
+
+    bool isMemoryDatabase() const { return deng == DatabaseEngineValues::DMemory; }
+
+    bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
+
+    bool isSharedDatabase() const { return deng == DatabaseEngineValues::DShared; }
+
+    bool isLazyDatabase() const { return deng == DatabaseEngineValues::DLazy; }
+
+    bool isOrdinaryDatabase() const { return deng == DatabaseEngineValues::DOrdinary; }
+
+    bool isDataLakeCatalogDatabase() const { return deng == DatabaseEngineValues::DDataLakeCatalog; }
+
+    bool isReplicatedOrSharedDatabase() const { return isReplicatedDatabase() || isSharedDatabase(); }
 
     const std::optional<String> & getCluster() const { return cluster; }
 
-    void setName(SQLIdentifier * f) const;
+    bool isAttached() const { return attached == DetachStatus::ATTACHED; }
+
+    bool isDettached() const { return attached != DetachStatus::ATTACHED; }
+
+    void setName(Database * db) const { SQLDatabase::setName(db, dname); }
+
+    String getName() const { return "d" + std::to_string(dname); }
+
+    void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
-struct SQLDatabase : WithCluster
+struct SQLBase
 {
 public:
-    bool random_engine = false;
-    String keeper_path;
-    String shard_name;
-    String replica_name;
-    uint32_t replica_counter = 0;
-    uint32_t shard_counter = 0;
-    uint32_t backup_number = 0;
-    DatabaseEngineValues deng{};
-    DetachStatus attached = DetachStatus::ATTACHED;
-    IntegrationCall integration = IntegrationCall::None;
-    /// For DataLakeCatalog
-    LakeCatalog catalog = LakeCatalog::None;
-    LakeStorage storage = LakeStorage::All;
-    LakeFormat format = LakeFormat::All;
-
-    static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
-
-    static void setName(SQLIdentifier * db, const String & name);
-
-    bool isAtomicDatabase() const;
-
-    bool isMemoryDatabase() const;
-
-    bool isReplicatedDatabase() const;
-
-    bool isSharedDatabase() const;
-
-    bool isBackupDatabase() const;
-
-    bool isOrdinaryDatabase() const;
-
-    bool isDataLakeCatalogDatabase() const;
-
-    bool isReplicatedOrSharedDatabase() const;
-
-    bool isAttached() const;
-
-    bool isDettached() const;
-
-    void setName(SQLIdentifier * db) const;
-
-    String getName() const;
-
-    String getSparkCatalogName() const;
-
-    void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
-
-    void finishDatabaseSpecification(DatabaseEngine * de);
-};
-
-struct SQLBase : WithCluster
-{
-public:
-    uint32_t counter = 0;
-    bool is_temp = false;
-    bool is_deterministic = false;
-    bool has_partition_by = false;
-    bool has_order_by = false;
-    bool random_engine = false;
-    bool can_run_merges = true;
-    uint32_t replica_counter = 0;
-    uint32_t shard_counter = 0;
+    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
+    uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> file_comp;
-    std::optional<String> partition_strategy;
-    std::optional<String> partition_columns_in_data_file;
-    std::optional<String> storage_class_name;
-    std::optional<String> host_params;
-    std::optional<String> bucket_path;
-    std::optional<String> topic;
-    std::optional<String> group;
-    String keeper_path;
-    String shard_name;
-    String replica_db;
-    String replica_table;
-    String replica_name;
+    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, host_params, bucket_path;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
-    TableEngineValues teng = TableEngineValues::Null;
-    TableEngineValues sub = TableEngineValues::Null;
+    TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     std::optional<InOutFormat> file_format;
-    IntegrationCall integration = IntegrationCall::None;
+    CatalogTable catalog = CatalogTable::None;
 
-    SQLBase() = default;
-    explicit SQLBase(const String && n) { name = n; }
-    virtual ~SQLBase() = default;
-    SQLBase(const SQLBase &) = default;
-    SQLBase & operator=(const SQLBase &) = default;
-    SQLBase(SQLBase &&) = default;
-    SQLBase & operator=(SQLBase &&) = default;
+    static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
-    static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b);
+    static bool supportsFinal(const TableEngineValues teng)
+    {
+        return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    }
 
-    static bool supportsFinal(TableEngineValues teng);
+    bool isMergeTreeFamily() const
+    {
+        return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    }
 
-    bool isMergeTreeFamily() const;
+    bool isLogFamily() const { return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog; }
 
-    bool isLogFamily() const;
+    bool isSharedMergeTree() const { return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared; }
 
-    bool isSharedMergeTree() const;
+    bool isReplicatedMergeTree() const
+    {
+        return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
+    }
 
-    bool isReplicatedMergeTree() const;
+    bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
 
-    bool isReplicatedOrSharedMergeTree() const;
+    bool isFileEngine() const { return teng == TableEngineValues::File; }
 
-    bool isShared() const;
+    bool isJoinEngine() const { return teng == TableEngineValues::Join; }
 
-    bool isFileEngine() const;
+    bool isNullEngine() const { return teng == TableEngineValues::Null; }
 
-    bool isJoinEngine() const;
+    bool isSetEngine() const { return teng == TableEngineValues::Set; }
 
-    bool isNullEngine() const;
+    bool isBufferEngine() const { return teng == TableEngineValues::Buffer; }
 
-    bool isSetEngine() const;
+    bool isRocksEngine() const { return teng == TableEngineValues::EmbeddedRocksDB; }
 
-    bool isBufferEngine() const;
+    bool isMySQLEngine() const
+    {
+        return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
+    }
 
-    bool isRocksEngine() const;
+    bool isPostgreSQLEngine() const
+    {
+        return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
+            || (isExternalDistributedEngine()
+                && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
+    }
 
-    bool isMemoryEngine() const;
+    bool isSQLiteEngine() const { return teng == TableEngineValues::SQLite; }
 
-    bool isMySQLEngine() const;
+    bool isMongoDBEngine() const { return teng == TableEngineValues::MongoDB; }
 
-    bool isPostgreSQLEngine() const;
+    bool isRedisEngine() const { return teng == TableEngineValues::Redis; }
 
-    bool isSQLiteEngine() const;
+    bool isS3Engine() const { return teng == TableEngineValues::S3; }
 
-    bool isMongoDBEngine() const;
+    bool isS3QueueEngine() const { return teng == TableEngineValues::S3Queue; }
 
-    bool isRedisEngine() const;
+    bool isAnyS3Engine() const { return isS3Engine() || isS3QueueEngine(); }
 
-    bool isS3Engine() const;
+    bool isAzureEngine() const { return teng == TableEngineValues::AzureBlobStorage; }
 
-    bool isS3QueueEngine() const;
+    bool isAzureQueueEngine() const { return teng == TableEngineValues::AzureQueue; }
 
-    bool isAnyS3Engine() const;
+    bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
 
-    bool isAzureEngine() const;
+    bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
-    bool isAzureQueueEngine() const;
+    bool isDeltaLakeS3Engine() const { return teng == TableEngineValues::DeltaLakeS3; }
 
-    bool isAnyAzureEngine() const;
+    bool isDeltaLakeAzureEngine() const { return teng == TableEngineValues::DeltaLakeAzure; }
 
-    bool isAnyQueueEngine() const;
+    bool isDeltaLakeLocalEngine() const { return teng == TableEngineValues::DeltaLakeLocal; }
 
-    bool isHudiEngine() const;
+    bool isAnyDeltaLakeEngine() const { return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal; }
 
-    bool isDeltaLakeS3Engine() const;
+    bool isIcebergS3Engine() const { return teng == TableEngineValues::IcebergS3; }
 
-    bool isDeltaLakeAzureEngine() const;
+    bool isIcebergAzureEngine() const { return teng == TableEngineValues::IcebergAzure; }
 
-    bool isDeltaLakeLocalEngine() const;
+    bool isIcebergLocalEngine() const { return teng == TableEngineValues::IcebergLocal; }
 
-    bool isAnyDeltaLakeEngine() const;
+    bool isAnyIcebergEngine() const { return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal; }
 
-    bool isIcebergS3Engine() const;
+    bool isOnS3() const { return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine(); }
 
-    bool isIcebergAzureEngine() const;
+    bool isOnAzure() const { return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine(); }
 
-    bool isIcebergLocalEngine() const;
+    bool isOnLocal() const { return isIcebergLocalEngine() || isDeltaLakeLocalEngine(); }
 
-    bool isAnyIcebergEngine() const;
+    bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
-    bool isPaimonS3Engine() const;
+    bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
 
-    bool isPaimonAzureEngine() const;
+    bool isDictionaryEngine() const { return teng == TableEngineValues::Dictionary; }
 
-    bool isPaimonLocalEngine() const;
+    bool isGenerateRandomEngine() const { return teng == TableEngineValues::GenerateRandom; }
 
-    bool isAnyPaimonEngine() const;
+    bool isURLEngine() const { return teng == TableEngineValues::URL; }
 
-    bool isAnyLakeEngine() const;
+    bool isKeeperMapEngine() const { return teng == TableEngineValues::KeeperMap; }
 
-    bool isOnS3() const;
+    bool isExternalDistributedEngine() const { return teng == TableEngineValues::ExternalDistributed; }
 
-    bool isOnAzure() const;
+    bool isMaterializedPostgreSQLEngine() const { return teng == TableEngineValues::MaterializedPostgreSQL; }
 
-    bool isOnLocal() const;
-
-    bool isMergeEngine() const;
-
-    bool isDistributedEngine() const;
-
-    bool isDictionaryEngine() const;
-
-    bool isGenerateRandomEngine() const;
-
-    bool isURLEngine() const;
-
-    bool isKeeperMapEngine() const;
-
-    bool isExternalDistributedEngine() const;
-
-    bool isMaterializedPostgreSQLEngine() const;
-
-    bool isArrowFlightEngine() const;
-
-    bool isAliasEngine() const;
-
-    bool isKafkaEngine() const;
+    bool isArrowFlightEngine() const { return teng == TableEngineValues::ArrowFlight; }
 
     bool isNotTruncableEngine() const;
 
@@ -366,13 +280,15 @@ public:
 
     bool hasDatabasePeer() const;
 
-    bool hasMySQLPeer() const;
+    bool hasMySQLPeer() const { return peer_table == PeerTableDatabase::MySQL; }
 
-    bool hasPostgreSQLPeer() const;
+    bool hasPostgreSQLPeer() const { return peer_table == PeerTableDatabase::PostgreSQL; }
 
-    bool hasSQLitePeer() const;
+    bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::SQLite; }
 
-    bool hasClickHousePeer() const;
+    bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
+
+    const std::optional<String> & getCluster() const { return cluster; }
 
     bool isAttached() const;
 
@@ -380,118 +296,120 @@ public:
 
     String getDatabaseName() const;
 
-    String getBaseName(bool full = true) const;
+    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    String getFullName(bool setdbname) const;
+    String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool no_change) const;
 
-    String getSparkCatalogName() const;
-
-    void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
-
-    String getTablePath() const;
-
-    String getTablePath(RandomGenerator & rg, bool allow_not_deterministic) const;
-
-    LakeCatalog getLakeCatalog() const;
-
-    LakeStorage getPossibleLakeStorage() const;
-
-    LakeFormat getPossibleLakeFormat() const;
-
-    static void setName(ExprSchemaTable * est, const String & name, bool setdbname, std::shared_ptr<SQLDatabase> database);
-
-    void setName(ExprSchemaTable * est, bool setdbname) const;
-
-    void setName(TableEngine * te) const;
+    String getMetadataPath(const FuzzConfig & fc) const;
 };
 
 struct SQLTable : SQLBase
 {
 public:
-    uint32_t col_counter = 0;
-    uint32_t idx_counter = 0;
-    uint32_t proj_counter = 0;
-    uint32_t constr_counter = 0;
-    std::unordered_map<String, SQLColumn> cols;
-    std::unordered_map<String, SQLColumn> staged_cols;
-    std::unordered_set<String> constrs;
-    std::unordered_set<String> staged_constrs;
-    std::unordered_map<String, String> frozen_partitions;
+    uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
+    std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
+    std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
+    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    std::unordered_map<uint32_t, String> frozen_partitions;
 
-    SQLTable()
-        : SQLBase("t")
+    size_t numberOfInsertableColumns() const;
+
+    bool supportsFinal() const
     {
+        return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
     }
 
-    size_t numberOfInsertableColumns(bool all) const;
+    bool hasSignColumn() const
+    {
+        return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    }
 
-    bool supportsFinal() const;
+    bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
 
-    bool hasSignColumn() const;
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+    {
+        if (database || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        }
+        est->mutable_table()->set_table("t" + std::to_string(name));
+    }
 
-    bool hasVersionColumn() const;
+    String getTableName() const;
 
-    bool areInsertsAppends() const;
+    String getFullName(bool setdbname) const;
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
+
+    void setName(TableEngine * te) const
+    {
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table(getTableName());
+    }
 };
 
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false;
-    bool is_refreshable = false;
-    bool has_with_cols = false;
+    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
     uint32_t staged_ncols = 0;
-    std::unordered_set<String> cols;
+    std::unordered_set<uint32_t> cols;
 
-    SQLView()
-        : SQLBase("v")
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
+        if (database || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        }
+        est->mutable_table()->set_table("v" + std::to_string(name));
     }
 
-    bool supportsFinal() const;
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLView::setName(est, setdbname, db, tname); }
+
+    void setName(TableEngine * te) const
+    {
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table("v" + std::to_string(tname));
+    }
+
+    bool supportsFinal() const { return !this->is_materialized; }
 };
 
 struct SQLDictionary : SQLBase
 {
 public:
-    std::unordered_map<String, SQLColumn> cols;
+    std::unordered_map<uint32_t, SQLColumn> cols;
 
-    SQLDictionary()
-        : SQLBase("d")
+    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
     {
+        if (database || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        }
+        est->mutable_table()->set_table("d" + std::to_string(name));
     }
 
-    bool supportsFinal() const;
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLDictionary::setName(est, setdbname, db, tname); }
+
+    void setName(TableEngine * te) const
+    {
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
+    }
+
+    bool supportsFinal() const { return false; }
 };
 
-struct SQLFunction : WithCluster
+struct SQLFunction
 {
 public:
     bool is_deterministic = false;
-    uint32_t nargs = 0;
-};
+    uint32_t fname = 0, nargs = 0;
+    std::optional<String> cluster;
 
-struct SQLPolicy : WithCluster
-{
-public:
-    bool is_row = true;
-    String table_key;
-    /// USING predicate stored at creation time; absent means the policy allows all rows.
-    std::optional<WhereStatement> where_expr;
-    /// True when the policy was created with `TO buzzhouse_oracle_role` — eligible for the row policy oracle.
-    bool targets_oracle_role = false;
+    const std::optional<String> & getCluster() const { return cluster; }
 
-    SQLPolicy() = default;
-    SQLPolicy(const SQLPolicy & other)
-        : WithCluster(other)
-    {
-        this->is_row = other.is_row;
-        this->table_key = other.table_key;
-        this->name = other.name;
-        this->where_expr = other.where_expr;
-        this->targets_oracle_role = other.targets_oracle_role;
-    }
-    SQLPolicy & operator=(const SQLPolicy & other) = default;
+    void setName(Function * f) const { f->set_function("f" + std::to_string(fname)); }
 };
 
 struct ColumnPathChainEntry
@@ -524,14 +442,11 @@ public:
     {
     }
 
-    const String & getBottomName() const;
+    const String & getBottomName() const { return path[path.size() - 1].cname; }
 
-    /// Returns the bottom name as a backtick-quoted SQL identifier: `escaped_name`.
-    String getBottomNameSQL() const;
+    SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 
-    SQLType * getBottomType() const;
-
-    String columnPathRef(const String & quote = "`") const;
+    String columnPathRef() const;
 };
 
 }

@@ -12,16 +12,16 @@ namespace DB
 namespace
 {
 
-class FunctionWKT final : public IFunction
+class FunctionWkt : public IFunction
 {
 public:
     static inline const char * name = "wkt";
 
-    explicit FunctionWKT() = default;
+    explicit FunctionWkt() = default;
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionWKT>();
+        return std::make_shared<FunctionWkt>();
     }
 
     String getName() const override
@@ -45,6 +45,14 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /*
+    * Functions like recursiveRemoveLowCardinality don't pay enough attention to custom types and just erase
+    * the information about it during type conversions.
+    * While it is a big problem the quick solution would be just to disable default low cardinality implementation
+    * because it doesn't make a lot of sense for geo types.
+    */
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
@@ -79,23 +87,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(WKT)
+REGISTER_FUNCTION(Wkt)
 {
-    FunctionDocumentation::Description description = R"(
-Converts a ClickHouse geometry object to its [Well-Known Text (WKT)](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry) representation.
-    )";
-    FunctionDocumentation::Syntax syntax = "wkt(geometry)";
-    FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the WKT string representation of the geometry.", {"String"}};
-    FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT (0 1)"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionWKT>(documentation);
-    factory.registerAlias("WKT", "wkt");
+    factory.registerFunction<FunctionWkt>();
 }
 
 }

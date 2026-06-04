@@ -2,8 +2,8 @@
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <TableFunctions/TableFunctionFile.h>
 
-#include <Core/Field.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -27,85 +27,17 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace
-{
-
-StorageFile::FileSource parseFileSourceFromStringArray(const Array & sources, const ContextPtr & context)
-{
-    if (sources.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function 'file' must contain at least one path");
-
-    StorageFile::FileSource result;
-    bool is_first_source = true;
-    bool has_different_formats = false;
-    for (const auto & source_field : sources)
-    {
-        if (source_field.getType() != Field::Types::String)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "All elements of the first argument of table function 'file' must have type String, got {}",
-                fieldTypeToString(source_field.getType()));
-
-        auto source = StorageFile::FileSource::parse(source_field.safeGet<String>(), context);
-        if (source.archive_info)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Array source for table function 'file' does not support archive path syntax");
-
-        result.paths.insert(result.paths.end(), source.paths.begin(), source.paths.end());
-        result.total_bytes_to_read += source.total_bytes_to_read;
-
-        if (is_first_source)
-        {
-            result.format_from_filenames = source.format_from_filenames;
-            is_first_source = false;
-        }
-        else if (result.format_from_filenames != source.format_from_filenames)
-        {
-            has_different_formats = true;
-        }
-    }
-
-    if (has_different_formats)
-        result.format_from_filenames = {};
-
-    /// Array sources are supported only for reading, even if the array contains a single path.
-    result.with_globs = true;
-    if (!result.paths.empty())
-        result.path_for_partitioned_write = result.paths.front();
-
-    return result;
-}
-
-}
-
 void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr & context)
 {
-    const auto * literal = arg->as<ASTLiteral>();
-    if (!literal)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "The first argument of table function '{}' must be a path, an array of paths, or a file descriptor",
-            getName());
-
-    auto type = literal->value.getType();
-    if (type == Field::Types::Array)
-    {
-        if (getName() != name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be a path, not an array", getName());
-
-        filename = arg->formatForErrorMessage();
-        file_source = parseFileSourceFromStringArray(literal->value.safeGet<Array>(), context);
-        return;
-    }
-
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        file_source = StorageFile::FileSource::parse(filename, context);
+        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
         return;
     }
 
+    const auto * literal = arg->as<ASTLiteral>();
+    auto type = literal->value.getType();
     if (type == Field::Types::String)
     {
         filename = literal->value.safeGet<String>();
@@ -116,7 +48,8 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            file_source = StorageFile::FileSource::parse(filename, context);
+            StorageFile::parseFileSource(
+                std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -126,20 +59,18 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File descriptor must be non-negative");
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' must be path or file descriptor", getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first argument of table function '{}' mush be path or file descriptor", getName());
 }
 
 std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-
-    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
-    return file_source->format_from_filenames;
+    return FormatFactory::instance().tryGetFormatFromFileName(filename);
 }
 
 StoragePtr TableFunctionFile::getStorage(
-    const String & /*source*/,
+    const String & source,
     const String & format_,
     const ColumnsDescription & columns,
     ContextPtr global_context,
@@ -159,13 +90,13 @@ StoragePtr TableFunctionFile::getStorage(
         ConstraintsDescription{},
         String{},
         global_context->getSettingsRef()[Setting::rename_files_after_processing],
+        path_to_archive,
     };
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
-    return std::make_shared<StorageFile>(*file_source, args);
+    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -174,16 +105,26 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
+        size_t total_bytes_to_read = 0;
 
-        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        Strings paths;
+        std::optional<StorageFile::ArchiveInfo> archive_info;
+        if (path_to_archive.empty())
+            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        else
+            archive_info
+                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
 
         ColumnsDescription columns;
         if (format == "auto")
-            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
+            columns = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
         else
-            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
+            columns = StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
 
-        auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
+        auto sample_path = paths.empty() ? String{} : paths.front();
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
             columns,
@@ -200,7 +141,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>({});
+    factory.registerFunction<TableFunctionFile>();
 }
 
 }
