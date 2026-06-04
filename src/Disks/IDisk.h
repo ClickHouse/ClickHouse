@@ -40,6 +40,8 @@ namespace Poco
 namespace DB
 {
 
+class ReadPipeline;
+
 #if USE_AWS_S3
 namespace S3
 {
@@ -71,6 +73,7 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 
 class DiskObjectStorage;
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
+using DiskObjectStorageConstPtr = std::shared_ptr<const DiskObjectStorage>;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
@@ -239,16 +242,25 @@ public:
     virtual void listFiles(const String & path, std::vector<String> & file_names) const = 0;
 
     /// Open the file for read and return ReadBufferFromFileBase object.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
+    /// Convenience wrapper: calls prepareRead() + pipeline.build().
+    std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const;
+
+    /// Populate a ReadPipeline with the stages needed to read from this disk.
+    /// Every disk implementation must override this method.
+    virtual void prepareRead(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
+        const ReadSettings & settings,
         std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
@@ -546,17 +558,6 @@ public:
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Method getObjectStorage is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-
-    /// Create disk object storage according to disk type.
-    /// For example for DiskLocal create DiskObjectStorage(LocalObjectStorage),
-    /// for DiskObjectStorage create just a copy.
-    virtual DiskObjectStoragePtr createDiskObjectStorage()
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 

@@ -15,7 +15,7 @@ inline std::string to_string(const integer<Bits, Signed> & n)
     if (integer<Bits, Signed>::_impl::operator_eq(n, 0U))
         return "0";
 
-    integer<Bits, unsigned> t;
+    integer<Bits, unsigned> t{};
     bool is_neg = integer<Bits, Signed>::_impl::is_negative(n);
     if (is_neg)
         t = integer<Bits, Signed>::_impl::operator_unary_minus(n);

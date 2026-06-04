@@ -159,7 +159,12 @@ public:
         }
         catch (const std::runtime_error & e)
         {
+            /// musl defines `stderr` as a recursive macro `(stderr)`,
+            /// which triggers `-Wdisabled-macro-expansion` when used as a function argument.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
             fmt::print(stderr, "{}", e.what());
+#pragma clang diagnostic pop
         }
     }
 
@@ -198,7 +203,7 @@ std::string replxx_now_ms_str()
 {
     std::chrono::milliseconds ms(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()));
     time_t t = ms.count() / 1000;
-    tm broken;
+    tm broken{};
     if (!localtime_r(&t, &broken))
         return {};
 
@@ -349,6 +354,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
 
     rx.set_completion_callback(callback);
+
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);

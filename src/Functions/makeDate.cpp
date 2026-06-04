@@ -64,7 +64,7 @@ protected:
 
 /// Implementation of makeDate, makeDate32
 template <typename Traits>
-class FunctionMakeDate : public FunctionWithNumericParamsBase
+class FunctionMakeDate final : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names_year_month_day = {"year", "month", "day"};
@@ -174,7 +174,7 @@ public:
 
 /// Implementation of YYYYMMDDToDate, YYYYMMDDToDate32
 template<typename Traits>
-class FunctionYYYYYMMDDToDate : public FunctionWithNumericParamsBase
+class FunctionYYYYYMMDDToDate final : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names = { "YYYYMMDD" };
@@ -331,7 +331,7 @@ protected:
 };
 
 /// makeDateTime(year, month, day, hour, minute, second[, timezone])
-class FunctionMakeDateTime : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime final : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"timezone"};
@@ -412,7 +412,7 @@ public:
 };
 
 /// makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
-class FunctionMakeDateTime64 : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime64 final : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"fraction", "precision", "timezone"};
@@ -551,7 +551,7 @@ protected:
 };
 
 /// YYYYMMDDhhmmssToDateTime
-class FunctionYYYYMMDDhhmmssToDateTime : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "timezone" };
@@ -630,7 +630,7 @@ public:
 };
 
 /// YYYYMMDDhhmmssToDateTime64
-class FunctionYYYYMMDDhhmmssToDateTime64 : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime64 final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "precision", "timezone" };

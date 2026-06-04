@@ -12,6 +12,8 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -135,7 +137,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
 {
     if (!column_mapper)
         return element.name;
@@ -150,8 +152,19 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
-    auto split = Nested::splitName(std::string_view(it->second), /*reverse=*/ true);
-    return split.second.empty() ? split.first : split.second;
+
+    /// At top level (empty path), return the full mapped name. For nested
+    /// elements, strip the parent path prefix to get the child name.
+    if (current_path.empty())
+        return it->second;
+
+    /// Strip "current_path." prefix to get the child name (preserves dots in child names)
+    std::string_view mapped = it->second;
+    if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
+        && mapped[current_path.size()] == '.')
+        return mapped.substr(current_path.size() + 1);
+
+    return it->second;
 }
 
 void SchemaConverter::processSubtree(TraversalNode & node)
@@ -169,7 +182,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
 
         if (sample_block)
         {
@@ -375,7 +388,10 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     }
 
     /// GeoParquet types like Point or Polygon can't be inside Nullable.
-    if (typeid_cast<const DataTypeArray *>(inferred_type.get()) || typeid_cast<const DataTypeTuple *>(inferred_type.get()))
+    /// Geometry (Variant) is also not Nullable-compatible.
+    if (typeid_cast<const DataTypeArray *>(inferred_type.get())
+        || typeid_cast<const DataTypeTuple *>(inferred_type.get())
+        || typeid_cast<const DataTypeVariant *>(inferred_type.get()))
     {
         output_nullable = false;
         output_nullable_if_not_json = false;
@@ -551,6 +567,18 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
+
+    if (column_mapper && schema_idx < file_metadata.schema.size())
+    {
+        const auto & elem_schema = file_metadata.schema.at(schema_idx);
+        if (elem_schema.__isset.field_id)
+        {
+            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
+                subnode.name = std::string(it->second);
+        }
+    }
+
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -617,7 +645,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx)));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
@@ -831,7 +859,6 @@ void SchemaConverter::processPrimitiveColumn(
         bool found = true;
         switch (type)
         {
-            case parq::Type::BOOLEAN: size = 1; break;
             case parq::Type::INT32: size = 4; break;
             case parq::Type::INT64: size = 8; break;
             case parq::Type::INT96: size = 12; break;
@@ -871,6 +898,14 @@ void SchemaConverter::processPrimitiveColumn(
         return;
     }
 
+    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
+    {
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        out_inferred_type = getGeoDataType(GeoType::Mixed);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        return;
+    }
+
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
         converted == CONV::BSON || converted == CONV::ENUM)
@@ -900,7 +935,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits;
+        size_t physical_bits = 0;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -957,7 +992,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale;
+        UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
@@ -1140,8 +1175,10 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::FIXED_LEN_BYTE_ARRAY || element.type_length != 16)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
-        /// TODO [parquet]: Support UUIDs. Make sure to get the byte order right, it seems tricky.
-        /// For now, fall through to reading as FixedString(16).
+        out_inferred_type = std::make_shared<DataTypeUUID>();
+        out_decoder.allow_stats = true; // UUIDs support min/max stats
+        out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        return;
     }
     else if (logical.__isset.FLOAT16)
     {
@@ -1238,12 +1275,19 @@ void SchemaConverter::processPrimitiveColumn(
         {
             if (type_hint)
             {
-                /// If parquet type is FIXED_LEN_BYTE_ARRAY(16), and type hint is [U]Int128, assume
-                /// it's binary little-endian [U]Int128. That's how clickhouse parquet writer writes
-                /// [U]Int128 (btw, we should probably change that to Decimal).
-                /// Same for FIXED_LEN_BYTE_ARRAY(32) and [U]Int256.
-                /// We can't leave this conversion to castColumn because it would parse as text.
                 WhichDataType which(type_hint->getTypeId());
+
+                /// Handle explicit UUID type hint (e.g. SELECT x::UUID)
+                if (which.isUUID() && element.type_length == 16)
+                {
+                    out_inferred_type = type_hint;
+                    out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                    out_decoder.allow_stats = true;
+                    return;
+                }
+
+                /// Legacy ClickHouse binary formats for [U]Int128 and [U]Int256.
+                /// These are written as FIXED_LEN_BYTE_ARRAY(16/32) but without logical types.
                 if (which.isInteger() && !which.isNativeInteger() &&
                     type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
                 {
@@ -1251,14 +1295,26 @@ void SchemaConverter::processPrimitiveColumn(
                 }
             }
 
+            /// Automatic Inference: If no hint is provided, but the Parquet
+            /// file metadata explicitly flags this column as a UUID.
+            if (logical.__isset.UUID && element.type_length == 16)
+            {
+                out_inferred_type = std::make_shared<DataTypeUUID>();
+                out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+                out_decoder.allow_stats = true;
+                return;
+            }
+
+            /// Default Fallback: If it's not a UUID or a BigInt hint, treat it as FixedString.
             if (!out_inferred_type)
                 out_inferred_type = std::make_shared<DataTypeFixedString>(size_t(element.type_length));
+
             auto converter = std::make_shared<FixedStringConverter>();
             converter->input_size = size_t(element.type_length);
             out_decoder.fixed_size_converter = std::move(converter);
 
-            /// (The case where type_hint is FixedString is handled above, no need to check for it here.)
-            out_decoder.allow_stats = !logical.__isset.UUID && WhichDataType(get_output_type_index()).isString();
+            /// Stats are only allowed for FixedString if the output is actually a string.
+            out_decoder.allow_stats = WhichDataType(get_output_type_index()).isString();
             return;
         }
     }

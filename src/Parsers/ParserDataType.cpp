@@ -3,7 +3,9 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
@@ -52,16 +54,24 @@ bool parseEnumValues(
             return false;
         }
 
-        /// Check for prefixed string literals like b'...' or x'...' - fall back to generic parser
+        String elem_name;
         char first_char = *pos->begin;
         if (first_char == 'b' || first_char == 'B' || first_char == 'x' || first_char == 'X')
-            return false;
-
-        String elem_name;
-        ReadBufferFromMemory in(pos->begin, pos->size());
-        if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
-            return false;
-        ++pos;
+        {
+            /// Binary/hex string literals (b'...', x'...') - use full parser to decode
+            ASTPtr literal_ast;
+            ParserStringLiteral string_literal_parser;
+            if (!string_literal_parser.parse(pos, literal_ast, expected))
+                return false;
+            elem_name = literal_ast->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+        {
+            ReadBufferFromMemory in(pos->begin, pos->size());
+            if (!tryReadQuotedStringWithSQLStyle(elem_name, in) || in.count() != pos->size())
+                return false;
+            ++pos;
+        }
 
         /// Must have explicit value - if not, fall back to generic parser for auto-assignment
         if (pos->type != TokenType::Equals)
@@ -226,7 +236,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         String n = type_name;
         boost::to_upper(n);
-        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "COMMENT" || n == "CODEC")
+        if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
         {
             expected.add(pos, "type name");
             return false;
@@ -325,6 +335,87 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = saved_pos;
     }
 
+    /// Handle Tuple types specially - parse directly into ASTTupleDataType
+    /// to avoid creating ASTNameTypePair nodes for each named element.
+    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
+    {
+        auto saved_pos = pos;
+        ++pos;
+
+        auto tuple_node = make_intrusive<ASTTupleDataType>();
+        tuple_node->name = type_name;
+        auto arguments = make_intrusive<ASTExpressionList>();
+        tuple_node->children.push_back(arguments);
+
+        bool has_named_elements = false;
+        Strings element_names_tmp;
+        bool first_element = true;
+
+        while (true)
+        {
+            if (!first_element)
+            {
+                if (pos->type == TokenType::Comma)
+                    ++pos;
+                else
+                    break;
+            }
+            first_element = false;
+
+            /// Try to parse: identifier Type (named element)
+            /// or just: Type (unnamed element)
+            ParserIdentifier identifier_parser;
+            ParserDataType type_parser;
+            ASTPtr identifier_node;
+            ASTPtr type_node;
+
+            auto element_pos = pos;
+            if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
+            {
+                /// Named element: name Type
+                String elem_name;
+                tryGetIdentifierNameInto(identifier_node, elem_name);
+                element_names_tmp.push_back(elem_name);
+                arguments->children.push_back(type_node);
+                has_named_elements = true;
+            }
+            else
+            {
+                /// Try just Type (unnamed element)
+                pos = element_pos;
+                if (type_parser.parse(pos, type_node, expected))
+                {
+                    /// Empty placeholder needed to detect mixed named/unnamed tuples.
+                    /// The factory validates that all names are non-empty when element_names is set.
+                    element_names_tmp.push_back("");
+                    arguments->children.push_back(type_node);
+                }
+                else
+                {
+                    /// Could not parse element
+                    break;
+                }
+            }
+        }
+
+        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
+        {
+            ++pos;
+            /// Only store element_names if tuple has any named elements
+            if (has_named_elements)
+            {
+                element_names_tmp.shrink_to_fit();
+                tuple_node->element_names = std::move(element_names_tmp);
+            }
+            arguments->children.shrink_to_fit();
+            node = tuple_node;
+            return true;
+        }
+
+        /// Fall back to generic parser
+        pos = saved_pos;
+    }
+
     auto data_type_node = make_intrusive<ASTDataType>();
     data_type_node->name = type_name;
 
@@ -417,7 +508,20 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             ParserDataType data_type_parser;
-            ParserAllCollectionsOfLiterals literal_parser(false);
+            /// Only accept simple literals (numbers, strings, NULL, ...) as
+            /// data-type arguments. We deliberately do NOT accept collection
+            /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data
+            /// type takes a tuple/array/map literal as an argument, and
+            /// accepting them produces an `ASTLiteral` with `Field::Tuple`
+            /// (or `Field::Array`) inside the type's argument list. The
+            /// formatter then prints such a Tuple literal as `tuple(...)`
+            /// (the explicit function form -- see
+            /// `FieldVisitorToString::operator()(const Tuple &)`), and
+            /// re-parsing `tuple(...)` in this context yields an
+            /// `ASTDataType("tuple")` instead of an `ASTLiteral`, breaking
+            /// the AST round-trip check in `executeQuery` (DEBUG/sanitizer
+            /// builds). See STID 1941-1bfa.
+            ParserLiteral literal_parser;
 
             const char * operators[] = {"=", "equals", nullptr};
             ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());
@@ -438,7 +542,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    data_type_node->children.push_back(expr_list_args);
+    /// Only attach arguments if non-empty, so that e.g. `Tuple()` produces the same
+    /// AST as `Tuple` (no children). This keeps the formatting roundtrip consistent:
+    /// formatImpl omits parentheses for empty arguments, and reparsing without
+    /// parentheses produces a node with no children.
+    if (!expr_list_args->children.empty())
+        data_type_node->children.push_back(expr_list_args);
 
     node = data_type_node;
     return true;

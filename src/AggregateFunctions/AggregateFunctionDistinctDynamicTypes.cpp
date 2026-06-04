@@ -10,7 +10,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -27,7 +28,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 {
     constexpr static size_t MAX_ARRAY_SIZE = 0xFFFFFF;
 
-    std::unordered_set<String> data;
+    UnorderedSetWithMemoryTracking<String> data;
 
     void add(const String & type)
     {
@@ -48,7 +49,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t size;
+        size_t size = 0;
         readVarUInt(size, buf);
         if (size > MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", MAX_ARRAY_SIZE, size);
@@ -154,6 +155,7 @@ static AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
     return std::make_shared<AggregateFunctionDistinctDynamicTypes>(argument_types);
 }
 
+void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory)
 {
     /// distinctDynamicTypes documentation
@@ -188,7 +190,7 @@ SELECT distinctDynamicTypes(d) FROM test_dynamic;
     FunctionDocumentation::Category category_distinctDynamicTypes = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_distinctDynamicTypes = {description_distinctDynamicTypes, syntax_distinctDynamicTypes, arguments_distinctDynamicTypes, {}, returned_value_distinctDynamicTypes, examples_distinctDynamicTypes, introduced_in_distinctDynamicTypes, category_distinctDynamicTypes};
 
-    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, {}, documentation_distinctDynamicTypes});
+    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, documentation_distinctDynamicTypes});
 }
 
 }

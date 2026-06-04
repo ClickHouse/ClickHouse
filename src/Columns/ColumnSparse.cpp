@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+void ColumnSparse::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    values->getValueNameImpl(name_buf, getValueIndex(n), options);
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -206,7 +206,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
         size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-        assert(offset_start <= offset_end);
+        chassert(offset_start <= offset_end);
 
         if (offset_start != offset_end)
         {
@@ -300,7 +300,8 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n <= _size);
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -480,7 +481,7 @@ ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
@@ -660,7 +661,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
         }
     }
 
-    assert(row == limit);
+    chassert(row == limit);
 }
 
 void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -729,7 +730,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size != replicate_offsets.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
-    if (_size == 0)
+    if (_size == 0 || replicate_offsets.back() == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
     auto res_offsets = offsets->cloneEmpty();
@@ -799,12 +800,21 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
     hash.update(_size);
 }
 
-void ColumnSparse::getExtremes(Field & min, Field & max) const
+void ColumnSparse::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (_size == 0)
+    if (start >= end)
     {
         values->get(0, min);
         values->get(0, max);
+        return;
+    }
+
+    /// For ColumnSparse, range-based extremes are not trivially supported
+    /// due to the sparse representation. Fall back to cut + getExtremes.
+    if (start != 0 || end != _size)
+    {
+        auto sub_column = cut(start, end - start);
+        sub_column->getExtremes(min, max, 0, end - start);
         return;
     }
 
@@ -826,7 +836,7 @@ void ColumnSparse::getExtremes(Field & min, Field & max) const
         return;
     }
 
-    values->getExtremes(min, max);
+    values->getExtremes(min, max, 0, values->size());
 }
 
 void ColumnSparse::getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const
@@ -909,7 +919,7 @@ IColumn::Offsets & ColumnSparse::getOffsetsData()
 
 size_t ColumnSparse::getValueIndex(size_t n) const
 {
-    assert(n < _size);
+    chassert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
@@ -927,18 +937,27 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns values_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns, max_dynamic_subcolumns);
+    values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnSparse::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeDynamicStructureFromColumn(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+}
+
+void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
+    values_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

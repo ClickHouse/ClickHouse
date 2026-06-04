@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/Sources/NullSource.h>
@@ -17,7 +19,6 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     , projection(projection_)
 {
     setInMemoryMetadata(*projection->metadata);
-    setVirtuals(MergeTreeData::createVirtuals(*parent_metadata));
 }
 
 void StorageFromMergeTreeProjection::read(
@@ -30,6 +31,8 @@ void StorageFromMergeTreeProjection::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    context->checkAccess(AccessType::SELECT, parent_storage->getStorageID());
+
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
     const auto & parts = snapshot_data.parts;
 

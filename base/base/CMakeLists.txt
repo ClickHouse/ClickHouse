@@ -22,6 +22,7 @@ set (SRCS
     itoa.cpp
     JSON.cpp
     mremap.cpp
+    openpty.cpp
     phdr_cache.cpp
     preciseExp10.cpp
     shift10.cpp
@@ -41,6 +42,12 @@ if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
+endif ()
+
+if (WITH_COVERAGE_DEPTH)
+    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=1)
+else ()
+    target_compile_definitions(common PUBLIC WITH_COVERAGE_DEPTH=0)
 endif ()
 
 if (TARGET ch_contrib::crc32_s390x)

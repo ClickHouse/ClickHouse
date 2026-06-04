@@ -1,14 +1,13 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
-#include <filesystem>
-#include <iomanip>
-
-#include <Common/CurrentThread.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -244,7 +243,7 @@ public:
         }
         catch (...)
         {
-            std::vector<String> quoted_arguments_with_parameters;
+            VectorWithMemoryTracking<String> quoted_arguments_with_parameters;
             for (const auto & argument : command_arguments_with_parameters)
                 quoted_arguments_with_parameters.push_back("\"" + argument + "\"");
             String quoted_arguments_string = boost::algorithm::join(quoted_arguments_with_parameters, ", ");
@@ -267,7 +266,7 @@ private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
     String command_with_parameters;
-    std::vector<String> command_arguments_with_parameters;
+    VectorWithMemoryTracking<String> command_arguments_with_parameters;
 };
 
 }
@@ -286,7 +285,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
@@ -306,7 +305,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
 
         if (CurrentThread::isInitialized())
         {
-            auto query_context = CurrentThread::get().getQueryContext();
+            auto query_context = CurrentThread::get().tryGetQueryContext();
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }
@@ -326,12 +325,12 @@ bool UserDefinedExecutableFunctionFactory::has(const String & function_name, Con
     return result;
 }
 
-std::vector<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
+Strings UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
     auto loaded_objects = loader.getLoadedObjects();
 
-    std::vector<std::string> registered_names;
+    Strings registered_names;
     registered_names.reserve(loaded_objects.size());
 
     for (auto & loaded_object : loaded_objects)

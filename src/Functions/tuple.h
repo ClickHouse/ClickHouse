@@ -22,7 +22,7 @@ namespace ErrorCodes
   * tuple(name1, name2, ...)(x, y, ...) creates a named tuple with the given names.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
-class FunctionTuple : public IFunction
+class FunctionTuple final : public IFunction
 {
 public:
     static constexpr auto name = "tuple";

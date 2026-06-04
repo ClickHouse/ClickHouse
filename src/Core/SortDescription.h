@@ -36,7 +36,7 @@ struct FillColumnDescription
     Field fill_staleness;   /// Default = Null - should not be considered
     std::optional<IntervalKind> staleness_kind;
 
-    using StepFunction = std::function<void(Field &, Int32 jumps_count)>;
+    using StepFunction = std::function<void(Field &, Int64 jumps_count)>;
     StepFunction step_func;
     StepFunction staleness_step_func;
 };
@@ -46,11 +46,11 @@ struct SortColumnDescription
 {
     std::string alias;
     std::string column_name; /// The name of the column.
-    int direction;           /// 1 - ascending, -1 - descending.
-    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
+    int direction{1};           /// 1 - ascending, -1 - descending.
+    int nulls_direction{1};     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
-    bool with_fill;
+    bool with_fill{};
     FillColumnDescription fill_description;
 
     SortColumnDescription() = default;
@@ -159,6 +159,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
 /// Outputs user-readable description into `out`.
 void dumpSortDescription(const SortDescription & description, WriteBuffer & out);
+
+struct ExplainFormatSettings;
+void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings);
 
 std::string dumpSortDescription(const SortDescription & description);
 

@@ -3,6 +3,7 @@
 #include <base/scope_guard.h>
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/Fiber.h>
 #include <sys/resource.h>
 #include <pthread.h>
@@ -35,8 +36,8 @@ static size_t getStackSize(void ** out_address)
 {
     using namespace DB;
 
-    size_t size;
-    void * address;
+    size_t size = 0;
+    void * address = nullptr;
 
 #if defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on

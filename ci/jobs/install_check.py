@@ -38,9 +38,11 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-# Do not use systemd, and hence we need to wait until the server will be ready below
+# Do not use systemd, and hence we need to wait until the server will be ready below.
+# The init.d wrapper prints "Server started" once the pid file exists, but the TCP
+# listener can take longer to open on a slow CI host; poll for up to 30s. See #86278.
 SYSTEMCTL_SKIP_REDIRECT=1 /etc/init.d/clickhouse-server start
-for i in {1..5}; do
+for i in {1..30}; do
     clickhouse-client -q 'SELECT version()' && break || sleep 1
 done
 clickhouse-client -q 'SELECT version()'
@@ -128,11 +130,11 @@ def test_install_rpm(image: DockerImage) -> List[Result]:
     # systemd just ignores the watchdog completely
     tests = {
         "Install server rpm": r"""#!/bin/bash -ex
-yum localinstall --disablerepo=* -y /packages/clickhouse-{server,client,common}*rpm
+yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-{server,client,common}*rpm
 echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
-yum localinstall --disablerepo=* -y /packages/clickhouse-keeper*rpm
+yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
 bash -ex /packages/keeper_test.sh""",
         "Install clickhouse binary in rpm": r"bash -ex /packages/binary_test.sh",
     }

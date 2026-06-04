@@ -21,6 +21,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -33,6 +34,7 @@
 #include <numeric>
 #include <deque>
 #include <iterator>
+#include <thread>
 
 using namespace DB;
 
@@ -100,7 +102,12 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
-void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
+void reserveSpaceInHashMaps(
+    HashJoin & hash_join,
+    size_t ind,
+    const StatsCollectingParams & stats_collecting_params,
+    size_t slots,
+    size_t external_join_threshold)
 {
     if (auto hint = getSizeHint(stats_collecting_params))
     {
@@ -108,8 +115,16 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
         /// we need to preallocate in all buckets of all hash maps.
         const size_t reserve_size = hint->ht_size;
 
+        /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
+        /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
+        /// query, blowing past that cap before `SpillingHashJoin` ever runs its threshold check. We still
+        /// want preallocation - just bounded by the memory budget. We aim for about half of the threshold
+        /// so that the cap itself plus the live data plus the conversion peak still fit under it. When
+        /// running standalone (`external_join_threshold == 0`), the original full reserve is used.
+
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
+        size_t actual_reserve_size = reserve_size;
         auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
         {
             APPLY_TO_MAP(
@@ -118,14 +133,30 @@ void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollect
                 maps,
                 [&](auto & map)
                 {
+                    using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                    constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+
+                    if (external_join_threshold > 0)
+                    {
+                        /// Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`), so each
+                        /// stored entry consumes 2 cells of capacity, and `bufSize` is then rounded up to
+                        /// the next power of two - a factor of up to 4x in the worst case. So each reserved
+                        /// entry occupies up to 4 × cell_size bytes of buffer. We keep total preallocated
+                        /// bytes (summed across all slots and buckets) under `threshold / 2`, leaving
+                        /// headroom for the eventual SpillingHashJoin trigger (also at `threshold / 2`)
+                        /// and for the conversion peak when handing data over to GraceHashJoin.
+                        const size_t budget_entries = external_join_threshold / (8 * cell_size);
+                        actual_reserve_size = std::min(reserve_size, budget_entries);
+                    }
+
                     for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(reserve_size / map.NUM_BUCKETS);
+                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
                 })
         };
 
         const auto & right_data = hash_join.getJoinedData();
         std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
     }
 }
 
@@ -150,7 +181,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     size_t slots_,
     SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    size_t external_join_threshold_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , any_take_last_row(any_take_last_row_)
@@ -162,6 +194,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*max_free_threads_*/ 0,
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
+    , external_join_threshold(external_join_threshold_)
 {
     hash_joins.resize(slots);
 
@@ -204,11 +237,10 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
-        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+        if (!build_phase_finished || !hash_joins[0]->data->twoLevelMapIsUsed())
             return;
 
-        if (build_phase_finished)
-            updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params);
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -262,6 +294,8 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
     while (blocks_left > 0)
     {
+        bool made_progress = false;
+
         /// insert blocks into corresponding HashJoin instances
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
@@ -275,9 +309,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 if (!lock.owns_lock())
                     continue;
 
+                made_progress = true;
+
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold);
                     hash_join->space_was_preallocated = true;
                 }
 
@@ -291,6 +327,11 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                     return false;
             }
         }
+
+        /// If no slot was available in this pass, yield to avoid burning CPU while waiting
+        /// for other threads to finish inserting into their respective hash join slots
+        if (!made_progress)
+            std::this_thread::yield();
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
@@ -349,6 +390,11 @@ public:
     {
         if (!current_result)
         {
+            /// Skip empty dispatched blocks to avoid running the full join machinery for nothing,
+            /// keep the last block so joinScatteredBlock produces the correct output header
+            while (next_block + 1 < dispatched_blocks.size() && dispatched_blocks[next_block].rows() == 0)
+                ++next_block;
+
             if (next_block >= dispatched_blocks.size())
                 return {Block(), nullptr, true};
 
@@ -440,6 +486,23 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
+    return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, 0, 1);
+}
+
+bool ConcurrentHashJoin::supportParallelNonJoinedBlocksProcessing() const
+{
+    return table_join->allowParallelNonJoinedRowsProcessing()
+        && JoinCommon::hasNonJoinedBlocks(*table_join)
+        && hash_joins[0]->data->twoLevelMapIsUsed();
+}
+
+///   1) always-false condition (no keys): stream 0 returns all right rows
+///   2) two-level maps - each stream scans buckets where (bucket % num_streams == stream_idx)
+///   3) single-level maps - stream 0 concatenates per-slot streams sequentially
+IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size,
+    size_t stream_idx, size_t num_streams) const
+{
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
@@ -447,48 +510,48 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
                         table_join->kind(), table_join->strictness());
 
-    // If two-level maps are used, the probe stage uses only slot 0 (see joinBlock()),
-    // and on build finish we merged buckets into slot 0 and copied the shared map/flags to all instances
-    if (hash_joins[0]->data->twoLevelMapIsUsed())
+    /// no join keys (always false-condition), all right rows are non-joined, only stream 0 emits them
+    if (table_join->getOnlyClause().key_names_right.empty())
     {
+        if (stream_idx != 0)
+            return {};
         std::lock_guard lock(hash_joins[0]->mutex);
         return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
-    /// For joins with always false condition
-    if (table_join->getOnlyClause().key_names_right.empty())
+    /// Two-level maps: partition buckets across pipeline streams
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        /// all rows should be considered non-joined
-        /// we need to return all rows from the right table
         std::lock_guard lock(hash_joins[0]->mutex);
-        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return hash_joins[0]->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, stream_idx, num_streams);
     }
-    else
+
+    /// single-level maps - each slot has its own HashJoin, only stream 0 collects them
+    if (stream_idx != 0)
+        return {};
+
+    std::vector<IBlocksStreamPtr> streams;
+    streams.reserve(slots);
+    for (const auto & hash_join : hash_joins)
     {
-        // Old per-slot streams approach
-        std::vector<IBlocksStreamPtr> streams;
-        streams.reserve(slots);
-        for (const auto & hash_join : hash_joins)
+        std::lock_guard lock(hash_join->mutex);
+        if (hash_join->data->hasNonJoinedRows())
         {
-            std::lock_guard lock(hash_join->mutex);
-            if (hash_join->data->hasNonJoinedRows())
-            {
-                if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                    streams.push_back(std::move(s));
-            }
+            if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                streams.push_back(std::move(s));
         }
-        if (streams.empty())
-            return {};
-        if (streams.size() == 1)
-            return streams[0];
-        return std::make_shared<ConcatStreams>(std::move(streams));
     }
+    if (streams.empty())
+        return {};
+    if (streams.size() == 1)
+        return streams[0];
+    return std::make_shared<ConcatStreams>(std::move(streams));
 }
 
 template <typename HashTable>
 static IColumn::Selector hashToSelector(const HashTable & hash_table, const BlockHashes & hashes, size_t num_shards)
 {
-    assert(isPowerOf2(num_shards));
+    chassert(isPowerOf2(num_shards));
     const size_t num_rows = hashes.size();
     IColumn::Selector selector(num_rows);
     for (size_t i = 0; i < num_rows; ++i)
@@ -513,7 +576,7 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
     return hash;
 }
 
-IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
+static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
     std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
@@ -526,7 +589,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    extractNestedColumnsAndNullMap(key_columns, null_map);
 
     auto calculate_selector = [&](auto & maps)
     {
@@ -554,7 +617,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     return std::visit([&](auto & maps) { return calculate_selector(maps); }, join.getJoinedData()->maps.at(0));
 }
 
-ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+static ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
 {
     Blocks blocks(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -577,7 +640,7 @@ ScatteredBlocks scatterBlocksByCopying(size_t num_shards, const IColumn::Selecto
     return result;
 }
 
-ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
+static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Selector & selector, const Block & from_block)
 {
     std::vector<ScatteredBlock::IndexesPtr> selectors(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -657,6 +720,16 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
         hash.update(name);
 
     return hash.get64();
+}
+
+BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
+{
+    chassert(slot_idx < hash_joins.size());
+    auto & hash_join = hash_joins[slot_idx];
+    std::lock_guard lock(hash_join->mutex);
+    if (!hash_join->data || !hash_join->data->getJoinedData())
+        return {};
+    return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
 void ConcurrentHashJoin::onBuildPhaseFinish()

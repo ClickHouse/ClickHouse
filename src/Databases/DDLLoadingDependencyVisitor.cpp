@@ -24,7 +24,7 @@ using TableLoadingDependenciesVisitor = DDLLoadingDependencyVisitor::Visitor;
 
 TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast, bool can_throw)
 {
-    assert(global_context == global_context->getGlobalContext());
+    chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
     data.default_database = global_context->getCurrentDatabase();
     data.create_query = ast;
@@ -135,7 +135,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
-        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.getChild(*storage.ttl_table), data.default_database);
+        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
         data.dependencies.merge(ttl_dependencies.dependencies);
     }
 

@@ -20,10 +20,12 @@ Tuples are normally used as intermediate values for an argument of IN operators,
 
 The function implements the operator `(x, y, ...)`.
 )",
+        .syntax = "tuple([t1[, t2[ ...]])",
         .examples{
             {"typical", "SELECT tuple(1, 2)", "(1,2)"},
             {"named_tuple", "SELECT tuple('a', 'b')(10, 20)", R"({"a": 10, "b": 20})"}
         },
+        .introduced_in = {1, 1},
         .category = FunctionDocumentation::Category::Tuple});
 }
 

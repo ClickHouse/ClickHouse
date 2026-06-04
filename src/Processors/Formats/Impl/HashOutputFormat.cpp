@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -35,6 +36,7 @@ void HashOutputFormat::finalizeImpl()
     out.next();
 }
 
+void registerOutputFormatHash(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory)
 {
     factory.registerOutputFormat("Hash",

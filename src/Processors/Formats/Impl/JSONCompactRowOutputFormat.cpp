@@ -1,6 +1,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <Processors/Formats/Impl/JSONCompactRowOutputFormat.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -63,6 +64,7 @@ void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const 
     JSONUtils::writeCompactArrayEnd(*ostr);
 }
 
+void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatJSONCompact(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompact", [](

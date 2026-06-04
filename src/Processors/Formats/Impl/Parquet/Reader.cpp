@@ -33,7 +33,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ProfileEvents
@@ -104,7 +103,7 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         {
             /// Can't use CompressionMethod::Snappy because it dispatches to HadoopSnappyReadBuffer,
             /// which expects some additional header before the compressed block.
-            size_t actual_uncompressed_size;
+            size_t actual_uncompressed_size = 0;
             if (!snappy::GetUncompressedLength(data, compressed_size, &actual_uncompressed_size))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Malformed snappy compressed page (couldn't get uncompressed length)");
             if (actual_uncompressed_size != uncompressed_size)
@@ -190,7 +189,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
-    int32_t metadata_size_i32;
+    int32_t metadata_size_i32 = 0;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
     if (metadata_size_i32 <= 0 || size_t(metadata_size_i32) + 8 > file_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
@@ -315,7 +314,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
-            if (sample_block->has(node->result_name))
+            if (node->type != ActionsDAG::ActionType::INPUT && sample_block->has(node->result_name))
                 schemer.external_columns.push_back(node->result_name);
     };
     if (row_level_filter)
@@ -360,8 +359,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows <= 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows == 0)
+            continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
@@ -410,9 +411,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down)
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
     {
-        const auto & column_conditions = static_cast<FilterInfoExt *>(format_filter_info->opaque.get())->column_conditions;
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -690,15 +691,16 @@ void Reader::preparePrewhere()
 
                 for (size_t primitive_idx = output_info.primitive_start; primitive_idx < output_info.primitive_end; ++primitive_idx)
                 {
-                    //primitive_columns[primitive_idx].use_prewhere = true;
-                    primitive_columns[primitive_idx].steps_to_calculate.insert(steps.size() + 1);
+                    if (primitive_columns[primitive_idx].first_step_to_calculate == 0)
+                        primitive_columns[primitive_idx].first_step_to_calculate = steps.size() + 1;
                     primitive_columns[primitive_idx].only_for_prewhere = only_for_prewhere;
                 }
             }
             else
             {
                 if (!prewhere_output_column_idxs.contains(idx_in_output_block))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input: column '{}' (idx {})",
+                        col.name, idx_in_output_block);
             }
             step.input_idxs.push_back(idx_in_output_block);
         }
@@ -726,6 +728,7 @@ void Reader::preparePrewhere()
         auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
         prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+
         bool success = tryBuildPrewhereSteps(
             prewhere_info_patched,
             *actions_settings,
@@ -738,7 +741,8 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                if (needs_filter)
+                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
@@ -799,7 +803,10 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    std::vector<PrefetchHandle> prefetches;
+    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
+        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)
@@ -1118,7 +1125,6 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
         }
     }
     row_group.intersected_row_ranges_after_column_index = std::move(row_ranges);
-    row_group.next_subgroup_for_step = std::vector<std::atomic<size_t>>(steps.size() + 1);
 }
 
 void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
@@ -1233,7 +1239,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
 
 double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
 {
-    double column_chunk_bytes;
+    double column_chunk_bytes = 0;
     if (column.meta->meta_data.__isset.size_statistics &&
         column.meta->meta_data.size_statistics.__isset.unencoded_byte_array_data_bytes)
     {
@@ -1244,7 +1250,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
         /// Dictionary-encoded strings. No way to know the decoded length in advance.
-        double avg_string_length;
+        double avg_string_length = 0;
         if (column.dictionary.isInitialized())
         {
             /// We've read the dictionary. Use the average string length in the dictionary as a guess
@@ -1256,7 +1262,12 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
+        /// Null values don't contribute to string data. Subtract null_count when available
+        /// to avoid massive overestimation for columns with high null rates and large dictionary entries.
+        double non_null_values = static_cast<double>(column.meta->meta_data.num_values);
+        if (column.meta->meta_data.statistics.__isset.null_count)
+            non_null_values = std::max(0., non_null_values - static_cast<double>(column.meta->meta_data.statistics.null_count));
+        column_chunk_bytes = avg_string_length * non_null_values;
     }
     else
     {
@@ -1269,7 +1280,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
-    double res;
+    double res = 0;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
         res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
@@ -1293,7 +1304,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 {
     /// Allocate columns for values, null map, and array offsets.
 
-    size_t output_num_values_estimate;
+    size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
     else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
@@ -1327,48 +1338,84 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     /// Find ranges of rows that pass filter and decode them.
 
-    size_t row_subidx = 0;
-    while (true) // loop over row ranges that pass the filter
-    {
-        /// Find a range of rows that pass filter.
-        /// TODO [parquet]: We call decoder for each such range separately, with a bunch of overhead per call.
-        ///       This will probably be slow on something like `PREWHERE idx%2=0`.
-        ///       If it's too slow and/or comes up in practice or benchmarks, make decoders accept
-        ///       a (optional) filter mask, like e.g. in commit c1a361d176507a19c2fdc49f0f1d6dc7e2cd539e.
-        size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
-        if (!row_subgroup.filter.filter.empty())
-        {
-            /// TODO [parquet]: simd or something
-            while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
-                row_subidx += 1;
-            num_rows = 0;
-            while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
-                num_rows += 1;
-        }
-        if (!num_rows)
-            break;
-        size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
-        size_t end_row_idx = start_row_idx + num_rows;
-        row_subidx += num_rows;
+    /// When we have per-page prefetches (offset index), some pages may have had their prefetch
+    /// handles reset by determinePagesToPrefetch because they are fully filtered out. The
+    /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
+    /// those reset handles. Only use this optimization when reading the whole column chunk
+    /// sequentially (no offset index, i.e. data_pages is empty).
+    ///
+    /// Also disabled for nullable columns (need_null_map): the filter-in-decoder path processes
+    /// ALL rows (passing + non-passing) through processDefLevelsForInnermostColumn, so the
+    /// null_map ends up with entries for all rows rather than just filtered rows. Additionally,
+    /// the decoder applies the filter at consecutive encoded-value indices, but with nulls the
+    /// encoded values don't correspond 1:1 to rows (null rows have no encoded values), causing
+    /// the filter to be applied at wrong positions. The standard row-range iteration path
+    /// correctly handles both issues by only reading rows in passing filter ranges.
+    const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
+        !row_subgroup.filter.filter.empty() &&
+        column.page.initialized &&
+        !column.page.is_dictionary_encoded &&
+        column.data_pages.empty() &&
+        !column.need_null_map;
+    const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
-        skipToRowOrNextPage(start_row_idx, column, column_info);
+    if (use_filter_in_decoder)
+    {
+        skipToRowOrNextPage(row_subgroup.start_row_idx, column, column_info);
 
         while (true) // loop over pages
         {
-            readRowsInPage(end_row_idx, subchunk, column, column_info);
+            readRowsInPage(subgroup_end_row_idx, subchunk, column, column_info, &row_subgroup);
 
-            /// We're done if we've reached end_row_idx and we're at a row boundary.
             auto & page = column.page;
-            if (page.next_row_idx == end_row_idx &&
+            if (page.next_row_idx == subgroup_end_row_idx &&
                 (page.value_idx < page.num_values ||
-                 page.end_row_idx.has_value() || // page ends on row boundary
+                 page.end_row_idx.has_value() ||
                  column.next_page_offset >= column.data_pages_bytes))
                 break;
 
-            /// Advance to next page.
             chassert(page.value_idx == page.num_values);
             skipToRowOrNextPage(std::nullopt, column, column_info);
             chassert(page.value_idx == 0);
+        }
+    }
+    else
+    {
+        size_t row_subidx = 0;
+        while (true) // loop over row ranges that pass the filter
+        {
+            size_t num_rows = row_subgroup.filter.rows_total - row_subidx;
+            if (!row_subgroup.filter.filter.empty())
+            {
+                while (row_subidx < row_subgroup.filter.rows_total && !row_subgroup.filter.filter[row_subidx])
+                    row_subidx += 1;
+                num_rows = 0;
+                while (row_subidx + num_rows < row_subgroup.filter.rows_total && row_subgroup.filter.filter[row_subidx + num_rows])
+                    num_rows += 1;
+            }
+            if (!num_rows)
+                break;
+            size_t start_row_idx = row_subgroup.start_row_idx + row_subidx;
+            size_t end_row_idx = start_row_idx + num_rows;
+            row_subidx += num_rows;
+
+            skipToRowOrNextPage(start_row_idx, column, column_info);
+
+            while (true) // loop over pages
+            {
+                readRowsInPage(end_row_idx, subchunk, column, column_info);
+
+                auto & page = column.page;
+                if (page.next_row_idx == end_row_idx &&
+                    (page.value_idx < page.num_values ||
+                     page.end_row_idx.has_value() ||
+                     column.next_page_offset >= column.data_pages_bytes))
+                    break;
+
+                chassert(page.value_idx == page.num_values);
+                skipToRowOrNextPage(std::nullopt, column, column_info);
+                chassert(page.value_idx == 0);
+            }
         }
     }
 
@@ -1388,7 +1435,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
+        /// Check if any values are null — those can't be inserted into a non-Nullable column.
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
         subchunk.null_map = nullptr;
     }
@@ -1498,7 +1547,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     {
         uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
         if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
     }
 
     return {header, page_data};
@@ -1579,7 +1628,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             /// <def length> <def> [<rep length> <rep>] <values>
             decompressPageIfCompressed(page);
 
-            UInt32 n;
+            UInt32 n = 0;
             if (column_info.levels.back().rep > 0)
             {
                 if (page.data.size() < 4)
@@ -1858,7 +1907,7 @@ static void processRepDefLevelsForArray(
     out_offsets.back() = offset;
 }
 
-void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowSubgroup * row_subgroup)
 {
     PageState & page = column.page;
     chassert(page.initialized && page.value_idx < page.num_values);
@@ -1869,6 +1918,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// readRowsInPage in page 1 will continue until it sees the end of the array, i.e. the start of
     /// the next row (rep == 0), still with next_row_idx == end_row_idx.
     chassert(end_row_idx >= page.next_row_idx);
+
+    size_t first_row_idx = page.next_row_idx;
 
     /// Convert number of rows to number of values.
     size_t prev_value_idx = page.value_idx;
@@ -1928,7 +1979,9 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// Decode values.
 
     /// See if we can decompress the whole page directly into IColumn's memory.
-    if (!page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
+    /// Skip when filter is set: direct read bypasses decode and would write all values without applying the filter.
+    const bool has_filter = row_subgroup && !row_subgroup->filter.filter.empty();
+    if (!has_filter && !page.is_dictionary_encoded && prev_value_idx == 0 && page.value_idx == page.num_values &&
         page.codec != parq::CompressionCodec::UNCOMPRESSED)
     {
         std::span<char> span;
@@ -1947,6 +2000,15 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (!page.decoder)
             createPageDecoder(page, column, column_info);
 
+        const UInt8 * filter = nullptr;
+        size_t filter_offset = 0;
+        if (row_subgroup && !row_subgroup->filter.filter.empty())
+        {
+            chassert(first_row_idx >= row_subgroup->start_row_idx);
+            filter_offset = first_row_idx - row_subgroup->start_row_idx;
+            filter = row_subgroup->filter.filter.data();
+        }
+
         if (page.is_dictionary_encoded)
         {
             if (!page.indices_column)
@@ -1954,13 +2016,14 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
             auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
             auto & data = indices_column_uint32.getData();
             chassert(data.empty());
-            page.decoder->decode(encoded_values_to_read, *page.indices_column);
+            chassert(!filter);
+            page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
             column.dictionary.index(indices_column_uint32, *subchunk.column);
             data.clear();
         }
         else
         {
-            page.decoder->decode(encoded_values_to_read, *subchunk.column);
+            page.decoder->decode(encoded_values_to_read, *subchunk.column, filter, filter_offset);
         }
     }
 
@@ -2136,12 +2199,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
-
-        for (size_t i = 0; i < filter_column->size(); ++i)
-        {
-            Field field;
-            filter_column->get(i, field);
-        }
         size_t rows_pass = countBytesInFilter(filter.data(), 0, filter.size());
         if (rows_pass == 0 || !row_group.need_to_process)
         {
