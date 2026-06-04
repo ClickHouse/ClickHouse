@@ -87,22 +87,6 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     readStringBinary(stored_type_name, buf);
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
-
-    if (stored_type_name != data_type->getName())
-    {
-        /// Column type has changed — try to convert min/max to the new type
-        auto stored_type = DataTypeFactory::instance().get(stored_type_name);
-        if (!min.isNull())
-        {
-            Field converted = convertFieldToType(min, *data_type, stored_type.get());
-            min = std::move(converted); /// null on conversion failure → effectively resets the bound
-        }
-        if (!max.isNull())
-        {
-            Field converted = convertFieldToType(max, *data_type, stored_type.get());
-            max = std::move(converted);
-        }
-    }
 }
 
 std::optional<Float64> StatisticsMinMax::estimateLess(const Field & val) const

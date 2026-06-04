@@ -180,7 +180,6 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
 
     if (tracks_numeric)
     {
-        writeStringBinary(data_type->getName(), buf);
         writeFieldBinary(min, buf);
         writeFieldBinary(max, buf);
     }
@@ -199,48 +198,18 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
 
     if (mask & BasicFeatureMask::NumericMinMax)
     {
-        String stored_type_name;
-        readStringBinary(stored_type_name, buf);
         min = readFieldBinary(buf);
         max = readFieldBinary(buf);
-
-        if (tracks_numeric && stored_type_name != data_type->getName())
-        {
-            /// The column type has changed (e.g. via `MODIFY COLUMN`). Try to convert the stored
-            /// bounds to the new type; on failure leave them as `Null` Fields, which the estimator
-            /// treats as "not initialized" and falls back gracefully.
-            auto stored_type = DataTypeFactory::instance().get(stored_type_name);
-            if (!min.isNull())
-            {
-                Field converted = convertFieldToType(min, *data_type, stored_type.get());
-                min = std::move(converted); /// `Null` on conversion failure — treated as "not initialized"
-            }
-            if (!max.isNull())
-            {
-                Field converted = convertFieldToType(max, *data_type, stored_type.get());
-                max = std::move(converted);
-            }
-        }
-        else if (!tracks_numeric)
-        {
-            /// The column was numeric when the stats were built but isn't now. Discard the bounds.
-            min = Field();
-            max = Field();
-        }
     }
 
     if (mask & BasicFeatureMask::StringLengthSum)
     {
         readIntBinary(string_total_bytes, buf);
-        if (!tracks_string)
-            string_total_bytes = 0;
     }
 
     if (mask & BasicFeatureMask::NullCount)
     {
         readIntBinary(null_count, buf);
-        if (!tracks_null)
-            null_count = 0;
     }
 }
 

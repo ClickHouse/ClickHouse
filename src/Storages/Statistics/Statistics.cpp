@@ -392,6 +392,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     /// Layout (V4):
     ///   UInt16  version (= V4)
     ///   UInt64  stat_types_mask
+    ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
     ///   For each set bit in mask (in ascending bit order):
     ///       UInt64  stat_size
@@ -404,6 +405,7 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
         stat_types_mask |= 1ULL << static_cast<UInt8>(type);
 
     writeIntBinary(stat_types_mask, buf);
+    writeStringBinary(stats_desc.data_type->getName(), buf);
 
     /// As the column row count is always useful, save it in any case
     writeIntBinary(rows, buf);
@@ -453,9 +455,21 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
 
     if (version == StatisticsFileVersion::V4)
     {
-        /// V4 layout: per-stat size prefix. Iterate every type bit in order; if the current build
-        /// doesn't recognize the type, skip its `stat_size` payload bytes.
-        UInt64 rows_value;
+        /// V4 layout: stored_type_name, then per-stat size prefix. Return nullptr if the stored
+        /// column type differs from the current type — statistics built on a different type are
+        /// stale (e.g. a MODIFY COLUMN mutation is in progress) and must not be used.
+        String stored_type_name;
+        readStringBinary(stored_type_name, buf);
+        if (stored_type_name != data_type->getName())
+        {
+            LOG_TRACE(getLogger("ColumnStatistics"),
+                "Skipping statistics: stored type {} does not match current column type {}. "
+                "Statistics will be ignored until rematerialized after the MODIFY COLUMN mutation completes.",
+                stored_type_name, data_type->getName());
+            return nullptr;
+        }
+
+        UInt64 rows_value = 0;
         readIntBinary(rows_value, buf);
 
         auto result = std::make_shared<ColumnStatistics>(stats_desc);
@@ -466,7 +480,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
             if (!(stat_types_mask & (1ULL << i)))
                 continue;
 
-            UInt64 stat_size;
+            UInt64 stat_size = 0;
             readIntBinary(stat_size, buf);
 
             auto type = static_cast<StatisticsType>(i);

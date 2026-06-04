@@ -1150,7 +1150,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {
@@ -1181,7 +1182,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {

@@ -24,6 +24,10 @@ enum class StatisticsFileVersion : UInt16
             /// The deserializer rejects V3 to avoid attempting to read incompatible reverted-format files.
     V4 = 4, /// per-statistic size prefix added (`stat_size: UInt64` precedes each stat payload),
             /// so unknown statistics types can be skipped on deserialize.
+            /// Also stores the column type name (`stored_type_name: String`) immediately after
+            /// the version field; deserialization returns nullptr if the stored type differs from
+            /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
+            /// are never used.
 };
 
 class Field;
