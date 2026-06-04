@@ -134,10 +134,12 @@
 
 #include <algorithm>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
 #include <future>
+#include <span>
 #include <vector>
 
 
@@ -8894,24 +8896,51 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
     Coordination::Requests delete_requests;
     getClearBlocksInPartitionOps(delete_requests, zookeeper, partition_id, min_block_num, max_block_num);
 
-    size_t total_removed = delete_requests.size();
+    const size_t total_removed = delete_requests.size();
 
     /// Send removals in batches to avoid exceeding ZooKeeper's maximum message size.
     /// Without batching, tables with large deduplication windows can produce multi-requests
     /// exceeding 1MB (the default jute.maxbuffer), causing the operation to fail.
+    ///
+    /// Keep several batches in flight at once instead of waiting for each one to complete
+    /// before sending the next, so that partitions with many deduplication blocks are cleared
+    /// without a long sequence of round-trips to ZooKeeper.
+    static constexpr size_t max_batches_in_flight = 16;
+
+    struct BatchInFlight
+    {
+        size_t batch_start;
+        std::future<Coordination::MultiResponse> future;
+    };
+
+    std::deque<BatchInFlight> in_flight;
+
+    auto wait_oldest = [&]
+    {
+        auto & batch = in_flight.front();
+        auto response = batch.future.get();
+        if (response.error != Coordination::Error::ZOK)
+        {
+            for (size_t i = 0; i < response.responses.size(); ++i)
+                if (response.responses[i]->error != Coordination::Error::ZOK)
+                    LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.",
+                                delete_requests[batch.batch_start + i]->getPath(), response.responses[i]->error);
+        }
+        in_flight.pop_front();
+    };
+
     for (size_t batch_start = 0; batch_start < delete_requests.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
     {
+        if (in_flight.size() >= max_batches_in_flight)
+            wait_oldest();
+
         size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, delete_requests.size());
-        Coordination::Requests batch_ops(delete_requests.begin() + batch_start, delete_requests.begin() + batch_end);
-        Coordination::Responses batch_responses;
-        auto code = zookeeper.tryMulti(batch_ops, batch_responses);
-        if (code != Coordination::Error::ZOK)
-        {
-            for (size_t i = 0; i < batch_ops.size(); ++i)
-                if (batch_responses[i]->error != Coordination::Error::ZOK)
-                    LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", batch_ops[i]->getPath(), batch_responses[i]->error);
-        }
+        std::span<const Coordination::RequestPtr> batch_ops(delete_requests.begin() + batch_start, delete_requests.begin() + batch_end);
+        in_flight.push_back({batch_start, zookeeper.asyncTryMultiNoThrow(batch_ops)});
     }
+
+    while (!in_flight.empty())
+        wait_oldest();
 
     async_block_ids_cache.truncate();
     deduplication_hashes_cache.truncate();
