@@ -65,7 +65,7 @@ void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, si
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    assert(index < size());
+    chassert(index < size());
     return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
@@ -472,7 +472,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

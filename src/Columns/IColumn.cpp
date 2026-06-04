@@ -411,7 +411,7 @@ void compareColumnImpl(
     for (size_t row = 0; row < num_rows; ++row)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -442,7 +442,7 @@ void compareWithIndexImpl(
     for (auto row : *row_indexes)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -691,7 +691,7 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
-        char * memory;
+        char * memory = nullptr;
         if (is_null[n])
         {
             memory = arena.allocContinue(1, begin);
