@@ -338,7 +338,7 @@ void ColumnVector<T>::compareColumn(
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 size_t), findFirstNotEqualImpl, MULTITARGET_FUNCTION_BODY((
@@ -388,12 +388,10 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
     static constexpr size_t window = 256;
     size_t window_end = std::min(begin + window, end);
 
-    size_t hit;
+    size_t hit = 0;
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
-    else if (isArchSupported(TargetArch::x86_64_v3))
-        hit = findFirstNotEqualImpl_x86_64_v3<T>(d, begin, window_end, ref, nan_direction_hint);
     else
 #endif
         hit = findFirstNotEqualImpl<T>(d, begin, window_end, ref, nan_direction_hint);
