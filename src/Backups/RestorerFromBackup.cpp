@@ -25,7 +25,9 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/insertAtEnd.h>
+#include <Common/typeid_cast.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -855,25 +857,21 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
             }
         }
 
+        /// Restore the metadata version of a replicated table if it was saved in the backup.
+        if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
         {
-            std::lock_guard lock{mutex};
-            auto & table_info = table_infos.at(table_name);
-            String metadata_version_path = fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt";
-            // Metadata version is only important to replicated tables
-            if (table_info.storage && table_info.storage->getName().starts_with("Replicated") && backup->fileExists(metadata_version_path))
+            String metadata_version_path;
+            {
+                std::lock_guard lock{mutex};
+                metadata_version_path = BackupUtils::getMetadataVersionPathInBackup(table_infos.at(table_name).metadata_path_in_backup);
+            }
+
+            if (backup->fileExists(metadata_version_path))
             {
                 auto buf = backup->readFile(metadata_version_path);
                 String metadata_version_str;
                 readStringUntilEOF(metadata_version_str, *buf);
-                int32_t metadata_version = parse<int32_t>(metadata_version_str);
-
-                // Now update the table's metadata version
-                // We only update the in-memory version and let the replication system handle ZooKeeper synchronization
-                auto metadata_ptr = table_info.storage->getInMemoryMetadataPtr(context, false);
-                auto new_metadata = metadata_ptr->withMetadataVersion(metadata_version);
-                storage->setInMemoryMetadata(new_metadata);
-
-                LOG_DEBUG(log, "Table {}: Restored in-memory metadata_version: {}", table_name.getFullName(), metadata_version);
+                replicated_storage->restoreMetadataVersionFromBackup(parse<Int32>(metadata_version_str));
             }
         }
 

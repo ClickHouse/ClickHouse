@@ -16,6 +16,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
@@ -827,15 +828,16 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
 
-        // metadata_version only makes sense for replicated tables.
-        // Process metadata_version separately from the parts
-        // to ensure it's captured regardless of part processing (e.g. structure_only=1)
-        if (table_info.storage && table_info.storage->getName().starts_with("Replicated"))
+        /// Save the metadata version of a replicated table if it had ALTERs before the backup,
+        /// so that RESTORE can make the table's metadata version consistent with the restored parts.
+        /// It's stored with the table definition (not with the parts) to be saved regardless of `structure_only`.
+        if (table_info.storage && typeid_cast<StorageReplicatedMergeTree *>(table_info.storage.get()))
         {
             int32_t metadata_version = table_info.storage->getInMemoryMetadataPtr(context, false)->metadata_version;
-            backup_entries.emplace_back(
-                fs::path(table_info.data_path_in_backup) / "table_metadata_version.txt",
-                std::make_shared<const BackupEntryFromMemory>(toString(metadata_version)));
+            if (metadata_version > 0)
+                backup_entries.emplace_back(
+                    BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup),
+                    std::make_shared<BackupEntryFromMemory>(toString(metadata_version)));
         }
     }
 }

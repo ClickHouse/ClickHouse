@@ -7222,6 +7222,46 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 }
 
+void StorageReplicatedMergeTree::restoreMetadataVersionFromBackup(Int32 metadata_version)
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreMetadataVersionFromBackup");
+    auto zookeeper = getZooKeeper();
+    const String table_metadata_path = fs::path(zookeeper_path) / "metadata";
+    const String replica_metadata_version_path = fs::path(replica_path) / "metadata_version";
+
+    /// The table's metadata version is the version of the /metadata znode.
+    /// Bump it by re-setting the same content. CAS protects against concurrent ALTERs
+    /// and other replicas restoring the same table.
+    Coordination::Stat metadata_stat;
+    String metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    while (metadata_stat.version < metadata_version)
+    {
+        auto code = zookeeper->trySet(table_metadata_path, metadata_str, metadata_stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException::fromPath(code, table_metadata_path);
+        metadata_str = zookeeper->get(table_metadata_path, &metadata_stat);
+    }
+
+    /// This replica has the same structure, so mark the version as applied by it.
+    String replica_metadata_version_str;
+    Coordination::Stat replica_metadata_version_stat;
+    while (zookeeper->tryGet(replica_metadata_version_path, replica_metadata_version_str, &replica_metadata_version_stat)
+        && parse<Int32>(replica_metadata_version_str) < metadata_version)
+    {
+        auto code = zookeeper->trySet(replica_metadata_version_path, toString(metadata_version), replica_metadata_version_stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        if (code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException::fromPath(code, replica_metadata_version_path);
+    }
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (metadata_snapshot->getMetadataVersion() < metadata_version)
+        setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
+
+    LOG_INFO(log, "Restored metadata version {} from backup", metadata_version);
+}
+
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
     assertNotReadonly();
