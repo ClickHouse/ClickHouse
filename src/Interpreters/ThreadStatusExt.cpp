@@ -17,6 +17,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/QueryProfiler.h>
@@ -39,6 +40,12 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char thread_group_switcher_attach_failure[];
+    extern const char thread_group_link_thread_failure[];
+}
+
 namespace Setting
 {
     extern const SettingsBool calculate_text_stack_trace;
@@ -74,6 +81,7 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings)
@@ -176,6 +184,10 @@ UInt64 ThreadGroup::getGroupElapsedMs() const
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);
+    fiu_do_on(FailPoints::thread_group_link_thread_failure,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in ThreadGroup::linkThread");
+    });
     thread_ids.insert(thread_id);
 
     if (active_thread_count == 0)
@@ -350,27 +362,45 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
     thread_attach_time.setUp();
 
-    /// Attach or init current thread to thread group and copy useful information from it
+    thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
-    thread_group->linkThread(thread_id);
-
-    performance_counters.setParent(&thread_group->performance_counters);
-    memory_tracker.setParent(&thread_group->memory_tracker);
-
-    query_context = thread_group->query_context;
-    global_context = thread_group->global_context;
-
-    fatal_error_callback = thread_group->fatal_error_callback;
-
-    local_data = thread_group->getSharedData();
-
-    applyGlobalSettings();
-    applyQuerySettings();
-    initPerformanceCounters();
-
-    if (thread_group->os_threads_nice_value != 0)
+    try
     {
-        OSThreadNiceValue::set(thread_group->os_threads_nice_value);
+        performance_counters.setParent(&thread_group->performance_counters);
+        memory_tracker.setParent(&thread_group->memory_tracker);
+
+        query_context = thread_group->query_context;
+        global_context = thread_group->global_context;
+
+        fatal_error_callback = thread_group->fatal_error_callback;
+
+        local_data = thread_group->getSharedData();
+
+        applyGlobalSettings();
+        applyQuerySettings();
+
+        /// Failpoint fires here: all context fields are already populated
+        /// (performance_counters/memory_tracker parents, query_context, local_data, …)
+        /// but initPerformanceCounters has not run yet. This mirrors the 26.4 incident
+        /// where TasksStatsCounters::reset() threw at exactly this point in the call
+        /// stack without a try/catch, leaving the thread attached to a stale group.
+        /// The try-catch above calls detachFromGroup() which resets all those fields.
+        fiu_do_on(FailPoints::thread_group_switcher_attach_failure,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in attachToGroupImpl after context fields set");
+        });
+
+        initPerformanceCounters();
+
+        if (thread_group->os_threads_nice_value != 0)
+        {
+            OSThreadNiceValue::set(thread_group->os_threads_nice_value);
+        }
+    }
+    catch (...)
+    {
+        detachFromGroup();
+        throw;
     }
 }
 
