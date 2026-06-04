@@ -157,11 +157,11 @@ class RandomRestarter(ChaosThread):
 
     @staticmethod
     def _wait_port_free(port: int, timeout: float = 60.0) -> None:
-        """Wait until *port* has no sockets in any state (LISTEN, TIME_WAIT, etc)."""
+        """Wait until no process is listening on *port*."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             ret = subprocess.run(
-                f"ss -tanH 'sport = :{port}' | grep -q .",
+                f"ss -tanH state listening 'sport = :{port}' | grep -q .",
                 shell=True,
                 capture_output=True,
             )
@@ -187,6 +187,7 @@ class RandomServerRestarter(RandomRestarter):
 
     NAME = "RandomServerRestarter"
     INTENTIONAL_KILLS_FILE = "/test_output/stress_intentional_server_kills.log"
+    RESTART_MARKER_FILE = "/test_output/stress_server_restarting"
 
     def __init__(
         self,
@@ -271,15 +272,22 @@ class RandomServerRestarter(RandomRestarter):
 
     def _loop_body(self) -> None:
         with self._restart_lock:
-            # Track total downtime from the moment the server goes down.
-            # clickhouse-test's liveness window is ~175s; we must be back
-            # before that to avoid false SERVER_DIED aborts.
             self._restart_deadline = time.monotonic() + self._server_start_timeout
-            if random.random() < 0.5:
-                self._stop_hard()
-            else:
-                self._stop_graceful()
-            self._start_and_wait()
+            try:
+                open(self.RESTART_MARKER_FILE, "w").close()
+            except OSError:
+                pass
+            try:
+                if random.random() < 0.5:
+                    self._stop_hard()
+                else:
+                    self._stop_graceful()
+                self._start_and_wait()
+            finally:
+                try:
+                    os.unlink(self.RESTART_MARKER_FILE)
+                except OSError:
+                    pass
 
     def _start_and_wait(self) -> None:
         deadline = self._restart_deadline
@@ -1143,7 +1151,7 @@ def main():
     is_sanitizer = os.environ.get("IS_SANITIZER_BUILD") == "1"
     min_server_start_interval = 300.0 if is_sanitizer else 120.0
     max_server_start_interval = 600.0 if is_sanitizer else 360.0
-    server_start_timeout = 180.0 if is_sanitizer else 120.0
+    server_start_timeout = 150.0 if is_sanitizer else 120.0
     # Build chaos threads list — started inside run_func_test after smoke check.
     # Order matters: stop runs in reverse so services come down before the
     # query killer, and the server stops last (hung check needs it alive).

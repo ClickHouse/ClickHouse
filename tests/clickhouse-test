@@ -4544,14 +4544,24 @@ def run_tests_array(
     sys.stdout.flush()
 
 
+_RESTART_MARKER_FILE = "/test_output/stress_server_restarting"
+
+
 def check_server_liveness(args, max_retries=10) -> bool:
     """Check if server is responding, with retries and exponential back-off.
 
     Used to distinguish a real server death from a transient network failure
     (e.g. the server being briefly unresponsive due to memory pressure).
     Returns True if the server responds within the retry window, False otherwise.
+
+    When a stress-test restart marker file exists, the check extends its
+    retry window so that intentional server restarts do not trigger
+    SERVER_DIED aborts.
     """
-    for attempt in range(max_retries):
+    attempt = 0
+    while attempt < max_retries:
+        if os.path.isfile(_RESTART_MARKER_FILE) and max_retries < 30:
+            max_retries = 30
         try:
             clickhouse_execute(
                 args, "SELECT 1 /*liveness check*/", max_http_retries=1, timeout=10
@@ -4560,6 +4570,7 @@ def check_server_liveness(args, max_retries=10) -> bool:
         except Exception:
             if attempt < max_retries - 1:
                 sleep(min(2**attempt, 10))
+        attempt += 1
     return False
 
 
