@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -58,9 +59,12 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
         const auto * node = stack.back();
         stack.pop_back();
         const auto * step = node->step.get();
+        /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
+        /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
         if (typeid_cast<const TotalsHavingStep *>(step)
             || typeid_cast<const RollupStep *>(step)
-            || typeid_cast<const CubeStep *>(step))
+            || typeid_cast<const CubeStep *>(step)
+            || typeid_cast<const ExtremesStep *>(step))
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
