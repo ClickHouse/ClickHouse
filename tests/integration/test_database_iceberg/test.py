@@ -133,10 +133,9 @@ def create_clickhouse_iceberg_database(
 
     settings.update(additional_settings)
 
-    drop_clickhouse_iceberg_database_if_exists(node, name)
-
     node.query(
         f"""
+DROP DATABASE IF EXISTS {name};
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
@@ -148,16 +147,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
-
-def drop_clickhouse_iceberg_database_if_exists(node, name):
-    if node.query(f"EXISTS DATABASE {name}").strip() != "1":
-        return
-
-    tables = node.query(f"SHOW TABLES FROM {name}").strip().splitlines()
-    for table in tables:
-        node.query(f"DROP TABLE IF EXISTS {name}.`{table}`")
-
-    node.query(f"DROP DATABASE IF EXISTS {name}")
 
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
@@ -312,7 +301,7 @@ def test_rest_catalog_empty_returns_false_when_table_exists(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, database_name)
 
-    error = node.query_and_get_error(f"DROP DATABASE {database_name}")
+    error = node.query_and_get_error(f"DETACH DATABASE {database_name}")
     assert "DATABASE_NOT_EMPTY" in error
 
 
@@ -873,9 +862,9 @@ def test_not_specified_catalog_type(started_cluster):
         "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
-    drop_clickhouse_iceberg_database_if_exists(node, CATALOG_NAME)
     node.query(
         f"""
+    DROP DATABASE IF EXISTS {CATALOG_NAME};
     CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """,
@@ -969,7 +958,7 @@ def test_system_tables_with_nullptr_table(started_cluster):
     )
     assert int(result.strip()) > 0
 
-    drop_clickhouse_iceberg_database_if_exists(node, CATALOG_NAME)
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 def test_delete_on_lazy_initialized_table(started_cluster):
     """
@@ -1022,8 +1011,8 @@ def test_delete_on_lazy_initialized_table(started_cluster):
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
-    drop_clickhouse_iceberg_database_if_exists(node, CATALOG_NAME)
     node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
 
     with pytest.raises(Exception) as err:
         node.query(
@@ -1042,7 +1031,7 @@ def test_gcs(started_cluster):
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
-    drop_clickhouse_iceberg_database_if_exists(node, CATALOG_NAME)
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
     with pytest.raises(Exception) as err:
         node.query(
             f"""
