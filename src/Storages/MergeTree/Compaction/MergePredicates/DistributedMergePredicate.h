@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/IMergePredicate.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 

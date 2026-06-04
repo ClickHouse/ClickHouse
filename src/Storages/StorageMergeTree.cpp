@@ -51,6 +51,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>

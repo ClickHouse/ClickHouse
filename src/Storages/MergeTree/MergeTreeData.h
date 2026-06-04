@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

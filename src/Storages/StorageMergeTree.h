@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>

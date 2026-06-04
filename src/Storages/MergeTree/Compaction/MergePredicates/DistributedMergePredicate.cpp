@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>

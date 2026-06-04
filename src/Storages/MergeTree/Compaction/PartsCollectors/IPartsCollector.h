@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <memory>
 #include <optional>

@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 

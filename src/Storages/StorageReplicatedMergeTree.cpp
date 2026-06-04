@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>

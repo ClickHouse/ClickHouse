@@ -100,6 +100,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Increment.h>

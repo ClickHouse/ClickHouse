@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <Storages/MutationCommands.h>
 #include <Common/TransactionID.h>
 

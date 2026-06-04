@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/PartitionIds.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
