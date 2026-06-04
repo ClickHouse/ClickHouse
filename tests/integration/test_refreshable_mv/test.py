@@ -543,6 +543,56 @@ def test_backup_inner_table(started_cluster, cleanup):
     do_test_backup(False)
 
 
+def test_backup_skips_rmv_target_when_view_storage_unresolved(started_cluster, cleanup):
+    # A refreshable MV's REPLACE target must be skipped during backup even when the MV resolves to a
+    # null storage on the backup-initiating replica. node1 (the only `with_minio` instance) backs up;
+    # pausing its DDL queue while node2 creates the MV leaves node1 seeing the MV only in ZooKeeper.
+    znode = f"/test/re_repro_null_storage_{test_idx}"
+    for node in nodes:
+        node.query(
+            f"create database re engine = Replicated('{znode}', 'shard1', '{{replica}}');"
+        )
+
+    # Base tables on node2; let node1 catch up.
+    node2.query(
+        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
+        "create table re.repro_tgt (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.repro_tgt values (1);"
+    )
+    node1.query("system sync database replica re")
+    node1.query_with_retry("system sync replica re.repro_tgt")
+
+    # Stall node1's DDL queue so it won't apply the CREATE below.
+    node1.query("system enable failpoint database_replicated_stop_entry_execution")
+
+    # Create the MV on node2 without waiting for node1. `EMPTY`+`EVERY 1 YEAR` avoid any refresh,
+    # so re.repro_tgt is never EXCHANGEd and stays resolvable on node1 while the MV does not.
+    node2.query(
+        "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt empty as select x from re.src",
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+    # The MV's metadata must be in ZooKeeper before backing up.
+    assert_eq_with_retry(
+        node2,
+        "select count() from system.tables where database = 're' and name = 'repro_mv'",
+        "1",
+    )
+
+    backup_destination = new_backup_destination()
+    node1.query(f"BACKUP DATABASE re TO {backup_destination}")
+
+    # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
+    node1.query("system disable failpoint database_replicated_stop_entry_execution")
+
+    # The target's data must be skipped even though the MV's storage was unresolved.
+    assert node1.contains_in_log(
+        "Skipping table data for re.repro_tgt (a target of a refreshable materialized view)"
+    )
+
+    for node in nodes:
+        node.query("drop database re sync")
+
+
 def test_adding_replica(started_cluster, cleanup):
     node1.query(
         "create database re engine = Replicated('/test/re', 'shard1', 'r1');"
