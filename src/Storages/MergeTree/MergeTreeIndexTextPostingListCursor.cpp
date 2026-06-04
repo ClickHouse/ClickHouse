@@ -35,6 +35,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
+/// occur and would underflow `out[v - row_offset]` indexing in `padColumn` / leapfrog
+/// writers (and the direct-fill path in `MergeTreeReaderTextIndex`). Throw rather than
+/// silently emit a zero filter and drop matches.
+void requireRowOffsetRepresentable(size_t row_offset)
+{
+    if (row_offset > std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
+}
+
 namespace
 {
 
@@ -126,11 +136,8 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     chassert(segment_idx < total_segments);
 
-    /// Obtain the decoded segment. When a cache is configured, it is keyed by index id + segment byte
-    /// offset and shared across all per-task cursors — and across queries when the global cache is
-    /// enabled — so the payload and block index are read and parsed once instead of once per read task.
-    /// Without a cache the segment is decoded directly for this cursor. Either way the segment is
-    /// shared_ptr-held, so it stays alive for the cursor's lifetime independently of any cache cell.
+    /// Obtain the decoded segment, sharing it via the cache (keyed by index id + segment offset) when one
+    /// is configured so it is parsed once; either way it is shared_ptr-held for the cursor's lifetime.
     if (!postings_cache)
     {
         current_segment = std::make_shared<PostingListSegment>(buildPostingSegment(segment_idx));
@@ -492,15 +499,6 @@ inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t *
     if (exclusive_end > std::numeric_limits<uint32_t>::max())
         return end;
     return std::lower_bound(begin, end, static_cast<uint32_t>(exclusive_end));
-}
-
-/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
-/// occur and would underflow `out[v - row_offset]` indexing in `padColumn` / leapfrog
-/// writers. Throw rather than silently emit a zero filter and drop matches.
-inline void requireRowOffsetRepresentable(size_t row_offset)
-{
-    if (row_offset > std::numeric_limits<uint32_t>::max())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
 }
 
 template <PadOp op>

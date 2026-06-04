@@ -672,7 +672,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
-    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx]);
+    auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));
     auto cell = condition_text.postingsCache()->getOrSet(hash, load_postings);
     return std::get<PostingListPtr>(cell->value);
 }

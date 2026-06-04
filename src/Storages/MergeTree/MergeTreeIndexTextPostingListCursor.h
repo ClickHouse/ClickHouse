@@ -4,7 +4,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListSegment.h>
+#include <Storages/MergeTree/PostingListSegment.h>
 #include <memory>
 #include <vector>
 
@@ -105,9 +105,6 @@ private:
     template <PadOp op>
     void linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// On-disk description of the posting list: a non-owning pointer into the granule's token map
-    /// (which outlives the cursor). Set only for compressed cursors; stays null for the shared-array
-    /// cursor, which derives everything it needs from the flattened array and reads no segments.
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
 
@@ -125,11 +122,12 @@ private:
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
-    /// point at this buffer. For shared-array cursors, `decoded_values_ptr` instead
-    /// points directly into `shared_values`, avoiding a copy and supporting lists
-    /// larger than BLOCK_SIZE.
+    /// point at this buffer.
+    /// For shared-array cursors, `decoded_values_ptr` instead points directly
+    /// into `shared_values`, avoiding a copy and supporting arrays larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
+
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
     size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
@@ -137,8 +135,8 @@ private:
     size_t current_block = 0;            /// Index of the packed block being iterated.
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
 
-    /// Decoded data of the current segment, read directly wherever the segment layout is needed. Held by
-    /// shared_ptr so it stays alive for the cursor's lifetime even after the cache evicts it.
+    /// Decoded data of the current segment, read directly wherever the segment layout is needed.
+    /// Held by shared_ptr so it stays alive for the cursor's lifetime even after the cache evicts it.
     PostingListSegmentPtr current_segment;
 
     /// Segment iteration state.
@@ -163,6 +161,10 @@ private:
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
+
+/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
+/// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
+void requireRowOffsetRepresentable(size_t row_offset);
 
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
 /// The caller is responsible for preparing the cursor vector (resolving search tokens

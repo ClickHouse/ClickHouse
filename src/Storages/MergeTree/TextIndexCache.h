@@ -2,7 +2,7 @@
 
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListSegment.h>
+#include <Storages/MergeTree/PostingListSegment.h>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -108,13 +108,14 @@ public:
 /// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
 enum class TextIndexPostingsCacheKind : UInt8
 {
-    Segment = 0,
-    Flat = 1,
+    Roaring = 0,
+    Segment = 1,
+    Flat = 2,
 };
 
-/// A single cell of TextIndexPostingsCache. It holds exactly one of:
-///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block (eager / materialize path);
-///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (lazy "prebuilt" cursor);
+/// A single cell of TextIndexPostingsCache. It holds one of:
+///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
+///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (prebuilt or embedded cursor);
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.

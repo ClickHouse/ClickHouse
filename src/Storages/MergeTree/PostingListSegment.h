@@ -8,19 +8,11 @@ namespace DB
 {
 
 /// Immutable, decoded metadata of one segment of a compressed (bitpacked) posting list.
-///
-/// Built once per (token, segment) in `PostingListCursor::prepareSegment` and memoized on the
-/// shared `MergeTreeIndexGranuleText` (one granule per part, reused by all parallel read tasks).
-/// Per-task cursors hold non-owning views into this shared data, so the segment's payload and
-/// per-block index are read from disk and parsed only once instead of once per read task.
-///
-/// All fields are write-once (at build time) and read-only afterwards, so the structure is safe
-/// to share across threads without synchronization.
+/// Per-task cursors hold non-owning views, so it is parsed once and safe to share without synchronization.
 struct PostingListSegment
 {
     /// Bulk-loaded compressed payload of the segment: bytes [header_end, index_section_start).
     PaddedPODArray<uint8_t> payload_buffer;
-
     /// Per-packed-block index (parallel arrays), enabling O(log N) advance within the segment.
     /// Last row_id of packed block j
     PaddedPODArray<UInt32> block_last_row_ids;

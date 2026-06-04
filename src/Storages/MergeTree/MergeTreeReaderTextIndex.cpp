@@ -699,11 +699,15 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
         }
         else if (query_builder.postings->cardinality() > 0)
         {
-            /// If there are not cursors for large postings, fill the column directly from the postings.
+            /// If there are no cursors for large postings, fill the column directly from the postings.
             if (cursors.empty())
             {
                 if (range_posting.cardinality() == 0)
-                    range_posting.addRangeClosed(static_cast<UInt32>(row_offset), static_cast<UInt32>(row_offset + num_rows - 1));
+                {
+                    requireRowOffsetRepresentable(row_offset);
+                    auto range_end = static_cast<UInt32>(std::min<size_t>(row_offset + num_rows - 1, std::numeric_limits<UInt32>::max()));
+                    range_posting.addRangeClosed(static_cast<UInt32>(row_offset), range_end);
+                }
 
                 PostingList clipped = *query_builder.postings & range_posting;
                 fillColumn(column, clipped, row_offset, num_rows);
@@ -717,7 +721,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
             {
                 auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
                 query_builder.postings->toUint32Array(flat->data());
-                return std::make_shared<TextIndexPostingsCacheCell>(FlatPostingsPtr(std::move(flat)));
+                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
             });
 
             auto cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
