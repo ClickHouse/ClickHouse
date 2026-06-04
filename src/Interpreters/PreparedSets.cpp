@@ -368,22 +368,28 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
 
     Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
 
-    /// Enforce `max_rows_to_transfer` / `max_bytes_to_transfer` on this in-place
-    /// external-table write path. The streaming `CreatingSetsTransform` checks
-    /// these limits per-block; here we are writing the deduplicated set as a
-    /// single chunk, so a single check on the chunk size is equivalent.
-    /// With `transfer_overflow_mode = 'break'` we silently skip the write
-    /// (consistent with the streaming path setting `done_with_table = true`).
-    if (!network_transfer_limits.check(
-            set_chunk.getNumRows(), set_chunk.bytes(),
-            "IN/JOIN external table",
-            ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        return;
+    const size_t rows_to_transfer = set_chunk.getNumRows();
+    const size_t bytes_to_transfer = set_chunk.bytes();
 
     auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
     executor.finish();
+
+    /// Enforce `max_rows_to_transfer` / `max_bytes_to_transfer` on this in-place
+    /// external-table write path. The streaming `CreatingSetsTransform` checks
+    /// these limits *after* pushing each block, so the block that crosses the
+    /// threshold is still transferred and only later blocks are skipped. Here we
+    /// write the deduplicated set as a single chunk, so we likewise push first
+    /// and check afterwards: with `transfer_overflow_mode = 'throw'` an over-limit
+    /// set raises; with `'break'` the chunk has already been written, mirroring
+    /// the streaming path that keeps the blocks transferred before the limit was
+    /// hit (and avoiding dropping the whole table at the exact boundary, since
+    /// `SizeLimits::softCheck` uses `>=`).
+    network_transfer_limits.check(
+        rows_to_transfer, bytes_to_transfer,
+        "IN/JOIN external table",
+        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
