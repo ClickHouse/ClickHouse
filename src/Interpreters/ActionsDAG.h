@@ -253,8 +253,13 @@ public:
         void unite(const Node * a, const Node * b);
 
     private:
-        mutable std::unordered_map<const Node *, const Node *> parent;
-        std::unordered_map<const Node *, size_t> size;
+        struct EquivalenceClass
+        {
+            const Node * representative;
+            size_t size;
+        };
+
+        mutable std::unordered_map<const Node *, EquivalenceClass> classes;
     };
 
     /// Classes from structural equivalence (CSE): same type, function, and children

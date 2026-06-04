@@ -892,31 +892,49 @@ bool constColumnsEqual(const ColumnPtr & a, const ColumnPtr & b)
         return false;
     if (hasDummyInside(a) || hasDummyInside(b))
         return false;
-    Field fa;
-    Field fb;
-    a->get(0, fa);
-    b->get(0, fb);
-    return fa == fb;
+    const IColumn & a_col = *a;
+    const IColumn & b_col = *b;
+    if (typeid(a_col) != typeid(b_col))
+        return false;
+    return a_col.compareAt(0, 0, b_col, /* nan_direction_hint */ 1) == 0;
 }
 
 struct NodeKey
 {
-    ActionsDAG::ActionType type{};
-    String name;
-    DataTypePtr result_type;
-    ColumnPtr column;
-    std::vector<const ActionsDAG::Node *> children;
+    const ActionsDAG::Node * node;
+    std::vector<const ActionsDAG::Node *> canonical_children;
 
     bool operator==(const NodeKey & o) const
     {
-        if (type != o.type || name != o.name || children != o.children)
+        using ActionType = ActionsDAG::ActionType;
+        if (node->type != o.node->type)
             return false;
-        if (bool(result_type) != bool(o.result_type))
+        if (canonical_children != o.canonical_children)
             return false;
-        if (result_type && !result_type->equals(*o.result_type))
+        if (bool(node->result_type) != bool(o.node->result_type))
             return false;
-        if (type == ActionsDAG::ActionType::COLUMN)
-            return constColumnsEqual(column, o.column);
+        if (node->result_type && !node->result_type->equals(*o.node->result_type))
+            return false;
+
+        switch (node->type)
+        {
+            case ActionType::FUNCTION:
+                if (bool(node->function_base) != bool(o.node->function_base))
+                    return false;
+                if (node->function_base && node->function_base->getName() != o.node->function_base->getName())
+                    return false;
+                return true;
+            case ActionType::COLUMN:
+                if (node->result_name != o.node->result_name)
+                    return false;
+                return constColumnsEqual(node->column, o.node->column);
+            case ActionType::ALIAS:
+                return node->result_name == o.node->result_name;
+            case ActionType::INPUT:
+            case ActionType::PLACEHOLDER:
+            case ActionType::ARRAY_JOIN:
+                return false;
+        }
         return true;
     }
 };
@@ -925,15 +943,32 @@ struct NodeKeyHash
 {
     size_t operator()(const NodeKey & k) const
     {
+        using ActionType = ActionsDAG::ActionType;
         SipHash h;
-        h.update(static_cast<UInt8>(k.type));
-        h.update(k.name);
-        for (const auto * c : k.children)
+        h.update(static_cast<UInt8>(k.node->type));
+        for (const auto * c : k.canonical_children)
             h.update(reinterpret_cast<uintptr_t>(c));
-        if (k.result_type)
-            h.update(k.result_type->getName());
-        if (k.column && k.column->size() == 1)
-            k.column->updateHashWithValue(0, h);
+        if (k.node->result_type)
+            h.update(k.node->result_type->getName());
+        switch (k.node->type)
+        {
+            case ActionType::FUNCTION:
+                if (k.node->function_base)
+                    h.update(k.node->function_base->getName());
+                break;
+            case ActionType::COLUMN:
+                h.update(k.node->result_name);
+                if (k.node->column && k.node->column->size() == 1)
+                    k.node->column->updateHashWithValue(0, h);
+                break;
+            case ActionType::ALIAS:
+                h.update(k.node->result_name);
+                break;
+            case ActionType::INPUT:
+            case ActionType::PLACEHOLDER:
+            case ActionType::ARRAY_JOIN:
+                break;
+        }
         return h.get64();
     }
 };
@@ -943,19 +978,18 @@ struct NodeKeyHash
 ActionsDAG::EquivalenceClasses::EquivalenceClasses(const ActionsDAG & dag)
 {
     for (const auto & node : dag.nodes)
-    {
-        parent[&node] = &node;
-        size[&node] = 1;
-    }
+        classes[&node] = EquivalenceClass{.representative = &node, .size = 1};
 }
 
 const ActionsDAG::Node * ActionsDAG::EquivalenceClasses::find(const Node * n) const
 {
-    auto it = parent.find(n);
-    if (it == parent.end() || it->second == n)
-        return it == parent.end() ? n : it->second;
-    const Node * root = find(it->second);
-    it->second = root;
+    auto it = classes.find(n);
+    if (it == classes.end())
+        return n;
+    if (it->second.representative == n)
+        return n;
+    const Node * root = find(it->second.representative);
+    it->second.representative = root; /// path compression
     return root;
 }
 
@@ -965,10 +999,18 @@ void ActionsDAG::EquivalenceClasses::unite(const Node * a, const Node * b)
     const Node * rb = find(b);
     if (ra == rb)
         return;
-    if (size[ra] < size[rb])
-        std::swap(ra, rb);
-    parent[rb] = ra;
-    size[ra] += size[rb];
+    auto & ca = classes[ra];
+    auto & cb = classes[rb];
+    if (ca.size >= cb.size)
+    {
+        cb.representative = ra;
+        ca.size += cb.size;
+    }
+    else
+    {
+        ca.representative = rb;
+        cb.size += ca.size;
+    }
 }
 
 ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() const
@@ -983,46 +1025,44 @@ ActionsDAG::EquivalenceClasses ActionsDAG::buildStructuralEquivalenceClasses() c
         /// identify inputs and placeholders by node pointer (do not dedup)
         if (node.type == ActionType::INPUT || node.type == ActionType::PLACEHOLDER)
             continue;
-        /// COLUMN that came from a non-deterministic source - two such columns aren't interchangeable
-        /// even if their current values match
         if (node.type == ActionType::COLUMN && !node.is_deterministic_constant)
             continue;
-        if (node.type == ActionType::FUNCTION && node.function_base)
-        {
-            /// `rand()` / `randConstant` may produce different values per call - merging changes semantics
-            if (!node.function_base->isDeterministic())
-                continue;
-        }
+        /// `rand()` / `randConstant` and similar give different values per call
+        if (node.type == ActionType::FUNCTION && node.function_base && !node.function_base->isDeterministic())
+            continue;
         /// Lambda-typed values (like results of `FunctionCapture`) carry inner DAG that we don't see here
         if (node.result_type && WhichDataType(node.result_type).isFunction())
             continue;
 
-        NodeKey key;
-        key.type = node.type;
-        key.result_type = node.result_type;
+        NodeKey key{.node = &node, .canonical_children = {}};
 
         switch (node.type)
         {
-            case ActionType::INPUT:
-            case ActionType::PLACEHOLDER:
-                /// skipped above
-                break;
-            case ActionType::COLUMN:
-                key.column = node.column;
-                break;
             case ActionType::ALIAS:
-                /// keep alias name in the key - downstream may look up by name
-                key.name = node.result_name;
                 if (!node.children.empty())
-                    key.children.push_back(ec.find(node.children.front()));
+                    key.canonical_children.push_back(ec.find(node.children.front()));
                 break;
             case ActionType::FUNCTION:
-                if (node.function_base)
-                    key.name = node.function_base->getName();
-                key.children.reserve(node.children.size());
-                for (const auto * c : node.children)
-                    key.children.push_back(ec.find(c));
+                key.canonical_children.reserve(node.children.size());
+                if (node.function_base && node.function_base->isNameInsensitive())
+                {
+                    for (const auto * c : node.children)
+                    {
+                        const Node * canon = ec.find(c);
+                        while (canon && canon->type == ActionType::ALIAS && !canon->children.empty())
+                            canon = ec.find(canon->children.front());
+                        key.canonical_children.push_back(canon);
+                    }
+                }
+                else
+                {
+                    for (const auto * c : node.children)
+                        key.canonical_children.push_back(ec.find(c));
+                }
                 break;
+            case ActionType::COLUMN:
+            case ActionType::INPUT:
+            case ActionType::PLACEHOLDER:
             case ActionType::ARRAY_JOIN:
                 break;
         }
