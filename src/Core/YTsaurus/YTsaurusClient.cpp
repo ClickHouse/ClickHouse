@@ -167,7 +167,7 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
-        size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
+        size_t url_index = (recently_used_url_index.load(std::memory_order_relaxed) + num_try) % connection_info.http_proxy_urls.size();
         URI host_for_request(connection_info.http_proxy_urls[url_index].c_str());
         try
         {
@@ -183,7 +183,7 @@ ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const R
             LOG_TRACE(log, "URI {} , query type {}", host_for_request.toString(), query->getQueryName());
 
             auto buf = createQueryRWBuffer(host_for_request, out_callback, query->getHTTPMethod());
-            recently_used_url_index = url_index;
+            recently_used_url_index.store(url_index, std::memory_order_relaxed);
             return buf;
         }
         catch (Exception & e)

@@ -17,6 +17,7 @@
 #include <Poco/JSON/Parser.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -107,7 +108,10 @@ private:
 
     const ConnectionInfo connection_info;
     LoggerPtr log;
-    size_t recently_used_url_index = 0;
+    /// `CacheDictionary` can call `loadIds` / `loadKeys` concurrently on the same `YTsarususDictionarySource`,
+    /// so a single `YTsaurusClient` can be used by several threads at once. This index is only a round-robin hint
+    /// for proxy selection, but it must still be accessed atomically to avoid a data race.
+    std::atomic<size_t> recently_used_url_index = 0;
     constexpr static String LOCKS_STORAGE_CYPRESS_PATH = "//sys/locks";
 };
 
