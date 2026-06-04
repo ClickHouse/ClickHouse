@@ -51,19 +51,14 @@ public:
 private:
     friend class PrefetchThreadPool;
 
-    /// Passkey: only `PrefetchThreadPool` can mint the tag, so only it can
-    /// construct handles - yet the ctor is public enough for `make_shared`,
-    /// which a plain private ctor + friendship would not allow.
+    /// Passkey: lets the pool construct handles via `make_shared` while keeping
+    /// the ctor closed to everyone else (a private ctor would block make_shared).
     struct ConstructTag
     {
         explicit ConstructTag() = default;
     };
 
 public:
-    /// The worker thread and the submitter share ownership of this one object
-    /// (the worker captures a `shared_ptr` to it), so the task's result and
-    /// cancellation state live here rather than in a separate heap allocation.
-    /// `future` is wired to `promise` at construction.
     explicit PrefetchHandle(ConstructTag) : future(promise.get_future()) {}
 
 private:

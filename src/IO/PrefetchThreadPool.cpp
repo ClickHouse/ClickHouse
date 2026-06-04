@@ -62,13 +62,9 @@ PrefetchThreadPool::PrefetchThreadPool(NoWorkers)
 
 std::shared_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()> task)
 {
-    /// Allocate the handle once, up front. The worker captures a `shared_ptr`
-    /// to this same object, so the result/state it sets is exactly what the
-    /// caller reads - no second heap object. Allocating before `trySchedule`
-    /// also means a bad_alloc here happens before anything is scheduled: there
-    /// is no window where the task is live but the caller never received a
-    /// handle to join or cancel it (which would run the worker against a
-    /// caller that is being destroyed - a use-after-free).
+    /// Allocate before scheduling, sharing this one object with the worker: a
+    /// throw here must precede a live task, else the task would run with no
+    /// handle for the caller to join or cancel - a use-after-free.
     auto handle = std::make_shared<PrefetchHandle>(PrefetchHandle::ConstructTag{});
 
     /// Capture the submitter's ThreadGroup so the worker can attach to it.
@@ -107,13 +103,17 @@ std::shared_ptr<PrefetchHandle> PrefetchThreadPool::submit(std::function<Rope()>
         }
         try
         {
-            handle->promise.set_value(t());
+            auto rope = t();
+            /// Store Done before set_value: get() unblocks on set_value, so a
+            /// later store would let get() return while state() still reads Running.
+            handle->current_state.store(PrefetchHandle::State::Done);
+            handle->promise.set_value(std::move(rope));
         }
         catch (...)
         {
+            handle->current_state.store(PrefetchHandle::State::Done);
             handle->promise.set_exception(std::current_exception());
         }
-        handle->current_state.store(PrefetchHandle::State::Done);
     });
 
     if (!scheduled)
