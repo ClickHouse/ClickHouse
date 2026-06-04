@@ -194,11 +194,9 @@ String formatWithOriginalWhitespace(const String & canonical, const String & ori
         {
             /// Tokens diverge — use canonical formatting from here.
             /// Output the rest of the canonical query from this token onwards.
-            const char * start;
-            if (ci == 0)
-                start = canonical.data();
-            else
-                start = canon_sig[ci - 1].text.data() + canon_sig[ci - 1].text.size();
+            const char * start = (ci == 0)
+                ? canonical.data()
+                : canon_sig[ci - 1].text.data() + canon_sig[ci - 1].text.size();
 
             /// Find the next point where tokens re-align.
             /// Simple heuristic: skip one canonical token and try to re-sync.
