@@ -514,6 +514,26 @@ struct ToTimeTransform64Signed
 /** Conversion of numeric to DateTime64
   */
 
+/// The largest whole-second timestamp a DateTime64 of the given scale can store. Normally this is the
+/// calendar maximum (`MAX_DATETIME64_TIMESTAMP`, 2299-12-31 23:59:59), but at scale 9 that second does not
+/// fit in the Int64 native storage once multiplied by the scale, so it is capped at the largest second that does.
+inline time_t maxRepresentableDateTime64WholeSecond(DateTime64::NativeType scale_multiplier)
+{
+    return std::min<DateTime64::NativeType>(
+        MAX_DATETIME64_TIMESTAMP, std::numeric_limits<DateTime64::NativeType>::max() / scale_multiplier);
+}
+
+/// The largest DateTime64 native value of the given scale: the maximum whole second scaled up plus the
+/// largest fraction representable at the scale, capped at Int64::max (relevant at scale 9, where the
+/// calendar maximum is not representable).
+inline DateTime64::NativeType maxRepresentableDateTime64Native(DateTime64::NativeType scale_multiplier)
+{
+    const time_t whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
+    if (whole_second < MAX_DATETIME64_TIMESTAMP)
+        return std::numeric_limits<DateTime64::NativeType>::max();
+    return whole_second * scale_multiplier + (scale_multiplier - 1);
+}
+
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64TransformUnsigned
 {
@@ -531,15 +551,17 @@ struct ToDateTime64TransformUnsigned
         /// so no bounds check is needed for them.
         if constexpr (sizeof(FromType) > sizeof(UInt32))
         {
+            /// The maximum representable whole second, capped so the scaled native value fits in Int64 at scale 9.
+            const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from > FromType(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
+                if (from > FromType(max_whole_second)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (UInt128, UInt256) before clamping.
-            time_t clamped = from > FromType(MAX_DATETIME64_TIMESTAMP) ? MAX_DATETIME64_TIMESTAMP : static_cast<time_t>(from);
+            time_t clamped = from > FromType(max_whole_second) ? max_whole_second : static_cast<time_t>(from);
             return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
         }
 
@@ -564,19 +586,21 @@ struct ToDateTime64TransformSigned
         /// [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP], so no bounds check is needed for them.
         if constexpr (sizeof(FromType) > sizeof(Int32))
         {
+            /// The maximum representable whole second, capped so the scaled native value fits in Int64 at scale 9.
+            const time_t max_whole_second = maxRepresentableDateTime64WholeSecond(scale_multiplier);
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             {
-                if (from < FromType(MIN_DATETIME64_TIMESTAMP) || from > FromType(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
+                if (from < FromType(MIN_DATETIME64_TIMESTAMP) || from > FromType(max_whole_second)) [[unlikely]]
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
-            time_t clamped;
+            time_t clamped = 0;
             if (from < FromType(MIN_DATETIME64_TIMESTAMP))
                 clamped = MIN_DATETIME64_TIMESTAMP;
-            else if (from > FromType(MAX_DATETIME64_TIMESTAMP))
-                clamped = MAX_DATETIME64_TIMESTAMP;
+            else if (from > FromType(max_whole_second))
+                clamped = max_whole_second;
             else
                 clamped = static_cast<time_t>(from);
             return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
@@ -600,14 +624,15 @@ struct ToDateTime64TransformFloat
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// DateTime64 can represent fractional seconds within the boundary second, e.g. 10413791999.1
-        /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Extend the upper bound by the largest
-        /// fraction representable at this scale so such values are neither falsely rejected in `throw`
-        /// mode nor clamped down to the whole second otherwise. The lower bound has no representable
-        /// fraction below it, so it stays at the whole second.
+        /// is a valid DateTime64(1) value (2299-12-31 23:59:59.1). Derive the bounds from the maximum
+        /// representable native value (capped at Int64::max, so scale 9 — where the calendar maximum does
+        /// not fit — saturates instead of raising DECIMAL_OVERFLOW). Saturated values are produced directly
+        /// in the native domain to avoid Float64 rounding losing the last representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-        const FromType max_fraction = static_cast<FromType>(scale_multiplier - 1) / static_cast<FromType>(scale_multiplier);
-        const FromType lower_bound = static_cast<FromType>(MIN_DATETIME64_TIMESTAMP);
-        const FromType upper_bound = static_cast<FromType>(MAX_DATETIME64_TIMESTAMP) + max_fraction;
+        const DateTime64::NativeType max_native = maxRepresentableDateTime64Native(scale_multiplier);
+        const DateTime64::NativeType min_native = MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+        const FromType lower_bound = static_cast<FromType>(min_native) / static_cast<FromType>(scale_multiplier);
+        const FromType upper_bound = static_cast<FromType>(max_native) / static_cast<FromType>(scale_multiplier);
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -615,8 +640,10 @@ struct ToDateTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, lower_bound);
-        from = std::min(from, upper_bound);
+        if (from <= lower_bound)
+            return min_native;
+        if (from >= upper_bound)
+            return max_native;
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -660,6 +687,14 @@ struct ToDateTime64Transform
 
 /** Conversion of numeric to Time64
   */
+
+/// The largest Time64 native value of the given scale: the maximum whole second (`MAX_TIME_TIMESTAMP`)
+/// scaled up plus the largest fraction representable at the scale. Time64 spans a narrow range, so this
+/// never approaches the Int64 native limit and needs no capping.
+inline Time64::NativeType maxRepresentableTime64Native(Time64::NativeType scale_multiplier)
+{
+    return MAX_TIME_TIMESTAMP * scale_multiplier + (scale_multiplier - 1);
+}
 
 template <typename FromType, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToTime64TransformUnsigned
@@ -719,7 +754,7 @@ struct ToTime64TransformSigned
             }
 
             /// Compare in FromType domain to avoid truncating wide ints (Int128, Int256) before clamping.
-            time_t clamped;
+            time_t clamped = 0;
             if (from < FromType(-1 * MAX_TIME_TIMESTAMP))
                 clamped = -1 * MAX_TIME_TIMESTAMP;
             else if (from > FromType(MAX_TIME_TIMESTAMP))
@@ -747,12 +782,13 @@ struct ToTime64TransformFloat
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
         /// Time64 can represent fractional seconds within the boundary second, e.g. 3599999.1 is a valid
-        /// Time64(1) value (999:59:59.1). Extend both bounds by the largest fraction representable at this
-        /// scale so such values are neither falsely rejected in `throw` mode nor clamped down to the whole
-        /// second otherwise.
+        /// Time64(1) value (999:59:59.1). Derive the bounds from the maximum representable native value so
+        /// such values are neither falsely rejected in `throw` mode nor clamped down to the whole second
+        /// otherwise. Saturated values are produced directly in the native domain to avoid Float64 rounding
+        /// losing the last representable fraction.
         const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
-        const FromType max_fraction = static_cast<FromType>(scale_multiplier - 1) / static_cast<FromType>(scale_multiplier);
-        const FromType upper_bound = static_cast<FromType>(MAX_TIME_TIMESTAMP) + max_fraction;
+        const Time64::NativeType max_native = maxRepresentableTime64Native(scale_multiplier);
+        const FromType upper_bound = static_cast<FromType>(max_native) / static_cast<FromType>(scale_multiplier);
         const FromType lower_bound = -upper_bound;
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
@@ -761,8 +797,10 @@ struct ToTime64TransformFloat
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        from = std::max(from, lower_bound);
-        from = std::min(from, upper_bound);
+        if (from <= lower_bound)
+            return -max_native;
+        if (from >= upper_bound)
+            return max_native;
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
