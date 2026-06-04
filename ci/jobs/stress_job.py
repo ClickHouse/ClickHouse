@@ -308,7 +308,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         signal9_count = int(
             Shell.get_output(
                 f"rg -Fa ' <Fatal> Application: Child process was terminated by signal 9' "
-                f"{server_log_path}/clickhouse-server*.log 2>/dev/null | wc -l"
+                f"{server_log_path}/clickhouse-server.stress.log 2>/dev/null | wc -l"
             )
             .strip()
             or "0"
