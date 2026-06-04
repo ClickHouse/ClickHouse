@@ -31,7 +31,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, leadership_expiry_ms, 0, "Duration after which a leader will expire if it fails to receive responses from peers. Set it lower or equal to election_timeout_lower_bound_ms to avoid multiple leaders.", 0) \
     DECLARE(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     DECLARE(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
-    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
+    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader. Has no effect if use_new_dispatcher = true as the new dispatcher has its own forwarding that's always enabled.", 0) \
     DECLARE(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
     DECLARE(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \
@@ -42,14 +42,19 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
-    DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
-    DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
+    DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
+    DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_threads, 8, "Number of threads for parallel local read request processing. 0 means disabled.", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_chunk_size, 16, "Number of read requests each worker picks up atomically when parallel reads are enabled.", HOT_RELOAD) \
+    DECLARE(UInt64, parallel_read_min_batch, 128, "Minimum batch size to trigger parallel read processing. Smaller batches are processed sequentially.", HOT_RELOAD) \
+    DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
-    DECLARE(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
-    DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
+    DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
+    DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consensus with similar speed", HOT_RELOAD) \
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
     DECLARE(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
@@ -73,16 +78,32 @@ namespace ErrorCodes
     DECLARE(UInt64, log_slow_connection_operation_threshold_ms, 1000, "Log message if a certain operation took too long inside a single connection", 0) \
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
+    DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
+    DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
+    DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
+    DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
+    DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
+    DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
+    DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
+    DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
+    DECLARE(Bool, nuraft_streaming_mode, true, "Enable NuRaft streaming mode, which allows multiple in-flight AppendEntries requests to followers instead of strict one-by-one pipeline. Increases write throughput, especially in high-latency environments (e.g. cross-zone Kubernetes).", 0) \
+    DECLARE(UInt64, nuraft_max_log_gap_in_stream, 0, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, commit_profiler_real_time_period_ns, 0, "Period for real clock timer of the query profiler on the Keeper commit thread (in nanoseconds). The profiling results appear in system.trace_log with query_id = 'KeeperCommit'. 0 means disabled.", 0) \
+    DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
+    DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
+    DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
 
-DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
+
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, CoordinationSettings, CoordinationSetting)
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -106,19 +127,9 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
-    if (!max_requests_append_size.changed)
-        max_requests_append_size = max_requests_batch_size;
+    if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
+        (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
 }
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
-
-namespace CoordinationSetting
-{
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
 {
@@ -138,24 +149,44 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
     impl->loadFromConfig(config_elem, config);
 }
 
-const String KeeperConfigurationAndSettings::DEFAULT_FOUR_LETTER_WORD_CMD =
+void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
+{
+    for (const auto & field : impl->all())
+    {
+        writeText(field.getName(), buf);
+        buf.write('=');
+        Field val = field.getValue();
+        /// Format bool as "true"/"false" instead of "1"/"0" for compatibility.
+        if (val.getType() == Field::Types::Bool)
+            writeText(val.safeGet<UInt64>() ? "true" : "false", buf);
+        else
+            writeText(field.getValueString(), buf);
+        buf.write('\n');
+    }
+}
+
+void CoordinationSettings::updateHotReloadableSettings(const CoordinationSettings & new_settings)
+{
+    impl->updateHotReloadableSettings(*new_settings.impl);
+}
+
+const String KeeperConfiguration::DEFAULT_FOUR_LETTER_WORD_CMD =
 #if USE_JEMALLOC
 "jmst,jmfp,jmep,jmdp,"
 #endif
 "conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,pfev,lgrq";
 
-KeeperConfigurationAndSettings::KeeperConfigurationAndSettings()
+KeeperConfiguration::KeeperConfiguration()
     : server_id(NOT_EXIST)
     , enable_ipv6(true)
     , tcp_port(NOT_EXIST)
     , tcp_port_secure(NOT_EXIST)
     , standalone_keeper(false)
-    , coordination_settings()
 {
 }
 
 
-void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
+void KeeperConfiguration::dump(WriteBufferFromOwnString & buf) const
 {
     auto write_int = [&buf](int64_t value)
     {
@@ -190,140 +221,12 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("four_letter_word_allow_list=", buf);
     writeText(four_letter_word_allow_list, buf);
     buf.write('\n');
-
-    /// coordination_settings
-
-    writeText("min_session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::min_session_timeout_ms]));
-    writeText("session_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::session_timeout_ms]));
-    writeText("operation_timeout_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::operation_timeout_ms]));
-    writeText("dead_session_check_period_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::dead_session_check_period_ms]));
-
-    writeText("heart_beat_interval_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::heart_beat_interval_ms]));
-    writeText("election_timeout_lower_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::election_timeout_lower_bound_ms]));
-    writeText("election_timeout_upper_bound_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::election_timeout_upper_bound_ms]));
-    writeText("leadership_expiry_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::leadership_expiry_ms]));
-
-    writeText("reserved_log_items=", buf);
-    write_int(coordination_settings[CoordinationSetting::reserved_log_items]);
-    writeText("snapshot_distance=", buf);
-    write_int(coordination_settings[CoordinationSetting::snapshot_distance]);
-
-    writeText("auto_forwarding=", buf);
-    write_bool(coordination_settings[CoordinationSetting::auto_forwarding]);
-    writeText("shutdown_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::shutdown_timeout]));
-    writeText("session_shutdown_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::session_shutdown_timeout]));
-    writeText("startup_timeout=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::startup_timeout]));
-    writeText("sleep_before_leader_change_ms=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]));
-
-    writeText("raft_logs_level=", buf);
-    writeText(coordination_settings[CoordinationSetting::raft_logs_level].toString(), buf);
-    buf.write('\n');
-
-    writeText("snapshots_to_keep=", buf);
-    write_int(coordination_settings[CoordinationSetting::snapshots_to_keep]);
-    writeText("rotate_log_storage_interval=", buf);
-    write_int(coordination_settings[CoordinationSetting::rotate_log_storage_interval]);
-    writeText("stale_log_gap=", buf);
-    write_int(coordination_settings[CoordinationSetting::stale_log_gap]);
-    writeText("fresh_log_gap=", buf);
-    write_int(coordination_settings[CoordinationSetting::fresh_log_gap]);
-
-    writeText("max_requests_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_batch_size]);
-    writeText("max_requests_batch_bytes_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_batch_bytes_size]);
-    writeText("max_request_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_request_size]);
-    writeText("max_requests_append_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_append_size]);
-    writeText("max_requests_append_bytes_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_append_bytes_size]);
-    writeText("max_flush_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_flush_batch_size]);
-    writeText("max_request_queue_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_request_queue_size]);
-    writeText("max_requests_quick_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_quick_batch_size]);
-    writeText("quorum_reads=", buf);
-    write_bool(coordination_settings[CoordinationSetting::quorum_reads]);
-    writeText("force_sync=", buf);
-    write_bool(coordination_settings[CoordinationSetting::force_sync]);
-
-    writeText("compress_logs=", buf);
-    write_bool(coordination_settings[CoordinationSetting::compress_logs]);
-    writeText("compress_snapshots_with_zstd_format=", buf);
-    write_bool(coordination_settings[CoordinationSetting::compress_snapshots_with_zstd_format]);
-    writeText("configuration_change_tries_count=", buf);
-    write_int(coordination_settings[CoordinationSetting::configuration_change_tries_count]);
-
-    writeText("max_log_file_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_log_file_size]);
-    writeText("log_file_overallocate_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::log_file_overallocate_size]);
-    writeText("min_request_size_for_cache=", buf);
-    write_int(coordination_settings[CoordinationSetting::min_request_size_for_cache]);
-
-    writeText("raft_limits_reconnect_limit=", buf);
-    write_int(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit]);
-    writeText("raft_limits_response_limit=", buf);
-    write_int(coordination_settings[CoordinationSetting::raft_limits_response_limit]);
-
-    writeText("async_replication=", buf);
-    write_bool(coordination_settings[CoordinationSetting::async_replication]);
-
-    writeText("experimental_use_rocksdb=", buf);
-    write_bool(coordination_settings[CoordinationSetting::experimental_use_rocksdb]);
-    writeText("rocksdb_load_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::rocksdb_load_batch_size]);
-
-    writeText("latest_logs_cache_size_threshold=", buf);
-    write_int(coordination_settings[CoordinationSetting::latest_logs_cache_size_threshold]);
-    writeText("latest_logs_cache_entry_count_threshold=", buf);
-    write_int(coordination_settings[CoordinationSetting::latest_logs_cache_entry_count_threshold]);
-    writeText("commit_logs_cache_size_threshold=", buf);
-    write_int(coordination_settings[CoordinationSetting::commit_logs_cache_size_threshold]);
-    writeText("commit_logs_cache_entry_count_threshold=", buf);
-    write_int(coordination_settings[CoordinationSetting::commit_logs_cache_entry_count_threshold]);
-
-    writeText("disk_move_retries_wait_ms=", buf);
-    write_int(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
-    writeText("disk_move_retries_during_init=", buf);
-    write_int(coordination_settings[CoordinationSetting::disk_move_retries_during_init]);
-
-    writeText("log_slow_total_threshold_ms=", buf);
-    write_int(coordination_settings[CoordinationSetting::log_slow_total_threshold_ms]);
-    writeText("log_slow_cpu_threshold_ms=", buf);
-    write_int(coordination_settings[CoordinationSetting::log_slow_cpu_threshold_ms]);
-    writeText("log_slow_connection_operation_threshold_ms=", buf);
-    write_int(coordination_settings[CoordinationSetting::log_slow_connection_operation_threshold_ms]);
-
-    writeText("use_xid_64=", buf);
-    write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
-    writeText("check_node_acl_on_remove=", buf);
-    write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
-
-    writeText("write_snapshot_version=", buf);
-    write_int(coordination_settings[CoordinationSetting::write_snapshot_version]);
-    writeText("nuraft_test_mode=", buf);
-    write_bool(coordination_settings[CoordinationSetting::nuraft_test_mode]);
 }
 
-KeeperConfigurationAndSettingsPtr
-KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
+KeeperConfigurationPtr
+KeeperConfiguration::loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_)
 {
-    std::shared_ptr<KeeperConfigurationAndSettings> ret = std::make_shared<KeeperConfigurationAndSettings>();
+    auto ret = std::make_shared<KeeperConfiguration>();
 
     ret->server_id = config.getInt("keeper_server.server_id");
     ret->standalone_keeper = standalone_keeper_;
@@ -347,9 +250,6 @@ KeeperConfigurationAndSettings::loadFromConfig(const Poco::Util::AbstractConfigu
         "keeper_server.four_letter_word_allow_list",
         config.getString("keeper_server.four_letter_word_white_list",
                          DEFAULT_FOUR_LETTER_WORD_CMD));
-
-
-    ret->coordination_settings.loadFromConfig("keeper_server.coordination_settings", config);
 
     return ret;
 }

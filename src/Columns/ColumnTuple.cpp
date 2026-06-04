@@ -409,6 +409,12 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
+void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
@@ -586,7 +592,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res;
+        int res = 0;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -627,7 +633,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res;
+            int res = 0;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else
@@ -876,7 +882,7 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
     nested_source_columns.resize(columns.size());
@@ -891,14 +897,50 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTr
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
+        columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
+}
+
+
+bool ColumnTuple::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasStatistics())
+            return true;
+    }
+    return false;
+}
+
+void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != columns.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
+        elem_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+
+            elem_source_columns.push_back(source_tuple->columns[i]);
+        }
+
+        if (!columns[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
+
+        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+    }
 }
 
 void ColumnTuple::fixDynamicStructure()

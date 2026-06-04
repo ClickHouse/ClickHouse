@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -97,12 +98,42 @@ namespace DB::Setting
 
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
-static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
 namespace DB::Iceberg
 {
 
 using namespace DB;
+
+/// Best-effort heuristic based on ClickHouse naming conventions.
+/// Files produced by other engines (Spark, Flink, Trino) may use different
+/// patterns and fall through to DATA_FILE; this only affects per-category
+/// reporting metrics, not deletion safety.
+FileCategory inspectFileCategory(const String & relative_path)
+{
+    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    {
+        if (relative_path.find(".metadata.json") != String::npos)
+            return FileCategory::METADATA_JSON;
+        if (relative_path.ends_with(".avro"))
+        {
+            if (relative_path.find("snap-") != String::npos)
+                return FileCategory::MANIFEST_LIST;
+            return FileCategory::MANIFEST_FILE;
+        }
+        if (relative_path.ends_with(".puffin") || relative_path.ends_with(".stats"))
+            return FileCategory::STATISTICS_FILE;
+    }
+
+    if (relative_path.find("eq-del") != String::npos)
+        return FileCategory::EQUALITY_DELETE_FILE;
+
+    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+        return FileCategory::POSITION_DELETE_FILE;
+
+    return FileCategory::DATA_FILE;
+}
+
 CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
@@ -140,16 +171,36 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
-    /// v<V>.metadata.json
+    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
+    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
+    /// write when committing a new metadata file).
     if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    {
+        auto end_pos = file_name.find_first_of(".-");
+        if (end_pos == String::npos || end_pos <= 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
+    }
     /// <V>-<random-uuid>.metadata.json
     else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+    {
+        auto dash_pos = file_name.find_first_of('-');
+        if (dash_pos == String::npos || dash_pos == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin(), file_name.begin() + dash_pos);
+    }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Expected `vN.metadata.json`, `vN-<uuid>.metadata.json`, or `N-<uuid>.metadata.json` where N is a version number",
+            file_name);
 
     return MetadataFileWithInfo{
         .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
@@ -358,7 +409,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string argument_string_representation = transform_name.substr(argument_start + 1, argument_width);
-        size_t argument;
+        size_t argument = 0;
         bool parsed = DB::tryParse<size_t>(argument, argument_string_representation);
 
         if (!parsed)
@@ -529,6 +580,12 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
         }
+        case TypeIndex::Variant:
+        {
+            if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+                return {Iceberg::f_geometry, false};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
@@ -538,6 +595,10 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
@@ -566,7 +627,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
     }
 }
 
-Poco::JSON::Object::Ptr getPartitionField(
+static Poco::JSON::Object::Ptr getPartitionField(
     ASTPtr partition_by_element,
     const std::unordered_map<String, Int32> & column_name_to_source_id,
     Int32 & partition_iter)
@@ -668,7 +729,7 @@ Poco::JSON::Object::Ptr getPartitionField(
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function for iceberg partitioning {}", partition_function->name);
 }
 
-std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
+static std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     ASTPtr partition_by,
     const std::unordered_map<String, Int32> & column_name_to_source_id)
 {
@@ -937,7 +998,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
     if (order_by)
     {
-        auto sort_columns_key_description = KeyDescription::getSortingKeyFromAST(order_by, columns, context, std::nullopt);
+        auto sort_columns_key_description = KeyDescription::getKeyFromAST(order_by, columns, {}, context);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
@@ -1140,9 +1201,10 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool force_fetch_latest_metadata)
+    bool force_fetch_latest_metadata,
+    bool ignore_explicit_metadata_file_path)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         if (explicit_metadata_path.find('\0') != String::npos)
@@ -1311,7 +1373,7 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
     if (order_by_str.empty())
         return KeyDescription{};
     order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+    return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
@@ -1357,6 +1419,25 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
     }
     sortBlock(block, result_sort_description);
+}
+
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback)
+{
+    RelativePathWithMetadata relative_path_with_metadata(filename);
+    auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
+
+    auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
+    auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
+
+    avro::GenericDatum datum(reader.readerSchema());
+    while (reader.read(datum))
+        callback(datum);
 }
 
 }
