@@ -30,6 +30,9 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+
 #include <Core/Settings.h>
 
 namespace DB
@@ -66,7 +69,34 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.filter_actions->dag = std::move(filter_expression_dag);
     result.correlated_subtrees = std::move(correlated_subtrees);
 
-    const auto * output = result.filter_actions->dag.getOutputs().at(0);
+    auto & dag = result.filter_actions->dag;
+    const auto * output = dag.getOutputs().at(0);
+
+    /// Rewrite a bare boolean-context column (e.g. `WHERE id` or `WHERE flag`) as `output != 0`
+    /// so index analysis sees a comparison against a constant. Scoped to bare INPUT/ALIAS nodes
+    /// only. See #89222.
+    auto is_bare_column = [](const ActionsDAG::Node * n)
+    {
+        while (n && n->type == ActionsDAG::ActionType::ALIAS)
+            n = n->children.empty() ? nullptr : n->children.front();
+        return n && n->type == ActionsDAG::ActionType::INPUT;
+    };
+
+    auto output_filter_type = removeNullable(removeLowCardinality(output->result_type));
+    if (is_bare_column(output)
+        && !output_filter_type->onlyNull()
+        && output->result_type->canBeUsedInBooleanContext())
+    {
+        /// Zero from the non-nullable type: `getDefault` on `Nullable`/`LowCardinality` yields
+        /// `NULL`, which would make the rewrite `notEquals(key, NULL)` and disable index analysis.
+        auto zero_column = output->result_type->createColumnConst(1, output_filter_type->getDefault());
+        const auto & zero_node = dag.addColumn({zero_column, output->result_type, "0"});
+        auto ne_func = FunctionFactory::instance().get("notEquals", planner_context->getQueryContext());
+        const auto & ne_node = dag.addFunction(ne_func, {output, &zero_node}, {});
+        dag.getOutputs()[0] = &ne_node;
+        output = &ne_node;
+    }
+
     if (output->column && ConstantFilterDescription(*output->column).always_true)
         return {};
 
