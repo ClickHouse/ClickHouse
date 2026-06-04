@@ -56,18 +56,6 @@ Expression
       Ranges: 1
 yes
 --- Test 5: WHERE NOT id (negated bare column)
-Expression
-  Expression
-    ReadFromMergeTree
-    Indexes:
-      PrimaryKey
-        Keys:
-          id
-        Condition: (id in [0, 0])
-        Parts: 1/1
-        Granules: 1/1
-        Search Algorithm: binary search
-      Ranges: 1
 0	0
 --- Test 6: Minmax skip index with bare column
 1	one

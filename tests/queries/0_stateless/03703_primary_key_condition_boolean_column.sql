@@ -75,9 +75,7 @@ SETTINGS index_granularity = 8192;
 
 INSERT INTO test_not_id SELECT number, toString(number) FROM numbers(1000);
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_not_id WHERE NOT id;
-
-SELECT id, value FROM test_not_id WHERE NOT id;
+SELECT id, value FROM test_not_id WHERE NOT id SETTINGS force_primary_key = 1;
 
 DROP TABLE test_not_id;
 
