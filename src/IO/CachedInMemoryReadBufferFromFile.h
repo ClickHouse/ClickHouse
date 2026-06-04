@@ -1,8 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <mutex>
-
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <Common/PageCache.h>
@@ -18,7 +15,7 @@ public:
     /// `in_` should be seekable and should be able to read the whole file from 0 to in_->getFileSize();
     /// in particular, don't call setReadUntilPosition() on `in_` directly, call
     /// CachedInMemoryReadBufferFromFile::setReadUntilPosition().
-    CachedInMemoryReadBufferFromFile(PageCacheFile cache_file_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const PageCacheSettings & settings_);
+    CachedInMemoryReadBufferFromFile(PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_);
 
     String getFileName() const override;
     String getInfoForLog() override;
@@ -33,21 +30,13 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 
-    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const override;
-    bool supportsReadAt() override { return innerSupportsReadAt(); }
-
-    VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
-    bool supportsReadAtRetainCells() const override { return innerSupportsReadAt(); }
-
     PageCache::MappedPtr getPageCacheCell() const { return chunk; }
     PageCachePtr getPageCache() const { return cache; }
 
 private:
-    const PageCacheFile cache_file;
-    PageCacheByteRange cache_range; // offset is offset of `chunk` start
-    SipHash cache_key_base_hash;
+    PageCacheKey cache_key; // .offset is offset of `chunk` start
     PageCachePtr cache;
-    PageCacheSettings settings;
+    ReadSettings settings;
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     size_t file_offset_of_buffer_end = 0;
@@ -56,20 +45,6 @@ private:
     size_t inner_read_until_position;
 
     PageCache::MappedPtr chunk;
-
-    /// Lazy: `in->supportsReadAt` may do HTTP/fstat, so don't probe in the ctor.
-    /// `call_once` also keeps the probe from racing with parallel `readBigAt` calls.
-    mutable std::once_flag inner_supports_read_at_init;
-    mutable bool inner_supports_read_at = false;
-    bool innerSupportsReadAt() const;
-
-    /// Ensures all cache blocks covering [offset, offset+n) are populated.
-    /// Returns a vector of MappedPtr, one per block. Each missing block is read
-    /// individually via `readBigAt` directly into its cache cell.
-    /// `block_callback` is called after reading each cell, in sequence.
-    /// The callback may move the cell out; then the returned vector will have nullptr.
-    /// If `block_callback` returns true, reading stops.
-    VectorWithMemoryTracking<PageCache::MappedPtr> populateBlockRange(size_t offset, size_t n, const std::function<bool(PageCache::MappedPtr &)> & block_callback = nullptr) const;
 
     bool nextImpl() override;
 };

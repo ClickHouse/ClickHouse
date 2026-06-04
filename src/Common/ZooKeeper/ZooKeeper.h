@@ -23,7 +23,6 @@ namespace Poco::Net
     class SocketAddress;
 }
 
-
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
@@ -190,18 +189,10 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(
-        ZooKeeperArgs args_,
-        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(
-        const ZooKeeperArgs & args_,
-        std::shared_ptr<DB::ZooKeeperLog> zk_log_,
-        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
-        Strings availability_zones_,
-        std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
@@ -451,8 +442,6 @@ public:
 
     Int64 getClientID() const;
 
-    Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;
-
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
     /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
@@ -463,11 +452,6 @@ public:
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
     Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
-
-    /// Lists all descendant paths under `path`.
-    Strings listRecursive(const std::string & path, uint32_t children_nodes_limit = 1000000);
-
-    Coordination::Error tryListRecursive(const std::string & path, Strings & res, uint32_t children_nodes_limit = 1000000);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.
@@ -708,16 +692,6 @@ private:
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
 
-    /// Wait for a future with progress-based timeout using session_timeout_ms.
-    /// On each iteration, waits up to session_timeout_ms for the future. If it
-    /// becomes ready, returns true. Otherwise, checks if the server made progress
-    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
-    /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
-    /// Worst-case latency: session_timeout_ms after no progress before returning false.
-    /// Defense-in-depth: only fires if the receive thread is stuck.
-    template <typename T>
-    bool waitForFutureWithProgress(std::future<T> & future) const;
-
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
@@ -737,7 +711,7 @@ private:
 
     AtomicStopwatch session_uptime;
 
-    int32_t session_node_version{};
+    int32_t session_node_version;
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> reconnect_task;
 };

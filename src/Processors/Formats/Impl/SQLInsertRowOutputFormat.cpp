@@ -93,7 +93,6 @@ void SQLInsertRowOutputFormat::resetFormatterImpl()
     rows_in_line = 0;
 }
 
-void registerOutputFormatSQLInsert(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory)
 {
     factory.registerOutputFormat("SQLInsert", [](

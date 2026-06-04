@@ -40,30 +40,35 @@ namespace ErrorCodes
 /// to reacreate mutation command as "UPDATE c1 = 'x' WHERE <cond>"
 static MutationCommand createCommandWithUpdatedColumns(
     const MutationCommand & command,
-    const std::unordered_map<String, ASTPtr> & available_columns)
+    std::unordered_map<String, ASTPtr> available_columns)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    chassert(!command.ast_text.empty());
+    chassert(command.ast);
 
     MutationCommand res;
     res.type = command.type;
-    res.mutation_version = command.mutation_version;
-    res.max_parser_depth = command.max_parser_depth;
-    res.max_parser_backtracks = command.max_parser_backtracks;
-    res.ast_text = command.ast_text;
+    res.ast = command.ast->clone();
 
-    auto handle = res.mutateAst();
+    if (command.predicate)
+        res.predicate = command.predicate->clone();
+
+    if (command.partition)
+        res.partition = command.partition->clone();
+
+    res.column_to_update_expression = std::move(available_columns);
+    res.mutation_version = command.mutation_version;
+
+    auto & alter_ast = assert_cast<ASTAlterCommand &>(*res.ast);
     auto new_assignments = make_intrusive<ASTExpressionList>();
 
-    for (const auto & child : handle->update_assignments->children)
+    for (const auto & child : alter_ast.update_assignments->children)
     {
         const auto & assignment = assert_cast<const ASTAssignment &>(*child);
-        if (available_columns.contains(assignment.column_name))
+        if (res.column_to_update_expression.contains(assignment.column_name))
             new_assignments->children.push_back(child->clone());
     }
 
-    handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
-    handle.commit();
+    alter_ast.update_assignments = alter_ast.children.emplace_back(std::move(new_assignments)).get();
     return res;
 }
 
@@ -85,22 +90,16 @@ static bool isLightweightDeleteCommand(const String & column_name, const ASTPtr 
 static MutationCommand createLightweightDeleteCommand(const MutationCommand & command)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    auto src_alter = command.ast();
-    chassert(src_alter && src_alter->predicate != nullptr);
+    chassert(command.predicate != nullptr);
 
     auto alter_command = make_intrusive<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
 
-    if (src_alter->partition)
-        alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
+    if (command.partition)
+        alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
 
-    alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
-    auto mutation_command = MutationCommand::parse(
-        *alter_command,
-        /* parse_alter_commands = */ false,
-        /* with_pure_metadata_commands = */ false,
-        command.max_parser_depth,
-        command.max_parser_backtracks);
+    alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
+    auto mutation_command = MutationCommand::parse(*alter_command);
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
@@ -200,11 +199,8 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        if (auto alter = command.ast(); alter && alter->update_assignments)
-        {
-            for (const auto & child : alter->update_assignments->children)
-                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
-        }
+        for (const auto & [column, _] : command.column_to_update_expression)
+            all_updated_columns.insert(column);
 
         mutation_commands.push_back(command);
     }
@@ -278,16 +274,11 @@ std::string AlterConversions::getColumnOldName(const std::string & new_name) con
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} was not renamed", new_name);
 }
 
-bool AlterConversions::isColumnDropped(const std::string & name, bool share_nested_offsets) const
+bool AlterConversions::isColumnDropped(const std::string & name) const
 {
     /// Check exact match (e.g. DROP COLUMN `n.s`)
     if (dropped_columns.contains(name))
         return true;
-
-    /// When share_nested_offsets is disabled, dotted-name columns are independent
-    /// and dropping `n` should not affect `n.a`.
-    if (!share_nested_offsets)
-        return false;
 
     /// Check if the parent nested column was dropped (e.g. DROP COLUMN `n` should match `n.s`, `n.d`, etc.)
     auto nested_prefix_end = name.find('.');
@@ -340,7 +331,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
 
     for (const auto & patch : patch_parts)
     {
-        bool has_column_in_patch = false;
+        bool has_column_in_patch;
         const auto & patch_conversions = patch.part->getAlterConversions();
 
         /// If patch has lightweight delete we have to always apply it.
@@ -484,7 +475,7 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
         IdentifierNameSet source_columns;
         if (command.type == MutationCommand::Type::DELETE)
         {
-            command.ast()->predicate->collectIdentifierNames(source_columns);
+            command.predicate->collectIdentifierNames(source_columns);
             filtered_commands.push_back(command);
         }
         else if (command.type == MutationCommand::Type::UPDATE)
@@ -492,36 +483,30 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
             bool has_lightweight_delete = false;
             std::unordered_map<String, ASTPtr> new_updated_columns;
 
-            auto alter = command.ast();
-            if (alter && alter->update_assignments)
+            for (const auto & [column, ast] : command.column_to_update_expression)
             {
-                for (const auto & child : alter->update_assignments->children)
+                if (isLightweightDeleteCommand(column, ast))
                 {
-                    const auto & assignment = child->as<ASTAssignment &>();
-                    auto expr = assignment.expression();
-                    if (isLightweightDeleteCommand(assignment.column_name, expr))
-                    {
-                        has_lightweight_delete = true;
-                    }
-                    else if (read_columns_set.contains(assignment.column_name))
-                    {
-                        expr->collectIdentifierNames(source_columns);
-                        new_updated_columns.emplace(assignment.column_name, expr->clone());
-                    }
+                    has_lightweight_delete = true;
+                }
+                else if (read_columns_set.contains(column))
+                {
+                    ast->collectIdentifierNames(source_columns);
+                    new_updated_columns.emplace(column, ast->clone());
                 }
             }
 
             if (has_lightweight_delete)
             {
                 auto new_command = createLightweightDeleteCommand(command);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                new_command.predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
             {
-                auto new_command = createCommandWithUpdatedColumns(command, new_updated_columns);
-                new_command.ast()->predicate->collectIdentifierNames(source_columns);
+                auto new_command = createCommandWithUpdatedColumns(command, std::move(new_updated_columns));
+                new_command.predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
         }

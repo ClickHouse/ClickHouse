@@ -19,17 +19,18 @@ from pyiceberg.table.sorting import SortOrder, SortField
 from pyiceberg.transforms import IdentityTransform
 
 BASE_URL = "http://rest:8181/v1"
+BASE_URL_LOCAL = "http://localhost:8182/v1"
+BASE_URL_LOCAL_RAW = "http://localhost:8182"
 
 CATALOG_NAME = "demo"
 
 def load_catalog_impl(started_cluster):
-    base_url_local_raw = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}"
     return load_catalog(
         CATALOG_NAME,
         **{
-            "uri": base_url_local_raw,
+            "uri": BASE_URL_LOCAL_RAW,
             "type": "rest",
-            "s3.endpoint": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+            "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
             "s3.secret-access-key": minio_secret_key,
         },
@@ -57,7 +58,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
     }
 
     settings.update(additional_settings)

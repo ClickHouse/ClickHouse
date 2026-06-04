@@ -66,15 +66,7 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     return 0;
 }
 
-}
-
-namespace DB
-{
-
-namespace QueryPlanOptimizations
-{
-
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
+UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide side)
 {
     SipHash hash;
 
@@ -98,10 +90,15 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
-void calculateHashTableCacheKeys(
-    const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes)
+}
+
+namespace DB
+{
+
+namespace QueryPlanOptimizations
+{
+
+void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
 {
     struct Frame
     {
@@ -144,17 +141,11 @@ void calculateHashTableCacheKeys(
                 }
                 else
                 {
-                    /// At this point cache_keys[child_i] holds the child's raw bottom-up hash
-                    /// (set when the child's frame was popped). Apply this join's per-side
-                    /// contribution to produce the child's final cache key, then SipHash-combine
-                    /// the two final-keyed children to derive this join's own raw hash.
-                    cache_keys[node.children.at(0)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Left);
-                    cache_keys[node.children.at(1)] ^= calculateJoinStepCacheKeyContribution(*join_step, JoinTableSide::Right);
+                    cache_keys[node.children.at(0)] ^= calculateHashFromStep(*join_step, JoinTableSide::Left);
+                    cache_keys[node.children.at(1)] ^= calculateHashFromStep(*join_step, JoinTableSide::Right);
                     frame.hash.update(cache_keys[node.children.at(0)]);
                     frame.hash.update(cache_keys[node.children.at(1)]);
-                    const auto raw = frame.hash.get64();
-                    raw_hashes[&node] = raw;
-                    cache_keys[&node] = raw;
+                    cache_keys[&node] = frame.hash.get64();
 
                     stack.pop_back();
                 }
@@ -183,18 +174,10 @@ void calculateHashTableCacheKeys(
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
 
-        const auto raw = frame.hash.get64();
-        raw_hashes[&node] = raw;
-        cache_keys[&node] = raw;
+        cache_keys[&node] = frame.hash.get64();
 
         stack.pop_back();
     }
-}
-
-static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
-{
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
-    calculateHashTableCacheKeys(root, cache_keys, raw_hashes);
 }
 
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
