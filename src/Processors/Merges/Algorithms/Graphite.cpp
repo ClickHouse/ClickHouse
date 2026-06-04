@@ -51,7 +51,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
 }
 
-static RuleType ruleType(const String & s)
+RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;

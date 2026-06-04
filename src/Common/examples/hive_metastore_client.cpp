@@ -4,7 +4,6 @@
 #include <thrift/transport/TSocket.h>
 #include <thrift/transport/TTransportUtils.h>
 #include <ThriftHiveMetastore.h>
-#include <Examples/clickhouse_examples.h>
 
 
 using namespace std;
@@ -13,7 +12,7 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace Apache::Hadoop::Hive;
 
-int mainEntryExampleHiveMetastoreClient(int, char **)
+int main()
 {
     std::shared_ptr<TTransport> socket(new TSocket("localhost", 9083));
     std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
@@ -41,5 +40,4 @@ int mainEntryExampleHiveMetastoreClient(int, char **)
     {
         cout << "ERROR: " << tx.what() << endl;
     }
-    return 0;
 }

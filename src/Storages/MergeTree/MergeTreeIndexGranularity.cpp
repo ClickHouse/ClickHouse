@@ -83,7 +83,7 @@ size_t computeIndexGranularity(
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity)
 {
-    size_t index_granularity_for_block = 0;
+    size_t index_granularity_for_block;
 
     if (!can_use_adaptive_index_granularity)
     {

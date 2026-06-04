@@ -14,7 +14,6 @@ namespace DB
 
 void registerObjectStorages();
 void registerMetadataStorages();
-void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
 
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {

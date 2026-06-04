@@ -159,7 +159,6 @@ void DatabaseDictionary::shutdown()
 {
 }
 
-void registerDatabaseDictionary(DatabaseFactory & factory);
 void registerDatabaseDictionary(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

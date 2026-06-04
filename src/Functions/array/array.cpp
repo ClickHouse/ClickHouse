@@ -12,8 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -23,7 +21,7 @@ namespace Setting
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray final : public IFunction
+class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";
@@ -134,7 +132,7 @@ private:
     bool executeNumber(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         using Container = ColumnVectorOrDecimal<T>::Container;
-        VectorWithMemoryTracking<const Container *> containers(columns.size(), nullptr);
+        std::vector<const Container *> containers(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnVectorOrDecimal<T> * concrete_column = checkAndGetColumn<ColumnVectorOrDecimal<T>>(columns[i]);
@@ -151,12 +149,6 @@ private:
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
             const size_t base = row_i * columns.size();
-            /// At x86-64-v3 the loop and SLP vectorizers widen the per-column scatter into AVX2 gathers / packed stores
-            /// for typical small `columns.size()` (1-4), which regresses array literal construction by 10-20% vs scalar
-            /// stores. Disabling unrolling and vectorization keeps the simple per-element copy.
-#if defined(__clang__) && defined(__AVX2__)
-#pragma clang loop unroll(disable) vectorize(disable)
-#endif
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
                 out_container[base + col_i] = (*containers[col_i])[row_i];
         }
@@ -166,7 +158,7 @@ private:
     bool executeString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
         size_t total_bytes = 0;
-        VectorWithMemoryTracking<const ColumnString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnString * concrete_column = checkAndGetColumn<ColumnString>(columns[i]);
@@ -200,7 +192,7 @@ private:
 
     bool executeFixedString(const ColumnRawPtrs & columns, IColumn & out_data, size_t input_rows_count) const
     {
-        VectorWithMemoryTracking<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
+        std::vector<const ColumnFixedString *> concrete_columns(columns.size(), nullptr);
         for (size_t i = 0; i < columns.size(); ++i)
         {
             const ColumnFixedString * concrete_column = checkAndGetColumn<ColumnFixedString>(columns[i]);
