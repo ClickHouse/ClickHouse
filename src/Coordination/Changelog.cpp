@@ -298,6 +298,12 @@ public:
     {
         LOG_TRACE(log, "Finalize S3 buffer");
 
+        /// Stop the compaction thread before touching shared state. `flushImpl` below
+        /// mutates `existing_changelogs` and `entry_storage` without holding `writer_mutex`,
+        /// while the compaction thread reads, erases and inserts into `existing_changelogs`.
+        /// Joining it first removes that data race during shutdown.
+        stopCompactionThread();
+
         /// `flush` dereferences `last_index_written`, which is empty until the first
         /// `appendRecord`. Skip the flush if nothing was ever written (e.g. immediate
         /// shutdown after startup) — mirrors the `isFileSet() && prealloc_done` guard
@@ -314,13 +320,7 @@ public:
 
     ~S3ChangelogWriter() override
     {
-        if (s3_compaction_thread && s3_compaction_thread->joinable())
-        {
-            s3_compaction_shutdown = true;
-            if (!s3_compaction_queue.push(true))
-                LOG_WARNING(log, "Failed to push shutdown signal to S3 compaction queue");
-            s3_compaction_thread->join();
-        }
+        stopCompactionThread();
 
         LOG_TRACE(log, "S3 changelogs map contents:");
         for (const auto & [index, description] : existing_changelogs)
@@ -339,11 +339,22 @@ private:
     std::mutex & writer_mutex;
     uint64_t last_merged_index;
 
+    void stopCompactionThread()
+    {
+        if (s3_compaction_thread && s3_compaction_thread->joinable())
+        {
+            s3_compaction_shutdown = true;
+            if (!s3_compaction_queue.push(true))
+                LOG_WARNING(log, "Failed to push shutdown signal to S3 compaction queue");
+            s3_compaction_thread->join();
+        }
+    }
+
     void s3CompactionThread()
     {
         LOG_INFO(log, "S3 compaction thread started");
 
-        bool dummy;
+        bool dummy = false;
         while (!s3_compaction_shutdown && s3_compaction_queue.pop(dummy))
         {
             std::vector<ChangelogFileDescriptionPtr> to_merge;
@@ -439,6 +450,37 @@ private:
                 /// the race will simply not find the path in `existing_changelogs`.
                 {
                     std::lock_guard<std::mutex> lock(writer_mutex);
+
+                    /// Re-validate that every planned source is still present and unchanged.
+                    /// The lock was released for the slow S3 copy, so `writeAt`/`compact`
+                    /// could have removed or replaced these ranges in the meantime. Publishing
+                    /// the merged file unconditionally would reintroduce stale/truncated entries
+                    /// (TOCTOU). If anything changed, discard the merge and try again later.
+                    bool sources_unchanged = true;
+                    for (const auto & changelog : to_remove)
+                    {
+                        auto it = existing_changelogs.find(changelog->from_log_index);
+                        if (it == existing_changelogs.end() || it->second != changelog)
+                        {
+                            sources_unchanged = false;
+                            break;
+                        }
+                    }
+
+                    if (!sources_unchanged)
+                    {
+                        LOG_INFO(log, "Planned S3 changelog sources changed during merge, discarding merged file {}", merged_changelog->path);
+                        try
+                        {
+                            getDisk()->removeFile(merged_changelog->path);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, fmt::format("Failed to remove discarded merged S3 changelog: {}", merged_changelog->path));
+                        }
+                        continue;
+                    }
+
                     for (const auto & changelog : to_remove)
                         existing_changelogs.erase(changelog->from_log_index);
 
@@ -488,16 +530,8 @@ private:
 
     void flushImpl(uint64_t new_start_log_index)
     {
-        if (current_file_description && last_index_written)
+        if (current_file_description && last_index_written && current_file_description->from_log_index <= *last_index_written)
         {
-            if (current_file_description->from_log_index > *last_index_written)
-            {
-                LOG_TRACE(log, "Close s3 writing buffer");
-
-                existing_changelogs.erase(current_file_description->from_log_index);
-                return;
-            }
-
             LOG_TRACE(log, "Flushing s3 buffer {}", write_buffer->count());
 
             auto new_path = Changelog::formatChangelogPath(
@@ -510,40 +544,40 @@ private:
 
             if (current_file_description->path != new_path)
             {
+                /// Finalize the write at the current path first so the data is fully persisted
+                /// to S3. We cannot reconstruct the payload from `write_buffer`'s in-memory
+                /// buffer because most of the bytes have already been streamed out via
+                /// multipart upload and are no longer addressable in process memory.
+                ///
+                /// Any failure here must propagate to `Changelog::writeThread`: it treats a
+                /// returned `flush` as durable and advances `last_durable_idx`, acknowledging
+                /// the segment to NuRaft as persisted. Swallowing the error would falsely
+                /// report data as durable while it was not safely published.
+                write_buffer->sync();
+                write_buffer->finalize();
+
+                auto disk = getDisk();
+                auto reader = disk->readFile(current_file_description->path, getReadSettings());
+                auto writer = disk->writeFile(new_path);
+                copyData(*reader, *writer);
+                writer->sync();
+                writer->finalize();
+
+                /// Removing the old object is best-effort: the data is already durable at
+                /// `new_path`, so a leftover stale object is harmless and must not fail the flush.
                 try
                 {
-                    /// Finalize the write at the current path first so the data is fully persisted
-                    /// to S3. We cannot reconstruct the payload from `write_buffer`'s in-memory
-                    /// buffer because most of the bytes have already been streamed out via
-                    /// multipart upload and are no longer addressable in process memory.
-                    write_buffer->sync();
-                    write_buffer->finalize();
-
-                    auto disk = getDisk();
-                    auto reader = disk->readFile(current_file_description->path, getReadSettings());
-                    auto writer = disk->writeFile(new_path);
-                    copyData(*reader, *writer);
-                    writer->sync();
-                    writer->finalize();
-
-                    try
-                    {
-                        disk->removeFile(current_file_description->path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("Failed to remove S3 changelog at old path {}", current_file_description->path));
-                    }
-
-                    current_file_description->path = new_path;
-                    current_file_description->to_log_index = *last_index_written;
-
-                    existing_changelogs[current_file_description->from_log_index] = current_file_description;
+                    disk->removeFile(current_file_description->path);
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, fmt::format("File rename failed on disk {}", getDisk()->getName()));
+                    tryLogCurrentException(log, fmt::format("Failed to remove S3 changelog at old path {}", current_file_description->path));
                 }
+
+                current_file_description->path = new_path;
+                current_file_description->to_log_index = *last_index_written;
+
+                existing_changelogs[current_file_description->from_log_index] = current_file_description;
             }
             else
             {
@@ -555,6 +589,22 @@ private:
 
             entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
             unflushed_indices_with_log_location.clear();
+        }
+        else if (current_file_description && last_index_written)
+        {
+            /// `from_log_index > last_index_written`: nothing was written into the current file
+            /// since it was opened. Discard the empty object and fall through to open a fresh
+            /// writer at `new_start_log_index`; do not return early, otherwise the requested
+            /// start index would never be installed and a later `rotate`/`writeAt` would keep
+            /// writing under the stale `current_file_description`.
+            LOG_TRACE(log, "Close empty s3 writing buffer");
+
+            existing_changelogs.erase(current_file_description->from_log_index);
+            if (write_buffer)
+            {
+                write_buffer->cancel();
+                write_buffer.reset();
+            }
         }
         else
         {
@@ -2498,10 +2548,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             move_from_latest_logs_disks(description);
         }
         /// don't mix compressed and uncompressed writes
-        else if (compress_logs == last_log_read_result->compressed_log)
+        else if (compress_logs == last_log_read_result->compressed_log && !keeper_context->isS3ExperimentalChangelog())
         {
             initWriter(description);
         }
+        /// In S3 mode we cannot append in place: `S3ChangelogWriter::setFile` opens the object
+        /// in rewrite mode, which would truncate the readable-but-incomplete last log and drop
+        /// already-recovered entries on the next restart. Leave the recovered object untouched
+        /// and let the writer start a fresh file from `max_log_id + 1` below.
     }
     else if (last_log_read_result.has_value())
     {
@@ -2512,21 +2566,28 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     if (!current_writer->isFileSet())
         current_writer->rotate(max_log_id + 1);
 
-    /// Move files to correct disks
-    auto latest_start_index = current_writer->getStartIndex();
-    auto latest_log_disk = getLatestLogDisk();
-    auto disk = getDisk();
-    for (const auto & [start_index, description] : existing_changelogs)
+    /// Move files to correct disks.
+    /// In S3 mode all changelogs live on the single S3 log disk, while `getDisk()`/
+    /// `getLatestLogDisk()` return the local log disks. Running this migration would try to
+    /// move every S3 object onto a local disk (and trip the `latest_log_disk` assertion), so
+    /// skip it entirely — there is nothing to rebalance across disks for the S3 backend.
+    if (!keeper_context->isS3ExperimentalChangelog())
     {
-        /// latest log should already be on latest_log_disk
-        if (start_index == latest_start_index)
+        auto latest_start_index = current_writer->getStartIndex();
+        auto latest_log_disk = getLatestLogDisk();
+        auto disk = getDisk();
+        for (const auto & [start_index, description] : existing_changelogs)
         {
-            chassert(description->disk == latest_log_disk);
-            continue;
-        }
+            /// latest log should already be on latest_log_disk
+            if (start_index == latest_start_index)
+            {
+                chassert(description->disk == latest_log_disk);
+                continue;
+            }
 
-        if (description->disk != disk)
-            moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+            if (description->disk != disk)
+                moveChangelogBetweenDisks(description->disk, description, disk, description->path, keeper_context);
+        }
     }
 
     initialized = true;
