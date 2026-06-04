@@ -693,6 +693,11 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
 
+    /// -1 ("unknown") unless a running prefetch completed: a queued one read no
+    /// bytes, and a short read at EOF reads fewer than the requested window. Matches
+    /// the legacy prefetch log, which writes size = -1 for a cancelled prefetch.
+    Int64 prefetched_size = -1;
+
     if (local_handle->tryCancel())
     {
         /// Cancelled before the worker ran - count it like the readNextWindow
@@ -721,6 +726,7 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
                 += stats.prefetch_issued_source_bytes - prefetch_issued_source_at_submit;
             stats.prefetch_wasted_cache_bytes
                 += stats.prefetch_issued_cache_bytes - prefetch_issued_cache_at_submit;
+            prefetched_size = static_cast<Int64>(rope.totalBytes());
         }
         catch (...)
         {
@@ -731,7 +737,7 @@ void ReaderExecutor::discardPrefetch(FilesystemPrefetchState reason)
     /// Log the dropped prefetch (seek-away). Destructor cleanup passes
     /// `UNNEEDED`, which the legacy path never logs — skip it too.
     if (reason != FilesystemPrefetchState::UNNEEDED)
-        emitPrefetchLog(reason, static_cast<Int64>(prefetch_range.size));
+        emitPrefetchLog(reason, prefetched_size);
 }
 
 void ReaderExecutor::drainAbandonedPrefetches(bool wait_finished)
