@@ -327,6 +327,20 @@ FORMAT OpenMetrics;
 SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
 
+-- Histogram `+Inf` / `_count` synthesis preserves non-marker labels per series.
+SELECT 'req' AS name, 10.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+SELECT *
+FROM (
+    SELECT 'req' AS name, 5.0 AS value, '' AS help, 'histogram' AS type, map('job', 'api', 'le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+    UNION ALL
+    SELECT 'req', 10.0, '', 'histogram', map('job', 'api', 'count', ''), CAST(NULL AS Nullable(Int64)), ''
+    UNION ALL
+    SELECT 'req', 20.0, '', 'histogram', map('job', 'web', 'le', '+Inf'), CAST(NULL AS Nullable(Int64)), ''
+)
+ORDER BY value
+FORMAT OpenMetrics;
+
 -- ----------------------------------------------------------------------------
 -- Output label serialization contract.
 --   * Only `\\`, `\"`, and `\n` escapes are emitted; other control characters are

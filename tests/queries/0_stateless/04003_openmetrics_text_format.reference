@@ -72,6 +72,19 @@ h{sum="bytes"} 7
 s{count="oops"} 8
 
 # EOF
+# TYPE req histogram
+req_bucket{job="api",le="+Inf"} 10
+req_count{job="api"} 10
+
+# EOF
+# TYPE req histogram
+req_bucket{job="api",le="0.5"} 5
+req_bucket{job="web",le="+Inf"} 20
+req_bucket{job="api",le="+Inf"} 10
+req_count{job="api"} 10
+req_count{job="web"} 20
+
+# EOF
 m{k="a\nb"} 1
 
 # EOF

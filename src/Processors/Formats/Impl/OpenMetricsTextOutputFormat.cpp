@@ -235,6 +235,23 @@ void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container &
     }
 }
 
+/// Histogram series identity: all labels except bucket/meta markers (`le`, empty `count`, empty `sum`).
+std::map<String, String> histogramSeriesLabels(const std::map<String, String> & labels)
+{
+    std::map<String, String> series;
+    for (const auto & [key, value] : labels)
+    {
+        if (key == "le")
+            continue;
+        if (key == "count" && value.empty())
+            continue;
+        if (key == "sum" && value.empty())
+            continue;
+        series[key] = value;
+    }
+    return series;
+}
+
 }
 
 OpenMetricsTextOutputFormat::OpenMetricsTextOutputFormat(
@@ -282,6 +299,53 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
         return it != labels.end() && it->second.empty();
     };
 
+    if (metric.type == "histogram")
+    {
+        struct SeriesState
+        {
+            bool has_count_marker = false;
+            bool has_inf_bucket = false;
+            std::optional<CurrentMetric::RowValue> count_marker_row;
+            std::optional<CurrentMetric::RowValue> inf_bucket_row;
+        };
+
+        std::map<std::map<String, String>, SeriesState> series_states;
+        for (const auto & val : metric.values)
+        {
+            const auto series = histogramSeriesLabels(val.labels);
+            auto & state = series_states[series];
+
+            if (is_empty_marker(val.labels, "count"))
+            {
+                state.has_count_marker = true;
+                state.count_marker_row = val;
+            }
+            if (auto it = val.labels.find("le"); it != val.labels.end() && it->second == "+Inf")
+            {
+                state.has_inf_bucket = true;
+                state.inf_bucket_row = val;
+            }
+        }
+
+        for (const auto & [series, state] : series_states)
+        {
+            if (state.has_count_marker && !state.has_inf_bucket && state.count_marker_row)
+            {
+                auto synthetic = *state.count_marker_row;
+                synthetic.labels = series;
+                synthetic.labels["le"] = "+Inf";
+                metric.values.emplace_back(std::move(synthetic));
+            }
+            else if (!state.has_count_marker && state.has_inf_bucket && state.inf_bucket_row)
+            {
+                auto synthetic = *state.inf_bucket_row;
+                synthetic.labels = series;
+                synthetic.labels["count"] = "";
+                metric.values.emplace_back(std::move(synthetic));
+            }
+        }
+    }
+
     ::sort(metric.values.begin(), metric.values.end(),
         [&bucket_label, &is_empty_marker](const auto & lhs, const auto & rhs)
         {
@@ -308,33 +372,6 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
                 return tryParseFloat(lit->second) < tryParseFloat(rit->second);
             return false;
         });
-
-    if (metric.type == "histogram")
-    {
-        std::optional<CurrentMetric::RowValue> inf_bucket;
-        std::optional<CurrentMetric::RowValue> count_bucket;
-        for (const auto & val : metric.values)
-        {
-            /// Only the empty-marker `{'count': ''}` row is treated as the count sample we
-            /// can mirror into a synthetic `+Inf` bucket; a real label named `count` with a
-            /// non-empty value is not a marker.
-            if (is_empty_marker(val.labels, "count"))
-            {
-                inf_bucket = val;
-                inf_bucket->labels = {{"le", "+Inf"}};
-            }
-            if (auto it = val.labels.find("le"); it != val.labels.end() && it->second == "+Inf")
-            {
-                count_bucket = val;
-                count_bucket->labels = {{"count", ""}};
-            }
-        }
-        if (inf_bucket.has_value() && !count_bucket.has_value())
-            metric.values.emplace_back(*inf_bucket);
-
-        if (!inf_bucket.has_value() && count_bucket.has_value())
-            metric.values.emplace_back(*count_bucket);
-    }
 }
 
 void OpenMetricsTextOutputFormat::flushCurrentMetric()
