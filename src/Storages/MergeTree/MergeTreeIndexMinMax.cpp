@@ -4,11 +4,13 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -27,6 +29,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_minmax_index_bulk_filtering;
 }
 
 
@@ -300,10 +307,10 @@ buildIntersectsAndContains(
 
     /// intersects: the element's range overlaps the granule's range.
     /// contains:   the granule's range is fully inside the element's range.
-    const ActionsDAG::Node * intersects_upper;
-    const ActionsDAG::Node * intersects_lower;
-    const ActionsDAG::Node * contains_upper;
-    const ActionsDAG::Node * contains_lower;
+    const ActionsDAG::Node * intersects_upper = nullptr;
+    const ActionsDAG::Node * intersects_lower = nullptr;
+    const ActionsDAG::Node * contains_upper = nullptr;
+    const ActionsDAG::Node * contains_lower = nullptr;
 
     if (right_is_pos_inf)
     {
@@ -519,20 +526,26 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     /// non-collapsed IN_SET); in that case the caller falls back to the generic path.
     ///
     /// The condition object is constructed during query analysis on every read of every
-    /// minmax-indexed table, regardless of whether `use_minmax_index_bulk_filtering` is on.
+    /// minmax-indexed table. When `use_minmax_index_bulk_filtering` is off (the default), the
+    /// bulk path is never taken, so building the DAG would be wasted query-analysis work; skip
+    /// it entirely and leave `minmax_actions` null, making the disabled setting a true no-op.
+    ///
     /// An unexpected Field/Type combination that escapes the explicit eligibility checks
     /// would otherwise fail the whole query; the per-granule scalar path is correct on
     /// every shape, so the safe fallback is to leave `minmax_actions` null.
-    try
+    if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering])
     {
-        minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
-                                               OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
-    }
-    catch (...)
-    {
-        /// Ok: see comment above; the per-granule scalar path is the safe fallback.
-        minmax_actions = nullptr;
-        minmax_input_names.clear();
+        try
+        {
+            minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
+                                                   OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
+        }
+        catch (...)
+        {
+            /// Ok: see comment above; the per-granule scalar path is the safe fallback.
+            minmax_actions = nullptr;
+            minmax_input_names.clear();
+        }
     }
 }
 
@@ -947,7 +960,7 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
                 }
                 else
                 {
-                    bool is_null;
+                    bool is_null = false;
                     readBinary(is_null, istr);
                     if (!is_null)
                     {
