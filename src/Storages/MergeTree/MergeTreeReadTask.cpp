@@ -442,4 +442,11 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
+{
+    /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
+    /// reader chain and is able to skip whole marks via `canSkipMark`.
+    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
+}
+
 }

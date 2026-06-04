@@ -19,16 +19,6 @@ class ColumnObject final : public COWHelper<IColumnHelper<ColumnObject>, ColumnO
 public:
     struct Statistics
     {
-        enum class Source
-        {
-            READ,  /// Statistics were loaded into column during reading from MergeTree.
-            MERGE, /// Statistics were calculated during merge of several MergeTree parts.
-        };
-
-        explicit Statistics(Source source_) : source(source_) {}
-
-        /// Source of the statistics.
-        Source source;
         /// Statistics for dynamic paths: (path) -> (total number of not-null values).
         std::unordered_map<String, size_t> dynamic_paths_statistics;
         /// Statistics for paths in shared data: (path) -> (total number of not-null values).
@@ -149,6 +139,13 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+
+    /// Used for deduplication: hashes the raw in-memory representation of typed paths,
+    /// dynamic paths and shared data. The hash is the same for the same INSERT data,
+    /// but NOT necessarily the same for logically equivalent data with different path
+    /// distribution between dynamic paths and shared data.
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
@@ -203,8 +200,8 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
@@ -217,6 +214,9 @@ public:
     PathToDynamicColumnPtrMap & getDynamicPathsPtrs() { return dynamic_paths_ptrs; }
 
     const StatisticsPtr & getStatistics() const { return statistics; }
+    StatisticsPtr getOrCalculateStatistics() const;
+    bool hasStatistics() const override { return true; }
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     const ColumnPtr & getSharedDataPtr() const { return shared_data; }
     ColumnPtr & getSharedDataPtr() { return shared_data; }
@@ -370,7 +370,7 @@ private:
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
     /// This limit can be different for different instances of Object column. For example, we can decrease it
-    /// in takeDynamicStructureFromSourceColumns before merge.
+    /// in `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom` before merge.
     size_t max_dynamic_paths;
     /// Global limit on number of dynamic paths for all column instances of this Object type. It's the limit specified
     /// in the type definition (for example 'JSON(max_dynamic_paths=N)'). max_dynamic_paths is always not greater than this limit.

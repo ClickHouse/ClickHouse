@@ -47,6 +47,7 @@ struct MongoDBConfiguration
     std::unordered_set<String> oid_fields = {"_id"};
 
     void checkHosts(const ContextPtr & context) const;
+    void checkCollection() const;
 
     bool isOidColumn(const std::string & name) const
     {

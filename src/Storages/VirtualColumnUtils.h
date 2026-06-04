@@ -45,6 +45,11 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
@@ -103,7 +108,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 template <typename T>
 void filterByPathOrFile(
@@ -112,9 +118,10 @@ void filterByPathOrFile(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -135,14 +142,12 @@ struct VirtualsForFileLikeStorage
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
-    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
-    /// Used by Iceberg position deletes to reference data files in the metadata path format.
-    const String * iceberg_metadata_file_path { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with

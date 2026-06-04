@@ -38,20 +38,19 @@
 #include <DataTypes/DataTypesNumber.h>
 
 
-#include <Databases/DataLake/Common.h>
-#include <IO/CompressionMethod.h>
+#include <IO/S3/Credentials.h>
+#include <IO/S3/Client.h>
+#include <IO/S3Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/S3/Client.h>
-#include <IO/S3/Credentials.h>
-#include <IO/S3Settings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Databases/DataLake/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB::ErrorCodes
 {
@@ -427,6 +426,27 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
+{
+    /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
+    /// web-identity, etc.) refreshes its cached credentials internally before
+    /// expiry. The bug we are fixing is that `setCredentials` captures the result
+    /// of `GetAWSCredentials` once at table-load time and embeds the access key,
+    /// secret, and session token as static literals in the storage args, so the
+    /// S3 client is pinned to a snapshot that goes stale on long reads. This
+    /// callback re-asks the same provider for current credentials each time
+    /// `ReadBufferFromS3` reports an `ExpiredToken`, letting the read recover.
+    return [this, storage_id]() -> std::shared_ptr<IStorageCredentials>
+    {
+        LOG_DEBUG(log, "Refreshing AWS credentials for {} after expired token", storage_id.getNameForLogs());
+        auto credentials = credentials_provider->GetAWSCredentials();
+        return std::make_shared<S3Credentials>(
+            credentials.GetAWSAccessKeyId(),
+            credentials.GetAWSSecretKey(),
+            credentials.GetSessionToken());
+    };
+}
+
 bool GlueCatalog::empty() const
 {
     auto all_databases = getDatabases("");
@@ -545,7 +565,14 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage,
+            table_path,
+            *storage_settings,
+            nullptr,
+            getContext(),
+            log.get(),
+            std::nullopt
+        );
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

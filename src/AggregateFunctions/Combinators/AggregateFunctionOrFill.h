@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/typeid_cast.h>
@@ -309,6 +310,42 @@ public:
                     nested_function->insertResultInto(place, to, arena);
             }
         }
+        else if (nested_function->isState())
+        {
+            /// Mirror the flag-set branch for State-nested combinators: routing
+            /// flag-unset rows through `to.insertDefault()` would call
+            /// `ColumnAggregateFunction::ensureOwnership()` on the inner column and
+            /// reset its `src`, leaving subsequent flag-set rows pushing externally-
+            /// owned state pointers without `src` protection (double-destroy under
+            /// `MemorySanitizer`, issue #105462). The state at `place` is already
+            /// default-initialized by `create()` above, so it is safe to forward.
+            if constexpr (UseNull)
+            {
+                if (!result_is_nullable || inner_nullable)
+                {
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, to, arena);
+                    else
+                        nested_function->insertResultInto(place, to, arena);
+                }
+                else
+                {
+                    ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+                    col.getNullMapColumn().getData().push_back(static_cast<UInt8>(1));
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                    else
+                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                }
+            }
+            else
+            {
+                if constexpr (merge)
+                    nested_function->insertMergeResultInto(place, to, arena);
+                else
+                    nested_function->insertResultInto(place, to, arena);
+            }
+        }
         else
             to.insertDefault();
     }
@@ -324,6 +361,32 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
+    /// which changed the default null adapter for Tuple-returning functions:
+    ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).
+    ///   - multi-arg: from `<false, true>` to `<true, true>` (flag byte was already present).
+    /// Only single-arg functions are affected because the multi-arg (variadic) Null combinator
+    /// always serialized the flag byte unconditionally, so its serialization format did not change.
+    /// Only OrDefault is affected. OrNull also has no backward compat concern since it
+    /// didn't work for Tuple-returning functions before `Nullable(Tuple)` was introduced.
+    /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
+    /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
+    /// functions, so that future functions with the same shape get the correct new behavior
+    /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function_,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        if constexpr (!UseNull) /// OrDefault only
+        {
+            if (nested_function->getName() == "sumCount")
+                return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function_, arguments, params);
+        }
+        return nullptr;
+    }
 };
 
 }

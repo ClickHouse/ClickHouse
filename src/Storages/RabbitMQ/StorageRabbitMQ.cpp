@@ -357,7 +357,7 @@ void StorageRabbitMQ::loopingFunc()
 
 void StorageRabbitMQ::stopLoop()
 {
-    connection->getHandler().updateLoopState(Loop::STOP);
+    connection->getHandler().stopLoop();
 }
 
 void StorageRabbitMQ::stopLoopIfNoReaders()
@@ -371,7 +371,7 @@ void StorageRabbitMQ::stopLoopIfNoReaders()
     std::lock_guard lock(loop_mutex);
     if (readers_count)
         return;
-    connection->getHandler().updateLoopState(Loop::STOP);
+    connection->getHandler().stopLoop();
 }
 
 void StorageRabbitMQ::startLoop()
@@ -512,7 +512,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
-        connection->getHandler().stopLoop();
+        connection->getHandler().stopBlockingLoop();
         /// This error can be a result of attempt to declare exchange if it was already declared but
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
@@ -524,7 +524,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
     .onError([&](const char * message)
     {
-        connection->getHandler().stopLoop();
+        connection->getHandler().stopBlockingLoop();
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
         if (error.empty())
         {
@@ -547,7 +547,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
             /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
             /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
             /// is bad.
@@ -562,7 +562,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
             if (error.empty())
             {
                 error = fmt::format(
@@ -592,10 +592,10 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
         }
 
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-        .onSuccess([&]() { connection->getHandler().stopLoop(); })
+        .onSuccess([&]() { connection->getHandler().stopBlockingLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
             error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
                                 exchange_name, bridge_exchange, std::string(message));
             error_code = ErrorCodes::CANNOT_BIND_RABBITMQ_EXCHANGE;
@@ -604,10 +604,10 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
     {
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-        .onSuccess([&]() { connection->getHandler().stopLoop(); })
+        .onSuccess([&]() { connection->getHandler().stopBlockingLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
             if (error.empty())
             {
                 error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
@@ -625,11 +625,11 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
             {
                 ++bound_keys;
                 if (bound_keys == routing_keys.size())
-                    connection->getHandler().stopLoop();
+                    connection->getHandler().stopBlockingLoop();
             })
             .onError([&](const char * message)
             {
-                connection->getHandler().stopLoop();
+                connection->getHandler().stopBlockingLoop();
                 if (error.empty())
                 {
                     error = fmt::format("Unable to bind exchange {} to bridge exchange ({}). Reason: {}",
@@ -662,10 +662,10 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
         * fanout exchange it can be arbitrary
         */
         rabbit_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
-        .onSuccess([&] { connection->getHandler().stopLoop(); })
+        .onSuccess([&] { connection->getHandler().stopBlockingLoop(); })
         .onError([&](const char * message)
         {
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
             error = fmt::format("Failed to create queue binding for exchange {}. Reason: {}",
                                 exchange_name, std::string(message));
         });
@@ -673,7 +673,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 
     auto error_callback([&](const char * message)
     {
-        connection->getHandler().stopLoop();
+        connection->getHandler().stopBlockingLoop();
         /* This error is most likely a result of an attempt to declare queue with different settings if it was declared before. So for a
          * given queue name either deadletter_exchange parameter changed or queue_size changed, i.e. table was declared with different
          * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
@@ -754,11 +754,11 @@ void StorageRabbitMQ::unbindExchange()
             rabbit_channel->removeExchange(bridge_exchange)
             .onSuccess([&]()
             {
-                connection->getHandler().stopLoop();
+                connection->getHandler().stopBlockingLoop();
             })
             .onError([&](const char * message)
             {
-                connection->getHandler().stopLoop();
+                connection->getHandler().stopBlockingLoop();
                 error = fmt::format("Unable to remove exchange. Reason: {}", std::string(message));
             });
 
@@ -898,19 +898,26 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown(bool)
 {
-    shutdown_called = true;
+    /// Needed to make this method idempotent
+    if (shutdown_called.exchange(true))
+        return;
 
-    for (auto & consumer : consumers_ref)
-        consumer.lock()->stop();
-
-    LOG_TRACE(log, "Deactivating background tasks");
-
-    /// In case it has not yet been able to setup connection;
+    LOG_TRACE(log, "Deactivating init task");
     deactivateTask(init_task, true, false);
+
+    for (auto & consumer_weak : consumers_ref)
+    {
+        auto consumer = consumer_weak.lock();
+        if (!consumer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+        consumer->stop();
+    }
 
     /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
     /// then wait for background event loop to finish.
+    LOG_TRACE(log, "Deactivating streaming task");
     deactivateTask(streaming_task, true, false);
+    LOG_TRACE(log, "Deactivating looping task");
     deactivateTask(looping_task, true, true);
 
     LOG_TRACE(log, "Cleaning up RabbitMQ after table usage");
@@ -918,8 +925,13 @@ void StorageRabbitMQ::shutdown(bool)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        for (auto & consumer : consumers_ref)
-            consumer.lock()->closeConnections();
+        for (auto & consumer_weak : consumers_ref)
+        {
+            auto consumer = consumer_weak.lock();
+            if (!consumer)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RabbitMQ consumer has been unexpectedly destroyed");
+            consumer->closeConnections();
+        }
 
         if (drop_table)
             cleanupRabbitMQ();
@@ -930,6 +942,8 @@ void StorageRabbitMQ::shutdown(bool)
 
         for (size_t i = 0; i < num_created_consumers; ++i)
             popConsumer();
+
+        consumers_ref.clear();
     }
     catch (...)
     {
@@ -983,12 +997,12 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         .onSuccess([&](uint32_t num_messages)
         {
             LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
         })
         .onError([&](const char * message)
         {
             LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
-            connection->getHandler().stopLoop();
+            connection->getHandler().stopBlockingLoop();
         });
     }
     connection->getHandler().startBlockingLoop();

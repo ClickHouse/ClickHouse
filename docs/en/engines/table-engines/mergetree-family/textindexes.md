@@ -67,23 +67,7 @@ In these versions, no special settings need to be configured to use the text ind
 We strongly recommend using ClickHouse versions >= 26.2 for production use cases.
 
 :::note
-If you have upgraded (or were upgraded, e.g. ClickHouse Cloud) from a ClickHouse version older than 26.2, the presence of a [compatibility](../../../operations/settings/settings#compatibility) setting may still cause the index to be disabled, and/or text-index related performance optimizations to be deactivated.
-
-If query
-
-```sql
-SELECT value FROM system.settings WHERE name = 'compatibility';
-```
-
-returns a value smaller than `26.2` (e.g. `25.4`), you will need to set three additional settings to use the text index:
-
-```sql
-SET enable_full_text_index = true;
-SET query_plan_direct_read_from_text_index = true;
-SET use_skip_indexes_on_data_read = true;
-```
-
-Alternatively, you can increment the [compatibility](../../../operations/settings/settings#compatibility) setting to `26.2` or newer but this affects many settings and typically requires prior testing.
+Text indexes can be used with any ClickHouse version >= 26.2, regardless of the [compatibility](../../../operations/settings/settings#compatibility) setting.
 :::
 
 To create a text index use the following syntax:
@@ -170,7 +154,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `unicode_word` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens.
+- `unicode_word` splits strings into tokens using Unicode word boundary rules (similar to UAX #29). ASCII alphanumeric characters and underscores form tokens with connectors (`:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters become single-character tokens. Stop words (configurable, defaults to common CJK punctuation) are skipped. An optional parameter `stop_words` can be specified as an array of strings, for example, `tokenizer = unicode_word(['，', '。'])`.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
