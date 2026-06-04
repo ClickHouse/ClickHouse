@@ -20,7 +20,7 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
   */
-class FunctionFinalizeAggregation final : public IFunction
+class FunctionFinalizeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "finalizeAggregation";
