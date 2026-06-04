@@ -57,7 +57,7 @@ Block FilterTransform::transformHeader(
     auto filter_type = result.getByName(filter_column_name).type;
     if (!canUseType(filter_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-            "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+            "Illegal type {} of column {} for filter. Must be native integer or float type",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
