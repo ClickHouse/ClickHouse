@@ -192,10 +192,13 @@ private:
         const ProjectionNames & parameters_projection_names,
         IdentifierResolveScope & scope);
 
-    ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
-                                        const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
-
     QueryTreeNodePtr convertTupleToArray(
+        const QueryTreeNodes & tuple_args,
+        const QueryTreeNodePtr & in_first_argument,
+        IdentifierResolveScope & scope,
+        bool expand_single_tuple_value);
+
+    QueryTreeNodes getArrayElementsForInTupleArguments(
         const QueryTreeNodes & tuple_args,
         const QueryTreeNodePtr & in_first_argument,
         IdentifierResolveScope & scope,

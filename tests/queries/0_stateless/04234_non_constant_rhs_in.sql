@@ -23,6 +23,8 @@ SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
 SETTINGS transform_null_in = 1;
 
+SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+
 SET enable_analyzer = 0;
 
 SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
@@ -44,3 +46,5 @@ FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
 SETTINGS transform_null_in = 1;
+
+SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
