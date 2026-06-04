@@ -47,8 +47,25 @@ void ArrowIPCBlockInputFormat::prepareReader()
     /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
     message_reader.skipBody(msg.body_length);
 
-    decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings);
+    collectDictionaryFields(arrow_schema->fields);
+
+    decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
     prepared = true;
+}
+
+void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields)
+{
+    for (const auto & field : fields)
+    {
+        if (field.dictionary)
+        {
+            /// The dictionary batch carries the plain value column: same type, but not dictionary-encoded.
+            ArrowIPC::ArrowField value_field = field;
+            value_field.dictionary.reset();
+            dictionary_value_fields[field.dictionary->id] = std::move(value_field);
+        }
+        collectDictionaryFields(field.type.children);
+    }
 }
 
 Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows)
@@ -147,8 +164,19 @@ Chunk ArrowIPCBlockInputFormat::read()
                 return chunk;
             }
             case ArrowIPC::flatbuf::MessageHeader_DictionaryBatch:
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED, "Native Arrow IPC reader does not support dictionaries yet");
+            {
+                const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+                const int64_t id = dict_batch->id();
+                auto field_it = dictionary_value_fields.find(id);
+                if (field_it == dictionary_value_fields.end())
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
+
+                message_reader.readBody(msg.body_length, body_buffer);
+                auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+                dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
+                continue;
+            }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
                 /// A redundant schema message; it carries no body. Ignore and continue.
                 message_reader.skipBody(msg.body_length);

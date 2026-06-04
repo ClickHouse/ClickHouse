@@ -4,6 +4,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/ReadBuffer.h>
 
 namespace DB
@@ -48,7 +49,12 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             make_nullable = true;
         else
             make_nullable = field.nullable;
-        result.emplace_back(field.name, ArrowIPC::fieldToCHType(field, format_settings, make_nullable));
+
+        DataTypePtr type = ArrowIPC::fieldToCHType(field, format_settings, make_nullable);
+        /// A dictionary-encoded Arrow column is inferred as LowCardinality of its value type.
+        if (field.dictionary && type->canBeInsideLowCardinality())
+            type = std::make_shared<DataTypeLowCardinality>(type);
+        result.emplace_back(field.name, type);
     }
     return result;
 }

@@ -12,6 +12,9 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 
 namespace DB
@@ -331,13 +334,42 @@ DataTypePtr fieldToCHType(const ArrowField & field, [[maybe_unused]] const Forma
         case TypeKind::FixedSizeBinary:
             result = std::make_shared<DataTypeFixedString>(type.byte_width);
             break;
-        case TypeKind::Null:
-        case TypeKind::Interval:
         case TypeKind::List:
         case TypeKind::LargeList:
         case TypeKind::FixedSizeList:
+        {
+            const ArrowField & element = type.children.at(0);
+            result = std::make_shared<DataTypeArray>(fieldToCHType(element, settings, element.nullable));
+            break;
+        }
         case TypeKind::Struct:
+        {
+            DataTypes elems;
+            Names names;
+            elems.reserve(type.children.size());
+            names.reserve(type.children.size());
+            for (const ArrowField & child : type.children)
+            {
+                elems.push_back(fieldToCHType(child, settings, child.nullable));
+                names.push_back(child.name);
+            }
+            result = std::make_shared<DataTypeTuple>(elems, names);
+            break;
+        }
         case TypeKind::Map:
+        {
+            /// Arrow Map is List<Struct<key, value>>: children[0] is the entries struct.
+            const ArrowField & entries = type.children.at(0);
+            const ArrowField & key = entries.type.children.at(0);
+            const ArrowField & value = entries.type.children.at(1);
+            /// ClickHouse map keys are never nullable.
+            result = std::make_shared<DataTypeMap>(
+                fieldToCHType(key, settings, /*make_nullable=*/false),
+                fieldToCHType(value, settings, value.nullable));
+            break;
+        }
+        case TypeKind::Null:
+        case TypeKind::Interval:
         case TypeKind::Union:
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

@@ -13,6 +13,8 @@
 
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -44,12 +46,16 @@ private:
     void onCancel() noexcept override { is_stopped = 1; }
 
     void prepareReader();
+    void collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields);
     Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
 
     const bool stream;
 
     ArrowIPC::MessageReader message_reader;
     std::optional<ArrowIPC::ArrowSchema> arrow_schema;
+    ArrowIPC::DictionaryRegistry dictionaries;
+    /// For each Arrow dictionary id, the field describing its value type (used to decode dictionary batches).
+    std::unordered_map<int64_t, ArrowIPC::ArrowField> dictionary_value_fields;
     std::unique_ptr<ArrowIPC::RecordBatchDecoder> decoder;
     bool prepared = false;
     PODArray<char> body_buffer;
