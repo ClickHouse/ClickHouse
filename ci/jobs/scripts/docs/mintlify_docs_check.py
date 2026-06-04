@@ -10,9 +10,12 @@ Steps:
   1. Pull the docs image (``clickhouse/docs-builder`` by default).
   2. Shallow + sparse clone the aggregator docs repo (``docs`` and the docs CI
      scripts at ``ci/jobs/scripts/docs``).
-  3. Overlay one or more local folders onto it (e.g. drop the locally edited
-     Python client docs over ``integrations/language-clients/python``).
-  4. Run the checks inside the image against the overlaid docs.
+  3. Replace one or more folders in it with local folders (e.g. drop the
+     locally edited Python client docs over
+     ``integrations/language-clients/python``). The destination is wiped first,
+     so deletions and renames in the local source are reflected -- the docs sync
+     is one-way, so the checks see exactly what the next sync would produce.
+  4. Run the checks inside the image against the resulting docs.
 
 The check definitions live in ``DEFAULT_CHECKS`` so they are declared once and
 shared: this driver runs them via ``docker run``, while the Praktika job
@@ -61,15 +64,19 @@ def clone_aggregator(repo, ref, sparse, dest):
     run(["git", "-C", dest, "checkout", "FETCH_HEAD"], check=True)
 
 
-def overlay(src, dest, mirror):
+def replace(src, dest):
     src = os.path.abspath(src)
     if not os.path.isdir(src):
-        raise FileNotFoundError(f"Overlay source is not a directory: {src}")
-    print(f"Overlay {src} -> {dest} ({'mirror' if mirror else 'merge'})", flush=True)
-    if mirror and os.path.exists(dest):
+        raise FileNotFoundError(f"Replace source is not a directory: {src}")
+    print(f"Replace {dest} with {src}", flush=True)
+    # Wipe dest first: the docs sync is one-way (the consuming repo is the source
+    # of truth), so the checks must see exactly what the next sync produces. A
+    # merge would leave stale files from the cloned aggregator behind, hiding
+    # deletions and renames in the source repo.
+    if os.path.exists(dest):
         shutil.rmtree(dest)
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
-    shutil.copytree(src, dest, dirs_exist_ok=True)
+    shutil.copytree(src, dest)
 
 
 def check_in_image(image, mount_root, workdir, name, command):
@@ -96,9 +103,9 @@ def main(argv=None):
                         "plus ci/jobs/scripts/docs).")
     p.add_argument("--docs-root", default="docs",
                    help="Dir containing docs.json within the clone (default: docs).")
-    p.add_argument("--overlay", action="append", default=[], metavar="SRC:DEST[:mirror]",
-                   help="Overlay a local folder onto DEST (relative to docs root); "
-                        "repeatable.")
+    p.add_argument("--replace", action="append", default=[], metavar="SRC:DEST",
+                   help="Replace DEST (relative to docs root) with the local folder "
+                        "SRC, wiping DEST first; repeatable.")
     p.add_argument("--workdir", help="Where to clone (default: a temp dir).")
     args = p.parse_args(argv)
 
@@ -114,12 +121,11 @@ def main(argv=None):
     if not os.path.isfile(os.path.join(docs_root, "docs.json")):
         raise FileNotFoundError(f"No docs.json in docs root: {docs_root}")
 
-    for spec in args.overlay:
+    for spec in args.replace:
         parts = spec.split(":")
-        if len(parts) < 2:
-            raise ValueError(f"Invalid --overlay '{spec}'. Expected SRC:DEST[:mirror].")
-        mirror = len(parts) >= 3 and parts[2].lower() in ("1", "true", "mirror", "yes")
-        overlay(parts[0], os.path.join(docs_root, parts[1]), mirror)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid --replace '{spec}'. Expected SRC:DEST.")
+        replace(parts[0], os.path.join(docs_root, parts[1]))
 
     results = [(name, check_in_image(args.image, clone_dir, args.docs_root, name, command))
                for name, command in DEFAULT_CHECKS]
