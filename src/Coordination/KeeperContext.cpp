@@ -46,6 +46,7 @@ extern const int ROCKSDB_ERROR;
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
 }
 
 struct CachedCoordinationSettings
@@ -602,6 +603,11 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
                 "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
                 "Bump write_snapshot_version after every replica has been upgraded.",
                 static_cast<int>(SnapshotVersion::V8), write_version);
+
+        const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
+        if (ttl_gc_period_ms <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
     }
 
     feature_flags.logFlags(getLogger("KeeperContext"));

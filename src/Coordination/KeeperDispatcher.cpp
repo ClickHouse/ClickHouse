@@ -183,13 +183,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     const auto & keeper_coordination_settings = keeper_context->getCoordinationSettings();
     size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
-    {
-        auto ttl_gc_period_ms = keeper_coordination_settings[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
-        if (ttl_gc_period_ms <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
         ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
-    }
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })

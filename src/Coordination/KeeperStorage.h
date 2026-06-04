@@ -122,9 +122,9 @@ private:
     struct
     {
         int64_t is_ephemeral : 1;
-        int64_t is_ttl : 1;
         int64_t ctime : 62;
-    } is_ephemeral_and_ctime{false, false, 0};
+        int64_t is_ttl : 1;
+    } is_ephemeral_and_ctime{false, 0, false};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter
@@ -522,7 +522,7 @@ public:
 
 #if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 136);
+    static_assert(sizeof(KeeperMemNode) == 104);
     static_assert(
         sizeof(ListNode<Node>) <= 160,
         "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
