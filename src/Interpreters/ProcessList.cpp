@@ -41,6 +41,8 @@ namespace Setting
 {
     extern const SettingsUInt64 max_concurrent_queries_for_all_users;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
+    extern const SettingsUInt64 max_concurrent_queries_for_normalized_query_hash;
+    extern const SettingsUInt64 queue_max_wait_ms_for_normalized_query_hash;
     extern const SettingsSeconds max_execution_time;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
@@ -253,6 +255,34 @@ ProcessList::EntryPtr ProcessList::insert(
             }
         }
 
+        /// Limit concurrent queries with the same normalized query hash
+        if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_normalized_query_hash])
+        {
+            UInt64 max_for_hash = settings[Setting::max_concurrent_queries_for_normalized_query_hash];
+            UInt64 wait_ms = settings[Setting::queue_max_wait_ms_for_normalized_query_hash];
+            auto it = queries_per_normalized_hash.find(normalized_query_hash);
+            size_t current_count = (it != queries_per_normalized_hash.end()) ? it->second : 0;
+
+            if (current_count >= max_for_hash)
+            {
+                if (wait_ms)
+                    LOG_WARNING(getLogger("ProcessList"),
+                        "Too many simultaneous queries with the same structure, will wait {} ms.", wait_ms);
+                if (!wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(wait_ms),
+                    [&]
+                    {
+                        auto it2 = queries_per_normalized_hash.find(normalized_query_hash);
+                        return it2 == queries_per_normalized_hash.end() || it2->second < max_for_hash;
+                    }))
+                    throw Exception(
+                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                        "Too many simultaneous queries with the same query structure. "
+                        "Current: {}, maximum: {}",
+                        current_count,
+                        max_for_hash);
+            }
+        }
+
         /// Check other users running query with our query_id
         if (auto query_user = queries_to_user.find(client_info.current_query_id); query_user != queries_to_user.end() && query_user->second != client_info.current_user)
         {
@@ -345,6 +375,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             ++non_internal_processes;
             increaseQueryKindAmount(query_kind);
+            ++queries_per_normalized_hash[normalized_query_hash];
         }
 
         bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
@@ -447,6 +478,14 @@ ProcessListEntry::~ProcessListEntry()
     {
         --parent.non_internal_processes;
         parent.decreaseQueryKindAmount(query_kind);
+        auto hash_it = parent.queries_per_normalized_hash.find((*it)->normalized_query_hash);
+        if (hash_it != parent.queries_per_normalized_hash.end())
+        {
+            if (hash_it->second <= 1)
+                parent.queries_per_normalized_hash.erase(hash_it);
+            else
+                --hash_it->second;
+        }
     }
 
     if (!found)

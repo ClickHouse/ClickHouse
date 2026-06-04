@@ -2102,7 +2102,20 @@ Possible values:
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-\
+    DECLARE(UInt64, max_concurrent_queries_for_normalized_query_hash, 0, R"(
+The maximum number of simultaneously processed queries with the same normalized query hash (i.e. structurally identical queries).
+
+Possible values:
+- Positive integer.
+- 0 — No limit.
+)", 0) \
+    DECLARE(UInt64, queue_max_wait_ms_for_normalized_query_hash, 0, R"(
+Wait time in milliseconds for a query to start executing when max_concurrent_queries_for_normalized_query_hash limit is reached.
+
+Possible values:
+- Positive integer.
+- 0 — Throw immediately without waiting.
+)", 0) \
     DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
 Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
 The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
