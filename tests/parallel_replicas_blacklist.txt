@@ -175,3 +175,4 @@
 
     investigate failed tests
 03707_statistics_cache
+04304_prewhere_statistics_column_grouping

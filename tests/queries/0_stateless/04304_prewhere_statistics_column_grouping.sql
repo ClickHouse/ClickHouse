@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject 0, which would skip grouping/reordering and produce no PREWHERE output
 
