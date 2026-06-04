@@ -77,7 +77,7 @@ struct ArenaKeyHolder
     std::string_view key;
     Arena & pool;
     /// When key is not held by any external instance, then it is held by this unique_ptr.
-    std::unique_ptr<char[]> holder;
+    std::unique_ptr<char[]> holder{};
 
     ArenaKeyHolder(const std::string_view key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
         : key(key_)

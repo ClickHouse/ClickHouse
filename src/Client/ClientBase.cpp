@@ -504,24 +504,6 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
-    if (is_interactive)
-    {
-        WriteBufferFromOwnString res_buf;
-        IAST::FormatSettings format_settings(/* one_line */ false);
-        format_settings.show_secrets = true;
-        format_settings.print_pretty_type_names = true;
-        res->format(res_buf, format_settings);
-        res_buf.finalize();
-
-        output_stream << std::endl;
-#if USE_REPLXX
-        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
-#else
-        output_stream << res_buf.str();
-#endif
-        output_stream << std::endl << std::endl;
-    }
-
     return res;
 }
 
@@ -983,7 +965,7 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
-    struct stat file_stat;
+    struct stat file_stat{};
     return fstat(fd, &file_stat) == 0
         && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
 }
@@ -1477,6 +1459,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 /// Also checks if query execution should be cancelled.
 void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel)
 {
+    /// The connection may already be torn down — e.g. `sendQuery` failed to
+    /// write the query to a server that died mid-transfer and called
+    /// `disconnect()`, after which `processOrdinaryQuery` calls us in a
+    /// best-effort attempt to drain remaining data. With the receive side
+    /// gone there is nothing to poll for; bail out so we don't call
+    /// `connection->poll()` (and friends) on a disconnected connection.
+    if (!connection->isConnected())
+        return;
+
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
     constexpr size_t default_poll_interval = 1000000; /// in microseconds
@@ -2426,10 +2417,14 @@ void ClientBase::processParsedSingleQuery(
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
 
-    if (is_interactive)
-    {
+    /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
+    /// In batch mode we only do this when we are going to print the query_id, so that the printed
+    /// value matches the one actually used for execution (otherwise the server generates its own).
+    if (is_interactive || (echo_query_id && query_id.empty()))
         client_context->setCurrentQueryId("");
-        // Generate a new query_id
+
+    if (echo_query_id)
+    {
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, *std_out);
@@ -2763,6 +2758,60 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 }
 
 
+void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
+{
+    const auto & config = getClientConfiguration();
+
+    /// By default, echoing and formatting are enabled in interactive mode and disabled in batch mode.
+    /// In `clickhouse-local`, `--verbose` enables echoing as well (historical behavior, opt-in here).
+    const bool echo_default = is_interactive || (verbose_implies_echo && config.getBool("verbose", false));
+    echo_queries = config.getBool("echo", echo_default);
+    echo_query_formatted = config.getBool("echo-formatted", is_interactive);
+    echo_query_id = config.getBool("echo-query-id", is_interactive);
+    highlight_queries = config.getBool("highlight", true);
+}
+
+
+void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_query)
+{
+    String text;
+    if (echo_query_formatted && parsed_query)
+    {
+        WriteBufferFromOwnString res_buf;
+        IAST::FormatSettings format_settings(/* one_line */ false);
+        format_settings.show_secrets = true;
+        format_settings.print_pretty_type_names = true;
+        parsed_query->format(res_buf, format_settings);
+        res_buf.finalize();
+        text = res_buf.str();
+    }
+    else
+    {
+        text = String{full_query};
+    }
+
+#if USE_REPLXX
+    /// Highlighting produces ANSI escape sequences, so it only makes sense when writing to a terminal.
+    if (highlight_queries && stdout_is_a_tty)
+        text = highlighted(text, *client_context, rainbow_parentheses);
+#endif
+
+    if (echo_query_formatted)
+    {
+        /// Surround the formatted query with blank lines, as in interactive mode.
+        writeChar('\n', *std_out);
+        writeString(text, *std_out);
+        writeString("\n\n", *std_out);
+    }
+    else
+    {
+        writeString(text, *std_out);
+        writeChar('\n', *std_out);
+    }
+    std_out->next();
+}
+
+
 bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
@@ -2790,7 +2839,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end;
+    const char * this_query_end = nullptr;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
     const char * prev_query_begin = all_queries_text.data();
@@ -2917,11 +2966,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool is_async_insert_with_inlined_data = false;
 
                 if (echo_query)
-                {
-                    writeString(full_query, *std_out);
-                    writeChar('\n', *std_out);
-                    std_out->next();
-                }
+                    echoQuery(full_query, parsed_query);
 
                 try
                 {
@@ -3480,7 +3525,9 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
-        ("echo", "In batch mode, print query before execution")
+        ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo-query-id", po::value<bool>()->implicit_value(true), "Print the query_id before execution. Enabled by default in interactive mode, disabled in batch mode.")
 
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
@@ -3489,7 +3536,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
-        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
+        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -3611,7 +3658,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("enable-progress-table-toggle"))
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.contains("echo"))
-        getClientConfiguration().setBool("echo", true);
+        getClientConfiguration().setBool("echo", options["echo"].as<bool>());
+    if (options.contains("echo-formatted"))
+        getClientConfiguration().setBool("echo-formatted", options["echo-formatted"].as<bool>());
+    if (options.contains("echo-query-id"))
+        getClientConfiguration().setBool("echo-query-id", options["echo-query-id"].as<bool>());
     if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
@@ -3962,7 +4013,7 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
 void ClientBase::runNonInteractive()
 {
-    if (delayed_interactive)
+    if (delayed_interactive || echo_query_id)
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
