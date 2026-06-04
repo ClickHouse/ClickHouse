@@ -109,8 +109,8 @@ private:
         String model;
         String api_key;
         String api_version;
-        float temperature;
-        UInt64 max_tokens;
+        float temperature = 0;
+        UInt64 max_tokens = 0;
     };
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;
