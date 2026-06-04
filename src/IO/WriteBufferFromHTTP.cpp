@@ -100,7 +100,24 @@ void WriteBufferFromHTTP::finalizeImpl()
                 "but the request body was already streamed and cannot be replayed, so the write "
                 "may not have been committed. Configure the endpoint to respond with 301, 302, or 303 "
                 "to acknowledge the write, or point the client at the final URL directly.",
-                initial_uri.toString(),
+                initial_uri.getHost(),
+                static_cast<int>(status),
+                response.getReason());
+        }
+
+        /// A genuine redirect acknowledgment carries a Location header pointing at the
+        /// canonical/result URL. A bare 301/302/303 without a Location header is not a
+        /// real redirect (for example, a proxy, auth, or error page that happens to use
+        /// a 3xx status); treating it as success would silently report a committed write
+        /// that may never have happened. Require a non-empty Location before accepting.
+        if (response.get("Location", "").empty())
+        {
+            throw Exception(
+                ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                "POST/PUT to {} returned HTTP {} ({}) without a Location header. "
+                "A redirect status is only accepted as a write acknowledgment when it carries "
+                "a Location header pointing at the canonical or result URL.",
+                initial_uri.getHost(),
                 static_cast<int>(status),
                 response.getReason());
         }

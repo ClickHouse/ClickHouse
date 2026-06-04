@@ -13,6 +13,9 @@ REDIRECT_PORT = 8081
 TARGET_PORT = 8001
 REDIRECT_307_PORT = 8082
 REDIRECT_308_PORT = 8083
+REDIRECT_301_PORT = 8084
+REDIRECT_303_PORT = 8085
+REDIRECT_NO_LOCATION_PORT = 8086
 
 
 def _start_server(container_id, file_name, args):
@@ -57,11 +60,22 @@ def started_cluster():
             "post_redirect_server.py",
             ["localhost", TARGET_PORT, "localhost", TARGET_PORT],
         )
-        # Redirect server which accepts the body and responds with a 302.
+        # Redirect servers which accept the body and respond with the
+        # body-consuming statuses 301/302/303 (all accepted with the setting).
         _start_server(
             container_id,
             "post_redirect_server.py",
-            ["localhost", REDIRECT_PORT, "localhost", TARGET_PORT],
+            ["localhost", REDIRECT_301_PORT, "localhost", TARGET_PORT, 301],
+        )
+        _start_server(
+            container_id,
+            "post_redirect_server.py",
+            ["localhost", REDIRECT_PORT, "localhost", TARGET_PORT, 302],
+        )
+        _start_server(
+            container_id,
+            "post_redirect_server.py",
+            ["localhost", REDIRECT_303_PORT, "localhost", TARGET_PORT, 303],
         )
         # Redirect servers which respond with the method-preserving 307 and 308.
         _start_server(
@@ -73,6 +87,12 @@ def started_cluster():
             container_id,
             "post_redirect_server.py",
             ["localhost", REDIRECT_308_PORT, "localhost", TARGET_PORT, 308],
+        )
+        # Redirect server which responds with a 302 but omits the Location header.
+        _start_server(
+            container_id,
+            "post_redirect_server.py",
+            ["localhost", REDIRECT_NO_LOCATION_PORT, "localhost", TARGET_PORT, 302, "no-location"],
         )
         yield cluster
     finally:
@@ -90,13 +110,38 @@ def test_post_redirect_rejected_by_default(started_cluster):
     assert "302" in str(exc_info.value) or "Moved Temporarily" in str(exc_info.value)
 
 
-def test_post_redirect_accepted_with_setting(started_cluster):
+@pytest.mark.parametrize(
+    "status, port",
+    [
+        pytest.param(301, REDIRECT_301_PORT, id="301"),
+        pytest.param(302, REDIRECT_PORT, id="302"),
+        pytest.param(303, REDIRECT_303_PORT, id="303"),
+    ],
+)
+def test_post_redirect_accepted_with_setting(started_cluster, status, port):
+    # 301/302/303 are body-consuming redirects: the server received the streamed
+    # body and replies with a Location pointing at the canonical/result URL.
+    # With the setting enabled, the write must be reported as successful.
     query = (
         f"INSERT INTO TABLE FUNCTION "
-        f"url('http://localhost:{REDIRECT_PORT}/insert', JSONEachRow, 'a UInt64') "
+        f"url('http://localhost:{port}/insert', JSONEachRow, 'a UInt64') "
         f"SELECT 1 SETTINGS http_allow_redirects_on_post = 1"
     )
     server.query(query)
+
+
+def test_post_redirect_without_location_rejected_with_setting(started_cluster):
+    # A 3xx response without a Location header is not a real redirect acknowledgment
+    # (it could be a proxy/auth/error page), so it must not be accepted as a
+    # committed write even when http_allow_redirects_on_post = 1.
+    query = (
+        f"INSERT INTO TABLE FUNCTION "
+        f"url('http://localhost:{REDIRECT_NO_LOCATION_PORT}/insert', JSONEachRow, 'a UInt64') "
+        f"SELECT 1 SETTINGS http_allow_redirects_on_post = 1"
+    )
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        server.query(query)
+    assert "without a Location header" in str(exc_info.value)
 
 
 @pytest.mark.parametrize(

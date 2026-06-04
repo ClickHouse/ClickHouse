@@ -4,6 +4,7 @@ import sys
 REDIRECT_HOST = ""
 REDIRECT_PORT = 0
 REDIRECT_STATUS = 302
+SEND_LOCATION = True
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -36,10 +37,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.rfile.read(size)
                 self.rfile.readline()
 
-        global REDIRECT_HOST, REDIRECT_PORT, REDIRECT_STATUS
+        global REDIRECT_HOST, REDIRECT_PORT, REDIRECT_STATUS, SEND_LOCATION
         self.send_response(REDIRECT_STATUS)
-        target = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{self.path}"
-        self.send_header("Location", target)
+        if SEND_LOCATION:
+            target = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{self.path}"
+            self.send_header("Location", target)
         self.end_headers()
 
     def do_POST(self):
@@ -56,6 +58,8 @@ if __name__ == "__main__":
     REDIRECT_PORT = int(sys.argv[4])
     if len(sys.argv) > 5:
         REDIRECT_STATUS = int(sys.argv[5])
+    if len(sys.argv) > 6 and sys.argv[6] == "no-location":
+        SEND_LOCATION = False
     httpd = http.server.ThreadingHTTPServer((host, port), RequestHandler)
     try:
         httpd.serve_forever()
