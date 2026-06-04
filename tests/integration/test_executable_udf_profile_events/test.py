@@ -43,6 +43,7 @@ def started_cluster():
             "udf_cpu.py",
             "udf_mem.py",
             "udf_syscall.py",
+            "udf_linger.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -193,19 +194,18 @@ def test_pool_wait_is_zero_on_executable_path(started_cluster):
     assert invocations >= 1, f"UDF did not run (Invocations={invocations}); PoolWait==0 is meaningless"
 
 
-def test_cpu_captured_when_check_exit_code_disabled(started_cluster):
+def test_check_exit_code_false_does_not_hang(started_cluster):
     _skip_msan()
-    qid = "exec-cpu-noexitcheck-1"
-    # With check_exit_code=false the source skips prepare()'s blocking wait, so the
-    # child is reaped in ShellCommandSource::cleanup. Only a *blocking* reap there
-    # captures wait4 rusage; a non-blocking reap would miss the not-yet-zombie child
-    # and report zero CPU. This is the one path that exercises that blocking reap, so
-    # without it UserTimeMicroseconds collapses to 0.
-    _run(
-        "SELECT sum(test_udf_cpu_no_exit_check(number)) FROM numbers(2000)",
-        qid,
-    )
-    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
-    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a check_exit_code=false UDF, got {cpu}"
-    invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
-    assert invocations >= 1, f"UDF did not run (Invocations={invocations}); CPU>0 is meaningless"
+    import time
+    qid = "exec-noexit-nohang-1"
+    # The UDF closes stdout (pipeline finishes) then sleeps 120s. check_exit_code=false
+    # means cleanup must NOT block on the child; ~ShellCommand terminates it on the
+    # bounded command_termination_timeout (3s). A regression to a blocking reap would
+    # make this query take ~120s. `sum` forces UDF evaluation (count() would prune it).
+    start = time.time()
+    result = _run("SELECT sum(test_udf_linger_no_exit_check(number)) FROM numbers(8)", qid)
+    elapsed = time.time() - start
+    assert result.strip() == "28", f"Unexpected UDF result: {result!r}"
+    assert elapsed < 30, f"Query took {elapsed:.1f}s — cleanup blocked on the lingering child (unbounded-wait regression)"
+
+
