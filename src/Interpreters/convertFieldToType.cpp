@@ -59,7 +59,7 @@ namespace
 template <typename From, typename To>
 Field convertNumericTypeImpl(const Field & from)
 {
-    To result;
+    To result{};
     if (!accurate::convertNumeric(from.safeGet<From>(), result))
         return {};
     return result;
@@ -396,7 +396,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
             else if (scale_from < scale_to)
             {
-                Int64 result;
+                Int64 result = 0;
                 if (common::mulOverflow(value, scale_multiplier_diff.value, result))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
                         src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
