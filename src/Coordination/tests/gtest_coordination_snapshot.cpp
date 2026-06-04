@@ -947,8 +947,8 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotTTLRoundTrip)
 
     auto node_it = restored->container.find("/ttl_node");
     ASSERT_NE(node_it, restored->container.end());
-    ASSERT_TRUE(node_it->value.destroy_time.has_value());
-    EXPECT_EQ(*node_it->value.destroy_time, ttl_ms);
+    ASSERT_TRUE(node_it->value.stats.isTTL());
+    EXPECT_EQ(node_it->value.stats.destroyTime(), ttl_ms);
 
     EXPECT_TRUE(restored->collectExpiredTTLPaths(/*now_ms=*/0, 1000000).empty());
     auto expired = restored->collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1, 1000000);

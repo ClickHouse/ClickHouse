@@ -305,12 +305,9 @@ uint64_t calculateDigest(std::string_view path, const Node & node)
     hash.update(node.numChildren());
     hash.update(node.stats.pzxid);
 
-    hash.update(node.destroy_time.has_value());
-    if (node.destroy_time.has_value())
-        hash.update(*node.destroy_time);
-    hash.update(node.ttl.has_value());
-    if (node.ttl.has_value())
-        hash.update(*node.ttl);
+    hash.update(node.stats.isTTL());
+    if (node.stats.isTTL())
+        hash.update(node.stats.ttl());
 
     auto digest = hash.get64();
 
@@ -370,12 +367,6 @@ String KeeperRocksNode::getEncodedString()
     const KeeperRocksNodeInfo & node_info = *this;
     writePODBinary(node_info, buffer);
     writeBinary(getData(), buffer);
-    writeBinary(destroy_time.has_value(), buffer);
-    if (destroy_time.has_value())
-        writeBinary(*destroy_time, buffer);
-    writeBinary(ttl.has_value(), buffer);
-    if (ttl.has_value())
-        writeBinary(*ttl, buffer);
     return buffer.str();
 }
 
@@ -389,25 +380,6 @@ void KeeperRocksNode::decodeFromString(const String &buffer_str)
     {
         data = std::unique_ptr<char[]>(new char[stats.data_size]);
         buffer.readStrict(data.get(), stats.data_size);
-    }
-    if (!buffer.eof())
-    {
-        bool has_destroy_time = false;
-        readBinary(has_destroy_time, buffer);
-        if (has_destroy_time)
-        {
-            int64_t v = 0;
-            readBinary(v, buffer);
-            destroy_time = v;
-        }
-        bool has_ttl = false;
-        readBinary(has_ttl, buffer);
-        if (has_ttl)
-        {
-            int64_t v = 0;
-            readBinary(v, buffer);
-            ttl = v;
-        }
     }
 }
 
@@ -434,8 +406,6 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
     stats = other.stats;
     acl_id = other.acl_id;
     num_children = other.num_children;
-    destroy_time = other.destroy_time;
-    ttl = other.ttl;
     cached_digest = other.cached_digest;
 
     if (stats.data_size != 0)
@@ -461,8 +431,6 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
     stats = other.stats;
     acl_id = other.acl_id;
     num_children = other.num_children;
-    destroy_time = std::move(other.destroy_time);
-    ttl = std::move(other.ttl);
     cached_digest = other.cached_digest;
 
     data = std::move(other.data);
@@ -556,8 +524,6 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     }
 
     cached_digest = other.cached_digest;
-    destroy_time = other.destroy_time;
-    ttl = other.ttl;
 }
 
 KeeperMemNode KeeperMemNode::copyFromSnapshotNode()
@@ -574,7 +540,6 @@ struct CreateNodeDelta
     Coordination::Stat stat;
     Coordination::ACLs acls;
     String data;
-    std::optional<int64_t> destroy_time;
     std::optional<int64_t> ttl;
 };
 
@@ -584,8 +549,6 @@ struct RemoveNodeDelta
     NodeStats stat;
     Coordination::ACLs acls;
     String data;
-    std::optional<int64_t> destroy_time;
-    std::optional<int64_t> ttl;
 };
 
 struct UpdateNodeStatDelta
@@ -596,7 +559,6 @@ struct UpdateNodeStatDelta
         , new_stats(node.stats)
         , old_num_children(node.num_children)
         , new_num_children(node.num_children)
-        , old_destroy_time(node.destroy_time)
     {}
 
     NodeStats old_stats;
@@ -604,11 +566,6 @@ struct UpdateNodeStatDelta
     int32_t old_num_children;
     int32_t new_num_children;
     int32_t version{-1};
-    /// Snapshot of destroy_time at delta construction so a rollback can restore
-    /// it. Without this a failed Multi after a Set would leak the refreshed TTL
-    /// deadline into uncommitted_state.
-    std::optional<int64_t> old_destroy_time;
-    std::optional<int64_t> new_destroy_time;
 };
 
 struct UpdateNodeDataDelta
@@ -883,8 +840,8 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node = std::make_shared<Node>();
                 node->copyStats(operation.stat);
                 node->setData(operation.data);
-                node->destroy_time = create_operation.destroy_time;
-                node->ttl = create_operation.ttl;
+                if (create_operation.ttl.has_value())
+                    node->stats.setTTL(*create_operation.ttl);
                 acls = operation.acls;
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
@@ -904,8 +861,6 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node->invalidateDigestCache();
                 node->stats = operation.new_stats;
                 node->num_children = operation.new_num_children;
-                if (operation.new_destroy_time.has_value())
-                    node->destroy_time = operation.new_destroy_time;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
@@ -994,8 +949,6 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
                 node = std::make_shared<Node>();
                 node->stats = operation.stat;
                 node->setData(operation.data);
-                node->destroy_time = operation.destroy_time;
-                node->ttl = operation.ttl;
                 acls = operation.acls;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
@@ -1004,8 +957,6 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
                 node->invalidateDigestCache();
                 node->stats = operation.old_stats;
                 node->num_children = operation.old_num_children;
-                /// Pair with apply, which may have refreshed destroy_time.
-                node->destroy_time = operation.old_destroy_time;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
@@ -1369,7 +1320,7 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
             {
                 if constexpr (std::same_as<DeltaType, CreateNodeDelta>)
                 {
-                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.destroy_time, operation.ttl))
+                    if (!createNode(path, operation.data, operation.stat, operation.acls, digest_on_commit, operation.ttl))
                         onStorageInconsistency("Failed to create a node");
 
                     return Coordination::Error::ZOK;
@@ -1395,8 +1346,6 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                         {
                             node.stats = operation.new_stats;
                             node.num_children = operation.new_num_children;
-                            if (operation.new_destroy_time.has_value())
-                                node.destroy_time = operation.new_destroy_time;
                         }
                         else
                             node.setData(std::move(operation.new_data));
@@ -1479,7 +1428,6 @@ bool KeeperStorage<Container>::createNode(
     const Coordination::Stat & stat,
     Coordination::ACLs node_acls,
     bool update_digest,
-    std::optional<int64_t> destroy_time,
     std::optional<int64_t> ttl)
 {
     auto parent_path = Coordination::parentNodePath(path);
@@ -1502,13 +1450,11 @@ bool KeeperStorage<Container>::createNode(
     created_node.acl_id = acl_id;
     created_node.copyStats(stat);
     created_node.setData(data);
-    if (destroy_time)
-        created_node.destroy_time = destroy_time;
     if (ttl)
-        created_node.ttl = ttl;
-
-    if (destroy_time)
+    {
+        created_node.stats.setTTL(*ttl);
         ttl_paths.insert(path);
+    }
 
     if constexpr (use_rocksdb)
     {
@@ -1818,7 +1764,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     if (parent_node->stats.isEphemeral())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOCHILDRENFOREPHEMERALS}};
 
-    if (parent_node->ttl.has_value())
+    if (parent_node->stats.isTTL())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     std::string path_created = zk_request.path;
@@ -1903,14 +1849,10 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
-    std::optional<int64_t> destroy_time = std::nullopt;
-    if (zk_request.include_ttl)
-        destroy_time = time + zk_request.ttl;
-
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
-        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, destroy_time, zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt});
+        CreateNodeDelta{stat, std::move(node_acls), zk_request.data, zk_request.include_ttl ? std::optional(zk_request.ttl) : std::nullopt});
 
     return new_deltas;
 }
@@ -2165,7 +2107,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     /// destroy_time, which the plain version check above misses.
     if (zk_request.try_remove && session_id == keeper_internal_ttl_garbage_collector_session_id)
     {
-        if (!node->destroy_time.has_value() || time < *node->destroy_time)
+        if (!node->stats.isTTL() || time < node->stats.destroyTime())
             return {};
     }
     if (node->numChildren() != 0)
@@ -2187,7 +2129,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_deltas.emplace_back(
         zk_request.path,
         zxid,
-        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}, node->destroy_time, node->ttl});
+        RemoveNodeDelta{zk_request.version, node->stats, storage.uncommitted_state.getACLs(zk_request.path), std::string{node->getData()}});
 
     if (node->stats.isEphemeral())
     {
@@ -2282,7 +2224,7 @@ public:
                 uncommitted_children[node_path] = &uncommitted_node;
         }
 
-        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()}, root_node.destroy_time, root_node.ttl);
+        addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
 
         for (auto current_delta_it = deltas.rbegin(); current_delta_it != deltas.rend(); ++current_delta_it)
         {
@@ -2337,7 +2279,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()}, child_node.destroy_time, child_node.ttl);
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
         }
 
         return CollectStatus::Ok;
@@ -2367,7 +2309,7 @@ private:
             if (checkLimits(child_node))
                 return CollectStatus::LimitExceeded;
 
-            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()}, child_node.destroy_time, child_node.ttl);
+            addDelta(child_path, child_node.stats, storage.acl_map.convertNumber(child_node.acl_id), std::string{child_node.getData()});
         }
 
         return CollectStatus::Ok;
@@ -2392,16 +2334,15 @@ private:
                 return CollectStatus::LimitExceeded;
 
             uncommitted_node->materializeACL(storage.acl_map);
-            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()}, node_ptr->destroy_time, node_ptr->ttl);
+            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()});
         }
 
         return CollectStatus::Ok;
     }
 
-    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data,
-                  std::optional<int64_t> destroy_time, std::optional<int64_t> ttl)
+    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
     {
-        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data), destroy_time, ttl});
+        deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
     }
 
     bool checkLimits(const Storage::Node & node)
@@ -2804,8 +2745,6 @@ std::list<KeeperStorageBase::Delta> preprocess(
     new_stats.mzxid = zxid;
     new_stats.mtime = time;
     new_stats.data_size = static_cast<uint32_t>(zk_request.data.size());
-    if (node->ttl.has_value())
-        node_delta.new_destroy_time = time + *node->ttl;
     new_deltas.emplace_back(zk_request.path, zxid, std::move(node_delta));
 
     auto parent_path = Coordination::parentNodePath(zk_request.path);
@@ -3934,7 +3873,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                     new_deltas.emplace_back(
                         ephemeral_path,
                         transaction->zxid,
-                        RemoveNodeDelta{.stat = node->stats, .acls = uncommitted_state.getACLs(ephemeral_path), .data = std::string{node->getData()}, .destroy_time = node->destroy_time, .ttl = node->ttl});
+                        RemoveNodeDelta{.stat = node->stats, .acls = uncommitted_state.getACLs(ephemeral_path), .data = std::string{node->getData()}});
                 }
             }
         };
@@ -4574,7 +4513,7 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
             continue;
         const Node & node = node_it->value;
         versions[ttl_path] = node.stats.version;
-        if (node.destroy_time.has_value() && now_ms >= *node.destroy_time)
+        if (node.stats.isTTL() && now_ms >= node.stats.destroyTime())
             expired_nodes.push_back(ttl_path);
         if (expired_nodes.size() >= batch_size)
             break;

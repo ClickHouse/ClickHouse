@@ -1883,8 +1883,8 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
     {
         auto node_it = storage.container.find("/ttl_node");
         ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.destroy_time.has_value());
-        EXPECT_EQ(*node_it->value.destroy_time, ttl_ms);
+        ASSERT_TRUE(node_it->value.stats.isTTL());
+        EXPECT_EQ(node_it->value.stats.destroyTime(), ttl_ms);
     }
 
     EXPECT_TRUE(storage.collectExpiredTTLPaths(/*now_ms=*/0, 1000000).empty());
@@ -1934,8 +1934,8 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     {
         auto node_it = storage.container.find("/ttl_node");
         ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.destroy_time.has_value());
-        EXPECT_EQ(*node_it->value.destroy_time, original_destroy_time);
+        ASSERT_TRUE(node_it->value.stats.isTTL());
+        EXPECT_EQ(node_it->value.stats.destroyTime(), original_destroy_time);
     }
 
     auto set_request = std::make_shared<ZooKeeperSetRequest>();
@@ -1946,8 +1946,8 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     {
         auto uncommitted = storage.uncommitted_state.getNode("/ttl_node");
         ASSERT_NE(uncommitted, nullptr);
-        ASSERT_TRUE(uncommitted->destroy_time.has_value());
-        EXPECT_EQ(*uncommitted->destroy_time, expected_new_destroy_time);
+        ASSERT_TRUE(uncommitted->stats.isTTL());
+        EXPECT_EQ(uncommitted->stats.destroyTime(), expected_new_destroy_time);
     }
 
     auto set_responses = storage.processRequest(set_request, session_id, zxid);
@@ -1956,8 +1956,8 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
     {
         auto node_it = storage.container.find("/ttl_node");
         ASSERT_NE(node_it, storage.container.end());
-        ASSERT_TRUE(node_it->value.destroy_time.has_value());
-        EXPECT_EQ(*node_it->value.destroy_time, expected_new_destroy_time);
+        ASSERT_TRUE(node_it->value.stats.isTTL());
+        EXPECT_EQ(node_it->value.stats.destroyTime(), expected_new_destroy_time);
     }
 }
 
@@ -2065,7 +2065,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
         auto node_it = storage.container.find("/ttl_node");
         ASSERT_NE(node_it, storage.container.end());
         EXPECT_EQ(node_it->value.stats.version, collected_version);
-        EXPECT_FALSE(node_it->value.destroy_time.has_value());
+        EXPECT_FALSE(node_it->value.stats.isTTL());
     }
 
     /// The stale TryRemove commits and must be a no-op — matching real ZK,
@@ -2081,7 +2081,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
 
     auto node_after_it = storage.container.find("/ttl_node");
     ASSERT_NE(node_after_it, storage.container.end());
-    EXPECT_FALSE(node_after_it->value.destroy_time.has_value());
+    EXPECT_FALSE(node_after_it->value.stats.isTTL());
     EXPECT_EQ(std::string{node_after_it->value.getData()}, "fresh");
     EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
 }
@@ -2325,13 +2325,13 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
 
     auto node_it = storage.container.find("/n");
     ASSERT_NE(node_it, storage.container.end());
-    ASSERT_TRUE(node_it->value.destroy_time.has_value());
-    EXPECT_EQ(*node_it->value.destroy_time, original_destroy_time);
+    ASSERT_TRUE(node_it->value.stats.isTTL());
+    EXPECT_EQ(node_it->value.stats.destroyTime(), original_destroy_time);
 
     auto uncommitted = storage.uncommitted_state.getNode("/n");
     ASSERT_NE(uncommitted, nullptr);
-    ASSERT_TRUE(uncommitted->destroy_time.has_value());
-    EXPECT_EQ(*uncommitted->destroy_time, original_destroy_time);
+    ASSERT_TRUE(uncommitted->stats.isTTL());
+    EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
 }
 
 #endif

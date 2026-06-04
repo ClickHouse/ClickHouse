@@ -174,12 +174,9 @@ namespace
 
         if (version >= SnapshotVersion::V8)
         {
-            writeBinary(node.destroy_time.has_value(), out);
-            if (node.destroy_time.has_value())
-                writeBinary(*node.destroy_time, out);
-            writeBinary(node.ttl.has_value(), out);
-            if (node.ttl.has_value())
-                writeBinary(*node.ttl, out);
+            writeBinary(node.stats.isTTL(), out);
+            if (node.stats.isTTL())
+                writeBinary(node.stats.ttl(), out);
         }
     }
 
@@ -292,21 +289,13 @@ namespace
 
         if (version >= SnapshotVersion::V8)
         {
-            bool has_destroy_time = false;
-            readBinary(has_destroy_time, in);
-            if (has_destroy_time)
-            {
-                int64_t destroy_time_ms = 0;
-                readBinary(destroy_time_ms, in);
-                node.destroy_time = destroy_time_ms;
-            }
             bool has_ttl = false;
             readBinary(has_ttl, in);
             if (has_ttl)
             {
                 int64_t ttl_ms = 0;
                 readBinary(ttl_ms, in);
-                node.ttl = ttl_ms;
+                node.stats.setTTL(ttl_ms);
             }
         }
     }
@@ -616,7 +605,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         if (recalculate_digest)
             storage.nodes_digest += node.getDigest(path);
 
-        if (node.destroy_time.has_value())
+        if (node.stats.isTTL())
             storage.ttl_paths.insert(std::string{path});
 
         storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));

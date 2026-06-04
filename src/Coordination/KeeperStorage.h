@@ -53,7 +53,7 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_seq_num.ephemeral_owner;
+            return ephemeral_or_seq_num_or_ttl.ephemeral_owner;
 
         return 0;
     }
@@ -61,26 +61,49 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_seq_num_or_ttl.ephemeral_owner = ephemeral_owner;
     }
 
     int64_t seqNum() const
     {
-        if (isEphemeral())
+        if (isEphemeral() || isTTL())
             return 0;
 
-        return ephemeral_or_seq_num.seq_num;
+        return ephemeral_or_seq_num_or_ttl.seq_num;
     }
 
     void setSeqNum(int64_t seq_num)
     {
-        ephemeral_or_seq_num.seq_num = seq_num;
+        ephemeral_or_seq_num_or_ttl.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
-        chassert(!isEphemeral());
-        ++ephemeral_or_seq_num.seq_num;
+        chassert(!isEphemeral() && !isTTL());
+        ++ephemeral_or_seq_num_or_ttl.seq_num;
+    }
+
+    bool isTTL() const
+    {
+        return is_ephemeral_and_ctime.is_ttl;
+    }
+
+    int64_t ttl() const
+    {
+        chassert(isTTL());
+        return ephemeral_or_seq_num_or_ttl.ttl;
+    }
+
+    void setTTL(int64_t ttl_)
+    {
+        is_ephemeral_and_ctime.is_ttl = true;
+        ephemeral_or_seq_num_or_ttl.ttl = ttl_;
+    }
+
+    int64_t destroyTime() const
+    {
+        chassert(isTTL());
+        return mtime + ttl();
     }
 
     int64_t ctime() const
@@ -95,21 +118,26 @@ struct NodeStats
 
 private:
     /// as ctime can't be negative because it stores the timestamp when the
-    /// node was created, we can use the MSB for a bool
+    /// node was created, we can use the high bits for flags
     struct
     {
         int64_t is_ephemeral : 1;
-        int64_t ctime : 63;
-    } is_ephemeral_and_ctime{false, 0};
+        int64_t is_ttl : 1;
+        int64_t ctime : 62;
+    } is_ephemeral_and_ctime{false, false, 0};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter
-    /// for generating sequential children names under this node)
+    /// for generating sequential children names under this node).
+    /// TTL nodes cannot have children either (in this implementation), so for
+    /// them this slot stores the ttl interval instead of seq_num. The active
+    /// member is selected by is_ephemeral / is_ttl.
     union
     {
         int64_t ephemeral_owner;
         int64_t seq_num;
-    } ephemeral_or_seq_num{0};
+        int64_t ttl;
+    } ephemeral_or_seq_num_or_ttl{0};
 };
 
 /// KeeperRocksNodeInfo is used in RocksDB keeper.
@@ -168,8 +196,6 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
         stats = other.stats;
         acl_id = other.acl_id;
         num_children = other.num_children;
-        destroy_time = other.destroy_time;
-        ttl = other.ttl;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -197,10 +223,6 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     }
     std::unique_ptr<char[]> data{nullptr};
     mutable UInt64 cached_digest = 0; /// we cached digest for this node.
-    /// Absolute expiry for TTL
-    mutable std::optional<int64_t> destroy_time;
-    /// TTL interval in ms
-    std::optional<int64_t> ttl;
 private:
     bool serialized = false;
 };
@@ -216,10 +238,6 @@ struct KeeperMemNode
 
     ACLId acl_id = 0; /// 0 -- no ACL by default
     int32_t num_children = 0;
-    /// Absolute expiry for TTL GC
-    mutable std::optional<int64_t> destroy_time;
-    /// TTL interval in ms
-    std::optional<int64_t> ttl;
 
     int32_t numChildren() const
     {
@@ -626,7 +644,6 @@ public:
         const Coordination::Stat & stat,
         Coordination::ACLs node_acls,
         bool update_digest,
-        std::optional<int64_t> destroy_time,
         std::optional<int64_t> ttl);
 
     // Remove node in the storage
