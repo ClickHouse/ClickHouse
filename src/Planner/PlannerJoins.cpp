@@ -1062,7 +1062,8 @@ PreparedJoinStorage tryGetLookupJoinStorage(
         table_expression_modifiers
         && (table_expression_modifiers->hasFinal()
             || table_expression_modifiers->hasSampleSizeRatio()
-            || table_expression_modifiers->hasSampleOffsetRatio()))
+            || table_expression_modifiers->hasSampleOffsetRatio()
+            || table_expression_modifiers->hasStream()))
         return {};
 
     auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
@@ -1073,6 +1074,11 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     /// join planning; the filled direct join built from the lookup index bypasses the
     /// right query plan, so reject this optimization to preserve visibility.
     if (getEffectiveRowPolicyFilter(storage, planner_context->getQueryContext()))
+        return {};
+
+    /// `additional_table_filters` are applied by the regular right-side plan; the lookup
+    /// direct join replaces that plan with a prebuilt entity and would ignore them.
+    if (hasAdditionalTableFilterForStorage(storage, table_expression->getAlias(), planner_context->getQueryContext()))
         return {};
 
     PreparedJoinStorage result;

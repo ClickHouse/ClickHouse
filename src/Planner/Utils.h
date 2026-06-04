@@ -133,4 +133,9 @@ QueryPlanStepPtr projectOnlyUsedColumns(
 /// there is no row policy for the current user or the combined filter is always-true.
 RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context);
 
+/// Returns true if an `additional_table_filters` entry applies to the given table expression.
+/// The lookup-index fast paths read the storage with an empty `SelectQueryInfo` and therefore
+/// bypass these filters, so they must fall back to the regular plan when this returns true.
+bool hasAdditionalTableFilterForStorage(const StoragePtr & storage, const String & table_expression_alias, const ContextPtr & query_context);
+
 }

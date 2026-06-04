@@ -62,6 +62,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -786,6 +787,27 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
+}
+
+bool hasAdditionalTableFilterForStorage(const StoragePtr & storage, const String & table_expression_alias, const ContextPtr & query_context)
+{
+    const auto & additional_filters = query_context->getSettingsRef()[Setting::additional_table_filters].value;
+    if (additional_filters.empty())
+        return false;
+
+    const auto & storage_id = storage->getStorageID();
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        const auto & table = tuple.at(0).safeGet<String>();
+
+        if ((!table_expression_alias.empty() && table == table_expression_alias)
+            || (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || (table == storage_id.getFullNameNotQuoted()))
+            return true;
+    }
+
+    return false;
 }
 
 }

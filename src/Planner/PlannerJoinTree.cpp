@@ -1783,6 +1783,18 @@ std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_ope
         else if (!lhs.fromLeft() || !rhs.fromRight())
             return {};
 
+        /// The lookup-index join (`MergeTreeTableJoinEntity`) hashes the left probe key
+        /// columns against a cache built from the stored (right) key columns using
+        /// `HashMethodHashed`. Identical values hash equally only when the column types are
+        /// identical: e.g. a `Nullable(UInt64)` or `LowCardinality(UInt64)` left key hashes
+        /// differently from a `UInt64` stored key (the null map / dictionary indexes are
+        /// hashed too), and a different underlying type (`Int32` vs `UInt64`) hashes
+        /// differently as well. In all such cases the regular join path inserts a cast to a
+        /// common supertype, which this fast path bypasses. Decline the lookup join when the
+        /// left and right key types are not exactly equal, so it falls back to `HashJoin`.
+        if (!lhs.getType()->equals(*rhs.getType()))
+            return {};
+
         right_key_names.push_back(rhs.getColumnName());
     }
 

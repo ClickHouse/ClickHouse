@@ -34,6 +34,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_bytes_in_set;
 }
 
 namespace ErrorCodes
@@ -57,12 +59,23 @@ bool hasUnsupportedLookupModifiers(const std::optional<TableExpressionModifiers>
     return table_expression_modifiers
         && (table_expression_modifiers->hasFinal()
             || table_expression_modifiers->hasSampleSizeRatio()
-            || table_expression_modifiers->hasSampleOffsetRatio());
+            || table_expression_modifiers->hasSampleOffsetRatio()
+            || table_expression_modifiers->hasStream());
 }
 
 std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const QueryTreeNodePtr & table_expression, PlannerContext & planner_context)
 {
-    if (!planner_context.getQueryContext()->getSettingsRef()[Setting::allow_experimental_lookup_index])
+    const auto & query_context = planner_context.getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    if (!settings[Setting::allow_experimental_lookup_index])
+        return std::nullopt;
+
+    /// The lookup `Set` is built once and cached/shared across queries with empty `SizeLimits`,
+    /// so it cannot honor per-query `IN`-set limits (`max_rows_in_set` / `max_bytes_in_set` /
+    /// `set_overflow_mode`). Fall back to the regular subquery/set path when set limits are
+    /// active so those settings keep their normal semantics.
+    if (settings[Setting::max_rows_in_set] != 0 || settings[Setting::max_bytes_in_set] != 0)
         return std::nullopt;
 
     auto * table_node = table_expression->as<TableNode>();
@@ -78,7 +91,12 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         /// A `SELECT_FILTER` row policy on the right table would normally be applied
         /// during regular subquery execution; the lookup fast path bypasses it, so
         /// fall back to the regular subquery/set path to preserve visibility.
-        if (getEffectiveRowPolicyFilter(storage, planner_context.getQueryContext()))
+        if (getEffectiveRowPolicyFilter(storage, query_context))
+            return std::nullopt;
+
+        /// `additional_table_filters` are applied by the regular plan; the lookup fast path
+        /// reads the storage with an empty `SelectQueryInfo` and would ignore them.
+        if (hasAdditionalTableFilterForStorage(storage, table_expression->getAlias(), query_context))
             return std::nullopt;
 
         auto columns_to_select = table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
@@ -125,7 +143,10 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (!storage)
         return std::nullopt;
 
-    if (getEffectiveRowPolicyFilter(storage, planner_context.getQueryContext()))
+    if (getEffectiveRowPolicyFilter(storage, query_context))
+        return std::nullopt;
+
+    if (hasAdditionalTableFilterForStorage(storage, inner_table_expression->getAlias(), query_context))
         return std::nullopt;
 
     TableExpressionData::ColumnIdentifierToColumnName column_mapping;
