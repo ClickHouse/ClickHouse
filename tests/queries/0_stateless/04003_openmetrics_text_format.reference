@@ -41,3 +41,33 @@ demo_jobs_processed_total
 42
 1500
 {'job':'b'}
+x_bucket	3	{'le':'0.5'}	
+x	5	{'sum':''}	summary
+x	7	{'count':''}	summary
+x	3	{'le':'0.5'}	histogram
+x	5	{'sum':''}
+x	7	{'count':''}
+# TYPE h histogram
+h_bucket{le="0.5"} 3
+
+# EOF
+# TYPE s summary
+s{le="0.5"} 3
+
+# EOF
+# TYPE h histogram
+h_sum 9
+
+# EOF
+# TYPE s summary
+s_count 11
+
+# EOF
+# TYPE h histogram
+h{sum="bytes"} 7
+
+# EOF
+# TYPE s summary
+s{count="oops"} 8
+
+# EOF

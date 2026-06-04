@@ -541,12 +541,23 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         if (pos < sv.size())
             throwIncorrect("Unexpected trailing data", line);
 
-        /// Resolve logical metric name. Suffix folding only when `# TYPE` is histogram/summary.
-        struct SuffixRule { std::string_view suffix; std::string_view synth_label; };
+        /// Resolve logical metric name by folding `_bucket`/`_sum`/`_count` siblings into the
+        /// `# TYPE` family they belong to. The rules are type-specific because the OpenMetrics /
+        /// Prometheus exposition contracts differ:
+        ///   * `_bucket` only exists for `histogram` families (summaries use `{quantile=...}` +
+        ///     `_sum`/`_count`). A `<base>_bucket{le=...}` line under a `# TYPE <base> summary`
+        ///     header therefore stays as its own metric (`logical_name = stem`) and the `le`
+        ///     label is preserved — folding it into the summary would silently misattribute it.
+        ///   * `_sum` and `_count` are shared by `histogram` and `summary` families.
+        /// When the suffix is folded, the parser synthesizes the empty marker label
+        /// (`labels[sum] = ""` / `labels[count] = ""`) used internally and by `FORMAT Prometheus`.
+        /// A user-provided label of the same name with a non-empty value would lose that value,
+        /// so collisions are rejected instead of silently overwritten.
+        struct SuffixRule { std::string_view suffix; std::string_view synth_label; bool histogram_only; };
         static constexpr std::array<SuffixRule, 3> rules = {{
-            {"_bucket", ""},
-            {"_sum",    "sum"},
-            {"_count",  "count"},
+            {"_bucket", "",      true},
+            {"_sum",    "sum",   false},
+            {"_count",  "count", false},
         }};
         String logical_name = stem;
         for (const auto & r : rules)
@@ -555,11 +566,26 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 continue;
             const String base = stem.substr(0, stem.size() - r.suffix.size());
             auto it = family_meta.find(base);
-            if (it == family_meta.end() || (it->second.type != "histogram" && it->second.type != "summary"))
+            if (it == family_meta.end())
+                break;
+            const String & base_type = it->second.type;
+            const bool type_matches = r.histogram_only
+                ? (base_type == "histogram")
+                : (base_type == "histogram" || base_type == "summary");
+            if (!type_matches)
                 break;
             logical_name = base;
             if (!r.synth_label.empty())
-                labels[String(r.synth_label)] = "";
+            {
+                const String synth_key(r.synth_label);
+                if (auto label_it = labels.find(synth_key); label_it != labels.end() && !label_it->second.empty())
+                    throwIncorrect(
+                        fmt::format(
+                            "Sample line for family '{}' uses suffix '{}' but its labels already contain '{}=\"{}\"'",
+                            base, r.suffix, synth_key, label_it->second),
+                        line);
+                labels[synth_key] = "";
+            }
             break;
         }
 

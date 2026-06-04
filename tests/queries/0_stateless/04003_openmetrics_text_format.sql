@@ -257,3 +257,69 @@ FORMAT TSV;
 SELECT labels
 FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
 FORMAT TSV;
+
+-- ----------------------------------------------------------------------------
+-- Type-specific suffix folding.
+--   * `_bucket` belongs only to `histogram` families. Under `# TYPE x summary`
+--     a sibling `x_bucket{le=...}` line must stay as its own metric named
+--     `x_bucket`, with `le` preserved as a normal label.
+--   * `_sum` and `_count` are shared by `histogram` and `summary` families.
+--   * Collisions between the synthesized empty marker label and a user-provided
+--     non-empty `sum`/`count` label are rejected as `INCORRECT_DATA` instead of
+--     silently overwriting the user value.
+-- ----------------------------------------------------------------------------
+-- `_bucket` under summary does NOT fold; `le` stays as a normal label.
+SELECT name, value, labels, type
+FROM format(
+    OpenMetrics,
+    concat('# TYPE x summary', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))
+)
+ORDER BY name, value FORMAT TSV;
+-- `_sum` / `_count` still fold under summary.
+SELECT name, value, labels, type
+FROM format(
+    OpenMetrics,
+    concat('# TYPE x summary', char(10), 'x_sum 5', char(10), 'x_count 7', char(10), '# EOF', char(10))
+)
+ORDER BY name, value FORMAT TSV;
+-- `_bucket` still folds under histogram.
+SELECT name, value, labels, type
+FROM format(
+    OpenMetrics,
+    concat('# TYPE x histogram', char(10), 'x_bucket{le="0.5"} 3', char(10), '# EOF', char(10))
+)
+ORDER BY name, value FORMAT TSV;
+-- Empty `sum=""` / `count=""` markers from external producers are idempotent (no error).
+SELECT name, value, labels
+FROM format(
+    OpenMetrics,
+    concat('# TYPE x histogram', char(10), 'x_sum{sum=""} 5', char(10), 'x_count{count=""} 7', char(10), '# EOF', char(10))
+)
+ORDER BY name, value FORMAT TSV;
+-- Collision: user-provided non-empty `sum`/`count` label on a `_sum`/`_count` sample is rejected.
+SELECT * FROM format(OpenMetrics, concat('# TYPE x histogram', char(10), 'x_sum{sum="bytes"} 5', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, concat('# TYPE x summary', char(10), 'x_count{count="oops"} 7', char(10), '# EOF', char(10))); -- { serverError INCORRECT_DATA }
+
+-- ----------------------------------------------------------------------------
+-- Output: `le -> _bucket` rewrite is histogram-only; summary preserves `le`.
+-- Output: `sum`/`count` are suffix markers only when the label value is empty;
+-- a non-empty user value is preserved as a normal label.
+-- ----------------------------------------------------------------------------
+-- Histogram + `{le: "0.5"}` -> `<name>_bucket{le="0.5"}`.
+SELECT 'h' AS name, 3.0 AS value, '' AS help, 'histogram' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+-- Summary + `{le: "0.5"}` -> `<name>{le="0.5"}` (no `_bucket` rewrite, `le` preserved).
+SELECT 's' AS name, 3.0 AS value, '' AS help, 'summary' AS type, map('le', '0.5') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+-- Histogram + `{sum: ""}` marker -> `<name>_sum` (label dropped).
+SELECT 'h' AS name, 9.0 AS value, '' AS help, 'histogram' AS type, map('sum', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+-- Summary + `{count: ""}` marker -> `<name>_count` (label dropped).
+SELECT 's' AS name, 11.0 AS value, '' AS help, 'summary' AS type, map('count', '') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+-- Histogram + non-empty `sum` label -> kept as a normal label (no `_sum` rewrite).
+SELECT 'h' AS name, 7.0 AS value, '' AS help, 'histogram' AS type, map('sum', 'bytes') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;
+-- Summary + non-empty `count` label -> kept as a normal label (no `_count` rewrite).
+SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
+FORMAT OpenMetrics;

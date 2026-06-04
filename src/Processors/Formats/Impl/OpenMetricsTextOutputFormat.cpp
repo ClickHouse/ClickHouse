@@ -188,15 +188,24 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
 {
     String bucket_label = metric.type == "histogram" ? "le" : "quantile";
 
+    /// `sum`/`count` are only suffix markers when present with the empty value (the documented
+    /// table contract). A real label literally named `sum` or `count` with a non-empty value is
+    /// not a marker and must not be sorted to the tail of the family.
+    auto is_empty_marker = [](const std::map<String, String> & labels, const String & key)
+    {
+        auto it = labels.find(key);
+        return it != labels.end() && it->second.empty();
+    };
+
     ::sort(metric.values.begin(), metric.values.end(),
-        [&bucket_label](const auto & lhs, const auto & rhs)
+        [&bucket_label, &is_empty_marker](const auto & lhs, const auto & rhs)
         {
-            bool lhs_sum = lhs.labels.contains("sum");
-            bool lhs_count = lhs.labels.contains("count");
+            bool lhs_sum = is_empty_marker(lhs.labels, "sum");
+            bool lhs_count = is_empty_marker(lhs.labels, "count");
             bool lhs_meta = lhs_sum || lhs_count;
 
-            bool rhs_sum = rhs.labels.contains("sum");
-            bool rhs_count = rhs.labels.contains("count");
+            bool rhs_sum = is_empty_marker(rhs.labels, "sum");
+            bool rhs_count = is_empty_marker(rhs.labels, "count");
             bool rhs_meta = rhs_sum || rhs_count;
 
             if (lhs_sum && rhs_count)
@@ -221,7 +230,10 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
         std::optional<CurrentMetric::RowValue> count_bucket;
         for (const auto & val : metric.values)
         {
-            if (auto it = val.labels.find("count"); it != val.labels.end())
+            /// Only the empty-marker `{'count': ''}` row is treated as the count sample we
+            /// can mirror into a synthetic `+Inf` bucket; a real label named `count` with a
+            /// non-empty value is not a marker.
+            if (is_empty_marker(val.labels, "count"))
             {
                 inf_bucket = val;
                 inf_bucket->labels = {{"le", "+Inf"}};
@@ -271,22 +283,35 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
     {
         writeString(current_metric.name, out);
 
-        auto label_to_suffix = [&val, this](const String & key, const String & suffix, bool erase)
+        /// Suffix-marker rewrite. The documented table contract is:
+        ///   * `{'sum': ''}` / `{'count': ''}` are marker rows: append `_sum`/`_count` to the
+        ///     family name and drop the marker label. A non-empty value for `sum`/`count` is
+        ///     not a marker — preserve it as a normal label rather than silently dropping it.
+        ///   * `{'le': '<bound>'}` is only a histogram bucket. Summaries use `{quantile=...}`
+        ///     and a real label named `le` on a summary is just a normal label, so the
+        ///     `le` -> `_bucket` rewrite is gated on the histogram type.
+        auto rewrite_empty_marker = [&val, this](const String & key, const String & suffix)
         {
-            if (auto it = val.labels.find(key); it != val.labels.end())
-            {
-                writeChar('_', out);
-                writeString(suffix, out);
-                if (erase)
-                    val.labels.erase(it);
-            }
+            auto it = val.labels.find(key);
+            if (it == val.labels.end() || !it->second.empty())
+                return;
+            writeChar('_', out);
+            writeString(suffix, out);
+            val.labels.erase(it);
         };
 
         if (use_buckets)
         {
-            label_to_suffix("sum", "sum", true);
-            label_to_suffix("count", "count", true);
-            label_to_suffix("le", "bucket", false);
+            rewrite_empty_marker("sum", "sum");
+            rewrite_empty_marker("count", "count");
+            if (current_metric.type == "histogram")
+            {
+                if (auto it = val.labels.find("le"); it != val.labels.end())
+                {
+                    writeChar('_', out);
+                    writeString("bucket", out);
+                }
+            }
         }
 
         if (!val.labels.empty())
