@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/IThrottler.h>
 
@@ -47,6 +49,17 @@ public:
 
     off_t size() const;
 
+    /// If set, the callback is consulted while writing the buffer: when it returns true, the
+    /// buffered data is discarded instead of being written. To keep it responsive even when the
+    /// sink blocks, writes are then done by waiting for writability with a timeout (checking the
+    /// callback in between) and in bounded chunks. This is used by the client to abort the output
+    /// of a result set promptly on Ctrl+C even while a write to a slow sink (e.g. a slow terminal)
+    /// would otherwise block.
+    void setCancellationHook(std::function<bool()> cancellation_hook_)
+    {
+        cancellation_hook = std::move(cancellation_hook_);
+    }
+
 protected:
     void nextImpl() override;
 
@@ -61,6 +74,9 @@ protected:
     /// large buffer allocation when actual size of written data is small.
     bool use_adaptive_buffer_size;
     size_t adaptive_max_buffer_size;
+
+    /// See setCancellationHook.
+    std::function<bool()> cancellation_hook;
 
     void finalizeImpl() override;
 };

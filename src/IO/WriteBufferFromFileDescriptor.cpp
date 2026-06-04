@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <cerrno>
+#include <poll.h>
 #include <sys/stat.h>
 
 #include <Common/Throttler.h>
@@ -46,17 +47,55 @@ void WriteBufferFromFileDescriptor::nextImpl()
     if (!offset())
         return;
 
+    /// The operation was cancelled (e.g. the user pressed Ctrl+C in the client) - discard the
+    /// buffered data instead of writing it, so the output stops promptly.
+    if (cancellation_hook && cancellation_hook())
+        return;
+
     Stopwatch watch;
 
     size_t bytes_written = 0;
     while (bytes_written != offset())
     {
+        size_t bytes_to_write = offset() - bytes_written;
+
+        /// When a cancellation hook is installed (e.g. the client output during a query), avoid
+        /// blocking for a long time in write() on a slow or stuck sink such as a slow terminal.
+        /// Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck in the
+        /// write(), because the interrupting signal can be delivered to another thread and thus
+        /// not interrupt this write() at all. Wait for the descriptor to become writable in small
+        /// steps, checking for cancellation in between, write only a bounded chunk at a time so a
+        /// single write() cannot block for long, and discard the rest of the buffer once
+        /// cancellation is requested.
+        if (cancellation_hook)
+        {
+            if (cancellation_hook())
+                return;
+
+            pollfd poll_fd{.fd = fd, .events = POLLOUT, .revents = 0};
+            int poll_res = ::poll(&poll_fd, 1, 100);
+
+            if (poll_res < 0 && errno != EINTR)
+            {
+                String poll_error_file_name = file_name.empty() ? "(fd = " + toString(fd) + ")" : file_name;
+                ErrnoException::throwFromPath(
+                    ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, poll_error_file_name, "Cannot write to file {}", poll_error_file_name);
+            }
+
+            /// Timed out or interrupted by a signal - the descriptor is not writable yet.
+            if (poll_res <= 0)
+                continue;
+
+            static constexpr size_t cancellable_write_chunk = 64 * 1024;
+            bytes_to_write = std::min(bytes_to_write, cancellable_write_chunk);
+        }
+
         ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWrite);
 
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
-            res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+            res = ::write(fd, working_buffer.begin() + bytes_written, bytes_to_write);
         }
 
         if ((-1 == res || 0 == res) && errno != EINTR)
@@ -70,6 +109,11 @@ void WriteBufferFromFileDescriptor::nextImpl()
             ErrnoException::throwFromPath(
                 ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, error_file_name, "Cannot write to file {}", error_file_name);
         }
+
+        /// The write was interrupted by a signal. If meanwhile the operation was cancelled,
+        /// stop writing and discard the rest of the buffer instead of restarting the write.
+        if (-1 == res && errno == EINTR && cancellation_hook && cancellation_hook())
+            return;
 
         if (res > 0)
         {

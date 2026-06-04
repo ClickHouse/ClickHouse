@@ -1407,6 +1407,13 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             query_interrupt_handler.start(signals_before_stop);
             SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+            /// Abort writing the result set to the output promptly when the query is cancelled.
+            /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
+            /// client, so the first Ctrl+C appears to have no effect until the whole block is
+            /// written. The hook lets the output buffer stop waiting and discard the rest.
+            std_out->setCancellationHook([this]() { return query_interrupt_handler.cancelled(); });
+            SCOPE_EXIT({ std_out->setCancellationHook({}); });
+
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
             /// for local connections this callback checks the signal handler flag.
