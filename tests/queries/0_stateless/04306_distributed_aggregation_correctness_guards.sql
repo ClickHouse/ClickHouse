@@ -1,7 +1,8 @@
 -- Regression test: distributed aggregation must not use the no-merge shuffle strategy where it
 -- would produce wrong results. The distributed result must match the single-node result.
--- GROUPING SETS: shuffle scatters by the full key set, so subtotal rows (grouped by key subsets)
--- would be produced independently in several buckets and duplicated.
+--   * GROUPING SETS: shuffle scatters by the full key set, so subtotal rows (grouped by key
+--     subsets) would be produced independently in several buckets and duplicated.
+--   * A global GROUP BY limit (max_rows_to_group_by): per-bucket aggregation cannot honor it.
 -- Results are wrapped in an order-independent aggregate so the check is robust to row order but
 -- still detects duplicated subtotals.
 
@@ -25,5 +26,9 @@ SELECT '-- GROUPING SETS (baseline, must match)';
 SELECT count(), sum(a), sum(b), sum(s)
 FROM (SELECT a, b, sum(v) AS s FROM t_agg_guard GROUP BY GROUPING SETS ((a), (b), ()))
 SETTINGS make_distributed_plan = 0;
+
+SELECT '-- max_rows_to_group_by: a global limit must still throw, not be diluted across buckets';
+SELECT a, sum(v) FROM t_agg_guard GROUP BY a
+SETTINGS max_rows_to_group_by = 5, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE t_agg_guard;

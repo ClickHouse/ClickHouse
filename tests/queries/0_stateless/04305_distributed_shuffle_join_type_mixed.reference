@@ -2,16 +2,15 @@
 1000000
 -- Distributed plan
 Expression ((Project names + Projection))
-  MergingAggregated (merge)
+  Aggregating
     GatherExchange
-      Aggregating (partial)
-        Expression (Before GROUP BY)
-          JoinLogical
-            ShuffleExchange (by hash([__table1.k]))
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.t_shuffle_join_left)
-            ShuffleExchange (by hash([__table2.k]))
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.t_shuffle_join_right)
+      Expression (Before GROUP BY)
+        JoinLogical
+          ShuffleExchange (by hash([__table1.k]))
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_shuffle_join_left)
+          ShuffleExchange (by hash([__table2.k]))
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.t_shuffle_join_right)
 -- Distributed
 1000000

@@ -3,6 +3,9 @@
 -- hashing because of different physical types, so matching rows are routed to different
 -- buckets and the join silently drops them.
 
+-- Pin a nonzero max_rows_to_group_by to keep the count single-node; the test targets the shuffle join.
+SET max_rows_to_group_by = 1000000;
+
 DROP TABLE IF EXISTS t_shuffle_join_left;
 DROP TABLE IF EXISTS t_shuffle_join_right;
 

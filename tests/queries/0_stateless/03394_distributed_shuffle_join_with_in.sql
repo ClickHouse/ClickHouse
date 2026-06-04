@@ -1,5 +1,8 @@
 -- Tags: no-old-analyzer
 
+-- A nonzero max_rows_to_group_by keeps aggregation single-node, so pin it to 0.
+SET max_rows_to_group_by = 0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
