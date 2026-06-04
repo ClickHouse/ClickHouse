@@ -340,3 +340,7 @@ SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(10), 'b')) AS labels
 SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(9), 'b')) AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 -- Duplicate keys in the `labels` map are rejected instead of silently keeping the first.
 SELECT 'm' AS name, 1.0 AS value, map('a', '1', 'a', '2') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+
+-- Output validates metric and label names with the same rules as the input parser.
+SELECT 'bad name' AS name, 1.0 AS value FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+SELECT 'm' AS name, 1.0 AS value, map('trace:id', 'x') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }

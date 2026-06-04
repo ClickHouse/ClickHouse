@@ -52,7 +52,7 @@ The ClickHouse `timestamp` column is **milliseconds since the Unix epoch**, iden
 
 Malformed exposition raises `INCORRECT_DATA`, including duplicate label keys, invalid or empty metric/label names, whitespace between a metric name and its `{labels}` block, a missing ASCII space or tab between the metric descriptor and sample value, float tokens that are not fully consumed, invalid timestamp or exemplar tokens (OpenMetrics `realnumber` grammar), timestamps whose ms value (`token * 1000`) overflows `Int64`, trailing characters after the value or timestamp on a sample line, invalid exemplar syntax after `#` (optional exemplar timestamp allowed), a `# EOF` line with extra non-whitespace on the same line, and any non-blank content after a valid `# EOF` line.
 
-On **output**, label values are quoted with OpenMetrics-specific escaping (`\\`, `\"`, and `\n` only). Other control characters in a label value raise `BAD_ARGUMENTS`, and duplicate keys in the `labels` map raise `BAD_ARGUMENTS` instead of silently keeping the first entry.
+On **output**, label values are quoted with OpenMetrics-specific escaping (`\\`, `\"`, and `\n` only). Other control characters in a label value raise `BAD_ARGUMENTS`, and duplicate keys in the `labels` map raise `BAD_ARGUMENTS` instead of silently keeping the first entry. Metric names and label keys are validated with the same identifier rules as the input parser before any sample bytes are written; invalid names raise `BAD_ARGUMENTS` rather than emitting text that `FORMAT OpenMetrics` cannot read back.
 
 ## Example usage {#example-usage}
 

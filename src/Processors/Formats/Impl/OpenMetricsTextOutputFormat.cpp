@@ -129,6 +129,44 @@ Float64 tryParseFloat(const String & s)
     return t;
 }
 
+/// `[a-zA-Z_:][a-zA-Z0-9_:]*` if allow_colon (metric names), else `[a-zA-Z_][a-zA-Z0-9_]*` (label names).
+/// Matches the input parser's `isValidName` in `OpenMetricsTextRowInputFormat.cpp`.
+bool isValidOpenMetricsName(std::string_view name, bool allow_colon)
+{
+    const auto ok = [allow_colon](char c, bool first)
+    {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
+            return true;
+        if (allow_colon && c == ':')
+            return true;
+        return !first && c >= '0' && c <= '9';
+    };
+    if (name.empty() || !ok(name[0], /*first=*/true))
+        return false;
+    for (size_t i = 1; i < name.size(); ++i)
+        if (!ok(name[i], /*first=*/false))
+            return false;
+    return true;
+}
+
+void validateOpenMetricsMetricName(const String & name)
+{
+    if (!isValidOpenMetricsName(name, /*allow_colon=*/true))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid metric name '{}' for output format '{}'",
+            name, FORMAT_NAME);
+}
+
+void validateOpenMetricsLabelName(const String & name)
+{
+    if (!isValidOpenMetricsName(name, /*allow_colon=*/false))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid label name '{}' for output format '{}'",
+            name, FORMAT_NAME);
+}
+
 /// OpenMetrics label values only permit `\\`, `\"`, and `\n` escapes (matching the input
 /// parser's `readQuotedString`). Generic `writeDoubleQuotedString` also emits `\t`, `\r`,
 /// `\0`, etc., which our reader rejects and strict consumers can reject too.
@@ -186,6 +224,7 @@ void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container &
             && map_entry[0].tryGet<String>(entry_key)
             && map_entry[1].tryGet<String>(entry_value))
         {
+            validateOpenMetricsLabelName(entry_key);
             const auto [it, inserted] = result.emplace(entry_key, entry_value);
             if (!inserted)
                 throw Exception(
@@ -412,7 +451,10 @@ String OpenMetricsTextOutputFormat::getString(const Columns & columns, size_t ro
 
 void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
 {
+    row_write_in_progress = true;
+
     String name = getString(columns, row_num, pos.name);
+    validateOpenMetricsMetricName(name);
     if (current_metric.name != name)
     {
         flushCurrentMetric();
@@ -435,7 +477,6 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     std::optional<std::map<String, String>> labels;
-    row_write_in_progress = true;
     if (pos.labels.has_value())
     {
         if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(columns[*pos.labels].get()))
