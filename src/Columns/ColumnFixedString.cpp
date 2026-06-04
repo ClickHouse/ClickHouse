@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -233,6 +234,17 @@ void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection directi
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
+}
+
+size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    const UInt8 * ref = chars.data() + begin * n;
+    auto equals = [&](size_t i) { return 0 == memcmpSmallAllowOverflow15(chars.data() + i * n, ref, n); };
+
+    return findEqualRangeEndAssumeSorted(begin, end, /*linear_probe=*/16, equals);
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
