@@ -140,6 +140,7 @@ static void universalizePlanImpl(QueryPlan & plan)
         const auto modifiers = query_info.table_expression_modifiers.value_or(TableExpressionModifiers{});
         const bool use_parallel_replicas = read_step->isParallelReadingFromReplicas();
         const auto prewhere_info = query_info.prewhere_info;
+        const auto row_level_filter = query_info.row_level_filter;
 
         /// `ReadFromTableStep` stores table_name + modifiers
         /// (FINAL, SAMPLE) + parallel-replicas flag + optional
@@ -162,7 +163,14 @@ static void universalizePlanImpl(QueryPlan & plan)
         ///    `ReadFromMergeTree.prewhere_info`. We preserve it in `ReadFromTableStep`
         ///    so that `resolveStorages` can restore it onto `SelectQueryInfo` before
         ///    calling `storage->read`, keeping the I/O reduction benefit.
-        node->step = std::make_unique<ReadFromTableStep>(output_header, table_name, modifiers, use_parallel_replicas, prewhere_info);
+        ///
+        /// Row-level security (row policy): for storages that support PREWHERE the Planner
+        /// puts the row policy into `SelectQueryInfo::row_level_filter` (not a `FilterStep`),
+        /// so `ReadFromMergeTree` carries it via `query_info`. We must preserve it the same
+        /// way as PREWHERE; otherwise `resolveStorages` would rebuild the read without the
+        /// policy on a cache hit and return unfiltered rows.
+        node->step = std::make_unique<ReadFromTableStep>(
+            output_header, table_name, modifiers, use_parallel_replicas, prewhere_info, row_level_filter);
     }
 }
 

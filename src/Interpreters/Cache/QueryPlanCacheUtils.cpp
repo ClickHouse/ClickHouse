@@ -146,6 +146,14 @@ std::optional<QueryPlanCacheLookupContext> tryBuildPreAnalysisQueryPlanCacheLook
         || table_expr->table_function || table_expr->subquery)
         return {};
 
+    /// Reject `SELECT ... FROM t STREAM`. The `STREAM` cursor state lives in
+    /// `TableExpressionModifiers::stream_settings`, which `ReadFromTableStep` does not
+    /// serialize, so a cache hit would materialize a streaming read as a normal
+    /// non-streaming one and change query semantics. Skip caching until the cursor
+    /// state is part of the serialized plan.
+    if (table_expr->stream_settings)
+        return {};
+
     StorageID storage_id(table_expr->database_and_table_name);
     storage_id = context->resolveStorageID(storage_id);
 

@@ -18,12 +18,14 @@ ReadFromTableStep::ReadFromTableStep(
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
     bool use_parallel_replicas_,
-    PrewhereInfoPtr prewhere_info_)
+    PrewhereInfoPtr prewhere_info_,
+    FilterDAGInfoPtr row_level_filter_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
     , use_parallel_replicas(use_parallel_replicas_)
     , prewhere_info(std::move(prewhere_info_))
+    , row_level_filter(std::move(row_level_filter_))
 {
 }
 
@@ -52,6 +54,7 @@ static constexpr UInt8 FLAG_HAS_SAMPLE_SIZE = 2;
 static constexpr UInt8 FLAG_HAS_SAMPLE_OFFSET = 4;
 static constexpr UInt8 FLAG_PARALLEL_REPLICAS = 8;
 static constexpr UInt8 FLAG_HAS_PREWHERE = 16;
+static constexpr UInt8 FLAG_HAS_ROW_LEVEL_FILTER = 32;
 
 void ReadFromTableStep::serialize(Serialization & ctx) const
 {
@@ -68,6 +71,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= FLAG_PARALLEL_REPLICAS;
     if (prewhere_info && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
         flags |= FLAG_HAS_PREWHERE;
+    if (row_level_filter && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+        flags |= FLAG_HAS_ROW_LEVEL_FILTER;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -81,6 +86,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (prewhere_info && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
         prewhere_info->serialize(ctx);
+
+    if (row_level_filter && ctx.version >= QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+        row_level_filter->serialize(ctx);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -119,13 +127,22 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
         prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
     }
 
+    FilterDAGInfoPtr row_level_filter;
+    if (flags & FLAG_HAS_ROW_LEVEL_FILTER)
+    {
+        if (ctx.version < QUERY_PLAN_CACHE_SERIALIZATION_VERSION)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Unexpected row-level filter payload flag in ReadFromTableStep serialization version {}", ctx.version);
+        row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+    }
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, prewhere_info);
+    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas, prewhere_info, row_level_filter);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, prewhere_info);
+    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas, prewhere_info, row_level_filter);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);

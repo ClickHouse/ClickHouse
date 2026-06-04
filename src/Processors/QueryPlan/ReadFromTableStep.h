@@ -14,7 +14,8 @@ public:
         String table_name_,
         TableExpressionModifiers table_expression_modifiers_,
         bool use_parallel_replicas_ = false,
-        PrewhereInfoPtr prewhere_info_ = nullptr);
+        PrewhereInfoPtr prewhere_info_ = nullptr,
+        FilterDAGInfoPtr row_level_filter_ = nullptr);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -28,6 +29,7 @@ public:
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
     PrewhereInfoPtr getPrewhereInfo() const { return prewhere_info; }
+    FilterDAGInfoPtr getRowLevelFilter() const { return row_level_filter; }
 
     QueryPlanStepPtr clone() const override;
 private:
@@ -35,6 +37,10 @@ private:
     TableExpressionModifiers table_expression_modifiers;
     bool use_parallel_replicas = false;
     PrewhereInfoPtr prewhere_info;
+    /// Row-level security filter (row policy). Carried so that a cache hit re-applies the
+    /// policy: `ReadFromMergeTree` keeps it in `SelectQueryInfo::row_level_filter`, and
+    /// `resolveStorages` restores it onto the freshly bound `SelectQueryInfo`.
+    FilterDAGInfoPtr row_level_filter;
 };
 
 }
