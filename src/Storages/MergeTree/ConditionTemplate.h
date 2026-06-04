@@ -25,6 +25,7 @@ class ConditionTemplate
 public:
     using Factory = std::function<Cond(const ActionsDAG *, const ActionsDAG::Node *)>;
     using Transformer = std::function<void(Cond &)>;
+    using Transformers = std::vector<Transformer>;
     using Ptr = std::shared_ptr<ConditionTemplate<Cond>>;
 
     ConditionTemplate(
@@ -46,7 +47,7 @@ public:
 private:
     std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
     Factory factory;
-    Transformer transformer;
+    Transformers transformers;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     bool skip_folding;

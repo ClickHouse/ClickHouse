@@ -119,7 +119,7 @@ Cond ConditionTemplate<Cond>::generate(const ActionsDAG * substituted_dag, const
 {
     Cond condition = factory(substituted_dag, root);
 
-    if (transformer)
+    for (const auto & transformer : transformers)
         transformer(condition);
 
     return condition;
@@ -194,18 +194,7 @@ void ConditionTemplate<Cond>::addTransformation(Transformer transformer_)
     unsubstituted.reset();
     cache.clear();
 
-    if (!transformer)
-    {
-        transformer = std::move(transformer_);
-        return;
-    }
-
-    transformer = [prev_transform = std::exchange(transformer, nullptr), next_transform = std::move(transformer_)](Cond & condition) -> Cond
-    {
-        prev_transform(condition);
-        next_transform(condition);
-        return condition;
-    };
+    transformers.push_back(std::move(transformer_));
 }
 
 template class ConditionTemplate<KeyCondition>;

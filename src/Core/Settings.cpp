@@ -1685,10 +1685,7 @@ Possible values:
 - 1 — Enabled.
 )", 0, use_partition_key) \
     DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
-Substitute partition-level constants into the filter predicate when analyzing per-part primary
-key and skip indexes. With this enabled, conditions like `partition_col = X AND <pk-pred>` get
-specialized per partition, which can prune more granules. Disable to fall back to the
-unsubstituted (per-table) condition.
+Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
 
 Possible values:
 
