@@ -312,6 +312,11 @@ public:
         }
     }
 
+    /// The distinct dictionary positions referenced by rows [offset, offset + limit),
+    /// in ascending order. Reads the index column's raw data directly, so it avoids a
+    /// per-row virtual/dispatch call.
+    PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
+
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
     /// Set shared ColumnUnique for empty low cardinality column.

@@ -632,6 +632,34 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
+PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
+{
+    const size_t dict_size = getDictionary().size();
+    PaddedPODArray<UInt8> seen(dict_size, 0);
+
+    const IColumn & indexes = getIndexes();
+    auto mark_seen = [&](const auto & positions)
+    {
+        for (size_t i = 0; i < limit; ++i)
+            seen[positions[offset + i]] = 1;
+    };
+
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): mark_seen(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): mark_seen(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): mark_seen(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): mark_seen(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
+    }
+
+    PaddedPODArray<UInt64> distinct;
+    for (size_t i = 0; i < dict_size; ++i)
+        if (seen[i])
+            distinct.push_back(i);
+    return distinct;
+}
+
 ColumnPtr ColumnLowCardinality::countKeys() const
 {
     const auto & nested_column = getDictionary().getNestedColumn();
