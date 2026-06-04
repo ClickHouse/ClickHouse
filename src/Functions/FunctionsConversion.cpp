@@ -278,6 +278,20 @@ ColumnPtr ConvertImplFromVariantToColumn::execute(
 
         ColumnsWithTypeAndName new_args = arguments;
         new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
+
+        /// Filter secondary arguments to match the compact variant subcolumn.
+        if (new_args.size() > 1)
+        {
+            auto local_discr = variant_column.localDiscriminatorByGlobal(static_cast<UInt8>(i));
+            PaddedPODArray<UInt8> variant_filter;
+            variant_filter.reserve(input_rows_count);
+            for (size_t row = 0; row != input_rows_count; ++row)
+                variant_filter.push_back(local_discriminators[row] == local_discr);
+            size_t variant_size = variant_column.getVariantPtrByGlobalDiscriminator(i)->size();
+            for (size_t j = 1; j < new_args.size(); ++j)
+                new_args[j].column = new_args[j].column->filter(variant_filter, variant_size);
+        }
+
         cast_variant_columns[i] = nested_convert(new_args, result_type);
         if (cast_variant_columns[i] && isColumnConst(*cast_variant_columns[i]))
         {
