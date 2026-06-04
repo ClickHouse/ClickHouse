@@ -273,6 +273,12 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     UInt64 num_columns = 0;
     readVarUInt(num_columns, *packet_in);
 
+    /// The final packet is the empty end-of-stream marker. A final packet carrying rows would have
+    /// them dropped once finished_reading is set, so reject it as a protocol violation.
+    if (final_chunk && num_rows != 0)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
+
     std::optional<Chunk> result;
     if (num_columns != 0)
     {
