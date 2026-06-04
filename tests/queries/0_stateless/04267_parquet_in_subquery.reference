@@ -2,6 +2,7 @@
 3
 3
 3
+explain_no_creating_set	1
 100743_cte	1
 100743_literal	1
 100743_or_subqueries	1
