@@ -82,8 +82,8 @@ SipHash TextSearchQuery::getHash() const
             else
             {
                 std::string required_substring;
-                bool is_trivial;
-                bool required_substring_is_prefix;
+                bool is_trivial = false;
+                bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
                 hash.update(required_substring);
                 hash.update(is_trivial);

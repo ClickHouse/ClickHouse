@@ -61,7 +61,7 @@ public:
 
     /// Resolve the named-collection argument: cast the first argument to a `ColumnConst`, run the
     /// `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`, and validate that the
-    /// required fields (`provider`, `endpoint`, `model`, `api_key`) are non-empty.
+    /// required fields (`provider`, `endpoint`, `model`) are non-empty. `api_key` is optional.
     static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
 
     /// Exponential backoff delay capped at one minute, so adversarial values of
@@ -109,8 +109,8 @@ private:
         String model;
         String api_key;
         String api_version;
-        float temperature;
-        UInt64 max_tokens;
+        float temperature = 0;
+        UInt64 max_tokens = 0;
     };
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;

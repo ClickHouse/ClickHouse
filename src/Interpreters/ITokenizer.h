@@ -34,6 +34,7 @@ public:
         AsciiCJK,
     };
 
+    ITokenizer() = delete;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
 
