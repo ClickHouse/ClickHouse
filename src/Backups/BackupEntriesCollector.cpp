@@ -587,7 +587,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
     /// partition-related constraints.
     for (auto & [qualified_name, res_table_info] : table_infos)
     {
-        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, rmv_replace_target_ids);
 
         if (!res_table_info.should_backup_data)
             continue;
@@ -887,17 +887,13 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
-    const StoragePtr & storage,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
         return false;
 
-    if (!storage)
-        return true;
-
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
-        && rmv_replace_target_ids.contains(storage->getStorageID()))
+        && rmv_replace_target_ids.contains(StorageID{table_name.database, table_name.table}))
     {
         LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
         return false;

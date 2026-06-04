@@ -99,7 +99,6 @@ private:
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
     bool shouldBackupTableData(
         const QualifiedTableName & table_name,
-        const StoragePtr & storage,
         const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
