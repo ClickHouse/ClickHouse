@@ -16,5 +16,7 @@ Expression (Project names)
               Granules: 1/1
               Search Algorithm: binary search
             Ranges: 1
+1
+equals(tenant_id, \'tenant_A\'_String)
 item_1	2
 item_2	1
