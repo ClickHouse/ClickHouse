@@ -165,7 +165,7 @@ TEST_F(UniqueKeyProbeTest, SinglePartLiveAndAbsent)
 
 TEST_F(UniqueKeyProbeTest, SinglePartAllDead)
 {
-    auto t = makeTarget({{7, 3}}, /*dead=*/{3});
+    auto t = makeTarget({{7, 3}}, /*dead_rows=*/{3});
     ASSERT_NE(t, nullptr);
     auto probe = probeOver({t});
     EXPECT_EQ(probeKey(probe, 7).outcome, ProbeOutcome::FOUND_ALL_DEAD);
@@ -186,7 +186,7 @@ TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlder)
 
 TEST_F(UniqueKeyProbeTest, SkipNewerDeadFindOlderLive)
 {
-    auto newest = makeTarget({{5, 9}}, /*dead=*/{9});
+    auto newest = makeTarget({{5, 9}}, /*dead_rows=*/{9});
     auto older = makeTarget({{5, 1}});
     ASSERT_NE(newest, nullptr);
     ASSERT_NE(older, nullptr);
@@ -199,8 +199,8 @@ TEST_F(UniqueKeyProbeTest, SkipNewerDeadFindOlderLive)
 
 TEST_F(UniqueKeyProbeTest, AllOccurrencesDeadAcrossParts)
 {
-    auto newest = makeTarget({{5, 9}}, /*dead=*/{9});
-    auto older = makeTarget({{5, 1}}, /*dead=*/{1});
+    auto newest = makeTarget({{5, 9}}, /*dead_rows=*/{9});
+    auto older = makeTarget({{5, 1}}, /*dead_rows=*/{1});
     ASSERT_NE(newest, nullptr);
     ASSERT_NE(older, nullptr);
     auto probe = probeOver({newest, older});
@@ -219,7 +219,7 @@ TEST_F(UniqueKeyProbeTest, NullTargetsSkipped)
 
 TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
 {
-    auto t = makeTarget({{1, 10}, {2, 20}, {3, 30}}, /*dead=*/{20});
+    auto t = makeTarget({{1, 10}, {2, 20}, {3, 30}}, /*dead_rows=*/{20});
     ASSERT_NE(t, nullptr);
     auto probe = probeOver({t});
 
