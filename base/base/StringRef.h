@@ -27,7 +27,7 @@ struct StringRef
     requires (sizeof(CharT) == 1)
     StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
     {
-        assert(size < 0x8000000000000000ULL);
+        chassert(size < 0x8000000000000000ULL);
     }
 
     constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}

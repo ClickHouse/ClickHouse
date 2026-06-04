@@ -53,7 +53,7 @@ struct ABStringRef
 
     static ABStringRef build(const char * ptr, size_t len, size_t hash)
     {
-        ABStringRef r;
+        ABStringRef r; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - both fields are assigned below in every branch
         if (len == 0)
         {
             r.low = 0;
