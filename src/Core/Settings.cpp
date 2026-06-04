@@ -8192,7 +8192,7 @@ DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", 
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
  - `greedy` - basic greedy algorithm - works fast but might not produce the best join order
  - `dpsize` - implements DPsize algorithm currently only for inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates
- - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - similar to `dpsize` but significantly faster for certain join graph shapes such as caterpillar graphs, at the cost of not considering cross products
+ - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
