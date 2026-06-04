@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cstring>
 #include <memory>
@@ -66,13 +67,13 @@ inline cctz::time_point<cctz::seconds> lookupTz(const cctz::time_zone & cctz_tim
 
 __attribute__((__weak__)) extern bool inside_main;
 
-DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - lut and lut_saturated are fully assigned below
+DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
     : time_zone(time_zone_)
 {
     /// DateLUT should not be initialized in global constructors for the following reasons:
     /// 1. It is too heavy.
     if (&inside_main)
-        chassert(inside_main);
+        assert(inside_main);
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
@@ -80,7 +81,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
 
     constexpr cctz::civil_day epoch{1970, 1, 1};
     constexpr cctz::civil_day lut_start{DATE_LUT_MIN_YEAR, 1, 1};
-    time_t start_of_day = 0;
+    time_t start_of_day;
 
     /// Note: it's validated against all timezones in the system.
     static_assert((epoch - lut_start) == daynum_offset_epoch);
@@ -143,10 +144,10 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
-        chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
-        chassert(values.month >= 1 && values.month <= 12);
-        chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
-        chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
+        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
+        assert(values.month >= 1 && values.month <= 12);
+        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
+        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {

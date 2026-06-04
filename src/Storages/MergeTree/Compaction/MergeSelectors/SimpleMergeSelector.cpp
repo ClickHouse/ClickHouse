@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cassert>
 #include <random>
 
 namespace DB
@@ -247,8 +248,8 @@ void selectWithinPartsRange(
     size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
     if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
     {
-        chassert(settings.partitions_stats);
-        chassert(range_it->size() > 1);
+        assert(settings.partitions_stats);
+        assert(range_it->size() > 1);
         const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
 
         if (static_cast<double>(partition_stats.part_count) < settings.base)
@@ -280,7 +281,7 @@ void selectWithinPartsRange(
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
-            chassert(end > begin);
+            assert(end > begin);
             if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
                 break;
 

@@ -1514,30 +1514,16 @@ QBitType::insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, cons
     return ret;
 }
 
-static void appendAggrParams(String & buf, const std::vector<AggregateParam> & params)
-{
-    if (params.empty())
-        return;
-    buf += "(";
-    for (size_t i = 0; i < params.size(); i++)
-    {
-        if (i != 0)
-            buf += ", ";
-        AggregateParamToString(buf, params[i]);
-    }
-    buf += ")";
-}
 
 String AggregateFunctionType::typeName(const bool escape, const bool simplified) const
 {
     String buf = simple ? "Simple" : "";
 
     buf += "AggregateFunction(";
-    buf += aggregate;
-    appendAggrParams(buf, params);
+    buf += SQLFunc_Name(aggregate).substr(4);
     for (const auto & entry : subtypes)
     {
-        buf += ", ";
+        buf += ",";
         buf += entry->typeName(escape, simplified);
     }
     buf += ")";
@@ -1568,21 +1554,17 @@ std::unique_ptr<SQLType> AggregateFunctionType::typeDeepCopy() const
     {
         nsubtypes.emplace_back(entry->typeDeepCopy());
     }
-    return std::make_unique<AggregateFunctionType>(simple, aggregate, params, std::move(nsubtypes));
+    return std::make_unique<AggregateFunctionType>(simple, aggregate, std::move(nsubtypes));
 }
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    String ret = aggregate;
+    String ret = SQLFunc_Name(aggregate).substr(4);
 
-    ret += "State";
-    appendAggrParams(ret, params);
-    ret += "(";
-    for (size_t i = 0; i < subtypes.size(); i++)
+    ret += "State(";
+    if (!subtypes.empty())
     {
-        if (i != 0)
-            ret += ",";
-        ret += subtypes[i]->appendRandomRawValue(rg, gen);
+        ret += subtypes[0]->appendRandomRawValue(rg, gen);
     }
     ret += ")";
     return ret;
@@ -1591,20 +1573,17 @@ String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, Stateme
 String AggregateFunctionType::insertNumberEntry(
     RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
 {
-    String ret = aggregate;
+    String ret = SQLFunc_Name(aggregate).substr(4);
 
-    ret += "State";
-    appendAggrParams(ret, params);
-    ret += "(";
-    for (size_t i = 0; i < subtypes.size(); i++)
+    ret += "State(";
+    if (!subtypes.empty())
     {
-        if (i != 0)
-            ret += ",";
-        ret += subtypes[i]->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+        ret += subtypes[0]->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
     }
     ret += ")";
     return ret;
 }
+
 
 String NestedType::typeName(const bool escape, const bool simplified) const
 {
@@ -1886,39 +1865,36 @@ StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allow
 std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator & rg, const bool simple, BottomTypeName * tp)
 {
     uint32_t col_counter2 = 0;
-    std::vector<AggregateParam> params;
     std::vector<std::unique_ptr<SQLType>> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-    const CHAggregate & agg = rg.pickRandomly(simple ? simple_det_aggrs : det_aggrs);
-    std::string aggr = agg.fname;
-    uint32_t nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
+    static const std::vector<SQLFunc> available_aggrs
+        = {SQLFunc::FUNCany,
+           SQLFunc::FUNCanyLast,
+           SQLFunc::FUNCavg,
+           SQLFunc::FUNCcount,
+           SQLFunc::FUNCgroupArrayArray,
+           SQLFunc::FUNCgroupBitAnd,
+           SQLFunc::FUNCgroupBitOr,
+           SQLFunc::FUNCgroupBitXor,
+           SQLFunc::FUNCgroupUniqArrayArray,
+           SQLFunc::FUNCgroupUniqArrayArrayMap,
+           SQLFunc::FUNCmax,
+           SQLFunc::FUNCmaxMap,
+           SQLFunc::FUNCmaxMappedArrays,
+           SQLFunc::FUNCmin,
+           SQLFunc::FUNCminMap,
+           SQLFunc::FUNCminMappedArrays,
+           SQLFunc::FUNCsum,
+           SQLFunc::FUNCsumMap,
+           SQLFunc::FUNCsumMappedArrays,
+           SQLFunc::FUNCsumWithOverflow};
+    SQLFunc aggr = rg.pickRandomly(available_aggrs);
 
-    if (agg.min_params > 0)
+    if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
     {
-        const uint32_t nparams = agg.min_params == agg.max_params
-            ? agg.min_params
-            : rg.randomInt<uint32_t>(agg.min_params, std::min(agg.max_params, UINT32_C(5)));
-        for (uint32_t i = 0; i < nparams; i++)
-        {
-            AggregateParam p;
-            if (rg.nextBool())
-                p.set_float_param(rg.randomInt<uint32_t>(0, 100) / 100.0);
-            else
-                p.set_int_param(rg.randomInt<uint64_t>(0, 100));
-            params.push_back(p);
-            if (af)
-                *af->add_params() = p;
-        }
+        aggr = SQLFunc::FUNCany;
     }
-    if (nargs == 0 && (simple || this->depth >= this->fc.max_depth))
-    {
-        aggr = "any";
-        nargs = 1;
-        params.clear();
-        if (af)
-            af->clear_params();
-    }
-    for (uint32_t i = 0; i < nargs; i++)
+    if (aggr != SQLFunc::FUNCcount)
     {
         this->depth++;
         subtypes.emplace_back(
@@ -1930,7 +1906,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
         af->set_simple(simple);
         af->set_aggr(aggr);
     }
-    return std::make_unique<AggregateFunctionType>(simple, std::move(aggr), std::move(params), std::move(subtypes));
+    return std::make_unique<AggregateFunctionType>(simple, aggr, std::move(subtypes));
 }
 
 std::unique_ptr<SQLType>
@@ -1963,7 +1939,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
         {{int_type,
           [&]
           {
-              Integers nint = {};
+              Integers nint;
 
               std::tie(res, nint) = randomIntType(rg, allowed_types);
               if (tp)
@@ -1974,7 +1950,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
          {floating_point_type,
           [&]
           {
-              FloatingPoints nflo = {};
+              FloatingPoints nflo;
 
               std::tie(res, nflo) = randomFloatType(rg, allowed_types);
               if (tp)
@@ -1985,7 +1961,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
          {date_type,
           [&]
           {
-              Dates dd = {};
+              Dates dd;
 
               std::tie(res, dd) = randomDateType(rg, allowed_types);
               if (tp)
@@ -2215,7 +2191,7 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
+              FloatingPoints nflo;
               const uint32_t dimension = rg.nextSmallNumber();
 
               std::tie(sub, nflo) = randomFloatType(rg, allowed_types);

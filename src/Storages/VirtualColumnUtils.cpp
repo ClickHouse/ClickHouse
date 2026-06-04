@@ -66,13 +66,16 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
             const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
             if (column_set)
             {
                 auto future_set = column_set->getData();

@@ -18,7 +18,7 @@ namespace DB
 
 ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values) const
 {
-    chassert(input_nodes_values.size() == getInputNodesCount());
+    assert(input_nodes_values.size() == getInputNodesCount());
 
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
