@@ -60,7 +60,7 @@ QueryPipeline::QueryPipeline()
 }
 
 QueryPipeline::QueryPipeline(QueryPipeline &&) noexcept = default;
-QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) noexcept = default;
+QueryPipeline & QueryPipeline::operator=(QueryPipeline &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 QueryPipeline::~QueryPipeline() = default;
 
 static void checkInput(const InputPort & input, const ProcessorPtr & processor)
