@@ -427,8 +427,11 @@ private:
     /// triaging a slow query needs only the server log, not a separate trace.
     struct Stats
     {
-        /// Bytes delivered to the consumer, split by where they came from.
-        /// Attributed by the serving provider's `tier()`.
+        /// Physical bytes issued per tier (attributed by the serving provider's
+        /// `tier()`), including background-prefetch reads - some of which a later
+        /// discard wastes. They drive the bandwidth/cache cost, so they count
+        /// issued I/O, not consumer-served bytes (that is `bytes_requested`); the
+        /// prefetch subset is `prefetch_issued_*`, the wasted subset `prefetch_wasted_*`.
         size_t bytes_from_page_cache = 0;
         size_t bytes_from_filesystem_cache = 0;
         size_t bytes_from_source = 0;
