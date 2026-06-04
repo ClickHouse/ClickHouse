@@ -23,37 +23,53 @@ _clickhouse_test_globals = runpy.run_path(str(_clickhouse_test))
 STOP_TESTING_EXIT_CODE = _clickhouse_test_globals["STOP_TESTING_EXIT_CODE"]
 GLOBAL_TIME_LIMIT_EXIT_CODE = _clickhouse_test_globals["GLOBAL_TIME_LIMIT_EXIT_CODE"]
 
-# Exit codes that mean the run was aborted mid-flight, so per-test results
-# (if any) are incomplete and we cannot trust which test "caused" the
-# failure. `STOP_TESTING_EXIT_CODE` is the in-band signal — the parent
-# raised `StopTesting` and reached the outer handler. The kill-by-signal
-# variants cover the out-of-band cases where the parent was killed before
-# it could exit through that handler (currently reachable via the
-# worker -> parent SIGTERM feedback loop in `stop_tests`: each worker the
-# parent terminates re-broadcasts SIGTERM to the whole process group via
-# `killpg`, hitting the parent before it can `sys.exit(STOP_TESTING_EXIT_CODE)`;
-# also covers external kills like job-level timeouts and runner shutdown).
+# Exit codes that mean the run was aborted mid-flight, so it never reached
+# the "All tests have finished" marker. They split into two kinds with
+# very different meanings, and conflating them is what made every external
+# kill show up as a spurious "Server died" (see PR #105643 follow-up).
 #
-# Both `128 + N` (bash's convention when its child died from signal N) and
-# the negative form `-N` are included: `Shell.run` wraps the command in
-# `bash -c`, so most kills surface as `128 + N` via bash's exit status, but
-# `Shell._check_timeout` calls `os.killpg` on the whole group, so the
-# wrapper bash can itself die from the signal — and Python's
-# `subprocess.Popen.returncode` reports that as `-N`, not `128 + N`.
+# `SERVER_DIED_EXIT_CODES` — the server really died. `clickhouse-test`
+# itself detected it (a dead server or a tripped hung-check), raised
+# `StopTesting`, reached its outer handler and exited with
+# `STOP_TESTING_EXIT_CODE`. The partial per-test results are untrustworthy
+# (the crash may have caused them), so they are demoted, and a "Server
+# died" leaf is the honest summary.
 #
-# Exit code 1 is deliberately NOT in this set: it is set by end-of-run
+# `RUNNER_ABORTED_EXIT_CODES` — `clickhouse-test` was terminated by a
+# signal, NOT because the server died. This is a plain "the test runner did
+# not finish" and must not be reported as a server death:
+#   * 143 = 128 + SIGTERM is `clickhouse-test`'s OWN exit code: its
+#     `signal_handler` turns SIGTERM into a `Terminated` exception and
+#     `__main__` exits `128 + e.signal` (see `tests/clickhouse-test`). The
+#     SIGTERM comes from a job-level wall-clock timeout (`Shell.run`'s
+#     safety-net `os.killpg`), a runner shutdown, or the worker -> parent
+#     feedback loop in `stop_tests` (terminating a worker re-broadcasts
+#     SIGTERM to the whole process group, hitting the parent).
+#   * 137 = 128 + SIGKILL is bash's convention for a child killed by an
+#     uncatchable SIGKILL (e.g. `_check_timeout` escalating after SIGTERM).
+#   * -15 / -9 are the negative form: `Shell._check_timeout` `killpg`s the
+#     whole group, so the wrapper `bash -c` itself can die from the signal,
+#     and Python's `subprocess.Popen.returncode` reports that as `-N`.
+# The per-test results that completed before the kill are authoritative and
+# are kept as-is — a real failure that happened before the abort stays
+# visible.
+#
+# Exit code 1 is deliberately NOT in either set: it is set by end-of-run
 # checks (final hung-check, `runner_process_killed`, `total_tests_run == 0`)
 # that run AFTER all tests have finished. Per-test results in that case are
 # complete and authoritative and must not be demoted.
-ABORTED_RUN_EXIT_CODES = frozenset(
+SERVER_DIED_EXIT_CODES = frozenset({STOP_TESTING_EXIT_CODE})
+
+RUNNER_ABORTED_EXIT_CODES = frozenset(
     {
-        STOP_TESTING_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
         -signal.SIGKILL,  # -9
     }
 )
+
+ABORTED_RUN_EXIT_CODES = SERVER_DIED_EXIT_CODES | RUNNER_ABORTED_EXIT_CODES
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -223,7 +239,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
+        elif runner_exit_code in SERVER_DIED_EXIT_CODES:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
@@ -238,6 +254,22 @@ class FTResultsProcessor:
                 # Single test failed - sequential run, this test is the culprit.
                 failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+        elif runner_exit_code in RUNNER_ABORTED_EXIT_CODES:
+            # `clickhouse-test` was terminated by a signal (job-level timeout,
+            # runner shutdown, or the worker -> parent SIGTERM feedback loop) -
+            # not a server death. Do NOT demote the per-test results: the ones
+            # that completed before the kill are authoritative. Report it under
+            # the same `clickhouse-test` leaf the end-of-run path uses for other
+            # non-zero exits, so the failure reads as "the runner did not finish"
+            # rather than "Server died".
+            state = Result.Status.FAIL
+            test_results.append(
+                Result(
+                    "clickhouse-test",
+                    Result.Status.FAIL,
+                    info=f"clickhouse-test was terminated before finishing (exit code {runner_exit_code})",
+                )
+            )
         elif runner_exit_code == GLOBAL_TIME_LIMIT_EXIT_CODE:
             # The run stopped gracefully because the global time limit was
             # reached. This is the *expected* stop condition for the flaky and

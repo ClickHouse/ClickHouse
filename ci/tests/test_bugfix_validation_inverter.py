@@ -75,10 +75,32 @@ def test_mixed_fail_and_ok_treats_any_fail_as_bug_reproduced():
 
 def test_server_died_synthetic_fail_leaf_treated_as_bug_reproduced():
     """Mirrors the leshikus PR #105643 flow: parser synthesises a `Server
-    died` FAIL leaf for `runner_exit_code in {STOP_TESTING_EXIT_CODE, 137,
-    143}`. The inverter must flip it to OK so the bugfix check passes.
+    died` FAIL leaf for `runner_exit_code in SERVER_DIED_EXIT_CODES`
+    (`STOP_TESTING_EXIT_CODE`). The inverter must flip it to OK so the
+    bugfix check passes.
     """
     leaf = _make_leaf("Server died", Result.Status.FAIL, info="Server died")
+    outer = _make_outer(Result.Status.FAIL, [leaf])
+
+    invert_bugfix_validation_status(outer)
+
+    assert leaf.status == Result.Status.OK
+    assert outer.status == Result.Status.OK
+
+
+def test_runner_aborted_synthetic_fail_leaf_treated_as_bug_reproduced():
+    """A run killed by SIGTERM/SIGKILL (exit codes 143/137/-15/-9) now
+    synthesises a `clickhouse-test` FAIL leaf instead of `Server died` - the
+    runner did not finish, but the server did not necessarily die. During
+    bugfix validation the runner being killed while exercising the new test
+    still means the bug reproduced, so the inverter must flip this leaf to OK
+    just as it does for `Server died`.
+    """
+    leaf = _make_leaf(
+        "clickhouse-test",
+        Result.Status.FAIL,
+        info="clickhouse-test was terminated before finishing (exit code 143)",
+    )
     outer = _make_outer(Result.Status.FAIL, [leaf])
 
     invert_bugfix_validation_status(outer)
