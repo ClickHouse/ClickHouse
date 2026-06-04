@@ -114,7 +114,7 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false,
+        bool is_concurrent_hash_join_ = false,
         bool enable_row_store_ = true);
 
     ~HashJoin() override;
@@ -521,6 +521,7 @@ private:
     friend class NotJoinedHash;
     friend class JoinSource;
     friend class CrossJoinResult;
+    friend class ConcurrentHashJoin;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -578,6 +579,9 @@ private:
     bool enable_lazy_columns_replication = false;
     bool enable_prefetch = true;
 
+    /// Determines if this HashJoin instance is a slot inside a ConcurrentHashJoin.
+    bool is_concurrent_hash_join = false;
+
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
@@ -625,6 +629,14 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     bool isRowStoreSupported() const;
+    /// Determine which columns can be added to the row store and which columns remain
+    /// columnar, and there indexes in the input block.
+    static std::optional<ColumnAccessIndexes> computeColumnAccessIndexes(
+        const Block & block,
+        const std::vector<bool> & column_replicated_flags,
+        size_t rows_to_join,
+        size_t max_row_store_bytes,
+        size_t min_row_store_columns);
     void finalizeRowStoreStatus();
     void tryConvertToRowStore();
 

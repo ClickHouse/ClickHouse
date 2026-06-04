@@ -114,7 +114,7 @@ namespace DB
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row major. 0 disables the row transformation.", 0) \
-    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 0, "Maximum total bytes of build-side data below which the hash join payload is transformed to row-major format. 0 means no maximum.", 0) \
+    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 5_GiB, "Maximum total bytes of build-side data below which the hash join payload is transformed to row-major format. 0 means no maximum.", 0) \
 
 
 // clang-format on

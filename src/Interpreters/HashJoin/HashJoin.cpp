@@ -2,6 +2,8 @@
 #include <limits>
 #include <memory>
 #include <vector>
+#include <Columns/ColumnIndex.h>
+#include <Core/Block.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -162,7 +164,7 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps,
+    bool is_concurrent_hash_join_,
     bool enable_row_store_)
     : table_join(table_join_)
     , kind(table_join->kind())
@@ -179,6 +181,7 @@ HashJoin::HashJoin(
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
+    , is_concurrent_hash_join(is_concurrent_hash_join_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -272,13 +275,13 @@ HashJoin::HashJoin(
             /// Therefore, add it back in such that it can be extracted appropriately from the full stored
             /// key_columns and key_sizes
             auto & asof_key_sizes = key_sizes.emplace_back();
-            data->type = chooseMethod(kind, key_columns, asof_key_sizes, use_two_level_maps);
+            data->type = chooseMethod(kind, key_columns, asof_key_sizes, /*use_two_level_maps=*/ is_concurrent_hash_join);
             asof_key_sizes.push_back(asof_size);
         }
         else
         {
             /// Choose data structure to use for JOIN.
-            auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), use_two_level_maps);
+            auto current_join_method = chooseMethod(kind, key_columns, key_sizes.emplace_back(), /*use_two_level_maps=*/ is_concurrent_hash_join);
             if (data->type == Type::EMPTY)
                 data->type = current_join_method;
             else if (data->type != current_join_method)
@@ -2389,6 +2392,11 @@ bool HashJoin::isRowStoreSupported() const
 
 void HashJoin::finalizeRowStoreStatus()
 {
+    /// In the case of concurrent hash join the row store is finalized one in `ConcurrentHashJoin`
+    /// for all hash join instances.
+    if (is_concurrent_hash_join)
+        return;
+
     auto disable_row_store = [&]
     {
         for (auto & cols : data->columns)
@@ -2404,15 +2412,45 @@ void HashJoin::finalizeRowStoreStatus()
         return;
     }
 
-    const Block & saved = savedBlockSample();
+    const Block & block = savedBlockSample();
+    auto access_indexes = computeColumnAccessIndexes(
+        block,
+        data->column_replicated_flags,
+        data->rows_to_join,
+        table_join->maxBytesForHashJoinRowStore(),
+        table_join->minColumnsForHashJoinRowStore());
 
+    if (!access_indexes)
+    {
+        disable_row_store();
+        return;
+    }
+
+    data->column_access_indexes = std::move(*access_indexes);
+
+    Strings row_store_column_names;
+    for (size_t i = 0; i < data->column_access_indexes.size(); ++i)
+        if (data->column_access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
+            row_store_column_names.push_back(block.getByPosition(i).name);
+
+    LOG_DEBUG(log, "{}Initialized Row store with {} columns: {}.",
+        instance_log_id, row_store_column_names.size(), fmt::join(row_store_column_names, ", "));
+}
+
+std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
+    const Block & block,
+    const std::vector<bool> & column_replicated_flags,
+    size_t rows_to_join,
+    size_t max_row_store_bytes,
+    size_t min_row_store_columns)
+{
     /// Collect columns for which the row store is useful.
     Columns eligible_columns;
     std::vector<size_t> eligible_indexes;
-    for (size_t i = 0; i < saved.columns(); ++i)
+    for (size_t i = 0; i < block.columns(); ++i)
     {
-        const auto & col = saved.getByPosition(i).column;
-        if (isRowStorageUseful(col) && !data->column_replicated_flags[i])
+        const auto & col = block.getByPosition(i).column;
+        if (isRowStorageUseful(col) && !column_replicated_flags[i])
         {
             eligible_columns.push_back(col);
             eligible_indexes.push_back(i);
@@ -2420,43 +2458,38 @@ void HashJoin::finalizeRowStoreStatus()
     }
 
     /// Select the columns that fit into the capacity and compute the layout of the row store.
-    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, data->rows_to_join, table_join->maxBytesForHashJoinRowStore());
+    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, rows_to_join, max_row_store_bytes);
     size_t row_store_size = std::ranges::count(filter, true);
-    if (row_store_size < table_join->minColumnsForHashJoinRowStore())
-    {
-        disable_row_store();
-        return;
-    }
+    if (row_store_size < min_row_store_columns)
+        return {};
 
     /// Translate the filter over eligible columns to all columns to determine which ones stay columnar.
-    std::vector<bool> expanded_filter(saved.columns(), false);
+    std::vector<bool> expanded_filter(block.columns(), false);
     for (size_t i = 0; i < eligible_indexes.size(); ++i)
         if (filter[i])
             expanded_filter[eligible_indexes[i]] = true;
 
     /// Initialize the final access indexes (columnar or row store) for the join payload.
-    data->column_access_indexes.reserve(saved.columns());
+    ColumnAccessIndexes access_indexes;
+    access_indexes.reserve(block.columns());
     size_t columns_index = 0;
     size_t row_store_index = 0;
-    Strings row_store_column_names;
-    for (size_t i = 0; i < saved.columns(); ++i)
+    for (size_t i = 0; i < block.columns(); ++i)
     {
         if (expanded_filter[i])
         {
             const auto & field = layout[row_store_index];
-            data->column_access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_index, field.offset, field.size, field.is_nullable});
+            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_index, field.offset, field.size, field.is_nullable});
             ++row_store_index;
-            row_store_column_names.push_back(saved.getByPosition(i).name);
         }
         else
         {
-            data->column_access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_index});
+            access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_index});
             ++columns_index;
         }
     }
 
-    LOG_DEBUG(log, "{}Initialized Row store with {} columns: {}.",
-        instance_log_id, row_store_column_names.size(), fmt::join(row_store_column_names, ", "));
+    return access_indexes;
 }
 
 void HashJoin::tryConvertToRowStore()
