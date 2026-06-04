@@ -334,6 +334,11 @@ private:
     /// Built once in constructor, filled once during finalization, read during convert-to-block.
     mutable PostAggregationManager post_aggregation;
 
+    /// Run post-aggregation precompute pass for TOTALS/BY combinators if not done yet.
+    /// Safe to call from multiple threads concurrently (uses std::call_once internally).
+    /// Must be called before reading from post_aggregation states during finalization.
+    void computePostAggregationStates(AggregatedDataVariants & data_variants) const;
+
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
     // add info to track alignment requirement

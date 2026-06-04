@@ -1816,6 +1816,9 @@ Aggregator::AggregatedChunk Aggregator::mergeAndConvertOneBucketToChunk(
     auto method = merged_data.type;
     AggregatedChunk agg_chunk;
 
+    if (final)
+        computePostAggregationStates(merged_data);
+
     if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
@@ -1877,6 +1880,9 @@ void Aggregator::mergeSingleLevelDataImplFixedMap(
 
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const
 {
+    if (final)
+        computePostAggregationStates(variants);
+
     const auto method = variants.type;
     AggregatedChunk agg_chunk;
 
@@ -2651,80 +2657,8 @@ Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variant
     /// hash table once, before any chunk conversion starts. This has to happen here
     /// (and in prepareChunksAndFillTwoLevel), because insertResultsIntoColumns sees
     /// only per-chunk places and cannot merge globally.
-    if (final && !post_aggregation.empty() && !post_aggregation.isComputed())
-    {
-        Arena * keys_arena = data_variants.aggregates_pool;
-
-        if (!post_aggregation.hasByStates())
-        {
-            /// Fast path: only TOTALS states — keys are not needed.
-#define COMPUTE_POST_TOTALS_ONLY(NAME) \
-            else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-            { \
-                data_variants.NAME->data.forEachValue([&](const auto & /*key*/, auto & mapped) \
-                { \
-                    if (mapped) \
-                        for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
-                            if (auto * ps = post_aggregation.find(idx)) \
-                                ps->absorb(mapped, nullptr, 0, keys_arena); \
-                }); \
-            }
-
-            if (false) {} // NOLINT
-            APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_TOTALS_ONLY)
-#undef COMPUTE_POST_TOTALS_ONLY
-            else {}
-        }
-        else
-        {
-            /// Slow path: BY states present — we need keys materialized per row.
-            /// We iterate the hash table, materializing keys into temporary columns,
-            /// then call absorb() with those columns.
-
-            IColumn::SerializationSettings serialization_settings{
-                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
-
-            /// Create temporary key columns of the correct types.
-            MutableColumns tmp_key_cols;
-            tmp_key_cols.reserve(params.keys_size);
-            for (size_t i = 0; i < params.keys_size; ++i)
-                tmp_key_cols.emplace_back(key_types[i]->createColumn());
-
-            /// Array of raw pointers for insertKeyIntoColumns.
-            std::vector<IColumn *> raw_key_cols(params.keys_size);
-            for (size_t i = 0; i < params.keys_size; ++i)
-                raw_key_cols[i] = tmp_key_cols[i].get();
-
-#define COMPUTE_POST_WITH_KEYS(NAME) \
-            else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-            { \
-                auto & method_ref = *data_variants.NAME; \
-                std::vector<AggregateDataPtr> places_vec; \
-                method_ref.data.forEachValue([&](const auto & key, auto & mapped) \
-                { \
-                    if (!mapped) return; \
-                    method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
-                    places_vec.push_back(mapped); \
-                }); \
-                \
-                std::vector<const IColumn *> const_key_cols(params.keys_size); \
-                for (size_t i = 0; i < params.keys_size; ++i) \
-                    const_key_cols[i] = tmp_key_cols[i].get(); \
-                \
-                for (size_t row = 0; row < places_vec.size(); ++row) \
-                    for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
-                        if (auto * ps = post_aggregation.find(idx)) \
-                            ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
-            }
-
-            if (false) {} // NOLINT
-            APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_WITH_KEYS)
-#undef COMPUTE_POST_WITH_KEYS
-            else {}
-        }
-
-        post_aggregation.markComputed();
-    }
+    if (final)
+    computePostAggregationStates(data_variants);
 
     Chunks res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
@@ -2756,87 +2690,12 @@ Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variant
 
 Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const
 {
-/// For TOTALS/BY: pre-compute post-aggregation states by iterating over all buckets
+    /// For TOTALS/BY: pre-compute post-aggregation states by iterating over all buckets
     /// of the two-level hash table sequentially, BEFORE the thread pool in
     /// prepareChunksAndFillTwoLevelImpl kicks in. This guarantees no race between
     /// post-state accumulation and parallel bucket-to-chunk conversion.
-    if (final && !post_aggregation.empty() && !post_aggregation.isComputed())
-    {
-        Arena * keys_arena = data_variants.aggregates_pool;
-
-        if (!post_aggregation.hasByStates())
-        {
-            /// Fast path: only TOTALS states — keys are not needed.
-#define COMPUTE_POST_TL_TOTALS_ONLY(NAME) \
-            else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-            { \
-                auto & method_ref = *data_variants.NAME; \
-                for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
-                { \
-                    method_ref.data.impls[bucket].forEachValue([&](const auto & /*key*/, auto & mapped) \
-                    { \
-                        if (mapped) \
-                            for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
-                                if (auto * ps = post_aggregation.find(idx)) \
-                                    ps->absorb(mapped, nullptr, 0, keys_arena); \
-                    }); \
-                } \
-            }
-
-            if (false) {} // NOLINT
-            APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_TL_TOTALS_ONLY)
-#undef COMPUTE_POST_TL_TOTALS_ONLY
-            else {}
-        }
-        else
-        {
-            /// Slow path: BY states present — materialize keys, absorb with keys.
-            IColumn::SerializationSettings serialization_settings{
-                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
-
-#define COMPUTE_POST_TL_WITH_KEYS(NAME) \
-            else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-            { \
-                auto & method_ref = *data_variants.NAME; \
-                \
-                for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
-                { \
-                    MutableColumns tmp_key_cols; \
-                    tmp_key_cols.reserve(params.keys_size); \
-                    for (size_t i = 0; i < params.keys_size; ++i) \
-                        tmp_key_cols.emplace_back(key_types[i]->createColumn()); \
-                    \
-                    std::vector<IColumn *> raw_key_cols(params.keys_size); \
-                    for (size_t i = 0; i < params.keys_size; ++i) \
-                        raw_key_cols[i] = tmp_key_cols[i].get(); \
-                    \
-                    std::vector<AggregateDataPtr> places_vec; \
-                    method_ref.data.impls[bucket].forEachValue([&](const auto & key, auto & mapped) \
-                    { \
-                        if (!mapped) return; \
-                        method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
-                        places_vec.push_back(mapped); \
-                    }); \
-                    \
-                    std::vector<const IColumn *> const_key_cols(params.keys_size); \
-                    for (size_t i = 0; i < params.keys_size; ++i) \
-                        const_key_cols[i] = tmp_key_cols[i].get(); \
-                    \
-                    for (size_t row = 0; row < places_vec.size(); ++row) \
-                        for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
-                            if (auto * ps = post_aggregation.find(idx)) \
-                                ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
-                } \
-            }
-
-            if (false) {} // NOLINT
-            APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_TL_WITH_KEYS)
-#undef COMPUTE_POST_TL_WITH_KEYS
-            else {}
-        }
-
-        post_aggregation.markComputed();
-    }
+    if (final)
+        computePostAggregationStates(data_variants);
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
@@ -2908,6 +2767,150 @@ Aggregator::AggregatedChunks Aggregator::prepareChunksAndFillTwoLevelImpl(Aggreg
     return chunks;
 }
 
+void Aggregator::computePostAggregationStates(AggregatedDataVariants & data_variants) const
+{
+    if (post_aggregation.empty())
+        return;
+
+    post_aggregation.computeOnce([&]() {
+        Arena * keys_arena = data_variants.aggregates_pool;
+
+        const bool two_level = data_variants.isTwoLevel();
+
+        if (!post_aggregation.hasByStates())
+        {
+            /// FAST PATH: only TOTALS combinators, keys are not needed.
+
+            if (!two_level)
+            {
+                /// Single-level: walk the only hash table.
+
+                #define COMPUTE_POST_TOTALS_ONLY_SL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        data_variants.NAME->data.forEachValue([&](const auto & /*key*/, auto & mapped) \
+                        { \
+                            if (mapped) \
+                                for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                    if (auto * ps = post_aggregation.find(idx)) \
+                                        ps->absorb(mapped, nullptr, 0, keys_arena); \
+                        }); \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_TOTALS_ONLY_SL)
+                #undef COMPUTE_POST_TOTALS_ONLY_SL
+            }
+            else
+            {
+                /// Two-level: walk all 256 buckets sequentially.
+
+                #define COMPUTE_POST_TOTALS_ONLY_TL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
+                        { \
+                            method_ref.data.impls[bucket].forEachValue([&](const auto & /*key*/, auto & mapped) \
+                            { \
+                                if (mapped) \
+                                    for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                        if (auto * ps = post_aggregation.find(idx)) \
+                                            ps->absorb(mapped, nullptr, 0, keys_arena); \
+                            }); \
+                        } \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_TOTALS_ONLY_TL)
+                #undef COMPUTE_POST_TOTALS_ONLY_TL
+            }
+        }
+        else
+        {
+            /// SLOW PATH: at least one BY combinator, keys must be materialized.
+
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+
+            if (!two_level)
+            {
+                /// Single-level: materialize keys into temporary columns once for the whole table.
+
+                MutableColumns tmp_key_cols;
+                tmp_key_cols.reserve(params.keys_size);
+                for (size_t i = 0; i < params.keys_size; ++i)
+                    tmp_key_cols.emplace_back(key_types[i]->createColumn());
+
+                std::vector<IColumn *> raw_key_cols(params.keys_size);
+                for (size_t i = 0; i < params.keys_size; ++i)
+                    raw_key_cols[i] = tmp_key_cols[i].get();
+
+                #define COMPUTE_POST_WITH_KEYS_SL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        std::vector<AggregateDataPtr> places_vec; \
+                        method_ref.data.forEachValue([&](const auto & key, auto & mapped) \
+                        { \
+                            if (!mapped) return; \
+                            method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
+                            places_vec.push_back(mapped); \
+                        }); \
+                        std::vector<const IColumn *> const_key_cols(params.keys_size); \
+                        for (size_t i = 0; i < params.keys_size; ++i) \
+                            const_key_cols[i] = tmp_key_cols[i].get(); \
+                        for (size_t row = 0; row < places_vec.size(); ++row) \
+                            for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                if (auto * ps = post_aggregation.find(idx)) \
+                                    ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_SINGLE_LEVEL(COMPUTE_POST_WITH_KEYS_SL)
+                #undef COMPUTE_POST_WITH_KEYS_SL
+            }
+            else
+            {
+                /// Two-level: process each bucket with its own temporary key columns.
+
+                #define COMPUTE_POST_WITH_KEYS_TL(NAME) \
+                    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+                    { \
+                        auto & method_ref = *data_variants.NAME; \
+                        for (size_t bucket = 0; bucket < method_ref.data.NUM_BUCKETS; ++bucket) \
+                        { \
+                            MutableColumns tmp_key_cols; \
+                            tmp_key_cols.reserve(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                tmp_key_cols.emplace_back(key_types[i]->createColumn()); \
+                            std::vector<IColumn *> raw_key_cols(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                raw_key_cols[i] = tmp_key_cols[i].get(); \
+                            std::vector<AggregateDataPtr> places_vec; \
+                            method_ref.data.impls[bucket].forEachValue([&](const auto & key, auto & mapped) \
+                            { \
+                                if (!mapped) return; \
+                                method_ref.insertKeyIntoColumns(key, raw_key_cols, key_sizes, &serialization_settings); \
+                                places_vec.push_back(mapped); \
+                            }); \
+                            std::vector<const IColumn *> const_key_cols(params.keys_size); \
+                            for (size_t i = 0; i < params.keys_size; ++i) \
+                                const_key_cols[i] = tmp_key_cols[i].get(); \
+                            for (size_t row = 0; row < places_vec.size(); ++row) \
+                                for (size_t idx = 0; idx < params.aggregates_size; ++idx) \
+                                    if (auto * ps = post_aggregation.find(idx)) \
+                                        ps->absorb(places_vec[row], const_key_cols.data(), row, keys_arena); \
+                        } \
+                    }
+
+                if (false) {} // NOLINT
+                APPLY_FOR_VARIANTS_TWO_LEVEL(COMPUTE_POST_WITH_KEYS_TL)
+                #undef COMPUTE_POST_WITH_KEYS_TL
+            }
+        }
+    });
+}
 
 Aggregator::AggregatedChunks Aggregator::convertToChunks(AggregatedDataVariants & data_variants, bool final) const
 {

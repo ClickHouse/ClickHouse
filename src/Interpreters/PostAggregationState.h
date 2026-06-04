@@ -10,6 +10,7 @@
 #include <string_view>
 #include <memory>
 #include <vector>
+#include <mutex>
 
 namespace DB
 {
@@ -163,8 +164,17 @@ public:
         }
     }
 
-    /// Mark that computation is complete. Used for assertions / idempotency.
-    void markComputed() { computed = true; }
+    /// Run the provided callable exactly once across all threads.
+    /// Subsequent calls (concurrent or sequential) do nothing and return
+    /// after the first invocation has completed.
+    template <typename Fn>
+    void computeOnce(Fn && fn) const
+    {
+        std::call_once(computed_flag, [&]() {
+            fn();
+            computed = true;
+        });
+    }
 
     /// Look up post-state by aggregate index. Returns nullptr if aggregate has no combinator.
     /// O(N) in number of post-states; N is tiny (1-3 per query typically).
@@ -174,7 +184,8 @@ public:
 
 private:
     std::vector<std::unique_ptr<PostAggregationState>> states;
-    bool computed = false;
+    mutable std::once_flag computed_flag;
+    mutable bool computed = false;
 };
 
 }
