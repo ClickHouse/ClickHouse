@@ -269,18 +269,32 @@ class RandomServerRestarter(RandomRestarter):
             )
             self._stop_hard(pid)
 
-    def _start_and_wait(self) -> None:
-        self._wait_port_free(9000)
-        self._wait_port_free(9009)
-        self._wait_port_free(9181)
+    def _loop_body(self) -> None:
+        with self._restart_lock:
+            # Track total downtime from the moment the server goes down.
+            # clickhouse-test's liveness window is ~175s; we must be back
+            # before that to avoid false SERVER_DIED aborts.
+            self._restart_deadline = time.monotonic() + self._server_start_timeout
+            if random.random() < 0.5:
+                self._stop_hard()
+            else:
+                self._stop_graceful()
+            self._start_and_wait()
 
+    def _start_and_wait(self) -> None:
+        deadline = self._restart_deadline
+
+        self._wait_port_free(9000, timeout=15)
+        self._wait_port_free(9009, timeout=15)
+        self._wait_port_free(9181, timeout=15)
+
+        remaining = max(0, deadline - time.monotonic())
         logging.info(
-            "%s: starting server (start timeout: %.0fs)",
+            "%s: starting server (%.0fs remaining in restart budget)",
             self.NAME,
-            self._server_start_timeout,
+            remaining,
         )
 
-        deadline = time.monotonic() + self._server_start_timeout
         started = False
         while time.monotonic() < deadline:
             subprocess.run(
@@ -375,15 +389,25 @@ class RandomMinIORestarter(RandomRestarter):
         )
         self._stop_hard()
 
+    _SETUP_SCRIPT = "/repo/ci/jobs/scripts/functional_tests/setup_minio.sh"
+
     def _start_and_wait(self) -> None:
         self._wait_port_free(self.MINIO_PORT)
 
-        logging.info("%s: starting MinIO", self.NAME)
-        subprocess.Popen(
-            f"nohup /minio server --address :{self.MINIO_PORT} {self._minio_data_dir} "
-            ">/dev/null 2>&1 &",
+        logging.info("%s: starting MinIO via setup_minio.sh", self.NAME)
+        ret = subprocess.run(
+            f"bash -c 'export TEMP_DIR=$(dirname {self._minio_data_dir}) && "
+            f"source {self._SETUP_SCRIPT} && start_minio'",
             shell=True,
+            capture_output=True,
+            timeout=120,
         )
+        if ret.returncode != 0:
+            logging.error(
+                "%s: setup_minio.sh failed (rc=%d): %s",
+                self.NAME, ret.returncode,
+                ret.stderr.decode(errors="replace")[-500:],
+            )
 
         if self._wait_minio_up():
             logging.info("%s: MinIO back up", self.NAME)
