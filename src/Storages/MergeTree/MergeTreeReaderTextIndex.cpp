@@ -496,7 +496,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
     if (!effective_range.has_value())
         return result;
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     const auto & analyzer = granule->getAnalyzer();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
@@ -647,7 +647,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, const String & c
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
     chassert(search_query->patterns.empty());
 
