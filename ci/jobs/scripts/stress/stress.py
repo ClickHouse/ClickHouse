@@ -395,12 +395,13 @@ class RandomMinIORestarter(RandomRestarter):
         self._wait_port_free(self.MINIO_PORT)
 
         logging.info("%s: starting MinIO via setup_minio.sh", self.NAME)
+        env = os.environ.copy()
+        env["TEMP_DIR"] = os.path.dirname(self._minio_data_dir)
         ret = subprocess.run(
-            f"bash -c 'export TEMP_DIR=$(dirname {self._minio_data_dir}) && "
-            f"source {self._SETUP_SCRIPT} && start_minio'",
-            shell=True,
+            [self._SETUP_SCRIPT, "stateless"],
             capture_output=True,
             timeout=120,
+            env=env,
         )
         if ret.returncode != 0:
             logging.error(
