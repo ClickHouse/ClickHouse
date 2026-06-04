@@ -242,9 +242,14 @@ String similarToPatternToRegexp(std::string_view pattern)
                         if (in_bracket || maybe_in_class)
                         {
                             /// Inside a bracket expression an escaped character is a single literal
-                            /// member of the class. Emit `\<char>` so that, for example, `[\-]` matches
-                            /// only `-` (not a backslash), and `[\^]` matches a literal `^`.
-                            res += '\\';
+                            /// member of the class. Only `-` and `^` are special inside an re2
+                            /// character class, so only those are emitted as `\<char>`: `[\-]` matches
+                            /// only `-` (not a backslash) and `[\^]` matches a literal `^`. Every other
+                            /// character is emitted as-is — in particular re2's Perl classes such as
+                            /// `\d`, `\w`, `\s` are not part of the `SIMILAR TO` grammar, so `[\d]` must
+                            /// match a literal `d`, not the digit class.
+                            if (pos[1] == '-' || pos[1] == '^')
+                                res += '\\';
                             res += pos[1];
                             ++pos;
                         }

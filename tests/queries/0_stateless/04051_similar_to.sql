@@ -170,6 +170,17 @@ SELECT '-' SIMILAR TO '[[:digit:]\-]';             -- Returns: 1
 SELECT '5' SIMILAR TO '[[:digit:]\-]';             -- Returns: 1
 SELECT '\\' SIMILAR TO '[[:digit:]\-]';            -- Returns: 0
 
+SELECT '-- re2 Perl classes are not part of SIMILAR TO: escaped letters inside a bracket are literal';
+SELECT 'd' SIMILAR TO '[\d]';                      -- Returns: 1
+SELECT '5' SIMILAR TO '[\d]';                      -- Returns: 0
+SELECT 'w' SIMILAR TO '[\w]';                      -- Returns: 1
+SELECT '_' SIMILAR TO '[\w]';                      -- Returns: 0
+SELECT 's' SIMILAR TO '[\s]';                      -- Returns: 1
+SELECT ' ' SIMILAR TO '[\s]';                      -- Returns: 0
+SELECT 'd' SIMILAR TO '[\da]';                     -- Returns: 1
+SELECT 'a' SIMILAR TO '[\da]';                     -- Returns: 1
+SELECT '5' SIMILAR TO '[\da]';                     -- Returns: 0
+
 SELECT '-- re2 extension groups like (?...) are not part of SIMILAR TO and are rejected';
 SELECT 'A' SIMILAR TO '(?i:a)'; -- { serverError BAD_ARGUMENTS }
 SELECT 'a' SIMILAR TO '(?:a)';  -- { serverError BAD_ARGUMENTS }
