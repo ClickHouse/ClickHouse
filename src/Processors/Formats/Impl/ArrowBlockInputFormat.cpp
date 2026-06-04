@@ -15,6 +15,8 @@
 #include <arrow/result.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowIPC/ArrowIPCSchemaReader.h>
 
 
 namespace DB
@@ -294,9 +296,12 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -304,9 +309,12 @@ void registerInputFormatArrow(FormatFactory & factory)
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & format_settings) -> InputFormatPtr
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
+            auto header = std::make_shared<const Block>(sample);
+            if (format_settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCBlockInputFormat>(buf, header, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, header, true, format_settings);
         });
 }
 
@@ -314,25 +322,35 @@ void registerArrowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
         "Arrow",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, false, settings);
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
     {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};use_native_reader={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.arrow.input_use_native_reader);
     });
     factory.registerSchemaReader(
         "ArrowStream",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
+            if (settings.arrow.input_use_native_reader)
+                return std::make_shared<ArrowIPCSchemaReader>(buf, true, settings);
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
         });
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
     {
-       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+        return fmt::format(
+            "schema_inference_make_columns_nullable={};use_native_reader={}",
+            settings.schema_inference_make_columns_nullable,
+            settings.arrow.input_use_native_reader);
     });
 }
 
