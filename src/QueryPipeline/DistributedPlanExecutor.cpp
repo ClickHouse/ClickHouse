@@ -788,6 +788,11 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
         auto shard_addresses = cluster->getShardsAddresses();
         if (shard_addresses.empty())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
+        /// Only a single-shard worker pool is supported; otherwise tasks would all be sent to the
+        /// first shard and the rest of the configured workers silently ignored.
+        if (shard_addresses.size() > 1)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
         for (const auto & shard : shard_addresses[0])
             hostnames.push_back(shard.host_name);
     }
@@ -1172,7 +1177,8 @@ protected:
             String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
             auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
             Poco::URI stateless_worker_uri;
-            stateless_worker_uri.setScheme("http");
+            /// Match the interserver scheme so a server with interserver_https_port is not sent plaintext.
+            stateless_worker_uri.setScheme(context->getInterserverScheme());
             stateless_worker_uri.setHost(host);
             stateless_worker_uri.setPort(static_cast<UInt16>(port));
             stateless_worker_uri.addQueryParameter("endpoint", endpoint);
