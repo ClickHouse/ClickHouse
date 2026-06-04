@@ -719,7 +719,7 @@ protected:
 
     void startStage(const String & stage_name, const DistributedQueryStage & stage) override
     {
-        VectorWithMemoryTracking<std::future<void>> started_tasks;
+        VectorWithMemoryTracking<std::shared_future<void>> started_tasks;
         started_tasks.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
@@ -728,7 +728,7 @@ protected:
         for (const auto & task : stage.tasks)
         {
             task_description.task = task;
-            started_tasks.emplace_back(startTask(task_description));
+            started_tasks.emplace_back(startTask(task_description).share());
         }
 
         stage_tasks[stage_name] = std::move(started_tasks);
@@ -743,7 +743,12 @@ protected:
             if (timeout_ms.has_value())
             {
                 if (task.wait_for(std::chrono::milliseconds(timeout_ms.value())) != std::future_status::ready)
+                {
+                    /// While this stage is still running, surface a failure from any other stage so a
+                    /// consumer blocked on an exchange does not wait forever on a dead producer.
+                    rethrowFailedTasks();
                     return false;
+                }
             }
             else
             {
@@ -762,7 +767,16 @@ protected:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::future<void>>> stage_tasks;
+    /// Rethrow the exception of any already-finished failed task across all stages, without blocking.
+    void rethrowFailedTasks()
+    {
+        for (auto & [stage_name, tasks] : stage_tasks)
+            for (auto & task : tasks)
+                if (task.valid() && task.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    task.get();
+    }
+
+    UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<std::shared_future<void>>> stage_tasks;
 };
 
 
