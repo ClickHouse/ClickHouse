@@ -365,12 +365,46 @@ OPTIMIZE TABLE t_lazy_int_partition FINAL;
 -- Test 10: Correctness ASC -- must return k=2 rows first.
 -- ------------------------------------------------------------------
 SELECT 'test 10 correctness integer partition ASC:';
-SELECT k, val FROM t_lazy_int_partition ORDER BY k ASC LIMIT 3;
+SELECT k, val FROM t_lazy_int_partition ORDER BY (k, val) ASC LIMIT 3;
 
 -- ------------------------------------------------------------------
 -- Test 11: Correctness DESC -- must return k=10 rows first.
 -- ------------------------------------------------------------------
 SELECT 'test 11 correctness integer partition DESC:';
-SELECT k, val FROM t_lazy_int_partition ORDER BY k DESC LIMIT 3;
+SELECT k, val FROM t_lazy_int_partition ORDER BY (k, val) DESC LIMIT 3;
 
 DROP TABLE t_lazy_int_partition;
+
+-- ============================================================================
+-- Table 4: PARTITION BY k ORDER BY k with Nullable(Int32) k.
+-- The optimization must be disabled for nullable partition keys.
+-- ============================================================================
+
+DROP TABLE IF EXISTS t_lazy_nullable_partition;
+
+CREATE TABLE t_lazy_nullable_partition (k Nullable(Int32), val UInt64)
+ENGINE = MergeTree
+PARTITION BY k
+ORDER BY k
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_lazy_nullable_partition VALUES (NULL, 999);
+INSERT INTO t_lazy_nullable_partition VALUES (2, 200), (2, 201);
+INSERT INTO t_lazy_nullable_partition VALUES (10, 1000), (10, 1001);
+
+OPTIMIZE TABLE t_lazy_nullable_partition FINAL;
+
+-- ------------------------------------------------------------------
+-- Test 12: Correctness ASC NULLS LAST -- must return k=2 rows first,
+-- not the NULL partition
+-- ------------------------------------------------------------------
+SELECT 'test 12 correctness nullable partition ASC:';
+SELECT k, val FROM t_lazy_nullable_partition ORDER BY k ASC NULLS LAST, val ASC LIMIT 2;
+
+-- ------------------------------------------------------------------
+-- Test 13: Correctness DESC NULLS LAST -- must return k=10 rows first.
+-- ------------------------------------------------------------------
+SELECT 'test 13 correctness nullable partition DESC:';
+SELECT k, val FROM t_lazy_nullable_partition ORDER BY k DESC NULLS LAST, val DESC LIMIT 2;
+
+DROP TABLE t_lazy_nullable_partition;

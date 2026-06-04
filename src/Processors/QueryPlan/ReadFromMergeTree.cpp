@@ -1395,6 +1395,10 @@ static std::optional<size_t> isPartitionKeyMonotonicInSortKey(
     if (!partition_output)
         return std::nullopt;
 
+    /// Disabling the optimization to be safe in ORDER BY k ASC NULLS LAST cases
+    if (partition_output->result_type && partition_output->result_type->isNullable())
+        return std::nullopt;
+
     /// Walk the partition key output node back to its INPUT leaf, checking that
     /// every function on the path is always-monotonic with exactly one non-constant argument
     const auto * node = partition_output;

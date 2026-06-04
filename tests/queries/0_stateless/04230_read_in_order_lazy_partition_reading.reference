@@ -33,3 +33,9 @@ test 11 correctness integer partition DESC:
 10	1002
 10	1001
 10	1000
+test 12 correctness nullable partition ASC:
+2	200
+2	201
+test 13 correctness nullable partition DESC:
+10	1001
+10	1000
