@@ -181,6 +181,7 @@ void JSONRowOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+void registerOutputFormatJSON(FormatFactory & factory);
 void registerOutputFormatJSON(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSON", [](

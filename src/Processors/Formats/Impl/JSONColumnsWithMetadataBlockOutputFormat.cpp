@@ -134,6 +134,7 @@ void JSONColumnsWithMetadataBlockOutputFormat::resetFormatterImpl()
     statistics = Statistics();
 }
 
+void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONColumnsWithMetadata", [](

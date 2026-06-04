@@ -245,8 +245,10 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos->type == TokenType::QuotedIdentifier)
     {
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
-        if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
+        if (*pos->begin == '\xE2' && pos->size() >= 6)
         {
+            if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
+                return false;
             node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
             ++pos;
             return true;
@@ -388,7 +390,7 @@ protected:
     }
 
 private:
-    size_t last_array_level;
+    size_t last_array_level{};
 };
 
 }
@@ -511,7 +513,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
@@ -555,7 +557,7 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
 bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    assert(node);
+    chassert(node);
     ASTFunction & function = dynamic_cast<ASTFunction &>(*node);
 
     // Variant 1:
@@ -1123,7 +1125,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto try_read_float = [&](const char * it, const char * end)
     {
         std::string buf(it, end); /// Copying is needed to ensure the string is 0-terminated.
-        char * str_end;
+        char * str_end = nullptr;
         errno = 0;    /// Functions strto* don't clear errno.
         /// The usage of strtod is needed, because we parse hex floating point literals as well.
         Float64 float_value = std::strtod(buf.c_str(), &str_end);
@@ -1375,7 +1377,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         std::string_view here_doc(pos->begin, pos->size());
         size_t heredoc_size = here_doc.find('$', 1) + 1;
-        assert(heredoc_size != std::string_view::npos);
+        chassert(heredoc_size != std::string_view::npos);
         s = String(pos->begin + heredoc_size, pos->size() - heredoc_size * 2);
     }
 
@@ -2511,7 +2513,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parser_exp.parse(pos, ttl_expr, expected))
         return false;
 
-    TTLMode mode;
+    TTLMode mode = {};
     DataDestinationType destination_type = DataDestinationType::DELETE;
     String destination_name;
 

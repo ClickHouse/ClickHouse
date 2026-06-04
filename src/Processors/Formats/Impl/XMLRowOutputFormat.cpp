@@ -266,6 +266,7 @@ void XMLRowOutputFormat::writeException()
     writeCString("</exception>\n", *ostr);
 }
 
+void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory)
 {
     factory.registerOutputFormat("XML", [](
