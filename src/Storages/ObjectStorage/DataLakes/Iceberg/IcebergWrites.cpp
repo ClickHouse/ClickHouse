@@ -113,6 +113,10 @@ namespace FailPoints
 
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
+/// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
+/// avro uses nasty '*std::any_cast' which triggers clang-tidy, the warning is false positive since
+/// a type and value are consistent in avro::GenericDatum, and even more - all avro manifests in iceberg
+/// consist only of AVRO_RECORDS
 namespace
 {
 
@@ -287,13 +291,6 @@ void carryOverParentManifestListEntries(
         return;
     }
 }
-
-}
-
-// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
-// Clang analyzer wrongly thinks the avro GenericDatum value can be uninitialized.
-namespace
-{
 
 bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
