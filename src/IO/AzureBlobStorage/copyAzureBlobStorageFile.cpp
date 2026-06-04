@@ -2,10 +2,8 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <Common/ListWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
@@ -58,7 +56,6 @@ namespace
             const String & dest_blob_,
             std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            BlobStorageLogWriterPtr blob_storage_log_,
             LoggerPtr log_)
             : create_read_buffer(create_read_buffer_)
             , client(client_)
@@ -68,7 +65,6 @@ namespace
             , dest_blob(dest_blob_)
             , settings(settings_)
             , schedule(schedule_)
-            , blob_storage_log(std::move(blob_storage_log_))
             , log(log_)
             , max_single_part_upload_size(settings_->max_single_part_upload_size)
             , normal_part_size(0)
@@ -86,7 +82,6 @@ namespace
         const String & dest_blob;
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
-        BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
         size_t max_single_part_upload_size;
 
@@ -94,14 +89,14 @@ namespace
         {
             size_t part_offset;
             size_t part_size;
-            Strings block_ids;
+            std::vector<std::string> block_ids;
             bool is_finished = false;
         };
 
         size_t normal_part_size;
-        Strings block_ids;
+        std::vector<std::string> block_ids;
 
-        ListWithMemoryTracking<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
         int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);
@@ -165,53 +160,7 @@ namespace
     public:
         void performCopy()
         {
-            if (total_size < max_single_part_upload_size)
-            {
-                performSinglepartUpload();
-            }
-            else
-            {
-                performMultipartUpload();
-            }
-        }
-
-        void performSinglepartUpload()
-        {
-            auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
-
-            PODArray<char> memory;
-            {
-                memory.resize(total_size);
-                WriteBufferFromVector<PODArray<char>> wb(memory);
-                copyData(*read_buffer, wb, total_size);
-            }
-
-            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
-
-            Stopwatch watch;
-            Int32 error_code = 0;
-            String error_message;
-            try
-            {
-                block_blob_client.Upload(stream);
-            }
-            catch (const Azure::Core::RequestFailedException & e)
-            {
-                error_code = static_cast<Int32>(e.StatusCode);
-                error_message = e.Message;
-                if (blob_storage_log)
-                    blob_storage_log->addEvent(
-                        BlobStorageLogElement::EventType::Upload,
-                        /* bucket */ dest_container_for_logging,
-                        /* remote_path */ dest_blob,
-                        /* local_path */ {},
-                        /* data_size */ total_size,
-                        watch.elapsedMicroseconds(),
-                        error_code,
-                        error_message);
-                throw;
-            }
+            performMultipartUpload();
         }
 
         void completeMultipartUpload()
@@ -221,41 +170,7 @@ namespace
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
-            Stopwatch watch;
-            Int32 error_code = 0;
-            String error_message;
-            try
-            {
-                block_blob_client.CommitBlockList(block_ids);
-            }
-            catch (const Azure::Core::RequestFailedException & e)
-            {
-                error_code = static_cast<Int32>(e.StatusCode);
-                error_message = e.Message;
-                if (blob_storage_log)
-                    blob_storage_log->addEvent(
-                        BlobStorageLogElement::EventType::MultiPartUploadComplete,
-                        /* bucket */ dest_container_for_logging,
-                        /* remote_path */ dest_blob,
-                        /* local_path */ {},
-                        /* data_size */ 0,
-                        watch.elapsedMicroseconds(),
-                        error_code,
-                        error_message);
-                throw;
-            }
-            auto elapsed = watch.elapsedMicroseconds();
-
-            if (blob_storage_log)
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::MultiPartUploadComplete,
-                    /* bucket */ dest_container_for_logging,
-                    /* remote_path */ dest_blob,
-                    /* local_path */ {},
-                    /* data_size */ 0,
-                    elapsed,
-                    error_code,
-                    error_message);
+            block_blob_client.CommitBlockList(block_ids);
         }
 
         void performMultipartUpload()
@@ -383,42 +298,7 @@ namespace
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
 
             const auto & block_id = task.block_ids.emplace_back(getRandomASCIIString(64));
-
-            Stopwatch watch;
-            Int32 error_code = 0;
-            String error_message;
-            try
-            {
-                block_blob_client.StageBlock(block_id, stream);
-            }
-            catch (const Azure::Core::RequestFailedException & e)
-            {
-                error_code = static_cast<Int32>(e.StatusCode);
-                error_message = e.Message;
-                if (blob_storage_log)
-                    blob_storage_log->addEvent(
-                        BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                        /* bucket */ dest_container_for_logging,
-                        /* remote_path */ dest_blob,
-                        /* local_path */ {},
-                        /* data_size */ size_to_stage,
-                        watch.elapsedMicroseconds(),
-                        error_code,
-                        error_message);
-                throw;
-            }
-            auto elapsed = watch.elapsedMicroseconds();
-
-            if (blob_storage_log)
-                blob_storage_log->addEvent(
-                    BlobStorageLogElement::EventType::MultiPartUploadWrite,
-                    /* bucket */ dest_container_for_logging,
-                    /* remote_path */ dest_blob,
-                    /* local_path */ {},
-                    /* data_size */ size_to_stage,
-                    elapsed,
-                    error_code,
-                    error_message);
+            block_blob_client.StageBlock(block_id, stream);
 
             LOG_TRACE(log, "Writing part. Container: {}, Blob: {}, block_id: {}, size: {}",
                       dest_container_for_logging, dest_blob, block_id, size_to_stage);
@@ -454,11 +334,10 @@ void copyDataToAzureBlobStorageFile(
     const String & dest_container_for_logging,
     const String & dest_blob,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyDataToAzureBlobStorageFile");
-    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, std::move(blob_storage_log), log};
+    UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, log};
     helper.performCopy();
 }
 
@@ -475,8 +354,7 @@ void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings,
     const ReadSettings & read_settings,
     const std::optional<ObjectAttributes> & object_to_attributes,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    BlobStorageLogWriterPtr blob_storage_log)
+    ThreadPoolCallbackRunnerUnsafe<void> schedule)
 {
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
@@ -573,7 +451,7 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, log};
         helper.performCopy();
     }
 }

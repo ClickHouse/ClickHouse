@@ -164,7 +164,7 @@ Chunk CassandraSource::generate()
     cassandraWaitAndCheck(result_future);
     CassResultPtr result = cass_future_get_result(result_future);
 
-    chassert(cass_result_column_count(result) == columns.size());
+    assert(cass_result_column_count(result) == columns.size());
 
     assertTypes(result);
 
@@ -188,7 +188,7 @@ Chunk CassandraSource::generate()
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[col_idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[col_idx].first, val);
-                column_nullable.getNullMapData().emplace_back(false);
+                column_nullable.getNullMapData().emplace_back(0);
             }
             else
                 insertValue(*columns[col_idx], description.types[col_idx].first, val);
@@ -196,7 +196,7 @@ Chunk CassandraSource::generate()
     }
 
     size_t num_rows = columns.front()->size();
-    chassert(cass_result_row_count(result) == num_rows);
+    assert(cass_result_row_count(result) == num_rows);
 
     return Chunk(std::move(columns), num_rows);
 }
