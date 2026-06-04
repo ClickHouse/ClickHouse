@@ -34,6 +34,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -72,6 +73,7 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <set>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -4510,97 +4512,93 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
-    const auto ensure_no_duplicate_outputs = [](const ActionsDAG & dag, const std::string_view & description)
-    {
-        NameSet seen_outputs;
-        for (const auto * output : dag.getOutputs())
-        {
-            if (seen_outputs.contains(output->result_name))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "Duplicate column name {} in {} actions output", output->result_name, description);
-            seen_outputs.insert(output->result_name);
-        }
-    };
-
-    if (query_info.prewhere_info)
-        ensure_no_duplicate_outputs(query_info.prewhere_info->prewhere_actions, "prewhere");
-    if (query_info.row_level_filter)
-        ensure_no_duplicate_outputs(query_info.row_level_filter->actions, "row policy");
-
     if (output_header == nullptr)
         return {};
 
-    /// ReadFromMergeTree output columns are unique (table columns always have distinct names),
-    /// so we can safely convert positions to names for internal use.
-    NameSet columns_to_keep;
-
+    /// Positions in the final RFMT output that must be preserved for the parent step or FINAL.
+    std::set<size_t> required_final_output_positions(required_output_positions.begin(), required_output_positions.end());
+    /// Positions in all_column_names that must still be read from storage.
+    std::set<size_t> required_storage_column_positions;
     if (query_info.isFinal())
-        columns_to_keep = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+    {
+        const auto required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
 
-    for (size_t pos : required_output_positions)
-        columns_to_keep.insert(output_header->getByPosition(pos).name);
+        for (size_t pos = 0; pos < output_header->columns(); ++pos)
+        {
+            if (required_for_final.contains(output_header->getByPosition(pos).name))
+                required_final_output_positions.insert(pos);
+        }
 
-    auto removed_output_from_prewhere = false;
+        for (size_t pos = 0; pos < all_column_names.size(); ++pos)
+        {
+            if (required_for_final.contains(all_column_names[pos]))
+                required_storage_column_positions.insert(pos);
+        }
+    }
 
+    /// Sorted vector form of required_final_output_positions, used as the initial backward-pruning frontier.
+    std::vector<size_t> final_output_positions(
+        required_final_output_positions.begin(),
+        required_final_output_positions.end());
+
+    Block storage_header = storage_snapshot->getSampleBlockForColumns(all_column_names);
+    Block row_level_output_header = storage_header;
+    if (query_info.row_level_filter)
+        row_level_output_header = SourceStepWithFilter::applyPrewhereActions(std::move(row_level_output_header), query_info.row_level_filter, nullptr);
+
+    /// Positions in the row-policy output header, which is the input header for PREWHERE.
+    std::vector<size_t> required_row_level_output_positions;
+    /// Positions from the old final RFMT output that remain after pruning.
+    std::vector<size_t> kept_output_positions = final_output_positions;
+    bool removed_output_from_prewhere = false;
     if (query_info.prewhere_info)
     {
-        auto & prewhere_outputs = query_info.prewhere_info->prewhere_actions.getOutputs();
-        removed_output_from_prewhere = std::erase_if(
-                                           prewhere_outputs,
-                                           [&](const auto * output)
-                                           {
-                                               return output->result_name != query_info.prewhere_info->prewhere_column_name
-                                                   && !columns_to_keep.contains(output->result_name);
-                                           })
-            > 0;
-
-        if (!query_info.prewhere_info->remove_prewhere_column && !columns_to_keep.contains(query_info.prewhere_info->prewhere_column_name))
-        {
-            query_info.prewhere_info->remove_prewhere_column = true;
-            removed_output_from_prewhere = true;
-        }
-
-        /// Preserve filter dependencies: inputs of prewhere must be kept so the filter can be evaluated.
-        for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
-            columns_to_keep.insert(input->result_name);
+        auto prewhere_pruning = pruneFilterDAGOutputsByPosition(
+            query_info.prewhere_info->prewhere_actions,
+            query_info.prewhere_info->prewhere_column_name,
+            query_info.prewhere_info->remove_prewhere_column,
+            row_level_output_header,
+            final_output_positions,
+            true);
+        removed_output_from_prewhere = prewhere_pruning.changed;
+        required_row_level_output_positions = std::move(prewhere_pruning.required_input_positions);
+    }
+    else
+    {
+        required_row_level_output_positions = final_output_positions;
     }
 
-    auto removed_output_from_row_level_filter = false;
+    bool removed_output_from_row_level_filter = false;
+    /// Positions in the storage header required by row policy and PREWHERE filters.
+    std::vector<size_t> required_storage_positions_from_filters;
     if (query_info.row_level_filter)
     {
-        /// Important that the inputs of prewhere are also kept as outputs for row level filter, thus `columns_to_keep`
-        /// is used instead of `required_outputs`.
-        auto & row_level_filter_outputs = query_info.row_level_filter->actions.getOutputs();
-        removed_output_from_row_level_filter = std::erase_if(
-                                                   row_level_filter_outputs,
-                                                   [&](const auto * output)
-                                                   {
-                                                       return output->result_name != query_info.row_level_filter->column_name
-                                                           && !columns_to_keep.contains(output->result_name);
-                                                   })
-            > 0;
-
-        if (!query_info.row_level_filter->do_remove_column && !columns_to_keep.contains(query_info.row_level_filter->column_name))
-        {
-            query_info.row_level_filter->do_remove_column = true;
-            removed_output_from_row_level_filter = true;
-        }
-        /// Preserve filter dependencies: inputs of row-level filter must be kept.
-        for (const auto * input : query_info.row_level_filter->actions.getInputs())
-            columns_to_keep.insert(input->result_name);
+        auto row_level_pruning = pruneFilterDAGOutputsByPosition(
+            query_info.row_level_filter->actions,
+            query_info.row_level_filter->column_name,
+            query_info.row_level_filter->do_remove_column,
+            storage_header,
+            required_row_level_output_positions,
+            true);
+        removed_output_from_row_level_filter = row_level_pruning.changed;
+        required_storage_positions_from_filters = std::move(row_level_pruning.required_input_positions);
+    }
+    else
+    {
+        required_storage_positions_from_filters = required_row_level_output_positions;
     }
 
+    required_storage_column_positions.insert(required_storage_positions_from_filters.begin(), required_storage_positions_from_filters.end());
+
     Names new_column_names;
-    for (const auto & column_name : all_column_names)
+    for (size_t pos = 0; pos < all_column_names.size(); ++pos)
     {
-        if (columns_to_keep.contains(column_name))
-            new_column_names.push_back(column_name);
+        if (required_storage_column_positions.contains(pos))
+            new_column_names.push_back(all_column_names[pos]);
     }
 
     if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
         return {};
-
-    const auto old_output_header = output_header;
 
     all_column_names = std::move(new_column_names);
 
@@ -4609,19 +4607,12 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
         query_info.row_level_filter,
         query_info.prewhere_info));
 
-    /// Compute kept output positions: for each column in the new output, find its position
-    /// in the old output header. ReadFromMergeTree has unique column names, so name lookup is safe.
-    /// We compute this after transformHeader because transformHeader may remove columns
-    /// (e.g., prewhere/row_level_filter columns whose remove flag was set during this optimization).
-    std::vector<size_t> kept_output_positions;
-    kept_output_positions.reserve(output_header->columns());
-    for (size_t i = 0; i < output_header->columns(); ++i)
-    {
-        const auto & column_name = output_header->getByPosition(i).name;
-        auto old_pos = old_output_header->findPositionByName(column_name);
-        chassert(old_pos.has_value() && "New output column must exist in the old output header");
-        kept_output_positions.push_back(*old_pos);
-    }
+    if (kept_output_positions.size() != output_header->columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected number of kept output positions after removing unused columns from ReadFromMergeTree: expected {}, got {}",
+            output_header->columns(),
+            kept_output_positions.size());
 
     /// Update analysis result if it exists
     if (analyzed_result_ptr)
