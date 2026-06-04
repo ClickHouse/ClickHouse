@@ -87,3 +87,13 @@ SELECT CAST(10413792000.5::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time
 SELECT CAST(10413792000.5::Float64, 'DateTime64(1, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
 SELECT CAST(3600000.5::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(3600000.5::Float64, 'Time64(1)') SETTINGS date_time_overflow_behavior='saturate';
+
+-- DateTime64(9) cannot store the calendar maximum (2299-12-31) in the Int64 native value, so the bounds are
+-- capped at the largest representable value. `throw` must raise VALUE_IS_OUT_OF_RANGE (not DECIMAL_OVERFLOW),
+-- and `saturate` must clamp to the maximum representable value (not raise DECIMAL_OVERFLOW).
+SELECT CAST(1e20::Float64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(toUInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(toInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(1e20::Float64, 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(toUInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
+SELECT CAST(toInt64(10413791999), 'DateTime64(9, \'UTC\')') SETTINGS date_time_overflow_behavior='saturate';
