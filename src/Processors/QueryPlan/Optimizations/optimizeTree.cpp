@@ -46,6 +46,7 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations
@@ -297,10 +298,13 @@ void optimizeTreeSecondPass(
             });
     }
 
-    /// WITH TOTALS / ROLLUP / CUBE produce extra streams the exchange protocol does not carry, so
-    /// such plans are not distributed (they run single-node and correctly).
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan
-        && !planHasUnsupportedDistributedStep(root);
+    /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
+    /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
+    /// than silently running single-node.
+    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},

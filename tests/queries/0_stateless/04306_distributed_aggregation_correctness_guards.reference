@@ -1,5 +1,2 @@
--- GROUPING SETS (distributed)
-18	45	21	14999850000
--- GROUPING SETS (baseline, must match)
-18	45	21	14999850000
--- max_rows_to_group_by: a global limit must still throw, not be diluted across buckets
+-- GROUPING SETS rejected
+-- max_rows_to_group_by rejected

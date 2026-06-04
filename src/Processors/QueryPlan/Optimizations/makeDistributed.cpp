@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations
@@ -268,9 +269,10 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     Names aggregation_keys = aggregating_step->getParams().keys;
 
-    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket; keep local.
+    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket.
     if (aggregating_step->getParams().max_rows_to_group_by != 0)
-        return;
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support aggregation with max_rows_to_group_by");
 
     enum AggregationStrategy
     {
@@ -312,9 +314,10 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         strategy = Shuffle;
 
     /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
-    /// produced in several buckets; keep grouping-sets aggregation single-node.
+    /// produced in several buckets and duplicated.
     if (aggregating_step->isGroupingSets())
-        return;
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support GROUPING SETS aggregation");
 
     if (strategy == PartialAggregation)
     {

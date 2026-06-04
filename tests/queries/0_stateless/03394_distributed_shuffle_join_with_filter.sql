@@ -1,6 +1,6 @@
 -- Tags: no-old-analyzer
 
--- A nonzero max_rows_to_group_by keeps aggregation single-node, so pin it to 0.
+-- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET max_rows_to_group_by = 0;
 SET distributed_plan_optimize_exchanges = 1;
 SET optimize_move_to_prewhere = 1;

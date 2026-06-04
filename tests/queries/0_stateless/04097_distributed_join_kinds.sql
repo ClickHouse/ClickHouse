@@ -18,7 +18,7 @@ SET query_plan_use_new_logical_join_step = 1;
 SET distributed_plan_default_shuffle_join_bucket_count = 4;
 SET distributed_plan_force_exchange_kind = 'Persisted';
 -- Pin settings that affect plan shape to make EXPLAIN output stable.
--- A nonzero max_rows_to_group_by keeps aggregation single-node, so pin it to 0.
+-- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET max_rows_to_group_by = 0;
 SET enable_join_runtime_filters = 0;
 SET optimize_move_to_prewhere = 0;
