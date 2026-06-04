@@ -346,23 +346,13 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
         }
     }
 
-    /// Handle incomplete sequences at EOF
-    /// If we have a pending high surrogate or incomplete bytes, emit replacement character
-    if (output_ptr + 4 <= output_end)
+    /// Handle incomplete bytes at EOF
+    if (output_ptr + 4 <= output_end && pending_bytes_count > 0)
     {
-        if (pending_high_surrogate != 0)
-        {
-            size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-            output_ptr += bytes;
-            pending_high_surrogate = 0;
-        }
-        else if (pending_bytes_count > 0)
-        {
-            /// Incomplete UTF-16 code unit at EOF
-            size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-            output_ptr += bytes;
-            pending_bytes_count = 0;
-        }
+        /// Incomplete UTF-16 code unit at EOF
+        size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+        output_ptr += bytes;
+        pending_bytes_count = 0;
     }
 
     size_t written = output_ptr - memory.data();
