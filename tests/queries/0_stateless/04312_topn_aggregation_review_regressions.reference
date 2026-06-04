@@ -1,0 +1,27 @@
+-- DESC sorting key: TopNAggregating is used
+1
+-- DESC sorting key: Mode 1 (sorted input) is used
+1
+-- DESC sorting key: correct top-K (optimization on)
+99	9999
+98	9998
+97	9997
+96	9996
+95	9995
+-- DESC sorting key: matches reference (optimization off)
+99	9999
+98	9998
+97	9997
+96	9996
+95	9995
+-- max_rows_to_group_by: no TopNAggregating
+0
+-- max_rows_to_group_by: limit is enforced
+-- serialize_query_plan: no TopNAggregating
+0
+-- serialize_query_plan: correct top-K, no exception
+99	9999
+98	9998
+97	9997
+96	9996
+95	9995
