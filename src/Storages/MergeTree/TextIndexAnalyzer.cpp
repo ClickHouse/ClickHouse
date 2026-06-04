@@ -216,6 +216,10 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
 
     switch (query.search_mode)
     {
+        /// A phrase requires all of its tokens to be present, so the document set is bounded by the
+        /// token intersection — the same estimate as `All`. The positional constraint only makes the
+        /// real result more selective, so the intersection is a safe upper bound.
+        case TextSearchMode::Phrase:
         case TextSearchMode::All:
         {
             /// |intersection| ≈ |C_read| * prod(|Ai|/n) over tokens whose postings are still unread.
