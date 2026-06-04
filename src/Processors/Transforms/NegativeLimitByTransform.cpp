@@ -236,7 +236,7 @@ void NegativeLimitByTransform::consume(Chunk chunk)
     key_columns.reserve(key_positions.size());
     for (size_t pos : key_positions)
     {
-        normalized_cols.push_back(removeSpecialRepresentations(cols[pos]));
+        normalized_cols.push_back(removeSpecialRepresentations(cols[pos])->convertToFullColumnIfConst());
         key_columns.push_back(normalized_cols.back().get());
     }
 
@@ -452,7 +452,7 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     Columns normalized_keys;
     normalized_keys.reserve(key_positions.size());
     for (size_t pos : key_positions)
-        normalized_keys.push_back(removeSpecialRepresentations(cols[pos]));
+        normalized_keys.push_back(removeSpecialRepresentations(cols[pos])->convertToFullColumnIfConst());
 
     auto append_run = [&](UInt64 start, UInt64 length)
     {

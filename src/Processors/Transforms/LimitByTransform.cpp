@@ -252,7 +252,7 @@ void LimitByTransform::transform(Chunk & chunk)
         grouping_key_columns.reserve(grouping_key_positions.size());
         for (size_t position : grouping_key_positions)
         {
-            normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position]));
+            normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
 
@@ -352,7 +352,7 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     Columns normalized_grouping_key_columns;
     normalized_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)
-        normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position]));
+        normalized_grouping_key_columns.push_back(removeSpecialRepresentations(chunk_columns[position])->convertToFullColumnIfConst());
 
     /// Row 0 can continue a group from the previous chunk. If its grouping
     /// key changed across the chunk boundary, start a fresh count for this group.
