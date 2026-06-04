@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- allow_feature_tier=1 forbids changing EXPERIMENTAL settings, but an EXPERIMENTAL MergeTree
+         setting placed in the global <merge_tree> config is a trusted source and must not break the
+         server or table creation. -->
+    <allow_feature_tier>1</allow_feature_tier>
+    <merge_tree>
+        <allow_experimental_reverse_key>1</allow_experimental_reverse_key>
+    </merge_tree>
+</clickhouse>

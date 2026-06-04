@@ -337,6 +337,42 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
     Field new_value = getNewValueToCheck(current_settings, change, /*ignore_unchanged_settings=*/false, reaction == THROW_ON_VIOLATION);
     if (new_value.isNull())
         return false;
+
+    /// Enforce `allow_feature_tier` for MergeTree settings, mirroring `getChecker` for regular settings.
+    /// This is intentionally delta-based: `getNewValueToCheck` above already returned Null (skipped) for
+    /// settings whose value equals the baseline `current_settings`. When the baseline is the server
+    /// `<merge_tree>` config (on CREATE) or the table's current settings (on ALTER), an EXPERIMENTAL/BETA
+    /// value inherited from that trusted source is exempt, while a value introduced by the query is rejected.
+    /// This matches how an experimental setting placed in the default profile is allowed for regular settings.
+    if (access_control)
+    {
+        bool allowed_experimental = access_control->getAllowExperimentalTierSettings();
+        bool allowed_beta = access_control->getAllowBetaTierSettings();
+        if (!allowed_experimental || !allowed_beta)
+        {
+            auto setting_tier = current_settings.getTier(setting_name);
+            if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
+            {
+                if (reaction == THROW_ON_VIOLATION)
+                    throw Exception(
+                        ErrorCodes::READONLY,
+                        "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
+                        "('allow_feature_tier')",
+                        setting_name);
+                return false;
+            }
+            if (setting_tier == SettingsTierType::BETA && !allowed_beta)
+            {
+                if (reaction == THROW_ON_VIOLATION)
+                    throw Exception(
+                        ErrorCodes::READONLY,
+                        "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
+                        setting_name);
+                return false;
+            }
+        }
+    }
+
     return getMergeTreeChecker(setting_name).check(change, new_value, reaction, SettingSource::QUERY);
 }
 

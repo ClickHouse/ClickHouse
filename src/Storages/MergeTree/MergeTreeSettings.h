@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
 #include <Columns/IColumn_fwd.h>
@@ -79,6 +80,8 @@ struct MergeTreeSettings
     bool tryGet(std::string_view name, Field & value) const;
     Field get(std::string_view name) const;
 
+    SettingsTierType getTier(std::string_view name) const;
+
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
@@ -92,7 +95,7 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;

@@ -714,15 +714,12 @@ MergeTreeData::MergeTreeData(
     allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
+    /// `allow_feature_tier` enforcement happens earlier, in the delta-based settings-constraints check
+    /// (`checkMergeTreeSettingsConstraints`) run by the storage factory / ALTER, so it is not repeated here.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -4804,11 +4801,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         performRequiredConversions(old_header, columns_to_check_conversion, local_context, new_metadata.getColumns().getDefaults(), true);
     }
 
+    /// Validate settings constraints (min/max/readonly and `allow_feature_tier`) for any settings the
+    /// ALTER introduces. Done unconditionally - not only when the table already had a SETTINGS clause - so
+    /// that a newly added EXPERIMENTAL/BETA setting is rejected under `allow_feature_tier`. The check is
+    /// delta-based against the table's current settings, so values carried over unchanged are exempt; this
+    /// is the enforcement point for the tier on ALTER (`MergeTreeSettings::sanityCheck` no longer checks it).
+    if (new_metadata.settings_changes)
+    {
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
+    }
+
     if (old_metadata.hasSettingsChanges())
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -5072,15 +5079,13 @@ void MergeTreeData::changeSettings(
         }
 
         /// Reset to default settings before applying existing.
+        /// `allow_feature_tier` is enforced earlier, during ALTER validation in `checkAlterIsPossible`
+        /// (delta-based), so it is not re-checked here - this would also run on rollback paths that
+        /// re-apply previously-valid settings.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         copy->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
 
         bool has_escape_index_filenames_changed

@@ -12,6 +12,14 @@ instance = cluster.add_instance(
     stay_alive=True,
 )
 
+# A separate instance that boots with allow_feature_tier=1 and an EXPERIMENTAL MergeTree setting
+# (allow_experimental_reverse_key) defined in the global <merge_tree> config.
+instance_mergetree_config = cluster.add_instance(
+    "instance_mergetree_config",
+    main_configs=["configs/feature_tier_mergetree.xml"],
+    stay_alive=True,
+)
+
 feature_tier_path = "/etc/clickhouse-server/config.d/allow_feature_tier.xml"
 
 
@@ -318,3 +326,54 @@ def test_it_is_possible_to_enable_experimental_settings_in_default_profile(
 
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
+
+
+def test_experimental_mergetree_setting_in_global_config_is_allowed(start_cluster):
+    # An EXPERIMENTAL MergeTree setting defined in the global <merge_tree> config is a trusted source,
+    # just like an experimental setting placed in the default profile. With allow_feature_tier=1 the
+    # server must boot and table creation must keep working, while a query that introduces an
+    # experimental setting itself must still be rejected.
+    node = instance_mergetree_config
+    assert "1" == get_current_tier_value(node)
+
+    # The experimental MergeTree setting from the global config is in effect.
+    assert (
+        "1"
+        == node.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name = 'allow_experimental_reverse_key'"
+        ).strip()
+    )
+
+    node.query("DROP TABLE IF EXISTS t_plain")
+    node.query("DROP TABLE IF EXISTS t_reverse")
+
+    # A plain table must be creatable even though an experimental value is inherited from the config.
+    output, error = node.query_and_get_answer_with_error(
+        "CREATE TABLE t_plain (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    assert error == "", error
+
+    # A table that actually uses the experimental feature (reverse key) must be creatable too,
+    # because the setting comes from the trusted global config and not from the query.
+    output, error = node.query_and_get_answer_with_error(
+        "CREATE TABLE t_reverse (x UInt64) ENGINE = MergeTree ORDER BY (x DESC)"
+    )
+    assert error == "", error
+
+    # But introducing the experimental setting via the query SETTINGS clause must still be rejected.
+    output, error = node.query_and_get_answer_with_error(
+        "CREATE TABLE t_explicit (x UInt64) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS allow_remote_fs_zero_copy_replication = 1"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    # And ALTER ... MODIFY SETTING that introduces an experimental setting must still be rejected.
+    output, error = node.query_and_get_answer_with_error(
+        "ALTER TABLE t_plain MODIFY SETTING allow_remote_fs_zero_copy_replication = 1"
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    node.query("DROP TABLE IF EXISTS t_plain")
+    node.query("DROP TABLE IF EXISTS t_reverse")

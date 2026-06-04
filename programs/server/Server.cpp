@@ -2936,14 +2936,13 @@ try
     /// It is important to initialize MergeTreeSettings after Settings, to support compatibility for MergeTreeSettings.
     sanityChecks(*this, server_settings);
 
-    /// Check sanity of MergeTreeSettings on server startup
+    /// Check sanity of MergeTreeSettings on server startup.
+    /// `allow_feature_tier` is intentionally not enforced for the global `<merge_tree>` config: any setting
+    /// (including EXPERIMENTAL/BETA) may be changed there, the same way it may be set in the default profile.
     {
-        /// All settings can be changed in the global config
-        bool allowed_experimental = true;
-        bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");

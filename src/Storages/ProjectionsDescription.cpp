@@ -328,14 +328,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
         }
 
-        const auto & ac = query_context->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
+        /// Projections only allow PRODUCTION-tier settings (see ALLOWED_PROJECTION_SETTINGS above), so
+        /// `allow_feature_tier` enforcement is not applicable here.
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
 
