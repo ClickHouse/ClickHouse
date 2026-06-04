@@ -12,6 +12,8 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
 #include <Common/RewriteRules/RewriteRules.h>
+#include <Common/RewriteRules/RewriteRuleObject.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 
 namespace DB
@@ -31,13 +33,17 @@ StorageSystemRewriteRules::StorageSystemRewriteRules(const StorageID & table_id_
 {
 }
 
-void StorageSystemRewriteRules::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemRewriteRules::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto rules = RewriteRules::instance().getAll();
     for (const auto & [name, rule] : rules)
     {
         res_columns[0]->insert(name);
-        res_columns[1]->insert(rule->getCreateQuery().whole_query);
+        /// A rule template can embed nested queries whose table functions or settings hold
+        /// secrets. Re-format the stored AST with secret hiding (gated by the display-secrets
+        /// grant and setting) instead of returning the raw query text, so credentials are not
+        /// leaked to every reader of this table.
+        res_columns[1]->insert(format({.ctx = context, .query = rule->getCreateQuery()}));
     }
 }
 
