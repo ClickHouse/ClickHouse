@@ -942,15 +942,15 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     /// The planner assigns action-node names by expression structure, so duplicates
     /// get the same name and downstream deduplication shrinks the column count,
     /// causing NUMBER_OF_COLUMNS_DOESNT_MATCH.  Wrap subsequent duplicates in
-    /// __actionName(expr, 'column_name') which forces a unique action-node name.
-    /// Only wrap items that correspond to ALIAS columns (identified by checking
-    /// whether the column has a Default of kind Alias in the storage metadata).
+    /// __actionName(expr, '<unique_name>') which forces a unique action-node name.
+    /// Identify ALIAS columns via the alias set by ReplaseAliasColumnsVisitor
+    /// (which is the original column name), and use position-based naming to
+    /// guarantee uniqueness even for repeated projections like SELECT a1, a2, a2.
     auto * query_node_ptr = query_tree_to_modify->as<QueryNode>();
     if (query_node_ptr)
     {
         const auto & columns_description = distributed_storage_snapshot->metadata->getColumns();
         auto & projection_nodes = query_node_ptr->getProjection().getNodes();
-        const auto & projection_columns = query_node_ptr->getProjectionColumns();
         struct TreeHashHash { size_t operator()(const IQueryTreeNode::Hash & h) const { return CityHash_v1_0_2::Hash128to64(h); } };
         std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
         bool has_duplicate = false;
@@ -960,7 +960,10 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
             if (!seen_hashes.emplace(tree_hash).second)
             {
-                const auto & col_default = columns_description.getDefault(projection_columns[i].name);
+                /// The alias on the node was set by ReplaseAliasColumnsVisitor
+                /// to the original ALIAS column name (before any user AS rename).
+                const auto & node_alias = projection_nodes[i]->getAlias();
+                const auto & col_default = columns_description.getDefault(node_alias);
                 if (col_default && col_default->kind == ColumnDefaultKind::Alias)
                 {
                     has_duplicate = true;
@@ -979,18 +982,19 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
                 auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
                 if (!seen_hashes.emplace(tree_hash).second)
                 {
-                    const auto & col_default = columns_description.getDefault(projection_columns[i].name);
+                    const auto & node_alias = projection_nodes[i]->getAlias();
+                    const auto & col_default = columns_description.getDefault(node_alias);
                     if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
                         continue;
 
-                    const auto & col_name = projection_columns[i].name;
+                    auto unique_name = node_alias + "_" + std::to_string(i);
                     projection_nodes[i]->removeAlias();
-                    auto name_node = std::make_shared<ConstantNode>(col_name);
+                    auto name_node = std::make_shared<ConstantNode>(unique_name);
                     auto wrapper = std::make_shared<FunctionNode>("__actionName");
                     wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
                     wrapper->getArguments().getNodes().push_back(std::move(name_node));
                     wrapper->resolveAsFunction(action_name_resolver);
-                    wrapper->setAlias(col_name);
+                    wrapper->setAlias(node_alias);
                     projection_nodes[i] = std::move(wrapper);
                 }
             }
