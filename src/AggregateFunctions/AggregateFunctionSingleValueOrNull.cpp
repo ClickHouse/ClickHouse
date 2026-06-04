@@ -28,23 +28,17 @@ struct AggregateFunctionSingleValueOrNullData
     using Self = AggregateFunctionSingleValueOrNullData;
 
 private:
-    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
-    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
-    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
-    SingleValueDataBaseMemoryBlock v_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    SingleValueDataBaseMemoryBlock v_data;
     bool first_value = true;
     bool is_null = false;
 
 public:
-    [[noreturn]] explicit AggregateFunctionSingleValueOrNullData() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    [[noreturn]] explicit AggregateFunctionSingleValueOrNullData()
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionSingleValueOrNullData initialized empty");
     }
 
-    explicit AggregateFunctionSingleValueOrNullData(const DataTypePtr & value_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-    {
-        generateSingleValueFromType(value_type, v_data);
-    }
+    explicit AggregateFunctionSingleValueOrNullData(const DataTypePtr & value_type) { generateSingleValueFromType(value_type, v_data); }
 
     ~AggregateFunctionSingleValueOrNullData() { data().~SingleValueDataBase(); }
 
@@ -68,12 +62,6 @@ public:
 
     void add(const Self & to, Arena * arena)
     {
-        if (to.is_null)
-        {
-            is_null = true;
-            return;
-        }
-
         if (!to.data().has())
             return;
 
@@ -104,7 +92,7 @@ public:
         {
             ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
             col.getNullMapColumn().insertDefault();
-            data().insertResultInto(col.getNestedColumn(), removeNullable(result_type));
+            data().insertResultInto(col.getNestedColumn(), result_type);
         }
     }
 };
@@ -181,7 +169,7 @@ public:
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, value_type, arena);
+        data(place).read(buf, *serialization, result_type, arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
@@ -204,7 +192,6 @@ AggregateFunctionPtr createAggregateFunctionSingleValueOrNull(
 
 }
 
-void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_singleValueOrNull = R"(

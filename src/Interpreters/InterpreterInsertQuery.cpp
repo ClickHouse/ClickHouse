@@ -499,7 +499,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             });
     }
 
-    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -597,7 +597,7 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
     }
 }
 
-static bool queryHasOrderByAll(const ASTPtr & select)
+bool queryHasOrderByAll(const ASTPtr & select)
 {
     if (auto * select_query = select->as<ASTSelectQuery>())
     {
@@ -1017,13 +1017,6 @@ BlockIO InterpreterInsertQuery::execute()
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 
-    if (context->getMessageQueueDisableInsertion()
-        && table->isMessageQueue()
-        && no_destination)
-    {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
-    }
-
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
     if (query.partition_by && !table->supportsPartitionBy())
@@ -1131,7 +1124,6 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
     context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
 }
 
-void registerInterpreterInsertQuery(InterpreterFactory & factory);
 void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

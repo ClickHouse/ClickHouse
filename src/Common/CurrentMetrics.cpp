@@ -371,8 +371,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
-    M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
-    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
+    M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
+    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
     M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
     M(SerializationCacheCount, "Total number of entries in the serialization cache") \
@@ -444,9 +444,6 @@
     M(BlobCopierThreads, "Number of threads in the thread pool of the object storage disk background replication process") \
     M(BlobCopierThreadsActive, "Number of threads in the thread pool of the object storage disk background replication process running a task") \
     M(BlobCopierThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background replication process") \
-    M(DiskObjectStorageCopyObjectThreads, "Number of threads in the thread pool used to parallelize copyObjectToAnotherObjectStorage calls inside object storage disk transactions") \
-    M(DiskObjectStorageCopyObjectThreadsActive, "Number of threads in the disk object storage copy thread pool running a task") \
-    M(DiskObjectStorageCopyObjectThreadsScheduled, "Number of queued or active tasks in the disk object storage copy thread pool") \
     \
     M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \

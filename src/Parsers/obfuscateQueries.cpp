@@ -12,6 +12,7 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
+#include <cassert>
 #include <iterator>
 
 #include <boost/algorithm/string.hpp>
@@ -1040,7 +1041,7 @@ void obfuscateLiteral(
                 else
                 {
                     ReadBufferFromMemory in(src_pos, src_end - src_pos);
-                    uint64_t num = 0;
+                    uint64_t num;
                     readIntText(num, in);
                     SipHash hash_func_num = hash_func;
                     hash_func_num.update(src_pos, in.count());
@@ -1075,7 +1076,7 @@ void obfuscateLiteral(
             ++src_pos;
 
             ReadBufferFromMemory in(src_pos, src_end - src_pos);
-            int16_t num = 0;
+            int16_t num;
             readIntText(num, in);
             writeIntText(num, result);
             src_pos += in.count();
@@ -1255,14 +1256,14 @@ void obfuscateQueries(
             }
             else if (token.type == TokenType::StringLiteral)
             {
-                chassert(token.size() >= 2);
+                assert(token.size() >= 2);
                 result.write(*token.begin);
                 obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, always_false_func);
                 result.write(token.end[-1]);
             }
             else if (token.type == TokenType::QuotedIdentifier)
             {
-                chassert(token.size() >= 2);
+                assert(token.size() >= 2);
                 result.write(*token.begin);
                 if (token.size() > 32)
                     writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
@@ -1518,7 +1519,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::QuotedIdentifier)
         {
-            chassert(token.size() >= 2);
+            assert(token.size() >= 2);
 
             /// Write quotes and the obfuscated content inside.
             result.write(*token.begin);
@@ -1537,7 +1538,7 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::StringLiteral)
         {
-            chassert(token.size() >= 2);
+            assert(token.size() >= 2);
 
             /// Hex string literals like x'ABCD' or binary string literals like b'1010'.
             if (token.size() >= 3

@@ -58,7 +58,7 @@ VirtualColumnsDescription StorageSystemDataSkippingIndices::createVirtuals()
     return desc;
 }
 
-class DataSkippingIndicesSource final : public ISource
+class DataSkippingIndicesSource : public ISource
 {
 public:
     DataSkippingIndicesSource(

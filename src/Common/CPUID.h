@@ -21,8 +21,8 @@ namespace CPU
 /// Our version is independent of -mxsave option, because we do dynamic dispatch.
 inline UInt64 our_xgetbv(UInt32 xcr) noexcept
 {
-    UInt32 eax = 0;
-    UInt32 edx = 0;
+    UInt32 eax;
+    UInt32 edx;
     __asm__ volatile(
         "xgetbv"
         : "=a"(eax), "=d"(edx)
@@ -71,7 +71,7 @@ inline int get_cpuid()
 
 union CPUInfo
 {
-    UInt32 info[4]{};
+    UInt32 info[4];
 
     struct Registers
     {
