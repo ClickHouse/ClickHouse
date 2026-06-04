@@ -16,7 +16,7 @@ inline std::function<bool()> makeSocketAliveCheckCallback(Poco::Net::Socket & so
     {
         try
         {
-            char b;
+            char b = 0;
             if (!socket_.impl()->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
                 return false;
         }
