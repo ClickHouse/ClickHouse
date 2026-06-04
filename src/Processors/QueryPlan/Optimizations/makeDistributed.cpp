@@ -239,6 +239,10 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     Names aggregation_keys = aggregating_step->getParams().keys;
 
+    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket; keep local.
+    if (aggregating_step->getParams().max_rows_to_group_by != 0)
+        return;
+
     enum AggregationStrategy
     {
         PartialAggregation, /// Do partial aggregation and then merge aggregation states
@@ -277,6 +281,11 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     if (optimization_settings.distributed_plan_force_shuffle_aggregation && !aggregation_keys.empty())
         strategy = Shuffle;
+
+    /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
+    /// produced in several buckets; keep grouping-sets aggregation single-node.
+    if (aggregating_step->isGroupingSets())
+        return;
 
     if (strategy == PartialAggregation)
     {
@@ -407,9 +416,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 {
     /// Is this a read from MergeTree step?
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
-    auto * read_from_object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(node.step.get());
-
-    if (!read_from_merge_tree_step && !read_from_object_storage_step)
+    if (!read_from_merge_tree_step)
         return;
 
     /// Should not have children
@@ -419,30 +426,21 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     /// TODO: estimate number of buckets based on statistics and available nodes and memory
     const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
-    if (read_from_merge_tree_step)
-    {
-        /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
-        /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
-        /// to serial read until a correctness-preserving bucketing strategy exists.
-        if (read_from_merge_tree_step->isQueryWithFinal() &&
-            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-            return;
+    /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
+    /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
+    /// to serial read until a correctness-preserving bucketing strategy exists.
+    if (read_from_merge_tree_step->isQueryWithFinal() &&
+        read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return;
 
-        /// Check if table is big enough for distributed read
-        /// TODO: implement better logic for choosing number of parallel readers
-        auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
-        if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
-            return;
+    /// Check if table is big enough for distributed read
+    /// TODO: implement better logic for choosing number of parallel readers
+    auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
+    if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+        return;
 
-        /// Move read step to a new node and set it to distributed read
-        read_from_merge_tree_step->setDistributedRead(bucket_count);
-    }
-    else if (read_from_object_storage_step)
-    {
-        /// TODO: implement row-count-based decision for object storage reads;
-        /// always enable distributed read for now.
-        read_from_object_storage_step->setDistributedRead(bucket_count);
-    }
+    /// Move read step to a new node and set it to distributed read
+    read_from_merge_tree_step->setDistributedRead(bucket_count);
 
     auto & new_read_node = nodes.emplace_back();
     new_read_node.step = std::move(node.step);
