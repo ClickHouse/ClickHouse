@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Defines.h>
+#include <Core/SortCursor.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -587,36 +588,6 @@ bool FillingTransform::generateSuffixIfNeeded(
     return true;
 }
 
-template <typename Predicate>
-size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
-{
-    chassert(begin < end);
-
-    const size_t linear_probe_threadhold = 16;
-    size_t linear_probe_end = begin + linear_probe_threadhold;
-    linear_probe_end = std::min(linear_probe_end, end);
-
-    for (size_t pos = begin; pos < linear_probe_end; ++pos)
-    {
-        if (!pred(begin, pos))
-            return pos;
-    }
-
-    size_t low = linear_probe_end;
-    size_t high = end - 1;
-    while (low <= high)
-    {
-        size_t mid = low + (high - low) / 2;
-        if (pred(begin, mid))
-            low = mid + 1;
-        else
-        {
-            high = mid - 1;
-            end = mid;
-        }
-    }
-    return end;
-}
 
 void FillingTransform::transformRange(
     const Columns & input_fill_columns,
@@ -871,21 +842,9 @@ void FillingTransform::transform(Chunk & chunk)
 
     for (size_t row_ind = 0; row_ind < num_rows;)
     {
-        /// find next range
-        auto current_sort_prefix_end_pos = getRangeEnd(
-            row_ind,
-            num_rows,
-            [&](size_t pos_with_current_sort_prefix, size_t row_pos)
-            {
-                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
-                {
-                    const int res = input_sort_prefix_columns[i]->compareAt(
-                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-                    if (res != 0)
-                        return false;
-                }
-                return true;
-            });
+        /// find next range: end of the run with equal sort-prefix values
+        auto current_sort_prefix_end_pos
+            = getEqualRangeEndAssumeSorted(input_sort_prefix_columns, sort_prefix, row_ind, num_rows);
 
         /// generate suffix for the previous range
         if (!last_range_sort_prefix.empty() && new_sort_prefix)
