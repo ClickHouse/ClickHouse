@@ -452,6 +452,15 @@ public:
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
+    /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
+      * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
+      * the value at `begin`. Returns `begin` if begin >= end. Equality is by value (`compareAt`), not collation-aware.
+      *
+      * PRECONDITION: [begin, end) is sorted so that equal values are contiguous. Only contiguity matters:
+      * the sort direction (ascending or descending) is irrelevant.
+      */
+    [[nodiscard]] virtual size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
