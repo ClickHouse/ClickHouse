@@ -421,10 +421,6 @@ protected:
     /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
-    void onEntryInvalidated();
-
-    void onInvalidatedEntryRemoved() { invalidated_count.fetch_sub(1, std::memory_order_relaxed); }
-
     /// Register a hook called from invalidate() once the number of pending
     /// invalidated entries reaches `threshold`.
     virtual void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate)
@@ -433,24 +429,20 @@ protected:
         invalidate_notifier = on_invalidate;
     }
 
-    /// Remove up to `max_batch` invalidated entries. Returns the number removed.
-    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard);
+    /// Remove up to `max_batch` pending invalidated entries, draining each from the
+    /// queue under the write lock. Returns the number of pending entries processed.
+    /// Implemented by leaf priorities (LRU); composites fan out to their sub-queues.
+    virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 
-private:
-    void cleanupTaskFunc();
-
-    /// Collect up to `max_batch` invalidated entries from this priority's own queue.
-    /// Implemented by leaf priorities (LRU); composites have no queue of their own.
-    virtual void collectInvalidatedEntries(
-        size_t /* max_batch */, InvalidatedEntriesInfos & /* res */, const CachePriorityGuard::ReadLock &) {}
-
-    /// Number of entries left in the queue by invalidate(), awaiting removal.
-    std::atomic<size_t> invalidated_count = 0;
+    /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;
     std::function<void()> invalidate_notifier;
+
+private:
+    void cleanupTaskFunc();
 
     /// The single cleanup task lives on the top-level priority only.
     BackgroundSchedulePoolTaskHolder cleanup_task;

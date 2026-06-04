@@ -20,6 +20,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
     extern const Event FilesystemCacheEvictionSkippedMovingFileSegments;
     extern const Event FilesystemCacheEvictionReusedIterator;
+    extern const Event FilesystemCacheBackgroundRemovedInvalidatedEntries;
 }
 
 namespace DB
@@ -154,9 +155,6 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     if (entry.size)
         state->sub(entry.size, /* elements */1);
 
-    if (entry.getState() == Entry::State::Invalidated)
-        onInvalidatedEntryRemoved();
-
     entry.setRemoved(lock);
 
     LOG_TEST(
@@ -164,8 +162,18 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         entry.key, entry.offset, entry.size.load());
 
     moveEvictionPosIfEqual(it, lock);
-    moveCleanupPosIfEqual(it, lock);
     return queue.erase(it);
+}
+
+void LRUFileCachePriority::addInvalidatedRef(std::weak_ptr<Entry> entry, LRUQueue::iterator it)
+{
+    std::lock_guard lock(invalidated_mutex);
+    invalidated_refs.push_back({std::move(entry), it});
+
+    const size_t threshold = invalidated_threshold.load(std::memory_order_relaxed);
+    const size_t prev = invalidated_count.fetch_add(1, std::memory_order_relaxed);
+    if (invalidate_notifier && threshold && prev + 1 == threshold)
+        invalidate_notifier();
 }
 
 LRUFileCachePriority::LRUIterator::LRUIterator(
@@ -209,23 +217,51 @@ void LRUFileCachePriority::iterate(
     iterateImpl(queue.begin(), func, stat, invalidated_entries, lock);
 }
 
-void LRUFileCachePriority::collectInvalidatedEntries(
-    size_t max_batch, InvalidatedEntriesInfos & res, const CachePriorityGuard::ReadLock &)
+size_t LRUFileCachePriority::removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard)
 {
-    /// Resume from where the previous scan stopped and wrap around, so that draining
-    /// many invalidated entries sweeps the queue once instead of rescanning from the
-    /// head on every batch.
-    const size_t to_examine = queue.size();
-    auto it = cleanup_pos == LRUQueue::iterator{} ? queue.begin() : cleanup_pos;
-    for (size_t examined = 0; examined < to_examine && res.size() < max_batch; ++examined)
+    if (invalidated_count.load(std::memory_order_relaxed) == 0)
+        return 0;
+
+    auto lock = cache_guard.writeLock();
+
+    /// We hold the priority write lock for the whole drain, so no other path can remove
+    /// queue entries meanwhile: an invalidated ref stays drainable until we process it.
+    /// Pop each ref up front (only invalidate() pushes, and that needs no priority lock),
+    /// then erase its queue node. If the erase throws, push the ref back to the front so a
+    /// later pass retries it instead of losing it. A ref whose entry was meanwhile removed
+    /// elsewhere has an expired weak_ptr (or a non-Invalidated state) and is dropped without
+    /// touching its stale iterator.
+    size_t removed = 0;
+    while (removed < max_batch)
     {
-        if (it == queue.end())
-            it = queue.begin();
-        if ((*it)->getState() == Entry::State::Invalidated)
-            res.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
-        ++it;
+        InvalidatedRef ref;
+        {
+            std::lock_guard cleanup_lock(invalidated_mutex);
+            if (invalidated_refs.empty())
+                break;
+            ref = std::move(invalidated_refs.front());
+            invalidated_refs.pop_front();
+        }
+
+        try
+        {
+            if (auto entry = ref.entry.lock(); entry && entry->getState() == Entry::State::Invalidated)
+            {
+                remove(ref.iterator, lock);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundRemovedInvalidatedEntries);
+            }
+        }
+        catch (...)
+        {
+            std::lock_guard cleanup_lock(invalidated_mutex);
+            invalidated_refs.push_front(std::move(ref));
+            throw;
+        }
+
+        invalidated_count.fetch_sub(1, std::memory_order_relaxed);
+        ++removed;
     }
-    cleanup_pos = it;
+    return removed;
 }
 
 LRUFileCachePriority::LRUQueue::iterator
@@ -556,8 +592,6 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
 #endif
 
     moveEvictionPosIfEqual(it.iterator, lock);
-    /// The entry leaves `other`, so advance `other`'s cleanup cursor off it.
-    other.moveCleanupPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -632,7 +666,6 @@ bool LRUFileCachePriority::tryIncreasePriority(
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);
-    moveCleanupPosIfEqual(it, lock);
     queue.splice(queue.end(), queue, it);
     return true;
 }
@@ -671,7 +704,7 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     if (entry_size)
         cache_priority->state->sub(entry_size, 1);
 
-    cache_priority->onEntryInvalidated();
+    cache_priority->addInvalidatedRef(entry, iterator);
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(
@@ -823,11 +856,5 @@ void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const C
     std::lock_guard lk(eviction_pos_mutex);
     if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)
         eviction_pos = std::next(it);
-}
-
-void LRUFileCachePriority::moveCleanupPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
-{
-    if (cleanup_pos != LRUQueue::iterator{} && cleanup_pos == it)
-        cleanup_pos = std::next(it);
 }
 }
