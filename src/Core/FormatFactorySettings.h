@@ -266,6 +266,9 @@ The number of columns in inserted MsgPack data. Used for automatic schema infere
     DECLARE(MsgPackUUIDRepresentation, output_format_msgpack_uuid_representation, FormatSettings::MsgPackUUIDRepresentation::EXT, R"(
 The way how to output UUID in MsgPack format.
 )", 0) \
+    DECLARE(Bool, column_binary_disable_preallocation, false, R"(
+Disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics.
+)", 0) \
     DECLARE(UInt64, input_format_max_rows_to_read_for_schema_inference, 25000, R"(
 The maximum rows of data to read for automatic schema inference.
 )", 0) \
