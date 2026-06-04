@@ -91,8 +91,17 @@ void ExchangeConnections::cleanupQuery(const String & query_id)
     {
         std::lock_guard lock(mutex);
         /// Mark the query so any addConnection/getConnection arriving after this point
-        /// short-circuits and doesn't recreate an orphan entry.
-        cancelled_queries.insert(query_id);
+        /// short-circuits and doesn't recreate an orphan entry. Keep the tombstone set bounded by
+        /// evicting the oldest ids; late connections are only possible for recently-cleaned queries.
+        if (cancelled_queries.insert(query_id).second)
+        {
+            cancelled_queries_order.push_back(query_id);
+            while (cancelled_queries_order.size() > MAX_CANCELLED_QUERIES)
+            {
+                cancelled_queries.erase(cancelled_queries_order.front());
+                cancelled_queries_order.pop_front();
+            }
+        }
         for (auto it = pending_connections.begin(); it != pending_connections.end();)
         {
             if (it->first.first == query_id)

@@ -8,6 +8,7 @@
 
 #include <boost/container_hash/hash.hpp>
 
+#include <deque>
 #include <future>
 #include <memory>
 #include <unordered_set>
@@ -50,7 +51,11 @@ private:
     ConnectionsMap pending_connections;
     /// Queries that have been cleaned up. Late add/get for these query ids must not
     /// (re)create pending entries — otherwise the entry would have no owner and leak.
+    /// Bounded: query ids are tracked in insertion order and the oldest tombstone is dropped past
+    /// the cap, so the set cannot grow without limit on a long-running server.
+    static constexpr size_t MAX_CANCELLED_QUERIES = 100000;
     std::unordered_set<String> cancelled_queries;
+    std::deque<String> cancelled_queries_order;
     LoggerPtr log = getLogger("ExchangeConnections");
 };
 
