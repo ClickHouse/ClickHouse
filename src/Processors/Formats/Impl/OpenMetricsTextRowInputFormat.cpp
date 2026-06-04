@@ -18,7 +18,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
-#include <IO/readIntText.h>
 
 #include <array>
 #include <cmath>
@@ -33,7 +32,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
-extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -189,45 +187,93 @@ Float64 parseRealNumber(std::string_view token, const String & line)
 /// Convert an OpenMetrics `realnumber` timestamp token (epoch seconds, possibly fractional) to
 /// the Prometheus-compatible millisecond representation stored in the `timestamp` column.
 ///
-/// The conversion is `seconds * 1000`, with the result bounded to `(-2^63, 2^63)` so the cast
-/// to `Int64` is well-defined. We choose two representations based on the token shape so that:
-///   1. Integer-shaped tokens (no `.`, no exponent) are parsed exactly as `Int64` seconds and
-///      multiplied with overflow detection. This guarantees ms-precise round-trip for tokens
-///      whose value fits in `Int64 / 1000` without `Float64` truncation near 2^53.
-///   2. Decimal/exponent tokens are converted via `Float64` because their fractional part is
-///      already a `Float64`. For typical Unix timestamps (`|s| <= 2^53 / 1000 ≈ 9e12`) this is
-///      exact; very large magnitudes may lose at most one millisecond of precision, but are
-///      still inside `Int64` range (or rejected here).
-///
-/// Strict `(-2^63, 2^63)` is used because `Float64` cannot distinguish `±2^63` from
-/// `±2^63 ± k` for small `k`; equality with the boundary is rejected to avoid silently
-/// admitting out-of-range tokens.
+/// The conversion is `seconds * 1000`. For the integer and decimal forms (no exponent) the math
+/// is done exactly in unsigned 64-bit arithmetic, so the token grammar emitted by
+/// `OpenMetricsTextOutputFormat::write` round-trips back to the same `Int64` ms value — including
+/// the boundaries `Int64::min` (`-9223372036854775.808`) and `Int64::max` (`9223372036854775.807`).
+/// The exponent form is rare and never produced by the writer; it falls back to a `Float64`
+/// multiplication with a strict `(-2^63, 2^63)` range guard to avoid undefined casts at the
+/// boundary that `Float64` cannot distinguish from one ULP outside the range.
 Int64 secondsTokenToMillis(std::string_view token, Float64 ts_value, const String & line)
 {
-    const bool has_dot = token.find('.') != std::string_view::npos;
     const bool has_exp = token.find('e') != std::string_view::npos || token.find('E') != std::string_view::npos;
 
-    if (!has_dot && !has_exp)
+    if (has_exp)
     {
-        std::string_view body = token;
-        if (!body.empty() && body.front() == '+')
-            body.remove_prefix(1);
-
-        Int64 seconds = 0;
-        if (!tryParseInt<>(seconds, body))
-            throwIncorrect("Timestamp value out of Int64 second range", line);
-
-        Int64 ms = 0;
-        if (common::mulOverflow(seconds, static_cast<Int64>(1000), ms))
+        const Float64 ms_f = ts_value * 1000.0;
+        const Float64 upper = std::ldexp(1.0, 63);
+        if (!(ms_f > -upper && ms_f < upper))
             throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-        return ms;
+        return static_cast<Int64>(ms_f);
     }
 
-    const Float64 ms_f = ts_value * 1000.0;
-    const Float64 upper = std::ldexp(1.0, 63);
-    if (!(ms_f > -upper && ms_f < upper))
+    /// Strip optional sign once; `parseRealNumber` already accepted the token, so the body
+    /// below is `[digits]` or `[digits].[digits]` with at least one digit overall.
+    std::string_view body = token;
+    bool neg = false;
+    if (!body.empty() && (body.front() == '+' || body.front() == '-'))
+    {
+        neg = body.front() == '-';
+        body.remove_prefix(1);
+    }
+
+    const size_t dot_pos = body.find('.');
+    const std::string_view int_part = (dot_pos == std::string_view::npos) ? body : body.substr(0, dot_pos);
+    const std::string_view frac_part = (dot_pos == std::string_view::npos) ? std::string_view{} : body.substr(dot_pos + 1);
+
+    UInt64 abs_seconds = 0;
+    for (char c : int_part)
+    {
+        if (c < '0' || c > '9')
+            throwIncorrect("Invalid timestamp token", line);
+        UInt64 next = abs_seconds * 10u + static_cast<UInt64>(c - '0');
+        if (next < abs_seconds)
+            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+        abs_seconds = next;
+    }
+
+    /// Pack the first three fractional digits into ms; anything beyond is sub-millisecond and
+    /// silently truncated (still validated as digits). The writer never emits >3 frac digits,
+    /// so this loses no information on round-trip.
+    UInt64 abs_frac_ms = 0;
+    size_t taken = 0;
+    for (char c : frac_part)
+    {
+        if (c < '0' || c > '9')
+            throwIncorrect("Invalid timestamp token", line);
+        if (taken < 3)
+        {
+            abs_frac_ms = abs_frac_ms * 10u + static_cast<UInt64>(c - '0');
+            ++taken;
+        }
+    }
+    while (taken < 3)
+    {
+        abs_frac_ms *= 10u;
+        ++taken;
+    }
+
+    UInt64 abs_ms_high = 0;
+    if (common::mulOverflow(abs_seconds, static_cast<UInt64>(1000u), abs_ms_high))
         throwIncorrect("Timestamp value out of Int64 millisecond range", line);
-    return static_cast<Int64>(ms_f);
+    UInt64 abs_total = abs_ms_high + abs_frac_ms;
+    if (abs_total < abs_ms_high)
+        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+
+    constexpr UInt64 INT64_MIN_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max()) + 1u;
+    constexpr UInt64 INT64_MAX_ABS = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+
+    if (neg)
+    {
+        if (abs_total > INT64_MIN_ABS)
+            throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+        if (abs_total == INT64_MIN_ABS)
+            return std::numeric_limits<Int64>::min();
+        return -static_cast<Int64>(abs_total);
+    }
+    if (abs_total > INT64_MAX_ABS)
+        throwIncorrect("Timestamp value out of Int64 millisecond range", line);
+    return static_cast<Int64>(abs_total);
 }
 
 /// OpenMetrics `number`: real number, NaN, ±Inf. Requires full-token consumption.
@@ -352,27 +398,26 @@ OpenMetricsTextRowInputFormat::ColumnLoc OpenMetricsTextRowInputFormat::buildCol
         const char * name;
         std::optional<size_t> ColumnLoc::* slot;
         Pred pred;
-        bool required;
     };
+    /// All slots are optional: `markFormatSupportsSubsetOfColumns` lets `file()`/`format()`
+    /// pass only the columns the query actually requests (e.g. `SELECT name FROM file(..., OpenMetrics)`).
+    /// `readRow` still parses the `name` and `value` tokens on every line because OpenMetrics
+    /// requires them; it just skips the insertion when the slot is absent.
     static const std::array<Spec, 7> specs = {{
-        {"name",      &ColumnLoc::name,      &isPlainString,     true},
-        {"value",     &ColumnLoc::value,     &isPlainFloat64,    true},
-        {"help",      &ColumnLoc::help,      &isPlainString,     false},
-        {"type",      &ColumnLoc::type,      &isPlainString,     false},
-        {"labels",    &ColumnLoc::labels,    &isMapStringString, false},
-        {"timestamp", &ColumnLoc::timestamp, &isOptionalInt64,   false},
-        {"unit",      &ColumnLoc::unit,      &isPlainString,     false},
+        {"name",      &ColumnLoc::name,      &isPlainString},
+        {"value",     &ColumnLoc::value,     &isPlainFloat64},
+        {"help",      &ColumnLoc::help,      &isPlainString},
+        {"type",      &ColumnLoc::type,      &isPlainString},
+        {"labels",    &ColumnLoc::labels,    &isMapStringString},
+        {"timestamp", &ColumnLoc::timestamp, &isOptionalInt64},
+        {"unit",      &ColumnLoc::unit,      &isPlainString},
     }};
 
     ColumnLoc loc;
     for (const auto & s : specs)
     {
         if (!header.has(s.name, /*case_insensitive=*/true))
-        {
-            if (s.required)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Format '{}' requires '{}' column", FORMAT_NAME, s.name);
             continue;
-        }
         const size_t idx = header.getPositionByName(s.name);
         const auto & col = header.getByPosition(idx);
         if (!s.pred(col.type))
@@ -535,8 +580,11 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
         setString(loc.name, logical_name);
 
-        assert_cast<ColumnFloat64 &>(*columns[*loc.value]).insert(value);
-        ext.read_columns[*loc.value] = 1;
+        if (loc.value)
+        {
+            assert_cast<ColumnFloat64 &>(*columns[*loc.value]).insert(value);
+            ext.read_columns[*loc.value] = 1;
+        }
 
         setString(loc.help, fm.help);
         setString(loc.type, fm.type);

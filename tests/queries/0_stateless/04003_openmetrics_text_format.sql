@@ -20,13 +20,14 @@ SELECT 'd' AS name, 4.0 AS value, CAST(0 AS Nullable(Int64)) AS timestamp FORMAT
 SELECT 'e' AS name, 5.0 AS value, CAST(bitShiftLeft(toInt64(1), 63) AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 
 -- Output schema validation: `timestamp` must be `Int64` (or `Nullable(Int64)`); other numeric
--- types are rejected so the ms-as-seconds contract is unambiguous at the column level.
+-- types are rejected so the ms-as-seconds contract is unambiguous at the column level. The
+-- output format is instantiated client-side under `FORMAT`, so the rejection is a `clientError`.
 SELECT name, value, CAST(timestamp AS Float64) AS timestamp
 FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
-FORMAT OpenMetrics; -- { serverError BAD_ARGUMENTS }
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 SELECT name, value, CAST(timestamp AS UInt32) AS timestamp
 FROM (SELECT 'm' AS name, 1.0 AS value, 0 AS timestamp)
-FORMAT OpenMetrics; -- { serverError BAD_ARGUMENTS }
+FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
 
 
 -- ============================================================================
@@ -211,3 +212,48 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullabl
 -- Float-shaped tokens that obviously overflow Int64 ms after the *1000 conversion are also rejected.
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1e20', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -1e20', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Exact boundary round-trip: the decimal tokens that `FORMAT OpenMetrics` emits for `Int64::min`
+-- and `Int64::max` must parse back to the same ms values. The parser uses exact integer/decimal
+-- arithmetic so the `(seconds * 1000) + frac_ms` packs without `Float64` precision loss.
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 9223372036854775.807', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 -9223372036854775.808', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+-- One ms past the boundary on either side must throw.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775.808', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775.809', char(10))); -- { serverError INCORRECT_DATA }
+-- Sub-millisecond fractional digits beyond the third are truncated, not rejected.
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 1.7895', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
+-- `markFormatSupportsSubsetOfColumns` contract: the parser still reads `name`/`value` from
+-- every line, but only inserts the columns the query actually selected. Each query below uses
+-- the same single-line input and exercises a different non-full-column projection.
+SELECT name
+FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
+FORMAT TSV;
+SELECT value
+FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
+FORMAT TSV;
+SELECT timestamp
+FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
+FORMAT TSV;
+SELECT labels
+FROM format(OpenMetrics, concat('demo_jobs_processed_total{job="b"} 42 1.5', char(10), '# EOF', char(10)))
+FORMAT TSV;

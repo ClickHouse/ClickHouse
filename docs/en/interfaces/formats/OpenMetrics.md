@@ -23,8 +23,9 @@ Use `FORMAT OpenMetrics` for input (`INSERT`, table functions such as `file()` a
 
 Columns follow the same logical model as [Prometheus](./Prometheus.md), extended with `unit`:
 
-- `name` ([String](/sql-reference/data-types/string.md)) and `value` ([Float64](/sql-reference/data-types/float.md)) are required for input (not `Nullable`/`FixedString` where `String` is required; `value` must be non-nullable `Float64`).
+- `name` ([String](/sql-reference/data-types/string.md)) and `value` ([Float64](/sql-reference/data-types/float.md)) form the OpenMetrics sample on the wire. Both are typed as above when present in the header; the inferred external schema always includes them.
 - Optional: `help`, `type`, and `unit` ([String](/sql-reference/data-types/string.md)), `labels` ([Map(String, String)](/sql-reference/data-types/map.md)), `timestamp` ([Int64](/sql-reference/data-types/int-uint.md) or [Nullable(Int64)](/sql-reference/data-types/nullable.md)).
+- The format reports `supports_subsets_of_columns = 1`, so queries that read OpenMetrics text (for example `SELECT name FROM file(..., OpenMetrics)`) may project to any subset of the inferred columns — including subsets that omit `name` or `value`. The parser still walks the `name`/`value` tokens on every sample line for grammar validation; it just skips inserting columns the query did not request.
 
 `type` should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped`, or empty. Histogram and summary label rules follow the [Prometheus exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/).
 
@@ -32,8 +33,8 @@ Columns follow the same logical model as [Prometheus](./Prometheus.md), extended
 
 The ClickHouse `timestamp` column is **milliseconds since the Unix epoch**, identical to `FORMAT Prometheus`. OpenMetrics text on the wire uses [`realnumber` epoch seconds](https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#abnf), so the format converts at the boundary:
 
-- **Output:** the `Int64` ms value is emitted as `<seconds>.<3-digit-ms>` with trailing zeros stripped. For example `1520879607789` → `1520879607.789`, `1520879607000` → `1520879607`, `-500` → `-0.5`, `0` → `0`.
-- **Input:** the OpenMetrics token (any `realnumber`: integer, fractional, or with exponent) is multiplied by `1000` and stored as `Int64` ms. Tokens whose ms value falls outside `Int64` are rejected with `INCORRECT_DATA`.
+- **Output:** the `Int64` ms value is emitted as `<seconds>.<3-digit-ms>` with trailing zeros stripped. For example `1520879607789` → `1520879607.789`, `1520879607000` → `1520879607`, `-500` → `-0.5`, `0` → `0`. The boundary values `Int64::min` and `Int64::max` render as `-9223372036854775.808` and `9223372036854775.807`.
+- **Input:** the OpenMetrics token (any `realnumber`: integer, fractional, or with exponent) is multiplied by `1000` and stored as `Int64` ms. For integer and fractional tokens (the shapes the writer emits) the conversion uses exact unsigned arithmetic, so values produced by `FORMAT OpenMetrics` round-trip through this format without precision loss — including the boundary tokens above. Fractional digits beyond the third are sub-millisecond and are silently truncated. Tokens whose ms value falls outside `Int64` are rejected with `INCORRECT_DATA`.
 
 ### Compared to `FORMAT Prometheus` {#compared-to-prometheus}
 

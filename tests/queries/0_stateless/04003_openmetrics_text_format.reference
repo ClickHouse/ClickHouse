@@ -34,3 +34,10 @@ http_requests_total_sum	1			{}	\N
 http_request_duration_seconds	5	help	histogram	{'sum':''}	\N	
 rpc_duration_seconds	3	help	histogram	{'le':'0.5'}	\N	
 m	1	9223372036854775000
+m	1	9223372036854775807
+m	1	-9223372036854775808
+m	1	1789
+demo_jobs_processed_total
+42
+1500
+{'job':'b'}
