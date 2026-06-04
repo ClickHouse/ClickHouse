@@ -3,45 +3,13 @@
 
 #include <gtest/gtest.h>
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <cstring>
+#include <latch>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
-#include <thread>
 #include <tuple>
 
 using namespace DB;
-
-namespace
-{
-
-/// Latch the worker thread on entry to a task so callers can manipulate
-/// other tasks' queue/run state deterministically.
-struct Latch
-{
-    std::mutex m;
-    std::condition_variable cv;
-    bool released = false;
-
-    void wait()
-    {
-        std::unique_lock lk(m);
-        cv.wait(lk, [&]{ return released; });
-    }
-
-    void release()
-    {
-        {
-            std::lock_guard lk(m);
-            released = true;
-        }
-        cv.notify_all();
-    }
-};
-
-}
 
 TEST(PrefetchThreadPool, CancelWhenQueued)
 {
@@ -51,7 +19,7 @@ TEST(PrefetchThreadPool, CancelWhenQueued)
 
     PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
-    Latch worker_latch;
+    std::latch worker_latch{1};
     auto blocker = pool.submit([&]() -> Rope
     {
         worker_latch.wait();
@@ -76,7 +44,7 @@ TEST(PrefetchThreadPool, CancelWhenQueued)
     /// Release the blocker so the worker drains the queue and reaches the
     /// cancelled task. The cancelled task is never run; the worker sets a
     /// std::runtime_error on its promise.
-    worker_latch.release();
+    worker_latch.count_down();
     std::ignore = blocker->get();
 
     /// get() blocks until the worker has reached the cancelled task and rethrows
@@ -94,12 +62,12 @@ TEST(PrefetchThreadPool, WaitWhenRunning)
 
     PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
-    std::atomic<bool> started{false};
-    Latch release_latch;
+    std::latch start_latch{1};
+    std::latch release_latch{1};
 
     auto handle = pool.submit([&]() -> Rope
     {
-        started.store(true);
+        start_latch.count_down();
         release_latch.wait();
         Rope r;
         auto buf = std::make_shared<OwnedRopeBuffer>(4);
@@ -109,14 +77,13 @@ TEST(PrefetchThreadPool, WaitWhenRunning)
     });
     ASSERT_NE(handle, nullptr);
 
-    /// Wait until the worker enters the task.
-    while (!started.load())
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-
+    /// The worker's CAS to Running is sequenced before the task body, so once
+    /// the task has entered, observing Running is guaranteed.
+    start_latch.wait();
     EXPECT_EQ(handle->state(), PrefetchHandle::State::Running);
     EXPECT_FALSE(handle->tryCancel());
 
-    release_latch.release();
+    release_latch.count_down();
 
     Rope r = handle->get();
     EXPECT_EQ(r.totalBytes(), 4u);
@@ -132,13 +99,11 @@ TEST(PrefetchThreadPool, TryCancelAfterCompletion)
     auto handle = pool.submit([]() -> Rope { return {}; });
     ASSERT_NE(handle, nullptr);
 
-    /// Wait for completion.
-    for (int i = 0; i < 1000 && handle->state() != PrefetchHandle::State::Done; ++i)
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-
-    ASSERT_EQ(handle->state(), PrefetchHandle::State::Done);
-    EXPECT_FALSE(handle->tryCancel());
+    /// get() returns only after the worker published Done (stored before the
+    /// future is made ready), so it is the completion sync point.
     EXPECT_NO_THROW(std::ignore = handle->get());
+    EXPECT_EQ(handle->state(), PrefetchHandle::State::Done);
+    EXPECT_FALSE(handle->tryCancel());
 }
 
 TEST(PrefetchThreadPool, QueueOverflowReturnsNullptr)
@@ -149,7 +114,7 @@ TEST(PrefetchThreadPool, QueueOverflowReturnsNullptr)
 
     PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/3);
 
-    Latch worker_latch;
+    std::latch worker_latch{1};
     auto blocker = pool.submit([&]() -> Rope { worker_latch.wait(); return {}; });
     ASSERT_NE(blocker, nullptr);
 
@@ -164,7 +129,7 @@ TEST(PrefetchThreadPool, QueueOverflowReturnsNullptr)
     EXPECT_EQ(overflow, nullptr) << "Submission past queue capacity must return nullptr";
 
     /// Cleanup.
-    worker_latch.release();
+    worker_latch.count_down();
     std::ignore = blocker->get();
     std::ignore = q1->get();
     std::ignore = q2->get();
@@ -177,7 +142,7 @@ TEST(PrefetchThreadPool, CancelledFutureGetRethrowsKnownException)
 
     PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
-    Latch worker_latch;
+    std::latch worker_latch{1};
     auto blocker = pool.submit([&]() -> Rope { worker_latch.wait(); return {}; });
     ASSERT_NE(blocker, nullptr);
 
@@ -187,7 +152,7 @@ TEST(PrefetchThreadPool, CancelledFutureGetRethrowsKnownException)
 
     /// Let the worker process the cancelled task — it will set the
     /// "task was cancelled" exception on the promise.
-    worker_latch.release();
+    worker_latch.count_down();
     std::ignore = blocker->get();
 
     EXPECT_THROW(std::ignore = handle->get(), std::runtime_error);
