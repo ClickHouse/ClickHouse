@@ -1,16 +1,12 @@
 a	Nullable(Int64)					
 b	Nullable(Int64)					
-header1	Nullable(String)					
-header2	Nullable(String)					
+schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, max_bytes_to_read_for_schema_inference=33554432, schema_inference_make_columns_nullable=3, date_time_input_format=BestEffort, input_format_try_infer_variants=false, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_datetimes_only_datetime64=false, use_best_effort_in_schema_inference=true, bool_true_representation=true, bool_false_representation=false, null_representation=\\N, delimiter=,, tuple_delimiter=,, try_infer_numbers_from_strings=false, try_infer_strings_from_quoted_tuples=true, skip_first_lines=1
 UInt8	Int32					
 Float32	UInt64					
-String	UInt8					
-Int64	Float32					
+schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, max_bytes_to_read_for_schema_inference=33554432, schema_inference_make_columns_nullable=3, date_time_input_format=BestEffort, input_format_try_infer_variants=false, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_datetimes_only_datetime64=false, use_best_effort_in_schema_inference=true, bool_true_representation=true, bool_false_representation=false, null_representation=\\N, delimiter=,, tuple_delimiter=,, try_infer_numbers_from_strings=false, try_infer_strings_from_quoted_tuples=true, skip_first_lines=1
 a	Nullable(Int64)					
 b	Nullable(Int64)					
-header1	Nullable(String)					
-header2	Nullable(String)					
+schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, max_bytes_to_read_for_schema_inference=33554432, schema_inference_make_columns_nullable=3, date_time_input_format=BestEffort, input_format_try_infer_variants=false, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_datetimes_only_datetime64=false, use_best_effort_in_schema_inference=true, bool_true_representation=true, bool_false_representation=false, null_representation=\\N, skip_first_lines=1
 UInt8	Int32					
 Float32	UInt64					
-String	UInt8					
-Int64	Float32					
+schema_inference_hints=, max_rows_to_read_for_schema_inference=25000, max_bytes_to_read_for_schema_inference=33554432, schema_inference_make_columns_nullable=3, date_time_input_format=BestEffort, input_format_try_infer_variants=false, try_infer_integers=true, try_infer_dates=true, try_infer_datetimes=true, try_infer_datetimes_only_datetime64=false, use_best_effort_in_schema_inference=true, bool_true_representation=true, bool_false_representation=false, null_representation=\\N, skip_first_lines=1

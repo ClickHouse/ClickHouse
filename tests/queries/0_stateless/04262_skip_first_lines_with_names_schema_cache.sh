@@ -10,23 +10,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 echo -e 'header1,header2\na,b\n1,2' > $CLICKHOUSE_TEST_UNIQUE_NAME.csv
 $CLICKHOUSE_LOCAL -m -q "
 DESC file('$CLICKHOUSE_TEST_UNIQUE_NAME.csv', CSVWithNames) SETTINGS input_format_csv_skip_first_lines=1;
-DESC file('$CLICKHOUSE_TEST_UNIQUE_NAME.csv', CSVWithNames) SETTINGS input_format_csv_skip_first_lines=0;"
+SELECT additional_format_info from system.schema_inference_cache;"
 
 # For WithNamesAndTypes, every row that might be interpreted as a types row must be a valid type name.
 echo -e 'String,Int64\nUInt8,Float32\nInt32,UInt64\n1,2' > ${CLICKHOUSE_TEST_UNIQUE_NAME}_types.csv
 $CLICKHOUSE_LOCAL -m -q "
 DESC file('${CLICKHOUSE_TEST_UNIQUE_NAME}_types.csv', CSVWithNamesAndTypes) SETTINGS input_format_csv_skip_first_lines=1;
-DESC file('${CLICKHOUSE_TEST_UNIQUE_NAME}_types.csv', CSVWithNamesAndTypes) SETTINGS input_format_csv_skip_first_lines=0;"
+SELECT additional_format_info from system.schema_inference_cache;"
 
 echo -e 'header1\theader2\na\tb\n1\t2' > $CLICKHOUSE_TEST_UNIQUE_NAME.tsv
 $CLICKHOUSE_LOCAL -m -q "
 DESC file('$CLICKHOUSE_TEST_UNIQUE_NAME.tsv', TSVWithNames) SETTINGS input_format_tsv_skip_first_lines=1;
-DESC file('$CLICKHOUSE_TEST_UNIQUE_NAME.tsv', TSVWithNames) SETTINGS input_format_tsv_skip_first_lines=0;"
+SELECT additional_format_info from system.schema_inference_cache;"
 
 echo -e 'String\tInt64\nUInt8\tFloat32\nInt32\tUInt64\n1\t2' > ${CLICKHOUSE_TEST_UNIQUE_NAME}_types.tsv
 $CLICKHOUSE_LOCAL -m -q "
 DESC file('${CLICKHOUSE_TEST_UNIQUE_NAME}_types.tsv', TSVWithNamesAndTypes) SETTINGS input_format_tsv_skip_first_lines=1;
-DESC file('${CLICKHOUSE_TEST_UNIQUE_NAME}_types.tsv', TSVWithNamesAndTypes) SETTINGS input_format_tsv_skip_first_lines=0;"
+SELECT additional_format_info from system.schema_inference_cache;;"
 
 rm $CLICKHOUSE_TEST_UNIQUE_NAME.csv ${CLICKHOUSE_TEST_UNIQUE_NAME}_types.csv
 rm $CLICKHOUSE_TEST_UNIQUE_NAME.tsv ${CLICKHOUSE_TEST_UNIQUE_NAME}_types.tsv
