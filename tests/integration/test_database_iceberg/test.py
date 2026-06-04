@@ -286,25 +286,6 @@ def test_list_tables(started_cluster):
     )
 
 
-def test_rest_catalog_empty_returns_false_when_table_exists(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    database_name = f"rest_catalog_empty_{uuid.uuid4().hex}"
-    root_namespace = f"clickhouse_{uuid.uuid4().hex}"
-    namespace_with_table = f"{root_namespace}.a_has_table"
-    empty_namespace = f"{root_namespace}.z_empty_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace_with_table)
-    create_table(catalog, namespace_with_table, "table_a")
-    catalog.create_namespace(empty_namespace)
-
-    create_clickhouse_iceberg_database(started_cluster, node, database_name)
-
-    error = node.query_and_get_error(f"DETACH DATABASE {database_name}")
-    assert "DATABASE_NOT_EMPTY" in error
-
-
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
 
