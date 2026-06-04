@@ -89,6 +89,9 @@ public:
         const auto * y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
 
+        /// Limit unrolling: x86-64-v3 defaults to unroll-by-4 which hurts when `category_count` is small (the unrolled body
+        /// is skipped, paying extra setup cost per row). Unroll-by-2 matches the v2 codegen.
+#pragma clang loop unroll_count(2)
         for (size_t i = 0; i < category_count; ++i)
         {
             const auto * x_col = static_cast<const ColumnUInt8 *>(columns[i]);
