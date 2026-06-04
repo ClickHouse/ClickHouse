@@ -72,7 +72,7 @@ size_t groupIndexFromMapped(AggregateDataPtr mapped)
 /// `run_start_row` and `run_row_count` describe the run inside the current chunk.
 /// `group_rows_seen_before_run` is the total number of rows already seen for this
 /// group before the run starts. `length == 0` means the run contributes no rows.
-ChunkSlice shrinkRunToLimitWindow(
+ChunkRowRange shrinkRunToLimitWindow(
     UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run, UInt64 group_offset, UInt64 group_limit_end)
 {
     /// Rows from this run consumed by the group's OFFSET prefix.
@@ -95,7 +95,7 @@ ChunkSlice shrinkRunToLimitWindow(
 /// non-overlapping, and each slice must stay within `[0, source_row_count)`.
 /// Reuse the whole chunk when possible; otherwise prefer a single `cut` for
 /// contiguous rows and fall back to mask-based `filter`.
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkSlice> & slices)
+UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices)
 {
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)
