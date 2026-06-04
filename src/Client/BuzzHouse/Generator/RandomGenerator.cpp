@@ -329,6 +329,54 @@ String RandomGenerator::nextTokenString()
     return pickRandomly(this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese));
 }
 
+/// Returns a backtick-safe identifier string.
+/// When allow_nasty is true, embeds spaces, special characters, unicode, or SQL keywords.
+/// Callers must backtick-quote the result in SQL output.
+String RandomGenerator::nextIdentifier(const String & prefix, const uint32_t counter, const bool allow_nasty)
+{
+    if (!allow_nasty || nextMediumNumber() < 6)
+        return prefix + std::to_string(counter);
+
+    /// SQL keyword or nasty identifier as leading part
+    String res = pickRandomly(nextSmallNumber() < 3 ? nasty_identifier_keywords : nasty_identifiers);
+
+    /// ~20% chance: build a long identifier by concatenating more parts
+    if (nextSmallNumber() < 3)
+    {
+        const uint32_t extra = randomInt<uint32_t>(1, 5);
+
+        for (uint32_t i = 0; i < extra; i++)
+        {
+            /// Occasionally insert a separator between parts
+            if (nextSmallNumber() < 3)
+                res += pickRandomly(DB::Strings{" ", "_", "-", "."});
+            res += pickRandomly(nasty_identifiers);
+        }
+    }
+    if (nextSmallNumber() < 9)
+    {
+        /// Add suffix most of the time, to increase variability and uniqueness
+        res += std::to_string(counter);
+    }
+    return res;
+}
+
+static const constexpr char hexDigits[] = "0123456789abcdef";
+
+String RandomGenerator::nextHexBytes(const uint32_t nbytes)
+{
+    String ret;
+
+    ret.reserve(nbytes * 2);
+    for (uint32_t i = 0; i < nbytes; i++)
+    {
+        const uint8_t byte = nextRandomUInt8();
+        ret += hexDigits[byte >> 4];
+        ret += hexDigits[byte & 0x0F];
+    }
+    return ret;
+}
+
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     String ret;
@@ -343,8 +391,15 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     /* A few times generate empty strings */
     if (this->nextMediumNumber() > 2)
     {
+        if (use_bad_utf8 && this->nextBool())
+        {
+            /// Random hex bytes: variable length from 1 to limit bytes
+            const uint32_t max_bytes = std::min(limit, this->nextBool() ? UINT32_C(64) : UINT32_C(4096));
+            if (max_bytes > 0)
+                ret += nextHexBytes(this->randomInt<uint32_t>(1, max_bytes));
+        }
         /// ~3% chance: repeated single character (stresses compression, string functions like repeat/position/like)
-        if (!use_bad_utf8 && this->nextMediumNumber() < 4)
+        else if (!use_bad_utf8 && this->nextMediumNumber() < 4)
         {
             static const std::vector<char> repeat_chars = {'a', '0', ' ', '\t', '%', '_', '\\', '"', '/', '-'};
             char c = this->pickRandomly(repeat_chars);
@@ -401,8 +456,6 @@ String RandomGenerator::nextString(const String & delimiter, const bool allow_na
     ret += delimiter;
     return ret;
 }
-
-static const constexpr char hexDigits[] = "0123456789abcdef";
 
 String RandomGenerator::nextUUID()
 {
@@ -533,6 +586,27 @@ String RandomGenerator::nextIPv6()
         hexDigits[hex_digits_dist(generator)],
         hexDigits[hex_digits_dist(generator)],
         hexDigits[hex_digits_dist(generator)]);
+}
+
+void RandomGenerator::pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options)
+{
+    uint32_t prob_space = 0;
+    for (const auto & [w, f] : options)
+        prob_space += w;
+    chassert(prob_space > 0, "At least one option must have a non-zero weight");
+    std::uniform_int_distribution<uint32_t> dist(1, prob_space);
+    const uint32_t nopt = dist(generator);
+    uint32_t cumulative = 0;
+    for (const auto & [w, f] : options)
+    {
+        cumulative += w;
+        if (w != 0 && nopt <= cumulative)
+        {
+            f();
+            return;
+        }
+    }
+    UNREACHABLE();
 }
 
 }

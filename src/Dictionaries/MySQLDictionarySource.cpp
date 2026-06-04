@@ -65,6 +65,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
 
+void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -155,6 +156,31 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
+
+            if (created_from_ddl)
+            {
+                if (config.has(settings_config_prefix + ".replica"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys replica_keys;
+                    config.keys(settings_config_prefix, replica_keys);
+                    for (const auto & replica_key : replica_keys)
+                    {
+                        if (replica_key.starts_with("replica"))
+                        {
+                            const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            global_context->getRemoteHostFilter().checkHostAndPort(
+                                config.getString(replica_prefix + ".host"),
+                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                        }
+                    }
+                }
+                else
+                {
+                    global_context->getRemoteHostFilter().checkHostAndPort(
+                        config.getString(settings_config_prefix + ".host"),
+                        toString(config.getInt(settings_config_prefix + ".port", 3306)));
+                }
+            }
 
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
@@ -276,11 +302,7 @@ bool MySQLDictionarySource::isModified() const
     {
         LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-
-        invalidate_query_response = response;
-        return true;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
 
     return true;

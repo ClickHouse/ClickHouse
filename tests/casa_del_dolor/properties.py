@@ -8,6 +8,7 @@ import typing
 
 from environment import get_system_timezones
 from integration.helpers.cluster import ClickHouseCluster
+from integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -155,15 +156,33 @@ possible_properties = {
     "dictionaries_lazy_load": true_false_lambda,
     "disable_insertion_and_mutation": true_false_lambda,
     "disable_internal_dns_cache": true_false_lambda,
+    "disk_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
+    "disk_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "disk_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "disk_connections_soft_limit": threshold_generator(0.2, 0.2, 0, 10000),
+    "disk_connections_store_limit": threshold_generator(0.2, 0.2, 0, 20000),
+    "disk_connections_warn_limit": threshold_generator(0.2, 0.2, 0, 15000),
     "display_secrets_in_show_and_select": true_false_lambda,
     "distributed_cache_apply_throttling_settings_from_client": true_false_lambda,
     "distributed_cache_keep_up_free_connections_ratio": threshold_generator(
         0.2, 0.2, 0.0, 1.0
     ),
+    "dns_allow_resolve_names_to_ipv4": true_false_lambda,
+    "dns_allow_resolve_names_to_ipv6": true_false_lambda,
     "dns_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "dns_cache_update_period": threshold_generator(0.2, 0.2, 1, 600),
+    "dns_max_consecutive_failures": threshold_generator(0.2, 0.2, 1, 10),
+    "drop_distributed_cache_pool_size": threads_lambda,
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "http_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
+    "http_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "http_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "http_connections_soft_limit": threshold_generator(0.2, 0.2, 0, 10000),
+    "http_connections_store_limit": threshold_generator(0.2, 0.2, 0, 20000),
+    "http_connections_warn_limit": threshold_generator(0.2, 0.2, 0, 15000),
+    "iceberg_background_schedule_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
@@ -241,6 +260,8 @@ possible_properties = {
     "max_replicated_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     # "max_server_memory_usage": threshold_generator(0.2, 0.2, 0, 10),
     "max_server_memory_usage_to_ram_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "max_snapshot_commit_thread_pool_free_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "max_snapshot_commit_thread_pool_size": threads_lambda,
     "max_table_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_named_collection_num_to_throw": threshold_generator(0.2, 0.2, 0, 1000),
     # "max_temporary_data_on_disk_size": threshold_generator(0.2, 0.2, 0, 1000), not worth to mess around
@@ -275,6 +296,10 @@ possible_properties = {
     "page_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "page_cache_shards": threshold_generator(0.2, 0.2, 0, 10),
     "page_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "parquet_metadata_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "parquet_metadata_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
+    "parquet_metadata_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
+    "parquet_metadata_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "parts_kill_delay_period": threshold_generator(0.2, 0.2, 0, 60),
     "parts_kill_delay_period_random_add": threshold_generator(0.2, 0.2, 0, 100),
     "parts_killer_pool_size": threads_lambda,  # Cloud setting
@@ -308,6 +333,12 @@ possible_properties = {
     "shutdown_wait_unfinished_queries": true_false_lambda,
     "snapshot_cleaner_pool_size": threads_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
+    "storage_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
+    "storage_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "storage_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
+    "storage_connections_soft_limit": threshold_generator(0.2, 0.2, 0, 10000),
+    "storage_connections_store_limit": threshold_generator(0.2, 0.2, 0, 20000),
+    "storage_connections_warn_limit": threshold_generator(0.2, 0.2, 0, 15000),
     "storage_shared_set_join_use_inner_uuid": true_false_lambda,
     "tables_loader_background_pool_size": threads_lambda,
     "tables_loader_foreground_pool_size": threads_lambda,
@@ -325,6 +356,10 @@ possible_properties = {
     "text_index_postings_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "text_index_postings_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "threadpool_local_fs_reader_pool_size": threads_lambda,
+    "threadpool_local_fs_reader_queue_size": threshold_generator(0.2, 0.2, 0, 20000),
+    "threadpool_remote_fs_reader_pool_size": threads_lambda,
+    "threadpool_remote_fs_reader_queue_size": threshold_generator(0.2, 0.2, 0, 20000),
     "threadpool_writer_pool_size": threshold_generator(0.2, 0.2, 1, 200),
     "threadpool_writer_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "throw_on_unknown_workload": true_false_lambda,
@@ -388,10 +423,10 @@ object_storages_properties = {
         "s3_max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
-        "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "s3_max_single_read_retries": threshold_generator(0.2, 0.2, 1, 16),
+        "s3_max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 1, 16),
         "s3_max_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 5 * 1024 * 1024 * 1024, 33
+            0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
         "s3_strict_upload_part_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024
@@ -411,18 +446,18 @@ object_storages_properties = {
         "list_object_keys_size": threshold_generator(0.2, 0.2, 1, 10 * 1024 * 1024),
         "max_blocks_in_multipart_upload": threshold_generator(0.2, 0.2, 1, 100000),
         "max_inflight_parts_for_one_file": threshold_generator(0.2, 0.2, 1, 100),
-        "max_single_download_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "max_single_download_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_single_part_copy_size": threshold_generator(
             0.2, 0.2, 0, 1024 * 1024 * 1024
         ),
         "max_single_part_upload_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_single_read_retries": threshold_generator(0.2, 0.2, 0, 16),
-        "max_tries": threshold_generator(0.2, 0.2, 0, 16),
-        "max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 0, 16),
+        "max_single_read_retries": threshold_generator(0.2, 0.2, 1, 16),
+        "max_tries": threshold_generator(0.2, 0.2, 1, 16),
+        "max_unexpected_write_error_retries": threshold_generator(0.2, 0.2, 1, 16),
         "max_upload_part_size": threshold_generator(
-            0.2, 0.2, 0, 5 * 1024 * 1024 * 1024, 33
+            0.2, 0.2, 16 * 1024 * 1024, 5 * 1024 * 1024 * 1024, 33
         ),
         "metadata_keep_free_space_bytes": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
@@ -467,7 +502,7 @@ cache_storage_properties = {
     ),
     "background_download_queue_size_limit": threshold_generator(0.2, 0.2, 0, 128),
     "background_download_threads": threads_lambda,
-    "boundary_alignment": threshold_generator(0.2, 0.2, 1, 128),
+    "boundary_alignment": threshold_generator(0.2, 0.2, 1, 128, bits=7),
     "bypass_cache_threshold": threshold_generator(0.2, 0.2, 0, 1024 * 1024 * 1024),
     "cache_on_write_operations": true_false_lambda,
     "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -477,9 +512,11 @@ cache_storage_properties = {
     "keep_free_space_remove_batch": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "keep_free_space_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "load_metadata_asynchronously": true_false_lambda,
-    "load_metadata_threads": threads_lambda,
+    "load_metadata_threads": no_zero_threads_lambda,
     "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
-    "max_file_segment_size": file_size_value(100),
+    "max_file_segment_size": threshold_generator(
+        0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024
+    ),  # must be >= default boundary_alignment (4Mi)
     "overcommit_eviction_evict_step": threshold_generator(
         0.2, 0.2, 1, 10 * 1024 * 1024
     ),
@@ -496,12 +533,11 @@ policy_properties = {
     "least_used_ttl_ms": threshold_generator(0.2, 0.2, 0, 120000),
     "load_balancing": lambda: random.choice(["round_robin", "least_used"]),
     # Cannot set `max_data_part_size_bytes` and `max_data_part_size_ratio` at the same time
-    #"max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
+    # "max_data_part_size_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "max_data_part_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "move_factor": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "perform_ttl_move_on_insert": true_false_lambda,
     "prefer_not_to_merge": true_false_lambda,
-    "volume_priority": threshold_generator(0.2, 0.2, 1, 10),
 }
 
 
@@ -855,11 +891,12 @@ class DiskPropertiesGroup(PropertiesGroup):
                 possible_types.extend(
                     ["s3_with_keeper", "s3_with_keeper", "s3_with_keeper"]
                 )
+            disk_xml_elem = ET.SubElement(disk_element, f"disk{i}")
             next_created_disk_pair = add_single_disk(
                 i,
                 args,
                 cluster,
-                ET.SubElement(disk_element, f"disk{i}"),
+                disk_xml_elem,
                 backups_element,
                 random.choice(possible_types),
                 created_disks_types,
@@ -872,11 +909,14 @@ class DiskPropertiesGroup(PropertiesGroup):
                 is_private_binary
                 and args.set_shared_mergetree_disk
                 and next_created_disk_pair[2] == "s3_with_keeper"
+                and disk_xml_elem.findtext("readonly") != "1"
             ):
                 created_keeper_disks.append(i)
-            if next_created_disk_pair[3] == "local" and next_created_disk_pair[
-                2
-            ] not in ("cache", "encrypted"):
+            if (
+                next_created_disk_pair[3] == "local"
+                and next_created_disk_pair[2] not in ("cache", "encrypted")
+                and disk_xml_elem.findtext("readonly") != "1"
+            ):
                 safe_for_database_disk.append(i)
 
         # Allow any disk in any table engine
@@ -919,6 +959,13 @@ class DiskPropertiesGroup(PropertiesGroup):
                     disk_xml.text = f"disk{input_disks[i]}"
                 if main_xml is not None and random.randint(1, 100) <= 70:
                     apply_properties_recursively(main_xml, policy_properties)
+                # Assign volume_priority as a valid permutation of 1..N (no gaps allowed)
+                if volume_counter > 0 and random.randint(1, 100) <= 20:
+                    priorities = list(range(1, volume_counter + 1))
+                    random.shuffle(priorities)
+                    for idx, vol_xml in enumerate(volumes_xml):
+                        prio_xml = ET.SubElement(vol_xml, "volume_priority")
+                        prio_xml.text = str(priorities[idx])
                 if random.randint(1, 100) <= 70:
                     apply_properties_recursively(next_policy_xml, policy_properties)
 
@@ -937,8 +984,16 @@ class DiskPropertiesGroup(PropertiesGroup):
             next_opt = random.randint(1, 100)
 
             if len(created_cache_disks) > 0 and next_opt <= 40:
+                chosen_cache_disk = random.choice(created_cache_disks)
                 temporary_cache_xml = ET.SubElement(top_root, "temporary_data_in_cache")
-                temporary_cache_xml.text = f"disk{random.choice(created_cache_disks)}"
+                temporary_cache_xml.text = f"disk{chosen_cache_disk}"
+                # load_metadata_asynchronously is disallowed when the cache disk is used
+                # as temporary storage
+                tmp_disk_xml = disk_element.find(f"disk{chosen_cache_disk}")
+                if tmp_disk_xml is not None:
+                    lma_xml = tmp_disk_xml.find("load_metadata_asynchronously")
+                    if lma_xml is not None:
+                        tmp_disk_xml.remove(lma_xml)
             # elif number_policies > 0 and next_opt <= 70: the disks must be local
             #    tmp_policy_xml = ET.SubElement(root, "tmp_policy")
             #    tmp_policy_xml.text = (
@@ -948,15 +1003,23 @@ class DiskPropertiesGroup(PropertiesGroup):
                 tmp_path_xml = ET.SubElement(top_root, "tmp_path")
                 tmp_path_xml.text = "/var/lib/clickhouse/tmp/"
         # Set disk for SMTs
-        if len(created_keeper_disks) > 0:
+        if top_root.find("shared_merge_tree") is None and len(created_keeper_disks) > 0:
             smt_element = ET.SubElement(top_root, "shared_merge_tree")
             disk_element = ET.SubElement(smt_element, "disk")
             disk_element.text = f"disk{random.choice(created_keeper_disks)}"
         # Optionally set database disk
-        if len(safe_for_database_disk) > 0 and random.randint(1, 100) <= 30:
+        if (
+            top_root.find("database_disk") is None
+            and len(safe_for_database_disk) > 0
+            and random.randint(1, 100) <= 30
+        ):
             dbd_element = ET.SubElement(top_root, "database_disk")
             disk_element = ET.SubElement(dbd_element, "disk")
             disk_element.text = f"disk{random.choice(safe_for_database_disk)}"
+        # Add custom_local_disks_base_directory
+        if top_root.find("custom_local_disks_base_directory") is None:
+            clddb_element = ET.SubElement(top_root, "custom_local_disks_base_directory")
+            clddb_element.text = "/var/lib/clickhouse/disks/"
 
 
 def add_single_cache(i: int, next_cache: ET.Element):
@@ -1084,6 +1147,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
         replicated_settings = {
             "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views": true_false_lambda,
             "check_consistency": true_false_lambda,
+            "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
             "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),
@@ -1243,27 +1307,53 @@ def modify_server_settings(
                 ["AcceptCertificateHandler", "RejectCertificateHandler"]
             )
 
-    if root.find("named_collections") is None:
-        modified = True
+    named_collections_xml = root.find("named_collections")
+    if named_collections_xml is None:
         named_collections_xml = ET.SubElement(root, "named_collections")
-        if args.with_minio:
-            s3_xml = ET.SubElement(named_collections_xml, "s3")
-            url_xml = ET.SubElement(s3_xml, "url")
-            url_xml.text = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
-            access_key_id_xml = ET.SubElement(s3_xml, "access_key_id")
-            access_key_id_xml.text = "minio"
-            secret_access_key_xml = ET.SubElement(s3_xml, "secret_access_key")
-            secret_access_key_xml.text = cluster.minio_secret_key
-        if args.with_azurite:
-            azure_xml = ET.SubElement(named_collections_xml, "azure")
-            account_name_xml = ET.SubElement(azure_xml, "account_name")
-            account_name_xml.text = cluster.azurite_account
-            account_key_xml = ET.SubElement(azure_xml, "account_key")
-            account_key_xml.text = cluster.azurite_key
-            container_xml = ET.SubElement(azure_xml, "container")
-            container_xml.text = cluster.azure_container_name
-            storage_account_url_xml = ET.SubElement(azure_xml, "storage_account_url")
-            storage_account_url_xml.text = f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+        modified = True
+    if args.with_minio and named_collections_xml.find("s3") is None:
+        modified = True
+        s3_xml = ET.SubElement(named_collections_xml, "s3")
+        ET.SubElement(s3_xml, "url").text = (
+            f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/"
+        )
+        ET.SubElement(s3_xml, "access_key_id").text = "minio"
+        ET.SubElement(s3_xml, "secret_access_key").text = cluster.minio_secret_key
+    if args.with_azurite and named_collections_xml.find("azure") is None:
+        modified = True
+        azure_xml = ET.SubElement(named_collections_xml, "azure")
+        ET.SubElement(azure_xml, "account_name").text = cluster.azurite_account
+        ET.SubElement(azure_xml, "account_key").text = cluster.azurite_key
+        ET.SubElement(azure_xml, "container").text = cluster.azure_container_name
+        ET.SubElement(azure_xml, "storage_account_url").text = (
+            f"http://{cluster.azurite_host}:{cluster.azurite_port}/{cluster.azurite_account}"
+        )
+    if args.with_mysql and named_collections_xml.find("mysql_remote") is None:
+        modified = True
+        mysql_xml = ET.SubElement(named_collections_xml, "mysql_remote")
+        ET.SubElement(mysql_xml, "host").text = cluster.mysql8_host
+        ET.SubElement(mysql_xml, "port").text = str(cluster.mysql8_port)
+        ET.SubElement(mysql_xml, "user").text = "root"
+        ET.SubElement(mysql_xml, "password").text = mysql_pass
+        ET.SubElement(mysql_xml, "database").text = "test"
+    if args.with_postgresql and named_collections_xml.find("postgres_remote") is None:
+        modified = True
+        pg_xml = ET.SubElement(named_collections_xml, "postgres_remote")
+        ET.SubElement(pg_xml, "host").text = cluster.postgres_host
+        ET.SubElement(pg_xml, "port").text = str(cluster.postgres_port)
+        ET.SubElement(pg_xml, "user").text = "postgres"
+        ET.SubElement(pg_xml, "password").text = pg_pass
+        ET.SubElement(pg_xml, "database").text = "test"
+    if args.with_mongodb and named_collections_xml.find("mongo_remote") is None:
+        modified = True
+        mongo_xml = ET.SubElement(named_collections_xml, "mongo_remote")
+        ET.SubElement(mongo_xml, "host").text = cluster.mongo_host
+        ET.SubElement(mongo_xml, "port").text = str(cluster.mongo_port)
+        ET.SubElement(mongo_xml, "user").text = "root"
+        ET.SubElement(mongo_xml, "password").text = mongo_pass
+        ET.SubElement(mongo_xml, "database").text = "test"
+    if named_collections_xml.find("local") is None:
+        modified = True
         ET.SubElement(named_collections_xml, "local")
 
     if "timezone" not in possible_properties:
@@ -1325,18 +1415,25 @@ def modify_server_settings(
     # Add log tables
     if args.add_log_tables:
         all_log_entries = [
+            ("aggregated_zookeeper_log", 1048576, 8192),
             ("asynchronous_insert_log", 1048576, 8192),
             ("asynchronous_metric_log", 1048576, 8192),
+            ("azure_queue_log", 1048576, 8192),
+            ("background_schedule_pool_log", 1048576, 8192),
             ("backup_log", 1048576, 8192),
             ("blob_storage_log", 1048576, 8192),
             ("crash_log", 1024, 1024),
             ("dead_letter_queue", 1048576, 8192),
             ("delta_lake_metadata_log", 1048576, 8192),
             ("error_log", 1048576, 8192),
+            ("filesystem_cache_log", 1048576, 8192),
+            ("filesystem_read_prefetches_log", 1048576, 8192),
+            ("histogram_metric_log", 1048576, 8192),
             ("iceberg_metadata_log", 1048576, 8192),
             ("metric_log", 1048576, 8192),
             ("opentelemetry_span_log", 1048576, 8192),
             ("part_log", 1048576, 8192),
+            ("predicate_statistics_log", 1048576, 8192),
             ("processors_profile_log", 1048576, 8192),
             ("query_log", 1048576, 8192),
             ("query_metric_log", 1048576, 8192),
@@ -1346,6 +1443,7 @@ def modify_server_settings(
             ("s3queue_log", 1048576, 8192),
             ("text_log", 1048576, 8192),
             ("trace_log", 1048576, 8192),
+            ("transactions_info_log", 1048576, 8192),
             ("zookeeper_connection_log", 1048576, 8192),
             ("zookeeper_log", 1048576, 8192),
         ]
@@ -1548,6 +1646,10 @@ keeper_settings = {
         "log_slow_total_threshold_ms": threshold_generator(0.2, 0.2, 0, 30000),
         "max_flush_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
         "max_log_file_size": threshold_generator(0.2, 0.2, 0, 100 * 1024 * 1024),
+        "max_read_batch_bytes_size": threshold_generator(
+            0.2, 0.2, 0, 100 * 1024 * 1024
+        ),
+        "max_read_batch_size": threshold_generator(0.2, 0.2, 0, 1000000),
         "max_request_queue_size": threshold_generator(0.2, 0.2, 0, 100000),
         "max_request_size": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
         "max_requests_append_bytes_size": threshold_generator(
@@ -1561,6 +1663,20 @@ keeper_settings = {
         "max_requests_quick_batch_size": threshold_generator(0.2, 0.2, 0, 200),
         "min_request_size_for_cache": threshold_generator(0.2, 0.2, 0, 100 * 1024),
         "min_session_timeout_ms": threshold_generator(0.2, 0.2, 1000, 10000),
+        "nuraft_max_bytes_in_flight_in_stream": threshold_generator(
+            0.2, 0.2, 0, 256 * 1024 * 1024
+        ),
+        "nuraft_append_entries_backward_probe_throttle_threshold": threshold_generator(
+            0.2, 0.2, 0, 128
+        ),
+        "nuraft_max_log_gap_in_stream": threshold_generator(0.2, 0.2, 0, 1024),
+        "nuraft_max_uncommitted_log_entries": threshold_generator(
+            0.2, 0.2, 0, 1000000
+        ),
+        "nuraft_streaming_mode": true_false_lambda,
+        "parallel_read_chunk_size": threshold_generator(0.2, 0.2, 1, 1024),
+        "parallel_read_min_batch": threshold_generator(0.2, 0.2, 0, 4096),
+        "parallel_read_threads": threshold_generator(0.2, 0.2, 0, 64),
         "quorum_reads": true_false_lambda,
         "raft_limits_reconnect_limit": threshold_generator(0.2, 0.2, 0, 100),
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
@@ -1571,9 +1687,14 @@ keeper_settings = {
         "shutdown_timeout": threshold_generator(0.2, 0.2, 3000, 30000),
         "sleep_before_leader_change_ms": threshold_generator(0.2, 0.2, 1000, 30000),
         "snapshot_distance": threshold_generator(0.2, 0.2, 0, 100000),
+        "snapshot_transfer_chunk_size": threshold_generator(
+            0.2, 0.2, 0, 16 * 1024 * 1024
+        ),
         "snapshots_to_keep": threshold_generator(0.2, 0.2, 0, 5),
         "stale_log_gap": threshold_generator(0.2, 0.2, 0, 10000),
+        "startup_timeout": threshold_generator(0.2, 0.2, 1000, 600000),
         "use_xid_64": true_false_lambda,
+        "write_snapshot_version": lambda: random.choice([6]),
     },
     "create_snapshot_on_exit": true_false_lambda,
     "digest_enabled": true_false_lambda,

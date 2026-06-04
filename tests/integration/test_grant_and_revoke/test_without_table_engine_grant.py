@@ -29,8 +29,11 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP USER IF EXISTS A")
+        instance.query("DROP USER IF EXISTS A, B")
         instance.query("DROP TABLE IF EXISTS test.table1")
+        instance.query("DROP DATABASE IF EXISTS test_db")
+        instance.query("DROP DATABASE IF EXISTS test_user_db")
+        instance.query("DROP DATABASE IF EXISTS test_fs_db")
 
 
 def test_table_engine_and_source_grant():
@@ -81,3 +84,97 @@ def test_table_engine_and_source_grant():
     )
 
     instance.query("DROP TABLE test.table1")
+
+
+def test_source_revocation_blocks_table_engine():
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.table1 TO A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query(
+        "CREATE TABLE test.table1(a Integer) engine=TinyLog",
+        user="A",
+    )
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("GRANT READ, WRITE ON URL TO A")
+
+    instance.query(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+    instance.query("DROP TABLE test.table1")
+
+    instance.query("REVOKE READ, WRITE ON URL FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE TABLE test.table1(a Integer) engine=URL('http://localhost:65535/dummy', 'CSV')",
+        user="A",
+    )
+
+
+def test_grant_table_engine_option():
+    instance.query("DROP USER IF EXISTS A, B")
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
+    instance.query("GRANT TABLE ENGINE ON * TO A WITH GRANT OPTION")
+
+    instance.query("GRANT TABLE ENGINE ON * TO B", user="A")
+
+    assert "GRANT TABLE ENGINE ON * TO B" in instance.query("SHOW GRANTS FOR B")
+
+    instance.query("DROP USER IF EXISTS B")
+
+
+def test_create_database_does_not_require_table_engine_grant():
+    # Regression test for PR #98984: `CREATE DATABASE` must not require `TABLE ENGINE` grants
+    # even when `table_engines_require_grant = false`. Database engines (e.g. `Atomic`) are
+    # registered in `DatabaseFactory`, not `StorageFactory`. Before the fix, only
+    # `StorageFactory::getAllStorages()` was iterated for implicit grants, omitting database
+    # engines and causing `ACCESS_DENIED` on `CREATE DATABASE`.
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE DATABASE ON *.* TO A")
+
+    # `CREATE DATABASE` with the default engine must succeed.
+    instance.query("CREATE DATABASE test_user_db", user="A")
+    instance.query("DROP DATABASE test_user_db")
+
+    # Explicitly specifying `Atomic` must also succeed — it is a database engine, not a table engine.
+    instance.query("CREATE DATABASE test_user_db ENGINE = Atomic", user="A")
+    instance.query("DROP DATABASE test_user_db")
+
+
+def test_database_source_engine_requires_source_grant():
+    # Database engines that connect to external sources declare source_access_type in
+    # DatabaseFactory, just like table engines do in StorageFactory. Even when
+    # table_engines_require_grant = false, source database engines still require the
+    # corresponding READ/WRITE source grant.
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE DATABASE ON *.* TO A")
+
+    # Filesystem database engine requires FILE source access.
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE DATABASE test_fs_db ENGINE = Filesystem",
+        user="A",
+    )
+
+    instance.query("GRANT READ, WRITE ON FILE TO A")
+
+    instance.query("CREATE DATABASE test_fs_db ENGINE = Filesystem", user="A")
+    instance.query("DROP DATABASE test_fs_db")
+
+    # Revoking FILE source access blocks Filesystem database creation again.
+    instance.query("REVOKE READ, WRITE ON FILE FROM A")
+
+    assert "Not enough privileges" in instance.query_and_get_error(
+        "CREATE DATABASE test_fs_db ENGINE = Filesystem",
+        user="A",
+    )

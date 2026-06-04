@@ -273,7 +273,6 @@ void DisksApp::runInteractiveReplxx()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = {},
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
@@ -625,6 +624,7 @@ void DisksApp::runInteractive()
 }
 }
 
+int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
     try

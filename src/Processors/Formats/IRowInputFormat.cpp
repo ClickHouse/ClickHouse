@@ -63,7 +63,7 @@ bool isParseError(int code)
         || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
-bool isConnectionError(int code)
+static bool isConnectionError(int code)
 {
     return code == ErrorCodes::SOCKET_TIMEOUT || code == ErrorCodes::NETWORK_ERROR || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
         || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET || code == ErrorCodes::UNEXPECTED_END_OF_FILE;
@@ -126,6 +126,7 @@ Chunk IRowInputFormat::read()
     block_missing_values.clear();
 
     size_t num_rows = 0;
+    size_t total_rows_before_read = total_rows;
     size_t chunk_start_offset = getDataOffsetMaybeCompressed(getReadBuffer());
     try
     {
@@ -139,7 +140,9 @@ Chunk IRowInputFormat::read()
             }
             total_rows += num_rows;
             approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
-            return getChunkForCount(num_rows);
+            auto chunk = getChunkForCount(num_rows);
+            chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
+            return chunk;
         }
 
         RowReadExtension info;
@@ -167,6 +170,16 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
+            if (max_block_wait_ms != 0 && num_rows > 0)
+            {
+                UInt64 elapsed_ms = watch.elapsedMilliseconds();
+                if (elapsed_ms >= max_block_wait_ms)
+                    break;
+
+                UInt64 remaining_us = (max_block_wait_ms - elapsed_ms) * 1000;
+                if (!getReadBuffer().poll(remaining_us))
+                    break;
+            }
 
             try
             {
@@ -306,6 +319,7 @@ Chunk IRowInputFormat::read()
         column->finalize();
 
     Chunk chunk(std::move(columns), num_rows);
+    chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before_read));
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
 
 
@@ -322,6 +336,7 @@ void IRowInputFormat::resetParser()
     IInputFormat::resetParser();
     total_rows = 0;
     num_errors = 0;
+    got_connection_exception = false;
     block_missing_values.clear();
 }
 
