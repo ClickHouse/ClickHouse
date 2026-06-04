@@ -130,6 +130,9 @@ def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
     elif storage_type.startswith("s3:"):  # s3:bucket_name format
         bucket = storage_type.split(":")[1]
         return f"s3a://{bucket}/{relative_path}"
+    elif storage_type.startswith("url:"):  # url:bucket_name format - explicit http://endpoint/bucket/... URL
+        bucket = storage_type.split(":")[1]
+        return f"http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{relative_path}"
     elif storage_type == "azure":
         return f"abfs://{cluster.azure_container_name}@{cluster.azurite_account}/{relative_path}"
     elif storage_type.startswith("azure:"):  # azure:container_name format
@@ -144,7 +147,7 @@ def get_absolute_path(storage_type: str, cluster, relative_path: str) -> str:
 def get_uploader(storage_type: str, cluster):
     if storage_type == "s3":
         return cluster.default_s3_uploader
-    elif storage_type.startswith("s3:"):
+    elif storage_type.startswith("s3:") or storage_type.startswith("url:"):
         bucket = storage_type.split(":")[1]
         return S3Uploader(cluster.minio_client, bucket)
     elif storage_type == "azure":
@@ -364,6 +367,95 @@ def test_four_different_s3_buckets(started_cluster):
     data_storage = f"s3:{buckets[3]}"
 
     uploaders = {f"s3:{b}": S3Uploader(started_cluster.minio_client, b) for b in buckets}
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, name STRING, score INT) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'Alice', 100), (2, 'Bob', 85), (3, 'Carol', 92)")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    temp_dir = tempfile.mkdtemp()
+    host_path = os.path.join(temp_dir, TABLE_NAME)
+    os.makedirs(host_path, exist_ok=True)
+
+    default_download_directory(started_cluster, "s3", f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/", host_path)
+
+    base_path = f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    metadata_dir = os.path.join(host_path, "metadata")
+    data_dir = os.path.join(host_path, "data")
+
+    manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
+    for mf in manifest_files:
+        modify_avro_file(mf, ["data_file", "file_path"],
+                        lambda p: path_modifier(p, data_storage, started_cluster, base_path))
+
+    manifest_list_files = [f for f in find_files(metadata_dir, ".avro") if os.path.basename(f).startswith("snap-")]
+    for ml in manifest_list_files:
+        modify_avro_file(ml, ["manifest_path"],
+                        lambda p: path_modifier(p, manifest_storage, started_cluster, base_path))
+
+    for mj in find_files(metadata_dir, ".metadata.json"):
+        with open(mj, 'r') as f:
+            data = json.load(f)
+        data["location"] = get_absolute_path(metadata_storage, started_cluster, base_path)
+        if "snapshots" in data:
+            for snap in data["snapshots"]:
+                if "manifest-list" in snap:
+                    snap["manifest-list"] = path_modifier(snap["manifest-list"], manifest_list_storage, started_cluster, base_path)
+        with open(mj, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    for f in find_files(metadata_dir, ".metadata.json") + find_files(metadata_dir, "version-hint.text"):
+        rel = os.path.relpath(f, host_path)
+        uploaders[metadata_storage].upload_file(f, f"{base_path}/{rel}")
+
+    for f in manifest_list_files:
+        rel = os.path.relpath(f, host_path)
+        uploaders[manifest_list_storage].upload_file(f, f"{base_path}/{rel}")
+
+    for f in manifest_files:
+        rel = os.path.relpath(f, host_path)
+        uploaders[manifest_storage].upload_file(f, f"{base_path}/{rel}")
+
+    if os.path.exists(data_dir):
+        for f in find_files(data_dir, ".parquet"):
+            rel = os.path.relpath(f, host_path)
+            uploaders[data_storage].upload_file(f, f"{base_path}/{rel}")
+
+    shutil.rmtree(temp_dir)
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    result = instance.query(f"SELECT * FROM icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{buckets[0]}/') ORDER BY id")
+
+    assert result == "1\tAlice\t100\n2\tBob\t85\n3\tCarol\t92\n"
+
+
+# Regression test: the bucket from an explicit path-style URL must be preserved when creating
+# the secondary storage; otherwise reads are issued against the wrong bucket.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3348134710
+def test_explicit_http_urls_different_buckets(started_cluster):
+    """S3: components referenced via explicit `http://endpoint/bucket/...` URLs in different buckets."""
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_explicit_urls_{get_uuid_str()}"
+    buckets = [
+        started_cluster.minio_bucket,
+        f"{started_cluster.minio_bucket}-storage1",
+        f"{started_cluster.minio_bucket}-storage2",
+        f"{started_cluster.minio_bucket}-storage3",
+    ]
+
+    metadata_storage = f"s3:{buckets[0]}"
+    manifest_list_storage = f"url:{buckets[1]}"
+    manifest_storage = f"url:{buckets[2]}"
+    data_storage = f"url:{buckets[3]}"
+
+    uploaders = {
+        metadata_storage: S3Uploader(started_cluster.minio_client, buckets[0]),
+        manifest_list_storage: S3Uploader(started_cluster.minio_client, buckets[1]),
+        manifest_storage: S3Uploader(started_cluster.minio_client, buckets[2]),
+        data_storage: S3Uploader(started_cluster.minio_client, buckets[3]),
+    }
 
     spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, name STRING, score INT) USING iceberg OPTIONS('format-version'='2')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'Alice', 100), (2, 'Bob', 85), (3, 'Carol', 92)")

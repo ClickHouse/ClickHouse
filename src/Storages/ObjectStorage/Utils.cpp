@@ -641,11 +641,28 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
         std::string endpoint_to_use;
 
+        /// Build an endpoint that keeps the bucket: `ObjectStorageFactory` re-parses the endpoint
+        /// from the config to determine the bucket, and reads use keys relative to the bucket, so
+        /// an endpoint without the bucket would address the wrong one (see `getS3URI`).
+        auto make_endpoint_with_bucket = [&]() -> std::string
+        {
+            if (s3_uri.endpoint.empty())
+                return "https://" + s3_uri.bucket + ".s3.amazonaws.com";
+
+            const auto scheme_end = s3_uri.endpoint.find("://");
+            if (s3_uri.is_virtual_hosted_style && scheme_end != std::string::npos)
+            {
+                /// Virtual-hosted style: https://s3.region.amazonaws.com -> https://bucket.s3.region.amazonaws.com
+                return s3_uri.endpoint.substr(0, scheme_end + 3) + s3_uri.bucket + "." + s3_uri.endpoint.substr(scheme_end + 3);
+            }
+
+            /// Path style: http://minio:9000 -> http://minio:9000/bucket
+            return s3_uri.endpoint + "/" + s3_uri.bucket;
+        };
+
         if (endpoint_explicit)
         {
-            endpoint_to_use = s3_uri.endpoint.empty()
-                ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
-                : s3_uri.endpoint;
+            endpoint_to_use = make_endpoint_with_bucket();
         }
         else
         {
@@ -690,12 +707,14 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
             /// Fallback: base storage is not S3
             if (endpoint_to_use.empty())
-            {
-                endpoint_to_use = s3_uri.endpoint.empty()
-                    ? ("https://" + s3_uri.bucket + ".s3.amazonaws.com")
-                    : s3_uri.endpoint;
-            }
+                endpoint_to_use = make_endpoint_with_bucket();
         }
+
+        /// Compare service endpoints (`scheme://authority`, no bucket) when deciding whether base
+        /// credentials apply: `getDescription` of the base storage carries no bucket, while
+        /// `endpoint_to_use` now does (in the host or in the path). A bucket in the path is ignored
+        /// by `sameEndpoint`, but a bucket in the host (virtual-hosted style) would break the match.
+        const std::string service_endpoint = (endpoint_explicit && !s3_uri.endpoint.empty()) ? s3_uri.endpoint : endpoint_to_use;
 
         /// Include credential-propagation flag in the cache key: `configure_fn` runs only on miss,
         /// so different per-query values of `object_storage_propagate_credentials_to_other_storages` must not share an entry.
@@ -717,7 +736,7 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 /// `object_storage_propagate_credentials_to_other_storages` is enabled.
                 if (base_storage->getType() == ObjectStorageType::S3
                     && (context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages]
-                        || sameEndpoint(base_storage->getDescription(), endpoint_to_use)))
+                        || sameEndpoint(base_storage->getDescription(), service_endpoint)))
                 {
                     if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
                     {
