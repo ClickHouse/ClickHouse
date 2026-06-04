@@ -187,11 +187,16 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return;
 
     /// The TopN transforms bypass `Aggregator`, so they cannot honor the GROUP BY
-    /// overflow limit (`max_rows_to_group_by` with `group_by_overflow_mode = 'throw'`/`'break'`)
-    /// nor the external (on-disk) aggregation path (`max_bytes_before_external_group_by`).
-    /// Fall back to the standard aggregation + sorting pipeline when either is configured,
-    /// otherwise we would silently change semantics and memory behavior.
-    if (params.max_rows_to_group_by != 0 || params.max_bytes_before_external_group_by != 0)
+    /// overflow limit: with `max_rows_to_group_by` set and `group_by_overflow_mode = 'throw'`
+    /// or `'break'`, the standard pipeline throws or stops, while the TopN transforms would
+    /// keep inserting groups. Fall back to the standard aggregation + sorting pipeline in
+    /// that case instead of silently changing semantics.
+    /// Note: we intentionally do not gate on `max_bytes_before_external_group_by` — it is
+    /// non-zero by default (derived from `max_bytes_ratio_before_external_group_by`), so
+    /// gating on it would disable the optimization for virtually all queries. The memory
+    /// tradeoff of skipping on-disk spilling is inherent to this opt-in optimization and is
+    /// bounded by Mode 2 threshold pruning.
+    if (params.max_rows_to_group_by != 0)
         return;
 
     const auto & agg_descs = *agg_descs_ptr;
