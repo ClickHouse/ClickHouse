@@ -34,6 +34,21 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+namespace
+{
+
+void checkVariantDiscriminator(ColumnVariant::Discriminator discr, size_t num_variants, bool native_format)
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
+        throw Exception(
+            native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Invalid discriminator {} in Variant column: it must be less than the number of variants ({})",
+            UInt64(discr),
+            num_variants);
+}
+
+}
+
 
 UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
 {
@@ -568,12 +583,16 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
                 *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+
+            const auto & new_discriminators = col.getLocalDiscriminators();
+            for (size_t i = prev_size; i != new_discriminators.size(); ++i)
+                checkVariantDiscriminator(new_discriminators[i], variant_serializations.size(), settings.native_format);
         }
         else
         {
             auto variant_pair = deserializeCompactDiscriminators(
                 col.getLocalDiscriminatorsPtr(), rows_offset, limit, discriminators_stream, settings.continuous_reading,
-                *discriminators_state);
+                settings.native_format, *discriminators_state);
 
             variant_rows_offsets = variant_pair.first;
             variant_limits = variant_pair.second;
@@ -752,6 +771,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     size_t limit,
     ReadBuffer * stream,
     bool continuous_reading,
+    bool native_format,
     DeserializeBinaryBulkStateVariantDiscriminators & state) const
 {
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
@@ -780,6 +800,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
         if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         {
+            checkVariantDiscriminator(state.compact_discr, variant_serializations.size(), native_format);
             auto & data = discriminators.getData();
             data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
             auto remained_limit_in_granule = limit_in_granule;
@@ -801,6 +822,9 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
+            for (size_t i = start; i != discriminators_data.size(); ++i)
+                checkVariantDiscriminator(discriminators_data[i], variant_serializations.size(), native_format);
+
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
             for (size_t i = start; i != start + skipped_rows; ++i)

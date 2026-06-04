@@ -206,6 +206,7 @@ private:
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
+        bool native_format,
         DeserializeBinaryBulkStateVariantDiscriminators & state) const;
 
     static void readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, ReadBuffer * stream);
