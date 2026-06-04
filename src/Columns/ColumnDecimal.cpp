@@ -17,6 +17,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
@@ -124,6 +125,17 @@ template <is_decimal T>
         }
         return res;
     }
+}
+
+template <is_decimal T>
+size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
+{
+    if (begin >= end)
+        return begin;
+
+    const T * d = data.data();
+    const auto ref = d[begin].value;
+    return findEqualRangeEndAssumeSorted(begin, end, 16, [&](size_t i) { return d[i].value == ref; });
 }
 
 template <is_decimal T>
