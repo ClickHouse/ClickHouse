@@ -56,6 +56,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -157,6 +158,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -241,6 +243,20 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     bool parallel_replicas_estimation_enabled
         = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
 
+    auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
+    {
+        const auto * raw = storage_ptr.get();
+        if (typeid_cast<const StorageDistributed *>(raw))
+            return true;
+        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+            return true;
+        if (typeid_cast<const StorageObjectStorageCluster *>(raw))
+            return true;
+        if (typeid_cast<const StorageView *>(raw))
+            return true;
+        return false;
+    };
+
     for (const auto & table_expression : table_nodes)
     {
         auto * table_node = table_expression->as<TableNode>();
@@ -249,21 +265,24 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             continue;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        if (typeid_cast<const StorageDistributed *>(storage.get())
-            || (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage)))
+        if (storage_requires_filter_collection(storage))
         {
             collect_filters = true;
             break;
         }
-        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
+        /// `Merge` is itself agnostic to shard skipping, but if any of the underlying
+        /// tables would itself trigger filter collection at the top level
+        /// (`Distributed`, `View`, `ObjectStorageCluster`, ...), the predicate from
+        /// above the `Merge` must still reach those storages via `query_info`.
+        /// The dummy-plan trick captures the WHERE clause for the `Merge` table
+        /// expression, which `StorageMerge` then forwards to each child storage.
+        if (const auto * storage_merge = typeid_cast<const StorageMerge *>(storage.get()))
         {
-            collect_filters = true;
-            break;
-        }
-        if (typeid_cast<const StorageView *>(storage.get()))
-        {
-            collect_filters = true;
-            break;
+            if (storage_merge->hasChildTable(storage_requires_filter_collection))
+            {
+                collect_filters = true;
+                break;
+            }
         }
     }
 
@@ -422,7 +441,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
     {
         Int64 int_value = converted_value_int.safeGet<Int64>();
 
-        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
         const UInt64 magnitude = -static_cast<UInt64>(int_value);
         return {magnitude, 0, true};
@@ -725,7 +744,8 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order]);
+        settings[Setting::force_aggregation_in_order],
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -970,19 +990,19 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
-    NameSet column_names_with_fill;
+    NameSet order_by_column_names;
     SortDescription fill_description;
 
     const auto & header = query_plan.getCurrentHeader();
 
     for (const auto & description : query_analysis_result.sort_description)
     {
+        order_by_column_names.insert(description.column_name);
         if (description.with_fill)
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
-            column_names_with_fill.insert(description.column_name);
         }
     }
 
@@ -1012,7 +1032,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
-                if (column_names_with_fill.contains(input_node->result_name))
+                if (order_by_column_names.contains(input_node->result_name))
                     continue;
 
                 interpolate_actions_dag.getOutputs().push_back(input_node);
@@ -1837,7 +1857,7 @@ void addReadFromQueryResultCacheStep(
 
 }
 
-PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
+static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     const SelectQueryOptions & select_query_options,
     GlobalPlannerContextPtr global_planner_context)
 {
