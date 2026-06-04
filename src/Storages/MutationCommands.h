@@ -174,11 +174,6 @@ struct MutationActions
     String filter_column_name;
     bool project_input;
     std::optional<UInt64> mutation_version;
-    /// Columns this single step overwrites: the predicate column for a filter
-    /// step, the assignment targets for an UPDATE step. Used by the on-fly
-    /// reader chain to decide which columns can skip `performRequiredConversions`
-    /// because the step itself will produce a fresh value.
-    NameSet overwritten_columns;
 };
 
 }

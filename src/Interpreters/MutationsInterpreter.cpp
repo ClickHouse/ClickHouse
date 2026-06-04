@@ -2327,45 +2327,33 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
     std::vector<MutationActions> result;
     for (const auto & stage : stages)
     {
-        /// Targets of this stage's UPDATE assignments. Attached to the
-        /// stage's expression step so the on-fly reader chain knows which
-        /// columns will be overwritten and can skip their on-disk conversion.
-        NameSet update_targets;
-        for (const auto & [column, _] : stage.column_to_updated)
-            update_targets.insert(column);
-
-        auto build_overwritten = [&](size_t step_index) -> NameSet
-        {
-            if (step_index < stage.filter_column_names.size())
-                return {stage.filter_column_names[step_index]};
-            return update_targets;
-        };
-
+        /// Old (`stage.analyzer`) and new (`stage.new_actions_chain`) analysis paths
+        /// emit the same chain shape, only the accessor names differ. Collect the
+        /// `ActionsAndProjectInputsFlagPtr` for each step into a single vector so
+        /// the per-step construction below is shared.
+        std::vector<ActionsAndProjectInputsFlagPtr> step_actions;
         if (stage.analyzer)
         {
-            /// Old path
-            for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
+            for (const auto & step : stage.expressions_chain.steps)
             {
-                const auto & step = stage.expressions_chain.steps[i];
-                bool project_input = step->actions()->project_input;
-                String filter = i < stage.filter_column_names.size() ? stage.filter_column_names[i] : String{};
-                result.push_back({step->actions()->dag.clone(), std::move(filter), project_input, stage.mutation_version, build_overwritten(i)});
+                step_actions.push_back(step->actions());
             }
         }
         else
         {
-            /// New path
-            const auto & chain_steps = stage.new_actions_chain->getSteps();
-            for (size_t i = 0; i < chain_steps.size(); ++i)
+            for (const auto & step : stage.new_actions_chain->getSteps())
             {
-                const auto & step = chain_steps[i];
-                bool project_input = step->getActions()->project_input;
-                String filter = i < stage.filter_column_names.size() ? stage.filter_column_names[i] : String{};
-                result.push_back({step->getActions()->dag.clone(), std::move(filter), project_input, stage.mutation_version, build_overwritten(i)});
+                step_actions.push_back(step->getActions());
             }
         }
-    }
 
+        for (size_t i = 0; i < step_actions.size(); ++i)
+        {
+            const auto & actions = step_actions[i];
+            String filter = i < stage.filter_column_names.size() ? stage.filter_column_names[i] : String{};
+            result.push_back({actions->dag.clone(), std::move(filter), actions->project_input, stage.mutation_version});
+        }
+    }
     return result;
 }
 

@@ -306,6 +306,56 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     auto actions_chain = getMutationActions(part_info, read_columns, metadata_snapshot, context);
     auto settings = ExpressionActionsSettings(context);
 
+    /// Columns the surviving on-fly chain will overwrite. Attached to every
+    /// pre-`MODIFY` step so `MergeTreeReadersChain::executeActionsBeforePrewhere`
+    /// can skip `performRequiredConversions` for them: their on-disk value is
+    /// about to be replaced and pre-casting it could fail on values the chain
+    /// will discard (for example, `_CAST('x', UInt64)` before `UPDATE v = '100'`).
+    ///
+    /// The set is built from the chain that `filterMutationCommands` actually
+    /// returns for this `read_columns`. Commands the query does not need are
+    /// dropped here, otherwise an earlier surviving step that reads one of
+    /// those columns as a source would see the on-disk type while the block
+    /// already advertises the post-`MODIFY` type.
+    NameSet columns_overwritten_by_chain;
+    if (!actions_chain.empty())
+    {
+        Names storage_read_columns;
+        NameSet storage_read_columns_set;
+        for (const auto & column : read_columns)
+        {
+            auto name_in_storage = column.getNameInStorage();
+            if (storage_read_columns_set.emplace(name_in_storage).second)
+            {
+                storage_read_columns.emplace_back(name_in_storage);
+            }
+        }
+        addColumnsRequiredForMaterialized(storage_read_columns, storage_read_columns_set, metadata_snapshot, context);
+        for (const auto & command : filterMutationCommands(storage_read_columns, std::move(storage_read_columns_set)))
+        {
+            auto ast = command.ast();
+            if (!ast)
+            {
+                continue;
+            }
+            if (command.type == MutationCommand::UPDATE)
+            {
+                for (const auto & [column, _] : getColumnToUpdateExpression(*ast))
+                {
+                    columns_overwritten_by_chain.insert(column);
+                }
+            }
+            else if (command.type == MutationCommand::DELETE)
+            {
+                /// Lightweight delete arrives as a `DELETE` typed command without
+                /// the original `_row_exists = 0` assignment; add it explicitly so
+                /// the chain skips it from conversion. Plain `ALTER DELETE` is
+                /// unaffected (`_row_exists` is virtual).
+                columns_overwritten_by_chain.insert(RowExistsColumn::name);
+            }
+        }
+    }
+
     PrewhereExprSteps steps;
     for (auto & actions : actions_chain)
     {
@@ -313,17 +363,6 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
         /// because correctness of ALTER MODIFY may depend on the result of mutation.
         bool perform_alter_conversions = !version_of_alter_mutation || actions.mutation_version > version_of_alter_mutation;
         bool is_filter = !actions.filter_column_name.empty();
-
-        /// Per-step skip set: each step carries the columns IT writes (filter
-        /// column for a filter step, assignment targets for an UPDATE step).
-        /// `MergeTreeReadersChain::executeActionsBeforePrewhere` skips
-        /// `performRequiredConversions` for those columns at this step while
-        /// still converting everything else read by the step. Earlier steps
-        /// that read one of these columns as a source will have already
-        /// converted it, so the chain stays self-consistent.
-        NameSet columns_overwritten_by_chain;
-        if (!perform_alter_conversions)
-            columns_overwritten_by_chain = std::move(actions.overwritten_columns);
 
         PrewhereExprStep step
         {
@@ -333,7 +372,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .remove_filter_column = false,
             .need_filter = is_filter,
             .perform_alter_conversions = perform_alter_conversions,
-            .columns_overwritten_by_chain = std::move(columns_overwritten_by_chain),
+            .columns_overwritten_by_chain = perform_alter_conversions ? NameSet{} : columns_overwritten_by_chain,
             .mutation_version = actions.mutation_version,
         };
 
