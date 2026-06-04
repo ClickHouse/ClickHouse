@@ -1,0 +1,12 @@
+-- tokens produced by the coarse_grained chinese tokenizer
+['我','来自','北京邮电大学']
+-- hasToken matches the segmented tokens
+2
+1
+0
+-- the chinese text index is applicable for the predicate
+2
+-- hasAllTokens through the index
+2
+-- fine_grained emits overlapping sub-tokens such as 大学
+1
