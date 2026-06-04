@@ -5,8 +5,98 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/ObjectFilterStep.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
+
 namespace DB::QueryPlanOptimizations
 {
+
+namespace
+{
+
+/// Rewrite bare numeric columns used in boolean context inside a filter DAG into
+/// explicit `notEquals(col, 0)` comparisons so that `KeyCondition` can build
+/// index atoms from them. Without this, `WHERE id` (a bare INPUT node) produces
+/// no primary-key condition, while the equivalent `WHERE id != 0` does.
+///
+/// Only nodes that are direct boolean leaves are rewritten: the DAG output itself,
+/// or children of `not` / `and` / `or` (the operators that `RPNBuilder` traverses).
+/// This is intentionally scoped to the second-pass filter-to-source attachment and
+/// never runs on projection candidate DAGs or join-marker filters. See #89222.
+void rewriteBareColumnFilters(ActionsDAG & dag)
+{
+    auto is_bare_column = [](const ActionsDAG::Node * n) -> bool
+    {
+        while (n && n->type == ActionsDAG::ActionType::ALIAS)
+            n = n->children.empty() ? nullptr : n->children.front();
+        return n && n->type == ActionsDAG::ActionType::INPUT;
+    };
+
+    auto is_numeric_filter_type = [](const DataTypePtr & type) -> bool
+    {
+        auto inner = removeNullable(removeLowCardinality(type));
+        if (inner->onlyNull())
+            return false;
+        WhichDataType which(inner);
+        return which.isInteger() || which.isFloat();
+    };
+
+    auto is_logical = [](const ActionsDAG::Node * n) -> bool
+    {
+        if (n->type != ActionsDAG::ActionType::FUNCTION || !n->function_base)
+            return false;
+        const auto & name = n->function_base->getName();
+        return name == "not" || name == "and" || name == "or";
+    };
+
+    FunctionOverloadResolverPtr ne_resolver;
+
+    auto rewrite_node = [&](const ActionsDAG::Node * bare_node) -> const ActionsDAG::Node *
+    {
+        if (!is_bare_column(bare_node) || !is_numeric_filter_type(bare_node->result_type))
+            return nullptr;
+
+        if (!ne_resolver)
+            ne_resolver = FunctionFactory::instance().get("notEquals", nullptr);
+
+        auto inner_type = removeNullable(removeLowCardinality(bare_node->result_type));
+        auto zero_column = bare_node->result_type->createColumnConst(1, inner_type->getDefault());
+        const auto & zero_node = dag.addColumn({zero_column, bare_node->result_type, bare_node->result_name + "__zero"});
+        return &dag.addFunction(ne_resolver, {bare_node, &zero_node}, {});
+    };
+
+    auto & outputs = dag.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (const auto * replacement = rewrite_node(outputs[i]))
+        {
+            outputs[i] = replacement;
+            continue;
+        }
+
+        if (is_logical(outputs[i]))
+        {
+            /// Rewrite bare-column children of top-level logical operators.
+            /// The node's children vector is const, so we must replace the
+            /// whole function node if any child changes.
+            bool any_changed = false;
+            ActionsDAG::NodeRawConstPtrs new_children = outputs[i]->children;
+            for (size_t j = 0; j < new_children.size(); ++j)
+            {
+                if (const auto * r = rewrite_node(new_children[j]))
+                {
+                    new_children[j] = r;
+                    any_changed = true;
+                }
+            }
+            if (any_changed)
+                outputs[i] = &dag.addFunction(outputs[i]->function_base, std::move(new_children), {});
+        }
+    }
+}
+
+}
 
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 {
@@ -46,6 +136,8 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
             /// matching for ALIAS columns and renamed columns.
             for (auto it = expression_dags.rbegin(); it != expression_dags.rend(); ++it)
                 filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
+
+            rewriteBareColumnFilters(filter_dag);
 
             source_step_with_filter->addFilter(std::move(filter_dag), filter_column_name);
         }
