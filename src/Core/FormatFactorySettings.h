@@ -214,8 +214,11 @@ Verify page checksums when reading parquet files.
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
-Allow seeks while reading in ORC/Parquet/Arrow input formats.
-
+Allow seeks (or range reads) while reading ORC, Parquet, and Arrow input formats.
+When enabled and the source supports it (e.g. local file, S3, HTTP with range support and known size),
+ClickHouse can read only the needed byte ranges and use less memory.
+When disabled, or when the source does not support seeks (e.g. no file size, or stream not seekable),
+some readers may fall back to loading the full file into memory.
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
@@ -1232,10 +1235,17 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(UInt64, output_format_float_precision, 0, R"(
+When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
+When 0 (the default), use the shortest round-trip representation.
+
+Values too large for fixed notation, and values whose magnitude is so small that rounding to the requested precision would lose all significant digits (the mantissa would become `±0`), are emitted in scientific notation instead. In these fallback cases the mantissa may carry more than the requested number of fractional digits.
+
+Valid range: 0 to 100.
+)", 0) \
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
-    \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
