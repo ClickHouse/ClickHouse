@@ -823,3 +823,66 @@ def test_runtime_increase_preserves_fifo(started_cluster):
         # Restore the original limit and confirm it before the next test runs.
         set_max_concurrent_queries(node, 2)
         wait_for_max_concurrent_queries(node, 2)
+
+
+def test_secondary_limit_not_rejected_on_early_release(started_cluster):
+    """
+    Regression test for the admission handoff vs secondary concurrency limits.
+
+    The admission slot is released early in `executeQuery` (same timing as the
+    resource-scheduler `QuerySlot`), before the finishing query's
+    `ProcessListEntry` destructor decrements `non_internal_processes` (and the
+    per-user counter). When `max_concurrent_queries_for_all_users` (or
+    `max_concurrent_queries_for_user`) equals `max_concurrent_queries`, a waiter
+    that just received the transferred admission slot used to reach the secondary
+    check while the finishing query was still counted, and was rejected with
+    `TOO_MANY_SIMULTANEOUS_QUERIES` ("for all users"/"for user") — whereas the
+    legacy `max_size` path would keep it waiting and then run it.
+
+    The fix makes the FIFO path wait on `query_finished` for the in-flight
+    teardown to drain (bounded by `queue_max_wait_ms`) instead of throwing. With
+    the fix every query completes; without it some intermittently fail at the
+    secondary-limit check.
+
+    The window between early release and destructor is short, so we drive a
+    steady stream of naturally-finishing queries (not killed — a killed query
+    releases its slot only in the destructor, so it never opens the window) and
+    assert that none is rejected by the secondary limits.
+    """
+    # server config: max_concurrent_queries = 2.
+    limit = 2
+
+    for setting in ("max_concurrent_queries_for_all_users", "max_concurrent_queries_for_user"):
+        prefix = uuid.uuid4().hex[:8]
+        num_queries = 60
+        pool = Pool(num_queries)
+
+        errors = []
+
+        def run_query(i):
+            try:
+                # A tiny bit of real work so the queries genuinely contend for the
+                # two slots and finish naturally, producing admission handoffs.
+                node.query(
+                    "SELECT sum(number) FROM numbers(200000) FORMAT Null",
+                    settings={
+                        setting: limit,
+                        "queue_max_wait_ms": 60000,
+                    },
+                    query_id=f"sec_{setting}_{prefix}_{i}",
+                )
+            except Exception as e:
+                errors.append(str(e))
+
+        results = [pool.apply_async(run_query, (i,)) for i in range(num_queries)]
+        pool.close()
+        pool.join()
+
+        # No query may be rejected by the secondary limit: the waiter held a valid
+        # admission slot and must wait out the early-release window, not fail.
+        offending = [e for e in errors if "Too many simultaneous queries" in e]
+        assert not offending, (
+            f"{setting}: {len(offending)}/{num_queries} queries were rejected by the "
+            f"secondary concurrency limit while holding an admission slot; "
+            f"first error: {offending[0]}"
+        )

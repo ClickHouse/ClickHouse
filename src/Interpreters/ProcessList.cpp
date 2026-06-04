@@ -332,12 +332,27 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
                 && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
-                throw Exception(
-                    ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                    "Too many simultaneous queries for all users. "
-                    "Current: {}, maximum: {}",
-                    non_internal_processes,
-                    settings[Setting::max_concurrent_queries_for_all_users].toString());
+            {
+                const size_t limit = settings[Setting::max_concurrent_queries_for_all_users];
+
+                /// When we hold an admission slot, it may have been transferred to us by a finishing
+                /// query whose `ProcessListEntry` is not yet destroyed (the slot is released early in
+                /// `executeQuery`, before `non_internal_processes` is decremented in the destructor).
+                /// Rejecting here would fail a waiter that just left the admission queue, whereas the
+                /// legacy `max_size` path keeps such a query waiting until the counter drops. Wait on
+                /// `query_finished` (notified by the destructor) for the in-flight teardown to drain,
+                /// bounded by the same `queue_max_wait_ms` budget, instead of throwing immediately.
+                if (!got_admission_slot
+                    || !queue_max_wait_ms
+                    || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                           [&] { return non_internal_processes < limit; }))
+                    throw Exception(
+                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                        "Too many simultaneous queries for all users. "
+                        "Current: {}, maximum: {}",
+                        non_internal_processes,
+                        settings[Setting::max_concurrent_queries_for_all_users].toString());
+            }
         }
 
         /** Why we use current user?
@@ -357,13 +372,26 @@ ProcessList::EntryPtr ProcessList::insert(
             {
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
                     && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
-                    throw Exception(
-                        ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                        "Too many simultaneous queries for user {}. "
-                        "Current: {}, maximum: {}",
-                        client_info.current_user,
-                        user_process_list->second.non_internal_queries,
-                        settings[Setting::max_concurrent_queries_for_user].toString());
+                {
+                    const size_t limit = settings[Setting::max_concurrent_queries_for_user];
+                    auto & user_queries = user_process_list->second.non_internal_queries;
+
+                    /// Same early-release window as `max_concurrent_queries_for_all_users` above: a
+                    /// finishing query that already handed us its admission slot still counts toward
+                    /// the per-user counter until its destructor runs. Wait for it to drain instead of
+                    /// rejecting a waiter that just left the admission queue.
+                    if (!got_admission_slot
+                        || !queue_max_wait_ms
+                        || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                               [&] { return user_queries < limit; }))
+                        throw Exception(
+                            ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                            "Too many simultaneous queries for user {}. "
+                            "Current: {}, maximum: {}",
+                            client_info.current_user,
+                            user_process_list->second.non_internal_queries,
+                            settings[Setting::max_concurrent_queries_for_user].toString());
+                }
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 
