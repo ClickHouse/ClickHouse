@@ -45,6 +45,7 @@ UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> imp
     : ReadBuffer(nullptr, 0)
     , impl(impl_.get())
     , owned_impl(std::move(impl_))
+    , pending_bytes{}
 {
     detectBOM();
 }
@@ -52,6 +53,7 @@ UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> imp
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_)
     : ReadBuffer(nullptr, 0)
     , impl(&impl_)
+    , pending_bytes{}
 {
     detectBOM();
 }
@@ -277,7 +279,7 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
         /// Handle pending high surrogate first
         if (pending_high_surrogate != 0)
         {
-            uint16_t low_surrogate;
+            uint16_t low_surrogate = 0;
             if (!readUTF16CodeUnit(low_surrogate))
             {
                 /// EOF reached while waiting for low surrogate
@@ -328,7 +330,7 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
         }
 
         /// Read next code unit
-        uint16_t code_unit;
+        uint16_t code_unit = 0;
         if (!readUTF16CodeUnit(code_unit))
         {
             /// No more data available
@@ -381,7 +383,7 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
 
     while (output_ptr + 4 <= output_end) /// Ensure space for maximum UTF-8 sequence
     {
-        uint32_t code_point;
+        uint32_t code_point = 0;
         if (!readUTF32CodePoint(code_point))
         {
             /// No more data available
@@ -422,18 +424,10 @@ bool UTFConvertingReadBuffer::nextImpl()
     {
         if (pending_bytes_count > 0)
         {
-            size_t rest_of_impl_size = impl->buffer().end() - impl->position();
-            size_t total_size = pending_bytes_count + rest_of_impl_size;
-            memory.resize(total_size);
-
+            memory.resize(pending_bytes_count);
             memcpy(memory.data(), pending_bytes, pending_bytes_count);
-            if (rest_of_impl_size > 0)
-            {
-                memcpy(memory.data() + pending_bytes_count, impl->position(), rest_of_impl_size);
-                impl->position() = impl->buffer().end();
-            }
 
-            working_buffer = Buffer(memory.data(), memory.data() + total_size);
+            working_buffer = Buffer(memory.data(), memory.data() + pending_bytes_count);
             pos = working_buffer.begin();
             nextimpl_working_buffer_offset = 0;
             pending_bytes_count = 0;
@@ -449,7 +443,7 @@ bool UTFConvertingReadBuffer::nextImpl()
 
         if (impl->hasPendingData() || impl->next())
         {
-            working_buffer = impl->buffer();
+            working_buffer = Buffer(impl->position(), impl->buffer().end());
             nextimpl_working_buffer_offset = 0;
             return true;
         }

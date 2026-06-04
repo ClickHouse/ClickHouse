@@ -29,7 +29,7 @@ TEST(UTFConvertingReadBuffer, SurrogateBoundary)
     // We need exactly (1048576 - 6) bytes to be filled, so that output_ptr + 6 <= output_end is false
     // AFTER reading high1, BUT high1 shouldn't be written.
     
-    size_t dummy_chars = 1048576 - 3; 
+    size_t dummy_chars = 1048576 - 6; 
     
     for (size_t i = 0; i < dummy_chars; ++i)
     {

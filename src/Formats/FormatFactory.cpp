@@ -862,6 +862,16 @@ public:
         return schema_reader->getNumRowsRead();
     }
 
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override
+    {
+        schema_reader->transformTypesIfNeeded(type, new_type);
+    }
+
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override
+    {
+        schema_reader->transformTypesFromDifferentFilesIfNeeded(type, new_type);
+    }
+
 private:
     std::unique_ptr<UTFConvertingReadBuffer> owned_buf;
     SchemaReaderPtr schema_reader;

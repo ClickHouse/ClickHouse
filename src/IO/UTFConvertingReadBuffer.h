@@ -60,7 +60,7 @@ private:
     Encoding encoding = Encoding::UTF8;
 
     /// Fixed size array for holding bytes that were read during BOM detection
-    char pending_bytes[4];
+    char pending_bytes[4] = {};
     size_t pending_bytes_count = 0;
 
     /// Memory buffer used only for UTF-16/32 conversion
