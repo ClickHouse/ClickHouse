@@ -155,6 +155,7 @@
 #include <base/defines.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
 namespace fs = std::filesystem;
 
@@ -279,6 +280,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool cloud_mode;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -1567,17 +1569,20 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             (*settings)[Setting::ast_fuzzer_runs].value);
 
     /// Make setting's name ordered
-    auto obsolete_settings = settings->getChangedAndObsoleteNames();
-
-    if (!obsolete_settings.empty())
+    if (!(*settings)[Setting::cloud_mode])
     {
-        bool single_element = obsolete_settings.size() == 1;
-        constexpr auto message_format_string
-            = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
-              "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
-        common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
-            = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        auto obsolete_settings = settings->getChangedAndObsoleteNames();
+
+        if (!obsolete_settings.empty())
+        {
+            bool single_element = obsolete_settings.size() == 1;
+            constexpr auto message_format_string
+                = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
+                  "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
+            String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
+            common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
+                = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        }
     }
 
     return common_warnings;
@@ -4809,7 +4814,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
 {
     size_t max_parallel_tasks_per_type = static_cast<size_t>(
         static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]);
+        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
     callOnce(
         shared->schedule_pool_initialized,
         [&]
@@ -7548,7 +7553,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
             }
         }
     }
-    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * background_merges_mutations_concurrency_ratio);
+    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * static_cast<double>(background_merges_mutations_concurrency_ratio));
     /// After auto-lowering, a small `background_pool_size` combined with a user-configured
     /// fractional `background_merges_mutations_concurrency_ratio` (e.g. `1 * 0.5 = 0`) can
     /// produce zero task count, which fails the `MergeTreeBackgroundExecutor` startup check.
