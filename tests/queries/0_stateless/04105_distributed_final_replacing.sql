@@ -17,7 +17,8 @@ SELECT '-- Local';
 SELECT count(), sum(version), uniqExact(pk) FROM t_replacing_final_correctness FINAL;
 
 SELECT '-- Distributed';
+-- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SELECT count(), sum(version), uniqExact(pk) FROM t_replacing_final_correctness FINAL
-SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0;
+SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0;
 
 DROP TABLE t_replacing_final_correctness;
