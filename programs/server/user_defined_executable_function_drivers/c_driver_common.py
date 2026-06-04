@@ -754,6 +754,7 @@ def compile_with_docker(work_dir):
         "--read-only",
         "--tmpfs=/tmp:rw,size=64m",
         "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
         "--memory=512m",
         "--cpus=1.0",
         "--pids-limit=128",
@@ -846,6 +847,7 @@ trap cleanup EXIT INT TERM
 mkfifo "$pipe_dir/in" "$pipe_dir/out" || exit 1
 
 docker run --rm --name "$container" --log-driver=none --network=none --read-only \
+    --security-opt=no-new-privileges \
     --tmpfs=/tmp:rw,size=16m --cap-drop=ALL --user "$user" --memory="$memory" \
     --cpus="$cpus" --pids-limit="$pids_limit" -v "$work_dir:/work:rw" -w "$mount_dir" \
     "$image" sh -c 'exec "$1" < "$2" > "$3"' sh \

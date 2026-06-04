@@ -31,6 +31,7 @@ DRIVER_DIR="$CUR_DIR/../../../programs/server/user_defined_executable_function_d
 
 cat > "$WORK_DIR/config.xml" <<EOF
 <clickhouse>
+    <allow_experimental_executable_udf_drivers>1</allow_experimental_executable_udf_drivers>
     <user_defined_executable_function_drivers_config>${WORK_DIR}/*_driver.xml</user_defined_executable_function_drivers_config>
     <dynamic_user_defined_executable_functions_path>${WORK_DIR}/dyn/</dynamic_user_defined_executable_functions_path>
     <user_defined_path>${WORK_DIR}/user_defined</user_defined_path>

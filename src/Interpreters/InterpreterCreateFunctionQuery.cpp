@@ -11,6 +11,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Core/UUID.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -43,6 +44,12 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int FUNCTION_ALREADY_EXISTS;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
 }
 
 namespace
@@ -214,7 +221,7 @@ namespace
             return replace_if_exists;
         }
 
-        if (UserDefinedExecutableFunctionFactory::instance().has(function_name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+        if (throw_if_exists && UserDefinedExecutableFunctionFactory::instance().has(function_name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
             throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
 
         if (throw_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
@@ -381,6 +388,19 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     auto * create_function_query = updated_query_ptr->as<ASTCreateFunctionWithDriverQuery>();
     if (!create_function_query)
         return std::nullopt;
+
+    if (!current_context->getServerSettings()[ServerSetting::allow_experimental_executable_udf_drivers])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Drivers for executable user-defined functions are an experimental feature. "
+            "Enable the server setting `allow_experimental_executable_udf_drivers` to use them");
+
+    /// Driver-based functions are materialized (driver invocation + dynamic config/working directory) only on the
+    /// replica that receives the query; the replicated SQL-object storage propagates just the `ATTACH FUNCTION`
+    /// statement, so other replicas (and `RESTORE`) would not have the runnable artifacts. Reject this combination
+    /// until the artifact lifecycle is replicated too.
+    if (current_context->getUserDefinedSQLObjectsStorage().isReplicated())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Drivers for executable user-defined functions are not supported with replicated user-defined function storage");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);

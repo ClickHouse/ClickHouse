@@ -151,14 +151,17 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
                 }
             }
 
+            /// The driver contract is `ENGINE = DriverName(...) AS '...code...'`, so the body is mandatory.
+            /// Requiring it here turns an accidental omission of `AS` into a syntax error instead of a
+            /// side-effectful create attempt that runs the driver with an empty source body.
             String source_code;
-            if (s_as.ignore(pos, expected))
-            {
-                ASTPtr body_literal;
-                if (!ParserStringLiteral{}.parse(pos, body_literal, expected))
-                    return false;
-                source_code = body_literal->as<ASTLiteral>()->value.safeGet<String>();
-            }
+            if (!s_as.ignore(pos, expected))
+                return false;
+
+            ASTPtr body_literal;
+            if (!ParserStringLiteral{}.parse(pos, body_literal, expected))
+                return false;
+            source_code = body_literal->as<ASTLiteral>()->value.safeGet<String>();
 
             auto create_function_query = make_intrusive<ASTCreateFunctionWithDriverQuery>();
             create_function_query->or_replace = or_replace;
