@@ -277,6 +277,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 /// See also:
 ///   - serializedHLL() - Create HLL sketches
 ///   - cardinalityFromHLL() - Extract cardinality from merged sketch
+void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

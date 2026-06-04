@@ -209,6 +209,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 ///   - mergeSerializedHLL() - Merge multiple HLL sketches
 ///   - cardinalityFromHLL() - Extract cardinality estimate from sketch
 ///   - uniq() - Direct cardinality estimation (non-serialized)
+void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

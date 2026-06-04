@@ -146,6 +146,7 @@ AggregateFunctionPtr createAggregateFunctionSerializedQuantiles(
 ///   - mergeSerializedQuantiles() - Merge multiple quantiles sketches
 ///   - percentileFromQuantiles() - Extract specific percentile from sketch
 ///   - quantile() - Direct percentile calculation (non-sketched)
+void registerAggregateFunctionSerializedQuantiles(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedQuantiles(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

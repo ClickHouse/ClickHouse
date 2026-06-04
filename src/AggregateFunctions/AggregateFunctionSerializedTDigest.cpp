@@ -102,6 +102,8 @@ AggregateFunctionPtr createAggregateFunctionSerializedTDigest(
 }
 
 }
+
+void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
