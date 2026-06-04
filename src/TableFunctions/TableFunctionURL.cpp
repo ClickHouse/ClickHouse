@@ -29,15 +29,16 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsString url_base;
 }
 
-std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    std::vector<size_t> result;
+    VectorWithMemoryTracking<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
@@ -66,8 +67,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         compression_method = configuration.compression_method;
 
         format = configuration.format;
-        if (format == "auto")
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
     }
@@ -88,6 +87,26 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
+
+    /// Resolve relative URLs against the url_base setting.
+    const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
+    filename = StorageURL::resolveURLBase(filename, url_base);
+    configuration.url = filename;
+
+    /// Re-derive format from the resolved URL if still auto, because the original
+    /// filename may have been a relative reference (e.g. "?x=1") with no extension.
+    /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+    /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+    if (format == "auto")
+    {
+        try
+        {
+            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 }
 
 StoragePtr TableFunctionURL::getStorage(
@@ -104,11 +123,6 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_secondary_query
         && !is_insert_query;
 
-    const auto & client_info = context->getClientInfo();
-    bool can_use_distributed_iterator =
-        client_info.collaborate_with_initiator &&
-        context->hasClusterFunctionReadTaskCallback();
-
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
@@ -123,6 +137,8 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
+    /// Note: distributed_processing is always false for the plain url() table function.
+    /// Cluster table functions (urlCluster) handle distributed processing in their own getStorage() method.
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -136,7 +152,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/can_use_distributed_iterator);
+        /*distributed_processing=*/false);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const

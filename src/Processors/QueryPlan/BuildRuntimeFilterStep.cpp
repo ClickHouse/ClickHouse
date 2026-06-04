@@ -1,4 +1,6 @@
+#include <string_view>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -9,6 +11,7 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 
@@ -161,7 +164,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     String filter_name;
     readStringBinary(filter_name, ctx.in);
 
-    bool allow_to_use_not_exact_filter;
+    bool allow_to_use_not_exact_filter = false;
     readBinary(allow_to_use_not_exact_filter, ctx.in);
 
     const UInt64 exact_values_limit = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit];
@@ -193,12 +196,31 @@ QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
 {
     const std::string & prefix = format_settings.detail_prefix;
-    format_settings.out
-        << prefix << "Filter id: " << filter_name << '\n'
-        << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
 
+    std::string_view filter_id_view = filter_name;
+    if (format_settings.pretty)
+    {
+        if (auto it = format_settings.runtime_filter_names.find(filter_name); it != format_settings.runtime_filter_names.end())
+            filter_id_view = it->second.pretty_name;
+    }
+
+    format_settings.out << prefix << "Filter id: " << filter_id_view << '\n';
+
+    if (format_settings.pretty)
+    {
+        if (auto it = format_settings.runtime_filter_names.find(filter_name); it != format_settings.runtime_filter_names.end())
+        {
+            if (!it->second.build_table_name.empty())
+                format_settings.out << prefix << "Source table: " << it->second.build_table_name << '\n';
+        }
+    }
+    else
+    {
+        format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+    }
 }
 
+void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("BuildRuntimeFilter", BuildRuntimeFilterStep::deserialize);

@@ -2,19 +2,16 @@
 #include <base/DecomposedFloat.h>
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
+#include <Common/NaNUtils.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wsign-compare"
-#include <dragonbox/dragonbox_to_chars.h>
-#pragma clang diagnostic pop
+#include <zmij.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int BAD_ARGUMENTS;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -31,7 +28,7 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    std::array<char, 36> dst;
+    std::array<char, 36> dst{};
     auto * dst_ptr = dst.data();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -97,19 +94,27 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
 template <typename F>
 static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer & buf, F && write_quoted_string)
 {
-    static constexpr std::string_view distinct_str = "distinct";
-    static constexpr std::string_view all_str = "all";
-    static constexpr std::string_view table_str = "table";
-    static constexpr std::string_view select_str = "select";
+    /// These are valid identifiers but are problematic if present unquoted in SQL query
+    /// because they are keywords that the parser interprets as clause starters or modifiers,
+    /// causing the formatted AST to fail parsing back.
+    auto isCaseInsensitiveEqual = [](std::string_view a, std::string_view b)
+    {
+        return a.size() == b.size()
+            && 0 == strncasecmp(a.data(), b.data(), a.size()); // NOLINT(bugprone-suspicious-stringview-data-usage)
+    };
+
     if (isValidIdentifier(s)
-        /// These are valid identifiers but are problematic if present unquoted in SQL query.
-        && !(s.size() == distinct_str.size() && 0 == strncasecmp(s.data(), "distinct", s.size()))
-        && !(s.size() == all_str.size() && 0 == strncasecmp(s.data(), "all", s.size()))
-        && !(s.size() == table_str.size() && 0 == strncasecmp(s.data(), "table", s.size()))
+        && !isCaseInsensitiveEqual(s, "distinct")
+        && !isCaseInsensitiveEqual(s, "all")
+        && !isCaseInsensitiveEqual(s, "table")
         /// SELECT unquoted as an identifier would be re-parsed as the SELECT keyword and produce a
         /// different AST, e.g. arrayElement(Identifier("SELECT"), x) formats as SELECT[x], which
         /// re-parses as a subquery (SELECT [x]) with a different structure.
-        && !(s.size() == select_str.size() && 0 == strncasecmp(s.data(), "select", s.size())))
+        && !isCaseInsensitiveEqual(s, "select")
+        /// These keywords cause parsing ambiguity when used as function or identifier names
+        /// because the parser consumes them as clause-starting keywords.
+        && !isCaseInsensitiveEqual(s, "from")
+        && !isCaseInsensitiveEqual(s, "values"))
     {
         writeString(s, buf);
     }
@@ -215,7 +220,7 @@ ALWAYS_INLINE inline bool tryRoundToShortest(IntType v, IntType lo, IntType hi, 
 /// and negative) confirms exact match with dragonbox output.
 NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer)
 {
-    UInt32 bits;
+    UInt32 bits = 0;
     memcpy(&bits, &f32, sizeof(bits));
     UInt32 mantissa = bits & 0x7FFFFFu;
 
@@ -246,7 +251,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 7);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
     if (tryRoundToShortest<10>(v, lo, hi, buffer, start, result)) return result;
@@ -266,7 +271,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 /// for Float64 (2^62 values in range).
 NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer)
 {
-    UInt64 bits;
+    UInt64 bits = 0;
     memcpy(&bits, &f64, sizeof(bits));
     UInt64 mantissa = bits & ((1ULL << 52) - 1);
 
@@ -293,7 +298,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 10);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 10 && tryRoundToShortest<10000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
@@ -308,8 +313,6 @@ template <typename T>
 requires is_floating_point<T>
 size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    Int64 result = 0;
-
     if constexpr (std::is_same_v<T, Float64>)
     {
         DecomposedFloat64 decomposed(x);
@@ -327,7 +330,7 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         if (exp > 53 && exp <= 62)
             return writeFloatTextFastPathFloat64Rounded(x, exp, buffer);
 
-        return jkj::dragonbox::to_chars_n(x, buffer) - buffer;
+        return zmij::detail::write(x, buffer) - buffer;
     }
     else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, BFloat16>)
     {
@@ -351,6 +354,8 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         ///               writeFloatTextFastPathFloat32Rounded to adjust, matching
         ///               dragonbox exactly for all ~4.3 billion Float32 values
         ///               (positive and negative, exhaustively verified).
+        ///               zmij was patched to produce identical output to dragonbox,
+        ///               so these results still hold.
         ///
         /// exp < 0:     |value| < 1, not an integer.
         /// exp > 30:    |value| >= 2^31, overflows Int32.
@@ -363,16 +368,93 @@ size_t writeFloatTextFastPath(T x, char * buffer)
         if (exp > 24 && exp <= 30)
             return writeFloatTextFastPathFloat32Rounded(f32, exp, buffer);
 
-        /// Not an integer, or exp out of range: use dragonbox.
-        return jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
+        /// Not an integer, or exp out of range: use zmij.
+        return zmij::detail::write(f32, buffer) - buffer;
     }
-
-    if (result <= 0)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
-    return result;
 }
 
 template size_t writeFloatTextFastPath(Float64 x, char * buffer);
 template size_t writeFloatTextFastPath(Float32 x, char * buffer);
 template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+
+template <typename T>
+requires is_floating_point<T>
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
+{
+    if (settings.float_precision == 0 || !isFinite(x))
+    {
+        writeFloatText(x, buf);
+        return;
+    }
+
+    using Converter = double_conversion::DoubleToStringConverter;
+    const int max_fixed_digits = Converter::kMaxFixedDigitsAfterPoint;
+    if (settings.float_precision > static_cast<UInt64>(max_fixed_digits))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Too high precision requested for Float, must not be more than {}, got {}",
+            max_fixed_digits, settings.float_precision);
+
+    /// First compute the default shortest round-trip representation.
+    /// If it already has fewer or equal decimal places than requested, use it directly
+    /// to avoid introducing floating-point artefacts from ToFixed.
+    char default_buf[64];
+    const size_t default_len = writeFloatTextFastPath(x, default_buf);
+
+    /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
+    /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
+    int default_decimals = -1;
+    if (!memchr(default_buf, 'e', default_len) && !memchr(default_buf, 'E', default_len))
+    {
+        const char * dot = static_cast<const char *>(memchr(default_buf, '.', default_len));
+        default_decimals = dot ? static_cast<int>(default_buf + default_len - dot - 1) : 0;
+    }
+
+    /// For fixed-notation defaults with few enough decimal places, use them directly.
+    if (default_decimals >= 0 && default_decimals <= static_cast<int>(settings.float_precision))
+    {
+        buf.write(default_buf, default_len);
+        return;
+    }
+
+    /// Otherwise use ToFixed to produce a fixed-notation form with the requested precision.
+    /// ToFixed returns false for values with large magnitude; use the default in that case.
+    DoubleConverter<false>::BufferType buffer;
+    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
+    if (!DoubleConverter<false>::instance().ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder))
+    {
+        buf.write(default_buf, default_len);
+        return;
+    }
+
+    /// Strip trailing zeros after the decimal point (and the point itself if unneeded).
+    int len = builder.position();
+    const char * dot = static_cast<const char *>(memchr(buffer, '.', len));
+    if (dot)
+    {
+        int decimal_pos = static_cast<int>(dot - buffer);
+        while (len > decimal_pos + 1 && buffer[len - 1] == '0')
+            --len;
+        if (len == decimal_pos + 1)
+            --len;
+    }
+
+    /// For values in scientific notation (e.g. 1.23e-20) that ToFixed rounds to ±0 at
+    /// the requested precision, fall back to the default representation to avoid
+    /// silently discarding information.
+    if (default_decimals < 0)
+    {
+        int non_sign = (buffer[0] == '-') ? 1 : 0;
+        if (len - non_sign == 1 && buffer[non_sign] == '0')
+        {
+            buf.write(default_buf, default_len);
+            return;
+        }
+    }
+
+    buf.write(buffer, len);
+}
+
+template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
+template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
 }

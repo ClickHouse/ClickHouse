@@ -7,6 +7,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/Range.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -34,7 +35,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource : public ISource
+class MergeTreeTextIndexSource final : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -220,7 +221,7 @@ private:
                 auto idx_file = storage.readFile(sparse_file_name, read_settings, part->checksums.files.at(sparse_file_name).file_size);
 
                 CompressedReadBufferFromFile idx_buf(std::move(idx_file));
-                sparse_index = TextIndexSerialization::deserializeSparseIndex(idx_buf);
+                sparse_index = TextIndexSerialization::deserializeHeader(idx_buf).sparse_index;
 
                 if (sparse_index.empty())
                     continue;
@@ -398,7 +399,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     const StoragePtr & source_table_,
     MergeTreeIndexPtr text_index_,
     const ColumnsDescription & columns)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
@@ -411,10 +412,19 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageMergeTreeTextIndex::read(
+VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageMergeTreeTextIndex::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
