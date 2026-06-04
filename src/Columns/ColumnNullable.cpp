@@ -471,6 +471,23 @@ int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & r
     return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
 }
 
+size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// In a sorted Nullable column the NULLs are grouped at one end, so within this range the null map is a
+    /// run of equal null-ness.
+    size_t run_end = getNullMapColumn().getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+
+    /// When the start row is non-NULL the run is additionally bounded by where the nested value changes.
+    /// That nested scan stays within `[begin, run_end)`, which is entirely non-NULL, so it never reads NULL slots.
+    if (!isNullAt(begin))
+        run_end = getNestedColumn().getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
+
+    return run_end;
+}
+
 void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
