@@ -382,6 +382,13 @@ int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColu
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
 }
 
+size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
+    /// If equal values are contiguous, then equal indexes are also contiguous.
+    return getIndexes().getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+}
+
 bool ColumnLowCardinality::hasEqualValues() const
 {
     if (getDictionary().size() <= 1)
