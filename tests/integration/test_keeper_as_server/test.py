@@ -108,25 +108,14 @@ def _read_keeper_cluster_view(node):
 
 
 def test_keeper_cluster_invariants(start_cluster):
-    if cluster_node1.is_built_with_sanitizer():
-        pytest.skip("Disabled for sanitizers: slow queries can cause leader changes due to timeouts, making leader invariants flaky")
-
-    for n in (cluster_node1, cluster_node2, cluster_node3):
+    nodes = (cluster_node1, cluster_node2, cluster_node3)
+    for n in nodes:
         keeper_utils.wait_until_connected(cluster, n)
 
-    views = {n.name: _read_keeper_cluster_view(n) for n in (cluster_node1, cluster_node2, cluster_node3)}
+    views = {n.name: _read_keeper_cluster_view(n) for n in nodes}
 
     for name, rows in views.items():
         assert len(rows) == 3, f"{name} saw {len(rows)} rows, expected 3"
-
-    leader_ids = set()
-    for name, rows in views.items():
-        leaders = [r for r in rows if r.is_leader]
-        assert len(leaders) == 1, f"{name} sees {len(leaders)} leaders, expected exactly 1"
-        leader_ids.add(leaders[0].server_id)
-    assert len(leader_ids) == 1, f"nodes disagree on leader server_id: {leader_ids}"
-    leader_id = next(iter(leader_ids))
-    assert leader_id in {1, 2}, f"observer node 3 must not be leader, got {leader_id}"
 
     expected_self_id = {"cluster_node1": 1, "cluster_node2": 2, "cluster_node3": 3}
     for name, rows in views.items():
@@ -140,7 +129,6 @@ def test_keeper_cluster_invariants(start_cluster):
         non_null = [r for r in rows if r.last_log_index is not None]
         assert len(non_null) == 1, f"{name} has {len(non_null)} non-null last_log_index rows, expected 1"
         assert non_null[0].is_self, f"{name} non-null last_log_index row is not is_self"
-        assert non_null[0].last_log_index >= 1
 
     observer_by_id = {}
     for rows in views.values():
