@@ -3,19 +3,26 @@
 #if USE_ARROW
 
 #include <Processors/Port.h>
+#include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Core/UUID.h>
 #include <Interpreters/castColumn.h>
 #include <algorithm>
@@ -43,6 +50,8 @@ ArrowIPCBlockInputFormat::ArrowIPCBlockInputFormat(
 {
 }
 
+ArrowIPCBlockInputFormat::~ArrowIPCBlockInputFormat() = default;
+
 void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields)
 {
     for (const auto & field : fields)
@@ -58,12 +67,182 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIP
     }
 }
 
+namespace
+{
+bool hasUnionField(const std::vector<ArrowIPC::ArrowField> & fields)
+{
+    for (const auto & field : fields)
+    {
+        if (field.type.kind == ArrowIPC::TypeKind::Union || hasUnionField(field.type.children))
+            return true;
+    }
+    return false;
+}
+
+bool elementNarrowsNullability(const DataTypePtr & from, const DataTypePtr & to);
+
+/// True if anywhere strictly inside a container `from` has a Nullable element where `to` does not.
+/// (Top-level nullable->non-nullable is handled natively by convertToHeaderType, so it is ignored here.)
+bool hasNestedNullabilityNarrowing(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const DataTypePtr f = removeNullable(removeLowCardinality(from));
+    const DataTypePtr t = removeNullable(removeLowCardinality(to));
+    const WhichDataType wf(f);
+    const WhichDataType wt(t);
+    if (wf.isArray() && wt.isArray())
+        return elementNarrowsNullability(
+            assert_cast<const DataTypeArray &>(*f).getNestedType(), assert_cast<const DataTypeArray &>(*t).getNestedType());
+    if (wf.isMap() && wt.isMap())
+    {
+        const auto & fm = assert_cast<const DataTypeMap &>(*f);
+        const auto & tm = assert_cast<const DataTypeMap &>(*t);
+        return elementNarrowsNullability(fm.getKeyType(), tm.getKeyType())
+            || elementNarrowsNullability(fm.getValueType(), tm.getValueType());
+    }
+    if (wf.isTuple() && wt.isTuple())
+    {
+        const auto & fe = assert_cast<const DataTypeTuple &>(*f).getElements();
+        const auto & te = assert_cast<const DataTypeTuple &>(*t).getElements();
+        if (fe.size() == te.size())
+            for (size_t i = 0; i < fe.size(); ++i)
+                if (elementNarrowsNullability(fe[i], te[i]))
+                    return true;
+    }
+    return false;
+}
+
+bool elementNarrowsNullability(const DataTypePtr & from, const DataTypePtr & to)
+{
+    const DataTypePtr f = removeLowCardinality(from);
+    const DataTypePtr t = removeLowCardinality(to);
+    if (f->isNullable() && !t->isNullable())
+        return true;
+    return hasNestedNullabilityNarrowing(from, to);
+}
+
+/// A LowCardinality dictionary must have unique values; the library reader rejects non-unique ones.
+/// Validate the common (non-nullable, contiguously-comparable) dictionary value columns.
+void checkDictionaryUnique(const ColumnPtr & values)
+{
+    const IColumn * inner = values.get();
+    const ColumnNullable * nullable = nullptr;
+    if (values->isNullable())
+    {
+        nullable = &assert_cast<const ColumnNullable &>(*values);
+        inner = &nullable->getNestedColumn();
+    }
+    /// Only validate value columns that can be compared cheaply and contiguously.
+    if (!(inner->isFixedAndContiguous() || typeid_cast<const ColumnString *>(inner)))
+        return;
+
+    std::unordered_set<std::string_view> seen;
+    seen.reserve(values->size());
+    bool null_seen = false;
+    for (size_t i = 0; i < values->size(); ++i)
+    {
+        if (nullable && nullable->getNullMapData()[i])
+        {
+            if (null_seen)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
+            null_seen = true;
+        }
+        else if (!seen.emplace(inner->getDataAt(i)).second)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow dictionary contains duplicate values");
+        }
+    }
+}
+}
+
+bool ArrowIPCBlockInputFormat::needsLibraryFallback() const
+{
+    /// GeoParquet geometry columns (schema-level "geo" metadata) need WKB/WKT parsing into geo types.
+    if (arrow_schema->custom_metadata.contains("geo"))
+        return true;
+
+    /// Unions map to Variant, which the native reader does not decode yet.
+    if (hasUnionField(arrow_schema->fields))
+        return true;
+
+    /// `import_nested`: a Nested column (dotted name) backed by a List/Struct/Map Arrow field is flattened
+    /// by the library reader; detect that and let it handle the flattening (and case-insensitive matching).
+    const Block & header = getPort().getHeader();
+    const bool case_insensitive = format_settings.arrow.case_insensitive_column_matching;
+    std::unordered_set<String> nested_field_names;
+    std::unordered_map<String, const ArrowIPC::ArrowField *> field_by_name;
+    for (const auto & field : arrow_schema->fields)
+    {
+        const auto kind = field.type.kind;
+        const bool is_nested = kind == ArrowIPC::TypeKind::List || kind == ArrowIPC::TypeKind::LargeList
+            || kind == ArrowIPC::TypeKind::FixedSizeList || kind == ArrowIPC::TypeKind::Struct
+            || kind == ArrowIPC::TypeKind::Map;
+        String key = field.name;
+        if (case_insensitive)
+            boost::to_lower(key);
+        if (is_nested)
+            nested_field_names.insert(key);
+        field_by_name.emplace(key, &field);
+    }
+    for (const auto & column : header)
+    {
+        const auto dot = column.name.find('.');
+        if (dot != String::npos)
+        {
+            String prefix = column.name.substr(0, dot);
+            if (case_insensitive)
+                boost::to_lower(prefix);
+            if (nested_field_names.contains(prefix))
+                return true;
+        }
+
+        /// null_as_default reading a nullable Arrow column into a non-nullable ClickHouse column: the
+        /// library replaces nulls with the column's DEFAULT expression (not just the type default), so
+        /// delegate the whole column to it. Covers both the top-level and nested cases.
+        if (format_settings.null_as_default)
+        {
+            String key = column.name;
+            if (case_insensitive)
+                boost::to_lower(key);
+            auto it = field_by_name.find(key);
+            if (it != field_by_name.end())
+            {
+                const DataTypePtr natural = ArrowIPC::fieldToCHType(*it->second, format_settings, it->second->nullable);
+                const bool top_level_narrows = natural->isNullable() && !removeLowCardinality(column.type)->isNullable();
+                if (top_level_narrows || hasNestedNullabilityNarrowing(natural, column.type))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
 void ArrowIPCBlockInputFormat::prepareReader()
 {
     if (stream)
         prepareStreamReader();
     else
         prepareFileReader();
+
+    if (needsLibraryFallback())
+    {
+        auto header = std::make_shared<const Block>(getPort().getHeader());
+        if (stream)
+        {
+            peekable->rollbackToCheckpoint(/*drop=*/true);
+            fallback = std::make_unique<ArrowBlockInputFormat>(*peekable, header, /*stream_=*/true, format_settings);
+        }
+        else
+        {
+            seekable->seek(0, SEEK_SET);
+            fallback = std::make_unique<ArrowBlockInputFormat>(*seekable, header, /*stream_=*/false, format_settings);
+        }
+        message_reader.reset();
+        prepared = true;
+        return;
+    }
+
+    if (stream)
+        peekable->dropCheckpoint();
 
     /// Reject duplicate column names, matching the Apache Arrow library based reader.
     std::unordered_set<String> seen_names;
@@ -78,7 +257,10 @@ void ArrowIPCBlockInputFormat::prepareReader()
 
 void ArrowIPCBlockInputFormat::prepareStreamReader()
 {
-    message_reader.emplace(*in);
+    /// Read the schema behind a checkpoint so the stream can be rewound for the library fallback.
+    peekable = std::make_unique<PeekableReadBuffer>(*in);
+    peekable->setCheckpoint();
+    message_reader.emplace(*peekable);
 
     ArrowIPC::MessageReader::Message msg;
     if (!message_reader->readNextMessage(msg))
@@ -139,12 +321,13 @@ void ArrowIPCBlockInputFormat::prepareFileReader()
 
         message_reader->readBody(msg.body_length, body_buffer);
         auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+        checkDictionaryUnique(decoded.at(0).column);
         dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
     }
 }
 
 ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
-    const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name, bool null_as_default)
+    const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name)
 {
     const DataTypePtr target_no_null = removeNullable(to_type);
     const WhichDataType target(target_no_null);
@@ -217,26 +400,9 @@ ColumnPtr ArrowIPCBlockInputFormat::convertToHeaderType(
         }
     }
 
-    /// Reading a nullable Arrow column into a non-nullable ClickHouse column: with input_format_null_as_default
-    /// replace nulls with the type's default (otherwise castColumn throws on the first null). Look through
-    /// LowCardinality, since LowCardinality(Nullable(T)) can hold nulls even though it is not itself Nullable.
-    if (null_as_default && column->isNullable() && !removeLowCardinality(to_type)->isNullable())
-    {
-        const auto & nullable = assert_cast<const ColumnNullable &>(*column);
-        const auto & null_map = nullable.getNullMapData();
-        const IColumn & nested = nullable.getNestedColumn();
-        auto without_nulls = nested.cloneEmpty();
-        without_nulls->reserve(nested.size());
-        for (size_t i = 0; i < nested.size(); ++i)
-        {
-            if (null_map[i])
-                without_nulls->insertDefault();
-            else
-                without_nulls->insertFrom(nested, i);
-        }
-        return castColumn({std::move(without_nulls), removeNullable(from_type), name}, to_type);
-    }
-
+    /// Nullable->non-nullable narrowing under input_format_null_as_default is handled by delegating the
+    /// whole read to the library reader (see needsLibraryFallback), which applies column DEFAULT
+    /// expressions; so here a plain cast is sufficient.
     return castColumn({column, from_type, name}, to_type);
 }
 
@@ -269,7 +435,7 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
         if (it != name_to_index.end())
         {
             auto & src = decoded[it->second];
-            columns.push_back(convertToHeaderType(src.column, src.type, header_column.type, src.name, format_settings.null_as_default));
+            columns.push_back(convertToHeaderType(src.column, src.type, header_column.type, src.name));
         }
         else if (format_settings.arrow.allow_missing_columns)
         {
@@ -337,6 +503,7 @@ Chunk ArrowIPCBlockInputFormat::readStream()
 
                 message_reader->readBody(msg.body_length, body_buffer);
                 auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+                checkDictionaryUnique(decoded.at(0).column);
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
                 continue;
             }
@@ -384,13 +551,23 @@ Chunk ArrowIPCBlockInputFormat::read()
     if (is_stopped)
         return {};
 
+    if (fallback)
+        return fallback->read();
+
     return stream ? readStream() : readFile();
+}
+
+const BlockMissingValues * ArrowIPCBlockInputFormat::getMissingValues() const
+{
+    return fallback ? fallback->getMissingValues() : &block_missing_values;
 }
 
 void ArrowIPCBlockInputFormat::resetParser()
 {
     IInputFormat::resetParser();
     prepared = false;
+    fallback.reset();
+    peekable.reset();
     decoder.reset();
     arrow_schema.reset();
     message_reader.reset();

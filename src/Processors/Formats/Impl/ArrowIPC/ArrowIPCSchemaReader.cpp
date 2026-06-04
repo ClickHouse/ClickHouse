@@ -4,13 +4,16 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
 #include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/ReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WithFileSize.h>
 #include <Common/assert_cast.h>
+#include <functional>
 
 namespace DB
 {
@@ -18,6 +21,23 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace
+{
+bool schemaNeedsLibrary(const ArrowIPC::ArrowSchema & schema)
+{
+    if (schema.custom_metadata.contains("geo"))
+        return true;
+    std::function<bool(const std::vector<ArrowIPC::ArrowField> &)> has_union = [&](const auto & fields)
+    {
+        for (const auto & field : fields)
+            if (field.type.kind == ArrowIPC::TypeKind::Union || has_union(field.type.children))
+                return true;
+        return false;
+    };
+    return has_union(schema.fields);
+}
 }
 
 ArrowIPCSchemaReader::ArrowIPCSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_)
@@ -30,13 +50,23 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
     ArrowIPC::ArrowSchema schema;
     if (stream)
     {
-        ArrowIPC::MessageReader reader(in);
-        ArrowIPC::MessageReader::Message msg;
-        if (!reader.readNextMessage(msg))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
-        if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
-        schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+        /// Read the schema behind a checkpoint so the stream can be rewound for the library fallback.
+        PeekableReadBuffer peekable(in);
+        peekable.setCheckpoint();
+        {
+            ArrowIPC::MessageReader reader(peekable);
+            ArrowIPC::MessageReader::Message msg;
+            if (!reader.readNextMessage(msg))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
+            if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
+            schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+        }
+        if (schemaNeedsLibrary(schema))
+        {
+            peekable.rollbackToCheckpoint(/*drop=*/true);
+            return ArrowSchemaReader(peekable, /*stream_=*/true, format_settings).readSchema();
+        }
     }
     else
     {
@@ -60,6 +90,11 @@ NamesAndTypesList ArrowIPCSchemaReader::readSchema()
             seekable = assert_cast<SeekableReadBuffer *>(memory_buffer.get());
         }
         schema = ArrowIPC::readArrowFileFooter(*seekable, file_size).schema;
+        if (schemaNeedsLibrary(schema))
+        {
+            seekable->seek(0, SEEK_SET);
+            return ArrowSchemaReader(*seekable, /*stream_=*/false, format_settings).readSchema();
+        }
     }
 
     /// `schema_inference_make_columns_nullable`: 0 = never nullable, 1 = always nullable,

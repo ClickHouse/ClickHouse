@@ -22,6 +22,8 @@ namespace DB
 
 class ReadBuffer;
 class SeekableReadBuffer;
+class PeekableReadBuffer;
+class ArrowBlockInputFormat;
 
 /// Native ClickHouse reader for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
@@ -34,12 +36,13 @@ class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
     ArrowIPCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
+    ~ArrowIPCBlockInputFormat() override;
 
     String getName() const override { return "ArrowIPCBlockInputFormat"; }
 
     void resetParser() override;
 
-    const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
@@ -51,14 +54,22 @@ private:
     void prepareReader();
     void prepareStreamReader();
     void prepareFileReader();
+    /// True if the parsed schema (and requested header) need features only the library reader has
+    /// (GeoParquet, unions/Variant, Nested flattening via import_nested).
+    bool needsLibraryFallback() const;
     void collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields);
     Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
     static ColumnPtr convertToHeaderType(
-        const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name, bool null_as_default);
+        const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type, const String & name);
     Chunk readStream();
     Chunk readFile();
 
     const bool stream;
+
+    /// When the data uses features the native reader does not support, decoding is delegated to the
+    /// Apache Arrow library based reader (`fallback`); `peekable` lets the stream be rewound first.
+    std::unique_ptr<PeekableReadBuffer> peekable;
+    std::unique_ptr<ArrowBlockInputFormat> fallback;
 
     std::optional<ArrowIPC::MessageReader> message_reader;
     std::optional<ArrowIPC::ArrowSchema> arrow_schema;

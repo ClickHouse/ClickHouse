@@ -19,6 +19,9 @@ class ArrowColumnToCHColumn;
 
 class ArrowBlockInputFormat final : public IInputFormat
 {
+    /// The native Arrow IPC reader delegates here for files it cannot faithfully decode (geo, unions, ...).
+    friend class ArrowIPCBlockInputFormat;
+
 public:
     ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
 

@@ -341,7 +341,7 @@ Skip columns with unsupported types while schema inference for format ORC
     DECLARE(Bool, input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Arrow
 )", 0) \
-    DECLARE(Bool, input_format_arrow_use_native_reader, false, R"(
+    DECLARE(Bool, input_format_arrow_use_native_reader, true, R"(
 Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     DECLARE(String, column_names_for_schema_inference, "", R"(
@@ -1415,7 +1415,7 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
-    DECLARE(Bool, output_format_arrow_use_native_writer, false, R"(
+    DECLARE(Bool, output_format_arrow_use_native_writer, true, R"(
 Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     \
