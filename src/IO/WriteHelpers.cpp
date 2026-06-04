@@ -23,7 +23,7 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    std::array<char, 36> dst;
+    std::array<char, 36> dst{};
     auto * dst_ptr = dst.data();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -215,7 +215,7 @@ ALWAYS_INLINE inline bool tryRoundToShortest(IntType v, IntType lo, IntType hi, 
 /// and negative) confirms exact match with dragonbox output.
 NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer)
 {
-    UInt32 bits;
+    UInt32 bits = 0;
     memcpy(&bits, &f32, sizeof(bits));
     UInt32 mantissa = bits & 0x7FFFFFu;
 
@@ -246,7 +246,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 7);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
     if (tryRoundToShortest<10>(v, lo, hi, buffer, start, result)) return result;
@@ -266,7 +266,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 /// for Float64 (2^62 values in range).
 NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer)
 {
-    UInt64 bits;
+    UInt64 bits = 0;
     memcpy(&bits, &f64, sizeof(bits));
     UInt64 mantissa = bits & ((1ULL << 52) - 1);
 
@@ -293,7 +293,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 10);
 
-    size_t result;
+    size_t result = 0;
     if (shift >= 10 && tryRoundToShortest<10000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
