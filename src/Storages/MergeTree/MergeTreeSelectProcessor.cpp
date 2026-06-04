@@ -450,7 +450,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
 PartialAggregateInfoPtr MergeTreeSelectProcessor::buildPartialAggregateInfoFromCurrentTask() const
 {
-    if (!reader_settings.use_partial_aggregate_cache || !task)
+    if (!reader_settings.use_partial_aggregate_cache || reader_settings.is_final || !task)
         return nullptr;
 
     /// On-the-fly mutation/patch overlays can change rows without changing the base part identity.

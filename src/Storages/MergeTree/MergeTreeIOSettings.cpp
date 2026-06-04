@@ -138,6 +138,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
 {
     auto result = createFromContext(context);
     result.read_in_order = query_info.input_order_info != nullptr;
+    result.is_final = query_info.isFinal();
     return result;
 }
 

@@ -62,6 +62,8 @@ struct MergeTreeReaderSettings
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     bool query_condition_cache_store_conditions_as_plaintext = false;
+    /// True when the query reads with FINAL (deduplication / collapsing merge semantics).
+    bool is_final = false;
     /// If we should use the partial aggregate cache for caching per-part aggregation results.
     bool use_partial_aggregate_cache = false;
     /// Plan-time probe already called `PartialAggregateCache::get` for these reads and missed; skip redundant execution-time `get`.

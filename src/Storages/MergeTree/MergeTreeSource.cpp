@@ -195,7 +195,9 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
     if (finished)
         processor->onFinish();
 
-    if (processor->getSettings().use_partial_aggregate_cache && chunk.chunk.getNumRows() > 0)
+    if (processor->getSettings().use_partial_aggregate_cache
+        && !processor->getSettings().is_final
+        && chunk.chunk.getNumRows() > 0)
     {
         if (partial_aggregate_identity_from_plan)
         {
