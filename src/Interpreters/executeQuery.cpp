@@ -38,6 +38,7 @@
 #include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -1467,6 +1468,29 @@ static BlockIO executeQueryImpl(
                     || out_ast->as<ASTDropFunctionQuery>() || out_ast->as<ASTCreateWorkloadQuery>()
                     || out_ast->as<ASTDropWorkloadQuery>() || out_ast->as<ASTCreateResourceQuery>()
                     || out_ast->as<ASTDropResourceQuery>();
+
+                /// Some statements inherit `ASTQueryWithOnCluster` but cannot carry a meaningful
+                /// `ON CLUSTER` clause, so filling the cluster would turn an ordinary local query
+                /// into one the distributed DDL worker rejects:
+                ///  - `ASTSystemQuery`: several `SYSTEM` subcommands (e.g. `SYSTEM REFRESH VIEW`) are
+                ///    parsed without `ON CLUSTER` support even though the AST carries the field, so a
+                ///    rewritten query fails to re-parse on the DDL worker. Skip `SYSTEM` queries entirely.
+                ///  - `BACKUP`/`RESTORE TEMPORARY TABLE`: temporary tables are session-local and cannot
+                ///    be backed up or restored `ON CLUSTER`.
+                if (out_ast->as<ASTSystemQuery>())
+                    target_forbids_on_cluster = true;
+
+                if (const auto * backup_query = out_ast->as<ASTBackupQuery>())
+                {
+                    for (const auto & element : backup_query->elements)
+                    {
+                        if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
+                        {
+                            target_forbids_on_cluster = true;
+                            break;
+                        }
+                    }
+                }
 
                 if (const auto * drop_query = out_ast->as<ASTDropQuery>())
                 {

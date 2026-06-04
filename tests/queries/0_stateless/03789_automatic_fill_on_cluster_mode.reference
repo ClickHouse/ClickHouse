@@ -13,3 +13,6 @@ Test 4 verification: DROP TABLE contains ON CLUSTER
 Test 5: CREATE/DROP TEMPORARY TABLE is not rewritten ON CLUSTER
 Test 6: CREATE/DROP FUNCTION is not rewritten ON CLUSTER
 2
+Test 7: SYSTEM query is not rewritten ON CLUSTER
+Test 7 verification: SYSTEM query does NOT contain ON CLUSTER
+1
