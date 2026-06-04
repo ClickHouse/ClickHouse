@@ -262,7 +262,8 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
             /*min_hit_rate_to_use_consecutive_keys_optimization_=*/settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
             /*stats_collecting_params_=*/{},
             /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
-            /*serialize_string_with_zero_byte_=*/false);
+            /*serialize_string_with_zero_byte_=*/false,
+            /*group_by_each_block_no_merge_=*/false);
 
         auto merge_threads = settings[Setting::max_threads];
         auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
