@@ -2034,21 +2034,22 @@ try
     global_context->updateInterserverCredentials(config());
 
     std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
+    String stateless_worker_endpoint_name;
     if (config().getBool("stateless_worker_server.enabled", false))
     {
         String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
         stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
-        auto full_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
-        global_context->getInterserverIOHandler().addEndpoint(full_endpoint_name, stateless_worker_endpoint_ptr);
-        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", full_endpoint_name);
+        stateless_worker_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
+        global_context->getInterserverIOHandler().addEndpoint(stateless_worker_endpoint_name, stateless_worker_endpoint_ptr);
+        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
     }
 
     SCOPE_EXIT({
         if (stateless_worker_endpoint_ptr)
         {
-            auto full_endpoint_name = stateless_worker_endpoint_ptr->getId("localhost");
-            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", full_endpoint_name);
-            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_ptr->getId("localhost"));
+            /// Remove the same endpoint that was registered (the configured name may differ from "localhost").
+            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", stateless_worker_endpoint_name);
+            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_name);
 
             stateless_worker_endpoint_ptr->blocker.cancelForever();
             stateless_worker_endpoint_ptr->shutdown();
