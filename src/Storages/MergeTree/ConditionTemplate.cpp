@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/ConditionTemplate.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -12,13 +14,15 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
+
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <base/defines.h>
 
 #include <unordered_map>
-#include <unordered_set>
 #include <ranges>
 
 namespace DB
@@ -32,169 +36,80 @@ namespace ErrorCodes
 namespace
 {
 
-const std::string PARTITION_ID_NAME = "_partition_id";
-const std::string PARTITION_VALUE_NAME = "_partition_value";
-
-std::vector<const ActionsDAG::Node *> collectReachableNodesPostOrder(
-    const ActionsDAG::Node * predicate_node)
+void fillPartitionConstantsSubstitution(
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
+    const ActionsDAG & predicate_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreePartition & partition)
 {
-    std::unordered_set<const ActionsDAG::Node *> observed;
-    observed.insert(predicate_node);
-    std::vector<std::pair<const ActionsDAG::Node *, size_t>> stack;
-    stack.emplace_back(predicate_node, 0);
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto & key_dag = partition_key.expression->getActionsDAG();
+    const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
+    const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
+    const auto partition_constants = std::views::zip(key_outputs, partition.value) | std::ranges::to<std::unordered_map<const ActionsDAG::Node *, Field>>();
 
-    std::vector<const ActionsDAG::Node *> order;
-    while (!stack.empty())
+    for (const auto & node : predicate_dag.getNodes())
     {
-        const auto * node = stack.back().first;
-        const size_t idx = stack.back().second;
-
-        if (idx < node->children.size())
-        {
-            stack.back().second = idx + 1;
-
-            const auto * child = node->children[idx];
-            const bool not_observed = observed.insert(child).second;
-            if (not_observed)
-                stack.emplace_back(child, 0);
-
+        const auto it = matches.find(&node);
+        if (it == matches.end() || !it->second.node || it->second.monotonicity)
             continue;
+
+        const auto [_, match] = *it;
+        if (!partition_constants.contains(match.node))
+            continue;
+
+        auto column = node.result_type->createColumnConst(1, partition_constants.at(match.node));
+        substitutions.emplace(&node, ColumnWithTypeAndName{column, node.result_type, node.result_name});
+    }
+}
+
+void fillVirtualConstantsSubstitution(
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
+    const ActionsDAG & predicate_dag,
+    const StorageMetadataPtr & metadata_snapshot,
+    const std::string & partition_id,
+    const MergeTreePartition & partition)
+{
+    const auto add_virtual = [&](const String & name, const Field & value)
+    {
+        if (!metadata_snapshot->isVirtualColumn(name))
+            return;
+
+        const auto column_desc = metadata_snapshot->virtuals.get(name, VirtualsKind::All, VirtualsMaterializationPlace::All);
+        for (const auto & node : predicate_dag.getNodes())
+        {
+            if (node.type != ActionsDAG::ActionType::INPUT || node.result_name != name)
+                continue;
+            if (substitutions.contains(&node))
+                continue;
+
+            auto column = column_desc.type->createColumnConst(1, value);
+            substitutions.emplace(&node, ColumnWithTypeAndName{column, column_desc.type, node.result_name});
         }
+    };
 
-        order.push_back(node);
-        stack.pop_back();
-    }
-
-    return order;
-}
-
-ColumnPtr makeConstantColumnForSubstitution(
-    const String & name,
-    const MergeTreePartition & partition,
-    const String & partition_id,
-    const StorageMetadataPtr & metadata_snapshot)
-{
-    if (name == PARTITION_ID_NAME)
-    {
-        auto column = metadata_snapshot->virtuals.get(PARTITION_ID_NAME, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-        return column.type->createColumnConst(1, Field(partition_id));
-    }
-
-    if (name == PARTITION_VALUE_NAME)
-    {
-        Tuple tuple;
-        tuple.reserve(partition.value.size());
-        for (const auto & v : partition.value)
-            tuple.push_back(v);
-
-        auto column = metadata_snapshot->virtuals.get(PARTITION_VALUE_NAME, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-        return column.type->createColumnConst(1, Field(std::move(tuple)));
-    }
-
-    for (const auto [column, value] : std::views::zip(metadata_snapshot->getPartitionKey().sample_block, partition.value))
-        if (column.name == name)
-            return column.type->createColumnConst(1, value);
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported constant generation for column: {}", name);
-}
-
-NameSet collectPartitionConstantColumnNames(
-    const StorageMetadataPtr & metadata_snapshot)
-{
-    NameSet names;
-
-    if (metadata_snapshot->hasPartitionKey())
-    {
-        for (const auto & column : metadata_snapshot->getPartitionKey().sample_block)
-            names.insert(column.name);
-
-        if (metadata_snapshot->isVirtualColumn(PARTITION_ID_NAME))
-            names.insert(PARTITION_ID_NAME);
-
-        if (metadata_snapshot->isVirtualColumn(PARTITION_VALUE_NAME))
-            names.insert(PARTITION_VALUE_NAME);
-    }
-
-    return names;
+    add_virtual(PartitionIdColumn::name, Field(partition_id));
+    add_virtual(PartitionValueColumn::name, partition.value | std::ranges::to<Tuple>());
 }
 
 ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
-    const NameSet & inputs_to_substitute,
     const MergeTreePartition & partition,
     const String & partition_id,
     const StorageMetadataPtr & metadata_snapshot)
 {
     chassert(predicate_node);
 
-    ActionsDAG new_dag;
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> mapping;
+    auto dag = ActionsDAG::cloneSubDAG({predicate_node}, /*remove_aliases=*/false);
 
-    for (const auto * old_node : collectReachableNodesPostOrder(predicate_node))
-    {
-        const ActionsDAG::Node * new_node = nullptr;
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
+    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, partition);
+    fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, partition_id, partition);
 
-        switch (old_node->type)
-        {
-            case ActionsDAG::ActionType::INPUT:
-            {
-                if (inputs_to_substitute.contains(old_node->result_name))
-                {
-                    auto column = makeConstantColumnForSubstitution(old_node->result_name, partition, partition_id, metadata_snapshot);
-                    new_node = &new_dag.addColumn(ColumnWithTypeAndName{column, old_node->result_type, old_node->result_name});
-                }
-                else
-                {
-                    new_node = &new_dag.addInput(old_node->result_name, old_node->result_type);
-                }
-                break;
-            }
-            case ActionsDAG::ActionType::FUNCTION:
-            {
-                if (inputs_to_substitute.contains(old_node->result_name))
-                {
-                    auto column = makeConstantColumnForSubstitution(old_node->result_name, partition, partition_id, metadata_snapshot);
-                    new_node = &new_dag.addColumn(ColumnWithTypeAndName{column, old_node->result_type, old_node->result_name});
-                }
-                else
-                {
-                    ActionsDAG::NodeRawConstPtrs children;
-                    children.reserve(old_node->children.size());
-                    for (const auto * child : old_node->children)
-                        children.push_back(mapping.at(child));
+    dag.substitute(substitutions);
+    dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/true, /*evaluate_constants=*/true);
 
-                    new_node = &new_dag.addFunction(old_node->function_base, std::move(children), old_node->result_name);
-                }
-                break;
-            }
-            case ActionsDAG::ActionType::COLUMN:
-            {
-                new_node = &new_dag.addColumn(ColumnWithTypeAndName{old_node->column, old_node->result_type, old_node->result_name}, old_node->is_deterministic_constant);
-                break;
-            }
-            case ActionsDAG::ActionType::ALIAS:
-            {
-                new_node = &new_dag.addAlias(*mapping.at(old_node->children[0]), old_node->result_name);
-                break;
-            }
-            case ActionsDAG::ActionType::ARRAY_JOIN:
-            {
-                new_node = &new_dag.addArrayJoin(*mapping.at(old_node->children[0]), old_node->result_name);
-                break;
-            }
-            case ActionsDAG::ActionType::PLACEHOLDER:
-            {
-                new_node = &new_dag.addPlaceholder(old_node->result_name, old_node->result_type);
-                break;
-            }
-        }
-
-        mapping.emplace(old_node, new_node);
-    }
-
-    new_dag.getOutputs().push_back(mapping.at(predicate_node));
-    new_dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/true);
-    return new_dag;
+    return dag;
 }
 
 }
@@ -223,7 +138,6 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , context(std::move(context_))
     , skip_folding(skip_folding_)
 {
-    partition_constant_names = collectPartitionConstantColumnNames(metadata_snapshot);
     generateUnsubstituted();
 }
 
@@ -254,14 +168,22 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     if (auto it = cache.find(partition_id); it != cache.end())
         return it->second;
 
-    auto specialized = substituteConstantInputs(dag->predicate, partition_constant_names, partition, partition_id, metadata_snapshot);
-    chassert(!specialized.getOutputs().empty());
+    try
+    {
+        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot);
+        chassert(!specialized.getOutputs().empty());
 
-    Cond produced = generate(&specialized, specialized.getOutputs().front());
-    const auto [it, inserted] = cache.emplace(partition_id, std::move(produced));
-    chassert(inserted);
+        Cond produced = generate(&specialized, specialized.getOutputs().front());
+        const auto [it, inserted] = cache.emplace(partition_id, std::move(produced));
+        chassert(inserted);
 
-    return it->second;
+        return it->second;
+    }
+    catch (...) /// Ok. Substitution is done in best-effort way.
+    {
+        lock.unlock();
+        return generateUnsubstituted();
+    }
 }
 
 template <typename Cond>

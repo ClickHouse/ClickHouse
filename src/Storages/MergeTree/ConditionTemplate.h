@@ -49,7 +49,6 @@ private:
     Transformer transformer;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
-    NameSet partition_constant_names;
     bool skip_folding;
 
     mutable std::mutex mutex;
