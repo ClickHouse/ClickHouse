@@ -88,25 +88,27 @@ def test_server_died_synthetic_fail_leaf_treated_as_bug_reproduced():
     assert outer.status == Result.Status.OK
 
 
-def test_runner_aborted_synthetic_fail_leaf_treated_as_bug_reproduced():
+def test_runner_aborted_error_is_preserved_as_inconclusive():
     """A run killed by SIGTERM/SIGKILL (exit codes 143/137/-15/-9) now
-    synthesises a `clickhouse-test` FAIL leaf instead of `Server died` - the
-    runner did not finish, but the server did not necessarily die. During
-    bugfix validation the runner being killed while exercising the new test
-    still means the bug reproduced, so the inverter must flip this leaf to OK
-    just as it does for `Server died`.
+    surfaces as `ERROR` with a `clickhouse-test` leaf - the runner did not
+    finish, but the server did not necessarily die. Unlike the old `Server
+    died` FAIL leaf (which the inverter flipped to "bug reproduced"), an
+    aborted run is inconclusive: a wall-clock abort does not prove this
+    particular bug reproduced. The inverter must preserve the `ERROR` rather
+    than claim a reproduction.
     """
     leaf = _make_leaf(
         "clickhouse-test",
-        Result.Status.FAIL,
+        Result.Status.ERROR,
         info="clickhouse-test was terminated before finishing (exit code 143)",
     )
-    outer = _make_outer(Result.Status.FAIL, [leaf])
+    outer = _make_outer(Result.Status.ERROR, [leaf])
 
     invert_bugfix_validation_status(outer)
 
-    assert leaf.status == Result.Status.OK
-    assert outer.status == Result.Status.OK
+    assert outer.status == Result.Status.ERROR
+    # The leaf is labelled XFAIL (bugfix-validation marker) but not flipped.
+    assert leaf.status == Result.Status.ERROR
 
 
 def test_error_status_with_empty_results_preserves_error():

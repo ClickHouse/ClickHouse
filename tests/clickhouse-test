@@ -4429,17 +4429,23 @@ def run_tests_array(
                 # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
-                        # Dump stacktraces *before* stop_tests() kills the
-                        # client connections.  This is the only moment
-                        # the offending user query is still wedged on the
-                        # server with its query_id — once the TCP
-                        # connection drops, the server typically cancels
-                        # the query and its threads go away.  BG threads
-                        # stay around either way and can be captured at
-                        # end-of-run.
+                        # Dump stacktraces while the offending query is still
+                        # wedged on the server with its query_id — once the
+                        # client connection drops, the server typically cancels
+                        # the query and its threads go away. BG threads stay
+                        # around either way and can be captured at end-of-run.
+                        #
+                        # Deliberately NOT calling stop_tests() here: its
+                        # `killpg` would SIGTERM this runner's own process group,
+                        # which surfaces as exit code 143 and is misreported as
+                        # an aborted run ("Server died"). The timed-out test is
+                        # instead reported as a normal per-test FAIL below (see
+                        # the `except TimeoutError`); the test's client runs in
+                        # its own session (`start_new_session=True` in
+                        # `TestCase.run`), so it is reaped by `--cleanup` rather
+                        # than by this killpg.
                         print_sql_stacktraces(args)
                         print_c_stacktraces(args)
-                        stop_tests()
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -4449,6 +4455,21 @@ def run_tests_array(
                     test_result = test_case.run(args, test_suite, client_options)
                     test_result = test_case.process_result(test_result, MESSAGES)
                 except TimeoutError:
+                    # The per-test wall-clock backstop fired. Treat it like the
+                    # query-level timeout paths: a FAIL with reason TIMEOUT,
+                    # recorded through the normal per-test result path so it
+                    # shows up as a `[ FAIL ]` line (`Reason: Timeout!`) rather
+                    # than aborting the whole run with exit code 143.
+                    test_result = test_case.process_result(
+                        TestResult(
+                            test_case.name,
+                            TestStatus.FAIL,
+                            FailureReason.TIMEOUT,
+                            float(int(args.timeout * 1.1) + 60),
+                            "",
+                        ),
+                        MESSAGES,
+                    )
                     break
                 finally:
                     signal.alarm(0)

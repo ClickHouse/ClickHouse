@@ -69,13 +69,15 @@ def test_runner_aborted_keeps_results_and_does_not_report_server_died(tmp_path):
     for exit_code in sorted(RUNNER_ABORTED_EXIT_CODES):
         result = _processor(tmp_path, lines).run(runner_exit_code=exit_code)
 
-        assert result.status == Result.Status.FAIL, exit_code
+        # The run did not finish, so it is inconclusive (ERROR), not a test
+        # producing a wrong answer (FAIL).
+        assert result.status == Result.Status.ERROR, exit_code
         # Not a server death.
         assert _leaf(result, "Server died") is None, exit_code
         # The runner-did-not-finish summary leaf is present.
         aborted_leaf = _leaf(result, "clickhouse-test")
         assert aborted_leaf is not None, exit_code
-        assert aborted_leaf.status == Result.Status.FAIL, exit_code
+        assert aborted_leaf.status == Result.Status.ERROR, exit_code
         assert str(exit_code) in aborted_leaf.info, exit_code
         # Completed per-test results stay authoritative - the FAIL that
         # happened before the kill is NOT demoted to UNKNOWN.

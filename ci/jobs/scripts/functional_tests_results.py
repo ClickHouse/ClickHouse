@@ -257,16 +257,25 @@ class FTResultsProcessor:
         elif runner_exit_code in RUNNER_ABORTED_EXIT_CODES:
             # `clickhouse-test` was terminated by a signal (job-level timeout,
             # runner shutdown, or the worker -> parent SIGTERM feedback loop) -
-            # not a server death. Do NOT demote the per-test results: the ones
-            # that completed before the kill are authoritative. Report it under
-            # the same `clickhouse-test` leaf the end-of-run path uses for other
-            # non-zero exits, so the failure reads as "the runner did not finish"
-            # rather than "Server died".
-            state = Result.Status.FAIL
+            # not a server death. This is the same condition as `not
+            # s.success_finish` below (the runner did not finish), so it gets
+            # the same `ERROR` status, plus an explicit `clickhouse-test` leaf
+            # carrying the exit code. `ERROR`, not `FAIL`: the run is
+            # inconclusive (we never reached the finish marker), it is not a
+            # test producing a wrong answer. We do NOT demote the per-test
+            # results - the ones that completed before the kill are
+            # authoritative and stay visible.
+            #
+            # The `ERROR` status also drives the bugfix-validation inverter
+            # down its "preserve, do not invert" path: an abort while
+            # exercising the regression test is reported as inconclusive rather
+            # than silently claimed as "bug reproduced" (a wall-clock timeout
+            # does not prove this particular bug reproduced).
+            state = Result.Status.ERROR
             test_results.append(
                 Result(
                     "clickhouse-test",
-                    Result.Status.FAIL,
+                    Result.Status.ERROR,
                     info=f"clickhouse-test was terminated before finishing (exit code {runner_exit_code})",
                 )
             )
@@ -326,15 +335,18 @@ class FTResultsProcessor:
         )
 
         if not result.is_ok():
+            # Sort the leaves so the most actionable ones come first. Keys are
+            # the actual `Result.Status` values the parser assigns - the former
+            # `SERVER_DIED`/`Timeout`/`BROKEN` keys never matched anything (the
+            # synthetic "Server died" leaf has status FAIL, not "SERVER_DIED")
+            # and `ERROR` was missing, so it silently sorted to the front.
             order = {
                 "FAIL": 0,
-                "SERVER_DIED": 1,
-                "Timeout": 2,
-                "NOT_FAILED": 3,
-                "BROKEN": 4,
-                "UNKNOWN": 5,
-                "OK": 6,
-                "SKIPPED": 7,
+                "ERROR": 1,
+                "NOT_FAILED": 2,
+                "UNKNOWN": 3,
+                "OK": 4,
+                "SKIPPED": 5,
             }
             result.results.sort(key=lambda x: order.get(x.status, -1))
 
