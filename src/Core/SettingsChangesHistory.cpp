@@ -55,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_max_encoded_size", 256, 256, "New setting: maximum size (bytes) of the order-preserving binary encoding of a single UNIQUE KEY row"},
             {"query_plan_push_limit_by_into_sort", false, true, "New setting that pushes a per-stream LIMIT BY into the sort pipeline when LIMIT BY's columns are a prefix of ORDER BY, reducing rows flowing through the final merge."},
             {"query_plan_max_set_size_for_projection_match", 0, 10000, "Added new setting that bounds the cost of content-hashing IN-clause sets in the projection matcher (today: aggregate projection). Sets larger than the limit are treated as non-matching. Zero disables content-hash comparison entirely (compatibility value: projection match never succeeds for nodes with IN-sets)."},
+            {"output_format_pretty_use_nbsp_for_padding", false, false, "New setting. When enabled, padding in `Pretty` output is rendered with `U+00A0` so it survives copy-paste through tools that compress runs of regular spaces."},
         });
         addSettingsChanges(settings_changes_history, "26.5",
         {
@@ -105,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
-            {"output_format_pretty_use_nbsp_for_padding", false, false, "New setting. When enabled, padding in `Pretty` output is rendered with `U+00A0` so it survives copy-paste through tools that compress runs of regular spaces."},
             {"query_cache_for_subqueries", false, false, "New setting to enable propagation of `use_query_cache` into all subqueries. Without it, subqueries are only cached on explicit per-subquery `SETTINGS use_query_cache = true` opt-in."},
             {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
             {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
