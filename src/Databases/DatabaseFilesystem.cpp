@@ -60,7 +60,19 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     };
 
     if (fs::path(path).is_relative())
-        path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
+    {
+        /// For a disk-backed `user_files_policy`, `user_files_path` is the disk root
+        /// (`disk->getPath()`), which is not necessarily a host-absolute directory -
+        /// for `s3_plain` it is an object-key prefix. Calling `fs::absolute` here would
+        /// prepend the server working directory and break the later disk-prefix match
+        /// in `splitUserFilesAbsolutePath` (so valid directories on the disk would be
+        /// reported as missing). Normalize only lexically in that case, preserving the
+        /// disk-root prefix so the path stays resolvable through `IDisk`.
+        if (user_files_volume)
+            path = (fs::path(user_files_path) / path).lexically_normal().string();
+        else
+            path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
+    }
     else
         path = fs::absolute(path).lexically_normal();
 

@@ -29,6 +29,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
 #include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -397,6 +399,26 @@ private:
     {
         if (object_storage->getType() == ObjectStorageType::Local)
         {
+            /// A local data lake reads through `LocalObjectStorage`, i.e. the host
+            /// filesystem namespace. With a non-local `user_files_policy` disk (e.g.
+            /// `s3_plain`), `getUserFilesPath` is that disk's object-key prefix rather
+            /// than a host-absolute directory, so the boundary check below would be
+            /// meaningless and a path that passed it would still be read from the local
+            /// filesystem instead of the configured `IDisk`. Reject up front, mirroring
+            /// the explicit guards added for the other local-only `user_files` consumers.
+            if (auto user_files_volume = local_context->getUserFilesVolume())
+            {
+                for (const auto & disk : user_files_volume->getDisks())
+                {
+                    if (disk->isRemote())
+                        throw Exception(
+                            ErrorCodes::PATH_ACCESS_DENIED,
+                            "Local data lake access is not supported with non-local `user_files_policy` disks "
+                            "(disk `{}` is remote)",
+                            disk->getName());
+                }
+            }
+
             if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, local_context->getUserFilesPath()))
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", this->getPathForRead().path);

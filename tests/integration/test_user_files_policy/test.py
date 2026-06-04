@@ -419,3 +419,33 @@ def test_s3_truncate_table_routes_through_disk():
     node_s3.query("TRUNCATE TABLE s3_truncate_routed")
     assert node_s3.query("SELECT count() FROM s3_truncate_routed").strip() == "0"
     node_s3.query("DROP TABLE s3_truncate_routed")
+
+
+def test_local_filesystem_database():
+    """The `Filesystem` database engine must resolve a relative path against the
+    configured `user_files_policy` disk root and read tables through `IDisk`."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "mkdir -p /test_user_files_disk1/fsdb && echo '42' > /test_user_files_disk1/fsdb/t.csv",
+        ]
+    )
+    node_local.query("DROP DATABASE IF EXISTS test_fs_db")
+    node_local.query("CREATE DATABASE test_fs_db ENGINE = Filesystem('fsdb')")
+    assert node_local.query("SELECT * FROM test_fs_db.`t.csv`").strip() == "42"
+    node_local.query("DROP DATABASE test_fs_db")
+
+
+def test_s3_filesystem_database():
+    """Same for the S3-backed disk: a relative `Filesystem` database path must keep
+    the disk-root prefix so `splitUserFilesAbsolutePath` matches, instead of being
+    mangled into a host-absolute path by `fs::absolute` (which would make valid
+    directories on the disk look missing)."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('fsdb_s3/t.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+    node_s3.query("DROP DATABASE IF EXISTS test_fs_db_s3")
+    node_s3.query("CREATE DATABASE test_fs_db_s3 ENGINE = Filesystem('fsdb_s3')")
+    assert node_s3.query("SELECT * FROM test_fs_db_s3.`t.csv`").strip() == "42"
+    node_s3.query("DROP DATABASE test_fs_db_s3")
