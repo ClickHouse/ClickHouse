@@ -354,7 +354,10 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
         /// Require at least one digit after "_try" and accept any number of trailing digits
         if (first_char_pos_after_try_n < dir_name.size()
             && std::all_of(dir_name.begin() + first_char_pos_after_try_n, dir_name.end(), [](unsigned char c) { return std::isdigit(c); }))
-                dir_name.remove_suffix(dir_name.size() - try_n_pos);
+        {
+            dir_name.remove_suffix(dir_name.size() - try_n_pos);
+            part_info.has_try_suffix = true;
+        }
     }
 
     /// Second, try to find known prefix and parse dir_name as <prefix>_<part_name>.

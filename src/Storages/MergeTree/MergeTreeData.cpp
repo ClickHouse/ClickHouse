@@ -8147,7 +8147,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         auto detached_parts = getDetachedParts();
         std::erase_if(detached_parts, [&partition_id](const DetachedPartInfo & part_info)
         {
-            return !part_info.valid_name || !part_info.prefix.empty() || (!partition_id.empty() && part_info.getPartitionId() != partition_id);
+            /// Parts with a "_tryN" suffix are leftover copies of failed detach renames. Their on-disk
+            /// name is not a parsable part name, so they cannot be used as ATTACH candidates (the set
+            /// operations below would reject them with BAD_DATA_PART_NAME). They can still be dropped.
+            return !part_info.valid_name || !part_info.prefix.empty() || part_info.has_try_suffix
+                || (!partition_id.empty() && part_info.getPartitionId() != partition_id);
         });
 
         for (const auto & part_info : detached_parts)
