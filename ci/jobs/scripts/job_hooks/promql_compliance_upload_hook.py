@@ -26,6 +26,7 @@ from ci.jobs.scripts.job_hooks.promql_compliance_s3 import (
     upload_master_result,
     upload_pr_result,
 )
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 
 RESULT_FILE = Path(
@@ -40,8 +41,9 @@ def check() -> None:
     try:
         _check_impl()
     except Exception:
-        print("WARNING: PromQL compliance upload hook failed with unexpected error")
+        print("ERROR: PromQL compliance upload hook failed")
         traceback.print_exc()
+        raise
 
 
 def _check_impl() -> None:
@@ -67,11 +69,17 @@ def _check_impl() -> None:
 
     if info.pr_number > 0:
         sha = (info.sha or "").strip()
-        if len(sha) == 40:
-            upload_pr_result(RESULT_FILE, info.pr_number, sha)
-        else:
+        if len(sha) != 40:
             print(
                 f"PromQL compliance upload hook: skip PR upload, unexpected SHA [{sha!r}]"
+            )
+            return
+        url = upload_pr_result(RESULT_FILE, info.pr_number, sha)
+        if url is None and Labels.COMP_PROMQL in list(info.pr_labels or []):
+            raise RuntimeError(
+                f"PromQL compliance upload hook: failed to upload PR result to S3 "
+                f"(PR #{info.pr_number}, sha {sha[:9]}); "
+                "downstream PromQL Compliance job will see 404"
             )
         return
 

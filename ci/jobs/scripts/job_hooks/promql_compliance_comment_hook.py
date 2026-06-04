@@ -124,10 +124,15 @@ def check() -> None:
                 return
 
         body = _build_body(d)
-        GH.post_fresh_comment(tag=COMMENT_TAG, body=body)
+        if not GH.post_fresh_comment(tag=COMMENT_TAG, body=body):
+            raise RuntimeError(
+                "PromQL compliance comment hook: failed to post GitHub comment "
+                "(gh pr comment returned failure)"
+            )
     except Exception:
-        print("WARNING: PromQL compliance comment hook failed")
+        print("ERROR: PromQL compliance comment hook failed")
         traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
