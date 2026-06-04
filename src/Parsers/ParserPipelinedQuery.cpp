@@ -77,6 +77,21 @@ ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
     return outer_query;
 }
 
+/// Whether `pos` points at a position where a query may legitimately end, i.e.
+/// nothing the regular SELECT parser could consume follows. Used to make sure a
+/// bare `FROM` pipelined query does not shadow existing syntax such as
+/// `FROM t SELECT c` or `FROM a JOIN b SELECT c`.
+bool atQueryEnd(IParser::Pos pos)
+{
+    if (pos->isEnd() || pos->type == TokenType::Semicolon || pos->type == TokenType::ClosingRoundBracket)
+        return true;
+
+    Expected expected;
+    return ParserKeyword(Keyword::FORMAT).ignore(pos, expected)
+        || ParserKeyword(Keyword::SETTINGS).ignore(pos, expected)
+        || ParserKeyword(Keyword::INTO_OUTFILE).ignore(pos, expected);
+}
+
 bool startsWithJoinClause(const IParser::Pos & pos)
 {
     auto starts_with_keyword = [&](Keyword keyword)
@@ -151,8 +166,12 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserPipeJoin pipe_join_parser;
     ParserPipeAggregate pipe_aggregate_parser;
 
+    bool consumed_pipe = false;
+
     while (s_pipe_arrow.ignore(pos, expected))
     {
+        consumed_pipe = true;
+
         if (s_where.ignore(pos, expected))
         {
             if (SQLClauseOrder::WHERE < highest_op)
@@ -222,6 +241,13 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
         }
     }
+
+    /// A bare `FROM <table>` query (without any pipe operator) must not shadow the
+    /// existing `FROM ... SELECT ...` syntax handled by the regular SELECT parser,
+    /// which runs after this one. Reject it unless the table expression is followed
+    /// by a valid end of query, so that the regular parser gets a chance.
+    if (!consumed_pipe && !atQueryEnd(pos))
+        return false;
 
     checkConstraints(current_query->as<ASTSelectQuery &>());
 
