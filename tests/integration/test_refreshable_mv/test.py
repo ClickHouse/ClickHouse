@@ -563,24 +563,25 @@ def test_backup_skips_rmv_target_when_view_storage_unresolved(started_cluster, c
     # Stall node1's DDL queue so it won't apply the CREATE below.
     node1.query("system enable failpoint database_replicated_stop_entry_execution")
 
-    # Create the MV on node2 without waiting for node1. `EMPTY`+`EVERY 1 YEAR` avoid any refresh,
-    # so re.repro_tgt is never EXCHANGEd and stays resolvable on node1 while the MV does not.
-    node2.query(
-        "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt empty as select x from re.src",
-        settings={"distributed_ddl_task_timeout": 0},
-    )
-    # The MV's metadata must be in ZooKeeper before backing up.
-    assert_eq_with_retry(
-        node2,
-        "select count() from system.tables where database = 're' and name = 'repro_mv'",
-        "1",
-    )
+    try:
+        # Create the MV on node2 without waiting for node1. `EMPTY`+`EVERY 1 YEAR` avoid any refresh,
+        # so re.repro_tgt is never EXCHANGEd and stays resolvable on node1 while the MV does not.
+        node2.query(
+            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt empty as select x from re.src",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        # The MV's metadata must be in ZooKeeper before backing up.
+        assert_eq_with_retry(
+            node2,
+            "select count() from system.tables where database = 're' and name = 'repro_mv'",
+            "1",
+        )
 
-    backup_destination = new_backup_destination()
-    node1.query(f"BACKUP DATABASE re TO {backup_destination}")
-
-    # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
-    node1.query("system disable failpoint database_replicated_stop_entry_execution")
+        backup_destination = new_backup_destination()
+        node1.query(f"BACKUP DATABASE re TO {backup_destination}")
+    finally:
+        # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
+        node1.query("system disable failpoint database_replicated_stop_entry_execution")
 
     # The target's data must be skipped even though the MV's storage was unresolved.
     assert node1.contains_in_log(
@@ -645,25 +646,26 @@ def test_backup_skips_rmv_target_when_target_storage_unresolved(
     # Stall node1's DDL queue so it won't apply the CREATE/EXCHANGE below.
     node1.query("system enable failpoint database_replicated_stop_entry_execution")
 
-    # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt.
-    node2.query(
-        "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt as select x from re.src",
-        settings={"distributed_ddl_task_timeout": 0},
-    )
-    # Wait until the EXCHANGE landed (re.repro_tgt's UUID changes on node2).
-    assert_eq_with_retry(
-        node2,
-        f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt'",
-        "1",
-        retry_count=60,
-        sleep_time=1,
-    )
+    try:
+        # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt.
+        node2.query(
+            "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt as select x from re.src",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        # Wait until the EXCHANGE landed (re.repro_tgt's UUID changes on node2).
+        assert_eq_with_retry(
+            node2,
+            f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt'",
+            "1",
+            retry_count=60,
+            sleep_time=1,
+        )
 
-    backup_destination = new_backup_destination()
-    node1.query(f"BACKUP DATABASE re TO {backup_destination}")
-
-    # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
-    node1.query("system disable failpoint database_replicated_stop_entry_execution")
+        backup_destination = new_backup_destination()
+        node1.query(f"BACKUP DATABASE re TO {backup_destination}")
+    finally:
+        # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
+        node1.query("system disable failpoint database_replicated_stop_entry_execution")
 
     # The target's data must be skipped even though its storage was unresolved on the backup replica.
     assert node1.contains_in_log(
