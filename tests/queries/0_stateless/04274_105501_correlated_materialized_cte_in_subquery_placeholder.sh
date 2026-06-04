@@ -29,21 +29,37 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Run a query and assert its stderr+stdout never mentions PLACEHOLDER execution.
-# Any other outcome (success, NOT_IMPLEMENTED, UNSUPPORTED_METHOD,
-# NUMBER_OF_COLUMNS_DOESNT_MATCH, UNKNOWN_IDENTIFIER, LOGICAL_ERROR about
-# `valid source node`) is acceptable.
+# Run a query and assert it never reaches `Trying to execute PLACEHOLDER action`.
+# A clean success (RC=0) is fine. A failure is fine ONLY if it is one of the
+# analyzer/fuzzer rejections this test intentionally exercises; any other error
+# (a setup failure, an unknown setting, "Not-ready Set is passed", etc.) is a real
+# failure so the test does not silently pass when the boundary is never exercised.
 assert_no_placeholder() {
     local desc="$1"
     local query="$2"
-    local output
+    local output rc
     output=$($CLICKHOUSE_CLIENT -q "$query" 2>&1)
-    if echo "$output" | grep -q "Trying to execute PLACEHOLDER action"; then
+    rc=$?
+
+    if echo "$output" | grep -qF "Trying to execute PLACEHOLDER action"; then
         echo "FAIL ($desc): PLACEHOLDER action reached execution"
         echo "$output" >&2
         return 1
     fi
-    echo "OK ($desc)"
+
+    if [ "$rc" -eq 0 ]; then
+        echo "OK ($desc)"
+        return 0
+    fi
+
+    if echo "$output" | grep -qE "NOT_IMPLEMENTED|UNSUPPORTED_METHOD|NUMBER_OF_COLUMNS_DOESNT_MATCH|UNKNOWN_IDENTIFIER|does not have valid source node"; then
+        echo "OK ($desc)"
+        return 0
+    fi
+
+    echo "FAIL ($desc): unexpected error"
+    echo "$output" >&2
+    return 1
 }
 
 # Case 1: the original AST fuzzer reproducer. `zeros(N)` returns column `zero`, so
