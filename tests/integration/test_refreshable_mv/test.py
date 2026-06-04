@@ -617,6 +617,61 @@ def test_adding_replica(started_cluster, cleanup):
     )
 
 
+def test_backup_skips_rmv_target_when_target_storage_unresolved(started_cluster, cleanup):
+    # Like the previous test, but the target itself resolves to a null storage on node1: the MV's
+    # initial refresh EXCHANGEs re.repro_tgt to a new UUID that paused node1 never applies. It must
+    # still be skipped, else a null storage delegates the data to another replica, racing the EXCHANGE.
+    znode = f"/test/re_repro_target_null_{test_idx}"
+    for node in nodes:
+        node.query(
+            f"create database re engine = Replicated('{znode}', 'shard1', '{{replica}}');"
+        )
+
+    # Base tables on node2; let node1 catch up.
+    node2.query(
+        "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
+        "create table re.repro_tgt (x Int64) engine ReplicatedMergeTree order by x;"
+        "insert into re.repro_tgt values (1);"
+    )
+    node1.query("system sync database replica re")
+    node1.query_with_retry("system sync replica re.repro_tgt")
+
+    tgt_uuid = node2.query(
+        "select uuid from system.tables where database = 're' and name = 'repro_tgt'"
+    ).strip()
+
+    # Stall node1's DDL queue so it won't apply the CREATE/EXCHANGE below.
+    node1.query("system enable failpoint database_replicated_stop_entry_execution")
+
+    # Create the MV on node2 without waiting for node1; its initial refresh EXCHANGEs re.repro_tgt.
+    node2.query(
+        "create materialized view re.repro_mv refresh every 1 year to re.repro_tgt as select x from re.src",
+        settings={"distributed_ddl_task_timeout": 0},
+    )
+    # Wait until the EXCHANGE landed (re.repro_tgt's UUID changes on node2).
+    assert_eq_with_retry(
+        node2,
+        f"select toString(uuid) != '{tgt_uuid}' from system.tables where database = 're' and name = 'repro_tgt'",
+        "1",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    backup_destination = new_backup_destination()
+    node1.query(f"BACKUP DATABASE re TO {backup_destination}")
+
+    # Re-enable the queue before asserting, so a failure doesn't hang teardown's `drop ... sync`.
+    node1.query("system disable failpoint database_replicated_stop_entry_execution")
+
+    # The target's data must be skipped even though its storage was unresolved on the backup replica.
+    assert node1.contains_in_log(
+        "Skipping table data for re.repro_tgt (a target of a refreshable materialized view)"
+    )
+
+    for node in nodes:
+        node.query("drop database re sync")
+
+
 def test_replicated_db_startup_race(started_cluster, cleanup):
     for node in nodes:
         node.query(
