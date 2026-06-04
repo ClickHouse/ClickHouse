@@ -388,9 +388,15 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
     {
         /// Use the trusted accessor so a fabricated inner estimate cannot mislead
         /// the outer DP; EXPLAIN keeps reading the raw value.
-        bool trusted = join_step->isResultRowsEstimateTrusted();
+        ///
+        /// A parent `FilterStep` predicate is passed down via `filter`, but it is not
+        /// estimated against the join output here. Mirroring the `ReadFromMergeTree`
+        /// branch above (which returns an unknown estimate for an unmodeled filter),
+        /// an unmodeled post-join filter makes the propagated row count and column
+        /// stats untrustworthy for the outer scope, so demote the estimate.
+        bool trusted = join_step->isResultRowsEstimateTrusted() && !filter;
         return RelationStats{
-            .estimated_rows = join_step->getTrustedResultRowsEstimation(),
+            .estimated_rows = trusted ? join_step->getTrustedResultRowsEstimation() : std::optional<UInt64>{},
             .column_stats = trusted ? join_step->getResultColumnStats() : std::unordered_map<String, ColumnStats>{},
             .rows_estimate_trusted = trusted,
             .table_name = join_step->getReadableRelationName()};

@@ -1,0 +1,10 @@
+-- no post-join filter: trusted inner-join estimate propagates upstream
+Join: sub[1000] ⋈ o[100]
+ResultRows: 100
+Join: a[1000] ⋈ b[1000]
+ResultRows: 1000
+-- post-join filter over both sides: estimate is hidden from upstream
+Join: o[100] ⋈ sub
+ResultRows: unknown
+Join: a[1000] ⋈ b[1000]
+ResultRows: 1000
