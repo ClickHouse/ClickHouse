@@ -16,7 +16,7 @@ class ResponseForSession;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-using ResponsesQueue = ConcurrentBoundedQueue<KeeperResponseForSession>;
+using KeeperResponseCallback = std::function<void(KeeperResponseForSession)>; // noexcept
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
@@ -38,7 +38,7 @@ public:
     using CommitCallback = std::function<void(uint64_t, const KeeperRequestForSession &)>;
 
     IKeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        KeeperResponseCallback response_callback_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -113,7 +113,7 @@ public:
     /// Introspection functions for 4lw commands
     virtual int64_t getLastProcessedZxid() const = 0;
 
-    virtual const KeeperStorageStats & getStorageStats() const = 0;
+    virtual KeeperStorageStats getStorageStats() const = 0;
 
     virtual uint64_t getNodesCount() const = 0;
     virtual uint64_t getTotalWatchesCount() const = 0;
@@ -169,9 +169,8 @@ protected:
 
     CoordinationSettingsPtr coordination_settings;
 
-    /// Save/Load and Serialize/Deserialize logic for snapshots.
-    /// Put processed responses into this queue
-    ResponsesQueue & responses_queue;
+    /// Function to put processed responses into a queue for sending to the client.
+    KeeperResponseCallback response_callback;
 
     /// Snapshots to create by snapshot thread
     SnapshotsQueue & snapshots_queue;
@@ -183,7 +182,7 @@ protected:
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
     mutable SharedMutex state_machine_storage_mutex;
-    /// Lock for processing and responses_queue. It's important to process requests
+    /// Lock for processing and response_callback. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
@@ -224,7 +223,7 @@ class KeeperStateMachine : public IKeeperStateMachine
 {
 public:
     KeeperStateMachine(
-        ResponsesQueue & responses_queue_,
+        KeeperResponseCallback response_callback_,
         SnapshotsQueue & snapshots_queue_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
@@ -258,6 +257,7 @@ public:
     // in a reasonable way.
     Storage & getStorageUnsafe()
     {
+        chassert(storage);
         return *storage;
     }
 
@@ -275,7 +275,7 @@ public:
     /// Introspection functions for 4lw commands
     int64_t getLastProcessedZxid() const override;
 
-    const KeeperStorageStats & getStorageStats() const override;
+    KeeperStorageStats getStorageStats() const override;
 
     uint64_t getNodesCount() const override;
     uint64_t getTotalWatchesCount() const override;

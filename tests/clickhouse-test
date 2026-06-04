@@ -83,6 +83,15 @@ def write_text_atomic(path: Path, text: str) -> None:
 # `STOP_TESTING_EXIT_CODE` in `ci/jobs/scripts/functional_tests_results.py`.
 STOP_TESTING_EXIT_CODE = 2
 
+# Exit code returned when the run stopped *gracefully* because the global time
+# limit (`--global_time_limit` / `--stop-time`) was reached. This is an
+# expected, benign stop condition - the flaky and targeted checks deliberately
+# rerun the selected tests until the time budget is exhausted - so it must NOT
+# be conflated with `STOP_TESTING_EXIT_CODE` (which the job side reports as
+# "Server died"). Kept in sync with `GLOBAL_TIME_LIMIT_EXIT_CODE` in
+# `ci/jobs/scripts/functional_tests_results.py`.
+GLOBAL_TIME_LIMIT_EXIT_CODE = 3
+
 USE_JINJA = True
 try:
     import jinja2
@@ -1235,6 +1244,7 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    OLD_ANALYZER = "old-analyzer"
     NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
     LINUX_ONLY = "supported only on Linux"
 
@@ -1502,10 +1512,14 @@ class SettingsRandomizer:
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
+        "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
-        # changing grace_hash_join_initial_buckets is giving wrong results in a test
-        # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
+        "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
+        # Default 16 MiB; randomize across small/large to exercise both the coalescing
+        # path and the cap that splits long miss runs into multiple reads.
+        "page_cache_max_coalesced_bytes": lambda: random.choice([65536, 1048576, 16777216, 67108864]),
         # Default-true optimize/enable settings: disable with 0.05 probability
+        "optimize_dictget_tuple_element": lambda: random.random() > 0.05,
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
@@ -1554,6 +1568,8 @@ class SettingsRandomizer:
         "optimize_use_projection_filtering": "optimize_use_projections",
         # top-k dynamic filtering requires the top-k skip index path to be active
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
+        # variable-length opt-in only matters when the parent dynamic filter is on
+        "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
     }
@@ -2586,6 +2602,9 @@ class TestCase:
 
         if "no-parallel-replicas" in tags and args.no_parallel_replicas:
             return FailureReason.NO_PARALLEL_REPLICAS
+
+        if "no-old-analyzer" in tags and is_old_analyzer_used(args):
+            return FailureReason.OLD_ANALYZER
 
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
@@ -4128,10 +4147,15 @@ class StopTesting(Exception):
 
     The reason is in the message — the catch handler prefixes it with
     "Test run aborted:" so it stands out in the log, and exits with
-    `STOP_TESTING_EXIT_CODE` so the job side treats the run as
-    catastrophically interrupted.
+    `exit_code` so the job side can distinguish the cause: the default
+    `STOP_TESTING_EXIT_CODE` means the run was catastrophically interrupted
+    (reported as "Server died"), while `GLOBAL_TIME_LIMIT_EXIT_CODE` means a
+    benign, expected stop after the time budget was reached.
     """
-    pass
+
+    def __init__(self, message, exit_code=STOP_TESTING_EXIT_CODE):
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 def run_diagnose_from_artifacts(args, stop_testing):
@@ -4366,8 +4390,21 @@ def run_tests_array(
             )
 
         if args.stop_time and time() > args.stop_time:
+            if is_concurrent:
+                # Parallel worker: stop quietly and let the parent orchestrate
+                # the graceful shutdown and the exit code. Do NOT call
+                # `stop_tests()` here — its `killpg` broadcasts SIGTERM to the
+                # whole group, including the parent, which would clobber the
+                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` into 143 (reported as
+                # "Server died").
+                break
+            # Sequential runner (runs in the main process): raise so the
+            # graceful exit code propagates to the outer handler.
             stop_tests()
-            raise StopTesting("global time limit exceeded (--stop-time)")
+            raise StopTesting(
+                "global time limit exceeded (--stop-time)",
+                exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+            )
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4887,6 +4924,11 @@ def do_run_tests(
         MEMORY_PRESSURE_THRESHOLD = 0.8
         last_memory_check = time()
 
+        # Set when the parent stops the run because the global time limit was
+        # reached, so the final `StopTesting` is raised with the benign
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` rather than the "Server died" code.
+        global_time_limit_reached = False
+
         while processes:
             sleep(0.1)
             sys.stdout.flush()
@@ -4916,6 +4958,29 @@ def do_run_tests(
                     # we consider shedding another worker.
                     last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
 
+            # Stop the whole run once the global time limit is reached. This is
+            # the *expected* stop condition for the flaky and targeted checks,
+            # which rerun the selected tests until the time budget is exhausted -
+            # distinct from a server death or a hung check below. Only claim the
+            # time limit if nothing else has already requested a stop, so a real
+            # server death or `--max-failures` abort keeps precedence.
+            if (
+                args.stop_time
+                and time() > args.stop_time
+                and not stop_testing.is_set()
+            ):
+                print("Global time limit reached - stopping all tests gracefully.")
+                # Ignore SIGTERM in the parent for the rest of the run: when we
+                # terminate the workers below, each worker's KeyboardInterrupt
+                # handler re-broadcasts SIGTERM to the whole process group via
+                # `stop_tests()` -> `killpg`. Without this guard that signal
+                # would hit the parent and exit it with 143 instead of the
+                # graceful `GLOBAL_TIME_LIMIT_EXIT_CODE` (turning an expected
+                # timeout back into a "Server died" report).
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                global_time_limit_reached = True
+                stop_testing.set()
+
             # Periodically check the server for hangs
             # and stop all processes in this case
             if args.hung_check:
@@ -4925,20 +4990,39 @@ def do_run_tests(
                     stop_testing.set()
 
             if stop_testing.is_set():
-                print("Stopping tests, terminating all processes...")
-                # Wait briefly for test results to be written
-                sleep(5)
-                for p in processes:
-                    if p.is_alive():
-                        p.terminate()
-                # Wait for processes to exit, then force-kill stragglers
-                for p in processes:
-                    p.join(timeout=10)
-                    if p.is_alive():
-                        print(f"Force killing process {p.name} (pid {p.pid})")
-                        p.kill()
-                for p in processes:
-                    p.join(timeout=5)
+                # Mask SIGTERM during the cleanup: when we terminate a worker,
+                # its `except KeyboardInterrupt` handler in `run_tests_array`
+                # calls `stop_tests()`, which broadcasts SIGTERM to the whole
+                # process group via `cleanup_child_processes`. Without this
+                # mask the signal would reach us mid-join, `signal_handler`
+                # would raise `Terminated`, and we would exit with 128+15=143
+                # instead of `STOP_TESTING_EXIT_CODE` - causing the job-side
+                # parser to misclassify the run as "terminated unexpectedly"
+                # (`Result.Status.ERROR`) rather than synthesizing the
+                # `Server died` FAIL leaf that bugfix validation needs.
+                old_sigterm_handler = signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                try:
+                    print("Stopping tests, terminating all processes...")
+                    # Wait briefly for test results to be written
+                    sleep(5)
+                    for p in processes:
+                        if p.is_alive():
+                            p.terminate()
+                    # Wait for processes to exit, then force-kill stragglers
+                    for p in processes:
+                        p.join(timeout=10)
+                        if p.is_alive():
+                            print(f"Force killing process {p.name} (pid {p.pid})")
+                            p.kill()
+                    for p in processes:
+                        p.join(timeout=5)
+                finally:
+                    signal.signal(signal.SIGTERM, old_sigterm_handler)
+                if global_time_limit_reached:
+                    raise StopTesting(
+                        "global time limit reached",
+                        exit_code=GLOBAL_TIME_LIMIT_EXIT_CODE,
+                    )
                 raise StopTesting(
                     "test run was stopped (see earlier output for the cause)"
                 )
@@ -6581,6 +6665,37 @@ if __name__ == "__main__":
     else:
         args.client_options_query_str = ""
 
+    if args.llvm_coverage:
+        # Pin the seeds of random-by-default mechanisms so the set of branches
+        # exercised inside the server is stable run-to-run. Without this the
+        # LLVM coverage report flickers on files reachable from these injection
+        # points (keeper fault injection, etc.).
+        # `--allow_repeated_settings` is already appended later by the per-test
+        # composition, so a test that explicitly sets one of these still wins.
+        coverage_pinned_settings = {
+            "backup_restore_keeper_fault_injection_seed": 1,
+            "insert_keeper_fault_injection_seed": 1,
+        }
+        coverage_pinned_cli = " ".join(
+            f"--{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+        coverage_pinned_url = "&".join(
+            f"{k}={v}" for k, v in coverage_pinned_settings.items()
+        )
+
+        existing_client_opt = os.environ.get("CLICKHOUSE_CLIENT_OPT", "").rstrip()
+        os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+            f"{existing_client_opt} {coverage_pinned_cli} ".lstrip()
+        )
+
+        existing_url_params = os.environ.get("CLICKHOUSE_URL_PARAMS", "").rstrip("&")
+        if existing_url_params:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                f"{existing_url_params}&{coverage_pinned_url}"
+            )
+        else:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = coverage_pinned_url
+
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
 
@@ -6601,7 +6716,7 @@ if __name__ == "__main__":
     except StopTesting as e:
         print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
-        sys.exit(STOP_TESTING_EXIT_CODE)
+        sys.exit(e.exit_code)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)
         sys.exit(128 + e.signal)
