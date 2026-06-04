@@ -57,11 +57,20 @@ struct GroupPolygonUnionData
     {
         if (mp.empty())
             return;
-        size_t added = countMultiPolygonPoints(mp);
-        checkPolygonalStateBudget(total_points, added, function_name);
-        total_points += added;
+        total_points += countMultiPolygonPoints(mp);
         chunks.push_back(std::move(mp));
-        maybeReduce(function_name);
+
+        /// The accumulated point count may exceed the budget only because identical or
+        /// overlapping polygons have not been unioned yet. Reduce to the canonical state
+        /// first and enforce the cap on the reduced representation, mirroring `merge`, so a
+        /// valid result is not rejected based on the row/chunk shape of the input.
+        if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+        {
+            reduceChunksPairwiseUnion(chunks);
+            recountPoints(function_name);
+        }
+        else
+            maybeReduce(function_name);
     }
 
     void merge(const GroupPolygonUnionData & other, const char * function_name)
@@ -183,7 +192,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt8 version;
+        UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
         if (version != GEO_SERDE_VERSION)
             throw Exception(
@@ -195,7 +204,7 @@ public:
 
         auto & data = AggregateFunctionGroupPolygonUnion::data(place);
         auto & chunks = data.chunks;
-        UInt64 chunk_count;
+        UInt64 chunk_count = 0;
         readVarUInt(chunk_count, buf);
         if (chunk_count > MAX_CHUNKS_PER_STATE)
             throw Exception(

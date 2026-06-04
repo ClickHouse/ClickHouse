@@ -33,9 +33,25 @@ struct GroupConvexHullData
 
     void addMany(const std::vector<CartesianPoint> & new_points, const char * function_name) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        checkConvexHullStateBudget(points.size(), new_points.size(), function_name);
         points.insert(points.end(), new_points.begin(), new_points.end());
-        maybeCompress();
+
+        /// Compress (recompute the hull) before enforcing the budget, mirroring `merge`: many
+        /// input points can collapse to a small hull, so a valid result must not be rejected
+        /// based on how the points were batched across rows. If the compressed hull genuinely
+        /// exceeds the cap, reject it.
+        if (points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
+        {
+            compress();
+            if (points.size() > MAX_POINTS_IN_CONVEX_HULL_STATE)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Aggregate function {} state has too many points after compression: {} (limit {})",
+                    function_name,
+                    points.size(),
+                    MAX_POINTS_IN_CONVEX_HULL_STATE);
+        }
+        else
+            maybeCompress();
     }
 
     void merge(const GroupConvexHullData & other, const char * function_name)
@@ -246,7 +262,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        UInt8 version;
+        UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
         if (version != GEO_SERDE_VERSION)
             throw Exception(
@@ -257,7 +273,7 @@ public:
                 static_cast<int>(GEO_SERDE_VERSION));
 
         auto & points = AggregateFunctionGroupConvexHull::data(place).points;
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, buf);
         if (size > MAX_POINTS_IN_CONVEX_HULL_STATE)
             throw Exception(
@@ -270,8 +286,8 @@ public:
         points.resize(size);
         for (UInt64 i = 0; i < size; ++i)
         {
-            Float64 x;
-            Float64 y;
+            Float64 x = 0;
+            Float64 y = 0;
             readBinaryLittleEndian(x, buf);
             readBinaryLittleEndian(y, buf);
             if (!std::isfinite(x) || !std::isfinite(y))
