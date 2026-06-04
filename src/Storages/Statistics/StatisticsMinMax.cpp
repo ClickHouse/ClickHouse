@@ -85,6 +85,10 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     /// V2+ format: type name followed by Field-typed min and max
     String stored_type_name;
     readStringBinary(stored_type_name, buf);
+    if (stored_type_name != data_type->getName())
+    {
+        return;
+    }
     min = readFieldBinary(buf);
     max = readFieldBinary(buf);
 }
