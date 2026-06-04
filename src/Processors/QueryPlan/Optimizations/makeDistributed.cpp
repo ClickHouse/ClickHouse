@@ -264,10 +264,6 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
     Names aggregation_keys = aggregating_step->getParams().keys;
 
-    /// A global GROUP BY limit can't be enforced once aggregation is split per bucket; keep local.
-    if (aggregating_step->getParams().max_rows_to_group_by != 0)
-        return;
-
     enum AggregationStrategy
     {
         PartialAggregation, /// Do partial aggregation and then merge aggregation states
