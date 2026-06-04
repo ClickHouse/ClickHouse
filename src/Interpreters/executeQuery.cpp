@@ -208,9 +208,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -543,7 +541,7 @@ QueryLogElement logQueryStart(
     return elem;
 }
 
-void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
+static void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id, std::chrono::system_clock::time_point finish_time, QueryStatusInfoPtr info)
 {
     if (auto query_metric_log = context->getQueryMetricLog(); query_metric_log && !internal)
     {
@@ -596,27 +594,15 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage query_result_cache_usage, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
 {
-    bool query_result_cache_write_failed = false;
-    if (query_result_cache_usage == QueryResultCacheUsage::Write)
-    {
-        /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-        /// prevent partial/garbage results in case of exceptions during query execution.
-        /// A failure to finalize the cache write must not prevent collecting profile counters or resetting the
-        /// pipeline, otherwise the `QueryFinish` entry would be lost from `query_log`.
-        try
-        {
-            query_pipeline.finalizeWriteInQueryResultCache();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("executeQuery"), "Failed to finalize query result cache write");
-            query_result_cache_write_failed = true;
-        }
-    }
+    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+    /// prevent partial/garbage results in case of exceptions during query execution.
+    /// Always called (it's a no-op if no cache writers exist in the pipeline), because subqueries may have
+    /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
+    query_pipeline.finalizeWriteInQueryResultCache();
 
-    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
 
     String pipeline_dump;
     {
@@ -642,11 +628,10 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
     return QueryPipelineFinalizedInfo{
         .result_progress = std::move(result_progress),
         .processors_profile_infos = std::move(processors_profile_infos),
-        .pipeline_dump = std::move(pipeline_dump),
-        .query_result_cache_write_failed = query_result_cache_write_failed};
+        .pipeline_dump = std::move(pipeline_dump)};
 }
 
-void logQueryFinishImpl(
+static void logQueryFinishImpl(
     QueryLogElement & elem,
     const ContextMutablePtr & context,
     const ASTPtr & query_ast,
@@ -712,11 +697,6 @@ void logQueryFinishImpl(
         }
 
         context->getRuntimeFilterLookup()->logStats();
-
-        /// If the buffered query result cache write threw during finalization, the result was *not* actually
-        /// stored in the cache. Downgrade the logged usage accordingly so `query_log` reflects reality.
-        if (query_pipeline_finalized_info.query_result_cache_write_failed)
-            query_result_cache_usage = QueryResultCacheUsage::None;
 
         elem.query_result_cache_usage = query_result_cache_usage;
 
@@ -1007,7 +987,7 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1146,8 +1126,8 @@ static BlockIO executeQueryImpl(
         context->setInitialQueryStartTime(query_start_time);
     }
 
-    assert(internal || CurrentThread::get().tryGetQueryContext());
-    assert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
+    chassert(internal || CurrentThread::get().tryGetQueryContext());
+    chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1158,7 +1138,7 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
-    UInt64 normalized_query_hash;
+    UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -1357,29 +1337,20 @@ static BlockIO executeQueryImpl(
         }
 
         const char * query_end = end;
-        bool is_create_parameterized_view = false;
 
         if (out_ast)
         {
             if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
                 query_end = insert_query->data;
-
-            if (const auto * create_query = out_ast->as<ASTCreateQuery>())
-            {
-                is_create_parameterized_view = create_query->isParameterizedView();
-            }
-            else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
-            {
-                if (!explain_query->children.empty())
-                    if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
-                        is_create_parameterized_view = create_of_explain_query->isParameterizedView();
-            }
         }
 
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
+        /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters.
+        /// The visitor handles parameterized views internally: it substitutes parameters in
+        /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
+        /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && !is_create_parameterized_view && probably_has_params)
+        if (out_ast && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
@@ -1450,9 +1421,9 @@ static BlockIO executeQueryImpl(
         /// If it is used - do the random sampling and "collapse" the settings.
         /// It allows to consistently log queries with all the subqueries in distributed query processing
         /// (subqueries on remote nodes will receive these "collapsed" settings)
-        if (settings[Setting::log_queries] && settings[Setting::log_queries_probability] < 1.0)
+        if (settings[Setting::log_queries] && static_cast<double>(settings[Setting::log_queries_probability]) < 1.0)
         {
-            std::bernoulli_distribution should_write_log{settings[Setting::log_queries_probability]};
+            std::bernoulli_distribution should_write_log{static_cast<double>(settings[Setting::log_queries_probability])};
 
             context->setSetting("log_queries", should_write_log(thread_local_rng));
             context->setSetting("log_queries_probability", 1.0);
@@ -1695,6 +1666,7 @@ static BlockIO executeQueryImpl(
         const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+        context->setCanUseQueryResultCache(can_use_query_result_cache);
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
@@ -1730,8 +1702,9 @@ static BlockIO executeQueryImpl(
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
+
                     if (reader.hasCacheEntryForKey())
                     {
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
@@ -1849,33 +1822,10 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-
-                    /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
-                    /// processor on top of the pipeline which stores the result in the query result cache.
-                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
+                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
+                    /// top of the pipeline which stores the result in the query cache.
+                    if (checkCanWriteQueryResultCache(out_ast, context))
                     {
-                        /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-
-                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
-
-                        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
-                            = settings[Setting::query_cache_nondeterministic_function_handling];
-                        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
-
-                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "The query result was not cached because the query contains a non-deterministic function."
-                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                                "The query result was not cached because the query contains a system table."
-                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
-                        {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
@@ -1885,7 +1835,8 @@ static BlockIO executeQueryImpl(
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
                                 created_at, expires_at,
-                                settings[Setting::query_cache_compress_entries]);
+                                settings[Setting::query_cache_compress_entries],
+                                /* is_subquery = */ false);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
@@ -1911,7 +1862,6 @@ static BlockIO executeQueryImpl(
                             /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
                             if (settings[Setting::enable_reads_from_query_cache])
                                 result_details.query_cache_entry_expires_at = expires_at;
-                        }
                     }
                 }
             }
@@ -2061,7 +2011,14 @@ static BlockIO executeQueryImpl(
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer()
 {
     static std::mutex mutex;
+#if WITH_COVERAGE
+    /// Under LLVM coverage builds we use a fixed seed so that the set of AST mutations
+    /// (and therefore the set of branches taken inside `QueryFuzzer`) is stable run-to-run.
+    /// Without this, coverage of `QueryFuzzer.cpp` and friends flickers between coverage runs.
+    static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(pcg64(0xC0FFEEULL));
+#else
     static std::shared_ptr<QueryFuzzer> fuzzer = std::make_shared<QueryFuzzer>(randomSeed());
+#endif
     return {fuzzer, std::unique_lock(mutex)};
 }
 
@@ -2227,8 +2184,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
+            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
             /*should_throw*/ true);
 
     ASTPtr ast;
@@ -2284,7 +2241,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
     if (!flags.internal && ast)
     {
-        Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+        Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
         if (ast_fuzzer_runs_value > 0)
         {
             bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
@@ -2337,8 +2294,8 @@ void executeQuery(
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
 
     PODArray<char> parse_buf;
-    const char * begin;
-    const char * end;
+    const char * begin = nullptr;
+    const char * end = nullptr;
 
     try
     {
@@ -2354,16 +2311,18 @@ void executeQuery(
     size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
 
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
-            context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
-            context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
+            static_cast<double>(context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw]),
+            static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size || http_continue_callback)
+    if (istr->available() > max_query_size || http_continue_callback || flags.parse_query_from_initial_buffer)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
         /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
         /// in the buffer already because it should have been extracted from the query parameter.
+        /// The same applies to streaming inserts whose query is already in the initial buffer and whose body must remain
+        /// available for the input format.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -2585,7 +2544,7 @@ void executeQuery(
 
         if (!flags.internal && ast)
         {
-            Float64 ast_fuzzer_runs_value = context->getSettingsRef()[Setting::ast_fuzzer_runs];
+            Float64 ast_fuzzer_runs_value = static_cast<double>(context->getSettingsRef()[Setting::ast_fuzzer_runs]);
             if (ast_fuzzer_runs_value > 0)
             {
                 bool any_query = context->getSettingsRef()[Setting::ast_fuzzer_any_query];
