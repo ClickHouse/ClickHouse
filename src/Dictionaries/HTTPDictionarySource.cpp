@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 static const UInt64 max_block_size = 8192;
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+static const std::unordered_set<std::string_view> optional_configuration_keys = { // STYLE_CHECK_ALLOW_STD_CONTAINERS
     "url",
     "endpoint",
     "user",
@@ -252,7 +252,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         {
             /// Headers in config file will have structure "headers.header.name" and "headers.header.value".
             /// But Poco::AbstractConfiguration converts them into "header", "header[1]", "header[2]".
-            static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys
+            static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys // STYLE_CHECK_ALLOW_STD_CONTAINERS
             {
                 std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].name)"),
                 std::make_shared<re2::RE2>(R"(headers.header\[[0-9]*\].value)"),
