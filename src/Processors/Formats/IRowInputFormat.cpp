@@ -170,6 +170,16 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
+            if (max_block_wait_ms != 0 && num_rows > 0)
+            {
+                UInt64 elapsed_ms = watch.elapsedMilliseconds();
+                if (elapsed_ms >= max_block_wait_ms)
+                    break;
+
+                UInt64 remaining_us = (max_block_wait_ms - elapsed_ms) * 1000;
+                if (!getReadBuffer().poll(remaining_us))
+                    break;
+            }
 
             try
             {

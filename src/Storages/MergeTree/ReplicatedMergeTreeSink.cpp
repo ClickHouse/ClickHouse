@@ -52,6 +52,7 @@ namespace Setting
     extern const SettingsUInt64 insert_keeper_max_retries;
     extern const SettingsUInt64 insert_keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 insert_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
     extern const SettingsBool optimize_on_insert;
 }
@@ -393,6 +394,11 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     finishDelayed(zookeeper);
     delayed_parts = std::move(current_parts);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
+    if (settings[Setting::input_format_max_block_wait_ms] != 0)
+        finishDelayed(zookeeper);
 
     ++num_blocks_processed;
 }

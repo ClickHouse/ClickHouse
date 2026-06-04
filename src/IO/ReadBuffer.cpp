@@ -32,6 +32,15 @@ namespace
 
         const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
+        bool poll(size_t timeout_microseconds) override
+        {
+            if (hasPendingData())
+                return true;
+
+            in.position() = position();
+            return in.poll(timeout_microseconds);
+        }
+
     private:
         ReadBuffer & in;
         CustomData custom_data;
