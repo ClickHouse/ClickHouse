@@ -154,7 +154,7 @@ REGISTER_FUNCTION(ArrayCombinations)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of arrays, where each inner array is a k-length combination.", {"Array(Array(T))"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCombinations([1, 2, 3], 2)", "[[1,2],[1,3],[2,3]]"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

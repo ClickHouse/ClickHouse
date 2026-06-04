@@ -212,7 +212,7 @@ REGISTER_FUNCTION(ArrayPermutations)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of arrays containing all permutations.", {"Array(Array(T))"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPermutations([1, 2, 3])", "[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -229,7 +229,7 @@ REGISTER_FUNCTION(ArrayPartialPermutations)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"An array of arrays containing all k-length ordered selections.", {"Array(Array(T))"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPartialPermutations([1, 2, 3], 2)", "[[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
