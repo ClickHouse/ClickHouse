@@ -955,14 +955,14 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_hashes;
         bool has_duplicate = false;
 
-        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        for (const auto & proj_node : projection_nodes)
         {
-            auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
+            auto tree_hash = proj_node->getTreeHash({.compare_aliases = false});
             if (!seen_hashes.emplace(tree_hash).second)
             {
                 /// The alias on the node was set by ReplaseAliasColumnsVisitor
                 /// to the original ALIAS column name (before any user AS rename).
-                const auto & node_alias = projection_nodes[i]->getAlias();
+                const auto & node_alias = proj_node->getAlias();
                 const auto & col_default = columns_description.getDefault(node_alias);
                 if (col_default && col_default->kind == ColumnDefaultKind::Alias)
                 {
