@@ -17,6 +17,9 @@ using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 class TextIndexPostingsCache;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
+class TokensCardinalitiesCache;
+using TokensCardinalitiesCachePtr = std::shared_ptr<TokensCardinalitiesCache>;
+
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
@@ -80,8 +83,8 @@ public:
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
     std::string getDescription() const override;
 
+    bool hasSearchPatterns() const;
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
-    const std::vector<const OptimizedRegularExpression *> & getAllSearchPatterns() const { return all_search_patterns; }
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
@@ -95,6 +98,7 @@ public:
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
+    TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
@@ -169,8 +173,6 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
-    /// Search patterns from all RPN elements (for LIKE/NOT_LIKE queries).
-    std::vector<const OptimizedRegularExpression *> all_search_patterns;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
@@ -187,6 +189,8 @@ private:
     TextIndexHeaderCachePtr header_cache;
     /// Cache for posting lists of tokens.
     TextIndexPostingsCachePtr postings_cache;
+    /// Cache for tokens cardinalities
+    TokensCardinalitiesCachePtr cardinalities_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
