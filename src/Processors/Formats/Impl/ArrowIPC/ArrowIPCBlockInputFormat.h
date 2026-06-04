@@ -6,8 +6,13 @@
 
 #include <Core/BlockMissingValues.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ArrowIPC/MessageReader.h>
+#include <Processors/Formats/Impl/ArrowIPC/SchemaConverter.h>
+#include <Processors/Formats/Impl/ArrowIPC/RecordBatchDecoder.h>
 #include <Formats/FormatSettings.h>
+
+#include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -16,9 +21,10 @@ class ReadBuffer;
 
 /// Native ClickHouse reader for the `Arrow` (file) and `ArrowStream` (stream) IPC formats.
 ///
-/// Unlike `ArrowBlockInputFormat`, this implementation does not use the Apache Arrow C++ library:
-/// it parses the IPC metadata (FlatBuffers) directly and decodes the record-batch buffers straight
-/// into ClickHouse columns. Selected via `input_format_arrow_use_native_reader`.
+/// Does not use the Apache Arrow C++ library: it parses the IPC metadata (FlatBuffers) directly and
+/// decodes record-batch buffers straight into ClickHouse columns. Selected via
+/// `input_format_arrow_use_native_reader`. Phase 1 supports the streaming format and flat,
+/// uncompressed types; the file format, nested types, dictionaries and compression follow.
 class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
@@ -37,8 +43,16 @@ private:
 
     void onCancel() noexcept override { is_stopped = 1; }
 
-    /// Whether the input uses the streaming format (`ArrowStream`) rather than the file format (`Arrow`).
+    void prepareReader();
+    Chunk buildChunk(std::vector<ArrowIPC::RecordBatchDecoder::DecodedColumn> & decoded, size_t num_rows);
+
     const bool stream;
+
+    ArrowIPC::MessageReader message_reader;
+    std::optional<ArrowIPC::ArrowSchema> arrow_schema;
+    std::unique_ptr<ArrowIPC::RecordBatchDecoder> decoder;
+    bool prepared = false;
+    PODArray<char> body_buffer;
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
