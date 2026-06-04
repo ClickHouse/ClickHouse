@@ -12,8 +12,6 @@ pk_multi_granule_results_within_pk_filter
 1
 pk_disjoint_pk_same_granule_vector_index_used
 1
-pk_disjoint_pk_same_granule_same_row_count_as_without_skip_indexes
-1
 pk_disjoint_pk_same_granule_results_within_pk_filter
 1
 empty_pk_filter

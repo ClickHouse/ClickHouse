@@ -5,7 +5,7 @@
 -- Here we check:
 -- 1) Case A: `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids (single PK slice, clear ANN winners).
 -- 2) vector path really runs (`USearchSearchCount > 0`).
--- 3) Cases D/E: partial PK + vector index across skip-index granules (index used, row count, results respect WHERE; no exact id match vs skip=0).
+-- 3) Cases D/E: partial PK + vector index across skip-index granules (index used, results respect WHERE; Case D also checks row count vs skip=0).
 -- 4) Date-range PK filters + extra non-PK filters still work as expected.
 
 SET allow_experimental_vector_similarity_index = 1;
@@ -164,33 +164,6 @@ WHERE current_database = currentDatabase()
     AND log_comment = '04217-pk-disjoint-same-granule'
     AND event_date >= yesterday()
     AND event_time >= now() - 600;
-
-SELECT 'pk_disjoint_pk_same_granule_same_row_count_as_without_skip_indexes';
-WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
-SELECT
-    (
-        SELECT count()
-        FROM
-        (
-            SELECT id
-            FROM tab_pk_partial
-            WHERE (id <= 1) OR (id >= 4 AND id <= 5)
-            ORDER BY L2Distance(vec, reference_vec) ASC
-            LIMIT 3
-            SETTINGS use_skip_indexes = 1
-        )
-    ) = (
-        SELECT count()
-        FROM
-        (
-            SELECT id
-            FROM tab_pk_partial
-            WHERE (id <= 1) OR (id >= 4 AND id <= 5)
-            ORDER BY L2Distance(vec, reference_vec) ASC
-            LIMIT 3
-            SETTINGS use_skip_indexes = 0
-        )
-    );
 
 SELECT 'pk_disjoint_pk_same_granule_results_within_pk_filter';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec

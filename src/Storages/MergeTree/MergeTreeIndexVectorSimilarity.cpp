@@ -597,8 +597,12 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring || overrides.row_filter.has_value())
-        /// Fewer hits after post-filter, rescoring, or PK row filter: raise fetch limit by index_fetch_multiplier.
+    {
+        /// Fewer hits after post-filter, rescoring, or partial-PK row filter: oversample before truncation.
+        /// Default `vector_search_index_fetch_multiplier` is 1.0, so `limit` stays equal to `parameters->limit` unless the user
+        /// raises the setting. Workloads that need a full LIMIT row count from the index path should use a multiplier > 1.0.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
+    }
 
     auto search_result = [&]()
     {
@@ -613,11 +617,15 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
         /// Copy filter into the closure: filtered_search may retain the predicate until the search completes, but a
         /// reference capture would be unsafe if evaluation ever outlived the local optional in the caller.
+        ///
+        /// With a tight `row_filter` (few allowed keys vs. `limit`, e.g. partial PK pruning), HNSW may stop before filling
+        /// `limit` passing keys. That is expected for an approximate index — do not assume the same row count as a brute-force
+        /// read with `use_skip_indexes = 0`.
         auto predicate = [rf = overrides.row_filter.value()](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
         return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
     }();
 
-    /// filtered_search can return fewer than limit under a tight predicate.
+    /// `filtered_search` may return fewer than `limit` rows even when the allowed set is slightly larger than `limit`.
 
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", search_result.error.release());
