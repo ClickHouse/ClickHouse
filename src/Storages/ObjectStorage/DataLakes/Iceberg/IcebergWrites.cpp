@@ -723,7 +723,7 @@ void generateExistingManifestFile(
         {
             if (version > 1)
             {
-                size_t field_index;
+                size_t field_index = 0;
                 if (!schema.root()->nameIndex(field_name, field_index))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
 
@@ -811,7 +811,7 @@ void generateManifestListForDelete(
     {
         if (version == 1)
         {
-            size_t field_index;
+            size_t field_index = 0;
             if (!schema.root()->nameIndex(field_name, field_index))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found field {} in schema", field_name);
             const avro::NodePtr & union_schema = schema.root()->leafAt(static_cast<UInt32>(field_index));
