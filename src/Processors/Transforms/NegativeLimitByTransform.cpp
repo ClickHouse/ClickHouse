@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
 #include <base/defines.h>
@@ -357,17 +358,6 @@ bool NegativeLimitBySortedStreamTransform::sameAsPrevChunkKey(const Columns & co
     return true;
 }
 
-bool NegativeLimitBySortedStreamTransform::sameAsRowBefore(const Columns & cols, UInt64 row) const
-{
-    for (auto pos : key_positions)
-    {
-        const auto & col = *cols[pos];
-        if (col.compareAt(row, row - 1, col, 1) != 0)
-            return false;
-    }
-    return true;
-}
-
 void NegativeLimitBySortedStreamTransform::rememberKey(const Columns & cols, UInt64 row)
 {
     if (key_positions.empty())
@@ -471,18 +461,20 @@ void NegativeLimitBySortedStreamTransform::consume(Chunk chunk)
     if (!prev_key_columns.empty() && !sameAsPrevChunkKey(cols, 0))
         finalizeWindow(current_group_window);
 
-    for (UInt64 row = 1; row < num_rows; ++row)
+    /// Segment the sorted chunk into maximal runs of rows that share the same key; each run is
+    /// one group.
+    while (run_start < num_rows)
     {
-        if (sameAsRowBefore(cols, row))
-            continue;
+        const UInt64 run_end = getEqualRangeEndAssumeSorted(cols, key_positions, run_start, num_rows, 1);
+
+        append_run(run_start, run_end - run_start);
 
         /// Group boundary: close the current run, finalize, start a new run.
-        append_run(run_start, row - run_start);
-        finalizeWindow(current_group_window);
-        run_start = row;
-    }
+        if (run_end != num_rows)
+            finalizeWindow(current_group_window);
 
-    append_run(run_start, num_rows - run_start);
+        run_start = run_end;
+    }
 
     /// Remember this chunk's last row for the next chunk's boundary check.
     rememberKey(cols, num_rows - 1);

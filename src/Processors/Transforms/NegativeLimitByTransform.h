@@ -126,7 +126,6 @@ private:
     };
 
     bool sameAsPrevChunkKey(const Columns & cols, UInt64 row) const;
-    bool sameAsRowBefore(const Columns & cols, UInt64 row) const;
     void rememberKey(const Columns & cols, UInt64 row);
     void dropExcessRows(GroupWindow & window) const;
     void dropOffsetRows(GroupWindow & window) const;
