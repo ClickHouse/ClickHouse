@@ -17,6 +17,7 @@
 #   28. checkViewStruct           – negative view size passes is_inline(), wraps in accumulation
 #   29. readColumnWithBigNumberFromBinaryData – data buffer over-read in copy loop
 #   30. readIPv6ColumnFromBinaryData – data buffer over-read in copy loop
+#   31. getNestedArrowColumn – nullable List: valid offsets/child but truncated parent bitmap
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -164,6 +165,18 @@ idx = d.rfind(data_len_bytes)
 if idx >= 8 and struct.unpack_from('<q', d, idx-8)[0] >= 0:
     d[idx:idx+8] = struct.pack('<q', 8)
 open(f'{out}/ipv6_dlen.arrow', 'wb').write(d)
+
+# 31. getNestedArrowColumn (nullable List): offsets and child buffers are valid, but the
+#     parent validity bitmap is shrunk so Flatten() reads IsValid() past the bitmap end.
+#     128 nullable List(Int32) rows: bitmap needs 16 bytes, shrink to 1.
+arr = pa.array([[i]*2 if i % 2 == 0 else None for i in range(128)], type=pa.list_(pa.int32()))
+d = write_arrow(arr)
+bitmap_size = next(b.size for b in pa.Table.from_batches([pa.RecordBatch.from_arrays([arr], ['x'])]).column(0).chunks[0].buffers() if b is not None)
+bitmap_entry = struct.pack('<qq', 0, bitmap_size)
+idx = d.find(bitmap_entry)
+assert idx >= 0, f"bitmap entry (size={bitmap_size}) not found"
+d[idx+8:idx+16] = struct.pack('<q', 1)
+open(f'{out}/list_bitmap.arrow', 'wb').write(d)
 PYEOF
 
 check() {
@@ -207,3 +220,5 @@ check view_negsize $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/vie
 check bignum_dlen  $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/bignum_dlen.arrow', Arrow, 'x Int128')"
 # IPv6 data-buffer: data buffer too small for value_offset + sizeof(IPv6)
 check ipv6_dlen    $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${TMP_DIR}/ipv6_dlen.arrow', Arrow, 'x IPv6')"
+# Nullable List bitmap: valid offsets + child but truncated parent validity bitmap
+check list_bitmap  $CLICKHOUSE_LOCAL --query "SELECT sum(length(x)) FROM file('${TMP_DIR}/list_bitmap.arrow', Arrow)"

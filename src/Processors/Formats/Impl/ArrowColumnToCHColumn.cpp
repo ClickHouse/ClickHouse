@@ -1273,6 +1273,10 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
 
+        /// Validate the parent list validity bitmap before Flatten(): when null_count > 0,
+        /// Flatten calls IsValid on the parent list array which reads buffers[0].
+        checkValidityBitmap(list_chunk, column_name);
+
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
         /// FixedSizeListArray uses a fixed stride instead of a variable-length offsets array.
