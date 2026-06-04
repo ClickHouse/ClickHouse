@@ -232,6 +232,10 @@ jobs:
     if: ${{ !cancelled() }}\
 """
 
+        TEMPLATE_IF_EXPRESSION_NOT_CANCELLED_WITH_CACHE = """
+    if: ${{{{ !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
+"""
+
         TEMPLATE_IF_EXPRESSION_ALWAYS = """
     if: ${{ always() }}\
 """
@@ -334,9 +338,18 @@ class PullRequestPushYamlGen:
                     JOB_NAME_BASE64=Utils.to_base64(job_name),
                 )
             if job.run_unless_cancelled:
-                if_expression = (
-                    YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED
-                )
+                if (
+                    self.workflow_config.config.enable_cache
+                    and job_name_normalized != config_job_name_normalized
+                ):
+                    if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED_WITH_CACHE.format(
+                        WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
+                        JOB_NAME_BASE64=Utils.to_base64(job_name),
+                    )
+                else:
+                    if_expression = (
+                        YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED
+                    )
             if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 

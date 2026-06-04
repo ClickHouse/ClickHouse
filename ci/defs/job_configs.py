@@ -1578,12 +1578,15 @@ class JobConfigs:
         name=JobNames.PROMQL_COMPLIANCE,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         run_in_docker="clickhouse/test-base",
-        requires=[
+        # Ordering only: wait for integration upload post-hooks; do not skip this job
+        # when unrelated integration shards fail (see run_unless_cancelled).
+        run_after=[
             j.name
             for j in (
                 integration_test_jobs_required + integration_test_jobs_non_required
             )
         ],
+        run_unless_cancelled=True,
         command="python3 ./ci/jobs/promql_compliance_job.py",
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
