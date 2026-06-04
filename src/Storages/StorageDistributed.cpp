@@ -980,23 +980,23 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             for (size_t i = 0; i < projection_nodes.size(); ++i)
             {
                 auto tree_hash = projection_nodes[i]->getTreeHash({.compare_aliases = false});
-                if (!seen_hashes.emplace(tree_hash).second)
-                {
-                    const auto & node_alias = projection_nodes[i]->getAlias();
-                    const auto & col_default = columns_description.getDefault(node_alias);
-                    if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
-                        continue;
+                if (seen_hashes.emplace(tree_hash).second)
+                    continue;
 
-                    auto unique_name = node_alias + "_" + std::to_string(i);
-                    projection_nodes[i]->removeAlias();
-                    auto name_node = std::make_shared<ConstantNode>(unique_name);
-                    auto wrapper = std::make_shared<FunctionNode>("__actionName");
-                    wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
-                    wrapper->getArguments().getNodes().push_back(std::move(name_node));
-                    wrapper->resolveAsFunction(action_name_resolver);
-                    wrapper->setAlias(node_alias);
-                    projection_nodes[i] = std::move(wrapper);
-                }
+                const auto & node_alias = projection_nodes[i]->getAlias();
+                const auto & col_default = columns_description.getDefault(node_alias);
+                if (!col_default || col_default->kind != ColumnDefaultKind::Alias)
+                    continue;
+
+                auto unique_name = node_alias + "_" + std::to_string(i);
+                projection_nodes[i]->removeAlias();
+                auto name_node = std::make_shared<ConstantNode>(unique_name);
+                auto wrapper = std::make_shared<FunctionNode>("__actionName");
+                wrapper->getArguments().getNodes().push_back(std::move(projection_nodes[i]));
+                wrapper->getArguments().getNodes().push_back(std::move(name_node));
+                wrapper->resolveAsFunction(action_name_resolver);
+                wrapper->setAlias(node_alias);
+                projection_nodes[i] = std::move(wrapper);
             }
         }
     }
