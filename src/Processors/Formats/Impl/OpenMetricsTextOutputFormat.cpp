@@ -306,8 +306,6 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
         return;
     }
 
-    wrote_exposition = true;
-
     auto write_attribute = [this](const char * marker, const String & value)
     {
         if (value.empty())
@@ -437,6 +435,7 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
     }
 
     std::optional<std::map<String, String>> labels;
+    row_write_in_progress = true;
     if (pos.labels.has_value())
     {
         if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(columns[*pos.labels].get()))
@@ -462,12 +461,14 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
 
     if (labels)
         row.labels = std::move(*labels);
+
+    row_write_in_progress = false;
 }
 
 void OpenMetricsTextOutputFormat::finalizeImpl()
 {
     flushCurrentMetric();
-    if (wrote_exposition)
+    if (!row_write_in_progress)
         writeCString("# EOF\n", out);
 }
 

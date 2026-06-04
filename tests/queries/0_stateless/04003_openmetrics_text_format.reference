@@ -21,6 +21,7 @@ d 4 0
 e 5 -9223372036854775.808
 
 # EOF
+# EOF
 demo_jobs_processed_total	42	Number of completed batch jobs	counter	{}	999000	seconds
 ingress_http_requests_total	7			{}	\N	
 demo_log_lines_total	1			{'k':'a\nb'}	\N	

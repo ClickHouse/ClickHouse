@@ -19,6 +19,9 @@ SELECT 'd' AS name, 4.0 AS value, CAST(0 AS Nullable(Int64)) AS timestamp FORMAT
 -- INT64_MIN written via bit math to avoid the literal being parsed as `-(UInt64{2^63})`.
 SELECT 'e' AS name, 5.0 AS value, CAST(bitShiftLeft(toInt64(1), 63) AS Nullable(Int64)) AS timestamp FORMAT OpenMetrics;
 
+-- Zero-row result still terminates the OpenMetrics stream with `# EOF`.
+SELECT 'm' AS name, 1.0 AS value WHERE 0 FORMAT OpenMetrics;
+
 -- Output schema validation: `timestamp` must be `Int64` (or `Nullable(Int64)`); other numeric
 -- types are rejected so the ms-as-seconds contract is unambiguous at the column level. The
 -- output format is instantiated client-side under `FORMAT`, so the rejection is a `clientError`.

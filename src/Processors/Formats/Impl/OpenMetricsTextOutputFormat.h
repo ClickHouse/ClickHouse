@@ -69,7 +69,9 @@ private:
 
     ColumnPositions pos;
     CurrentMetric current_metric;
-    bool wrote_exposition = false;
+    /// Set while assembling a row in `write()`; if still true when `finalizeImpl` runs, a
+    /// validation error aborted the row and the stream terminator must not be emitted.
+    bool row_write_in_progress = false;
     SerializationPtr string_serialization;
     const FormatSettings format_settings;
 };
