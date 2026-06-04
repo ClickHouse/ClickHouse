@@ -27,6 +27,7 @@
 
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -54,6 +55,11 @@ namespace CurrentMetrics
     extern const Metric DDLWorkerThreads;
     extern const Metric DDLWorkerThreadsActive;
     extern const Metric DDLWorkerThreadsScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredDistributedDDL;
 }
 
 namespace DB
@@ -399,7 +405,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         first_failed_task_name.reset();
     }
 
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
+    Strings queue_nodes = zookeeper->getChildrenWatch(
+        queue_dir,
+        &queue_node_stat,
+        Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL});
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
     /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
@@ -859,7 +868,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     Coordination::EventPtr event = std::make_shared<Poco::Event>();
     /// We must use exists request instead of get, because zookeeper will not setup event
     /// for non existing node after get request
-    if (zookeeper->exists(is_executed_path, nullptr, event))
+    if (zookeeper->existsWatch(is_executed_path, nullptr, Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL}))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
         if (auto op = task.getOpToUpdateLogPointer())
@@ -1159,7 +1168,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Value pushed_entry;
+        CurrentMetrics::Value pushed_entry = 0;
         readText(pushed_entry, in);
         pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
         CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);

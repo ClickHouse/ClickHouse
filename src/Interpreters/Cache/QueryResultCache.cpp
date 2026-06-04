@@ -148,7 +148,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);

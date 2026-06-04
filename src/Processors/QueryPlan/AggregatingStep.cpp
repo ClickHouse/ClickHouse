@@ -1068,7 +1068,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
@@ -1077,7 +1077,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
 
-    UInt64 num_keys;
+    UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
     Names keys(num_keys);
     for (auto & key : keys)
@@ -1086,12 +1086,12 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     GroupingSetsParamsList grouping_sets_params;
     if (has_grouping_sets)
     {
-        UInt64 num_groups;
+        UInt64 num_groups = 0;
         readVarUInt(num_groups, ctx.in);
         for (size_t group_num = 0; group_num < num_groups; ++group_num)
         {
             auto & grouping_set = grouping_sets_params.emplace_back();
-            UInt64 num_used_keys;
+            UInt64 num_used_keys = 0;
             readVarUInt(num_used_keys, ctx.in);
             grouping_set.used_keys.resize(num_used_keys);
             NameSet used_keys_set;
@@ -1206,6 +1206,7 @@ void AggregatingStep::setFinal(bool new_value)
     updateOutputHeader();
 }
 
+void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Aggregating", AggregatingStep::deserialize);
