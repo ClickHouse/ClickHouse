@@ -298,9 +298,9 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
 
 bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Columns & chunk_columns) const
 {
-    for (size_t key_idx = 0; key_idx < grouping_key_positions.size(); ++key_idx)
+    for (size_t key_idx = 0; key_idx < chunk_columns.size(); ++key_idx)
     {
-        if (chunk_columns[grouping_key_positions[key_idx]]->compareAt(0, 0, *previous_chunk_last_grouping_key_columns[key_idx], 1) != 0)
+        if (chunk_columns[key_idx]->compareAt(0, 0, *previous_chunk_last_grouping_key_columns[key_idx], 1) != 0)
             return false;
     }
     return true;
@@ -308,10 +308,9 @@ bool LimitBySortedStreamTransform::firstRowContinuesPreviousChunkGroup(const Col
 
 bool LimitBySortedStreamTransform::hasSameGroupingKeyAsPreviousRow(const Columns & chunk_columns, UInt64 row_idx) const
 {
-    for (size_t position : grouping_key_positions)
+    for (const auto & column : chunk_columns)
     {
-        const auto & column = *chunk_columns[position];
-        if (column.compareAt(row_idx, row_idx - 1, column, 1) != 0)
+        if (column->compareAt(row_idx, row_idx - 1, *column, 1) != 0)
             return false;
     }
     return true;
