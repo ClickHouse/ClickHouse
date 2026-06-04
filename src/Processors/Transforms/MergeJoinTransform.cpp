@@ -145,41 +145,29 @@ Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & ind
     return new_columns;
 }
 
-bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
-{
-    if (impl.isLast())
-        return false;
-
-    size_t pos = impl.getRow();
-    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
-    {
-        const auto * nm = getNullMapData(impl.null_maps[i]);
-        if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
-            return false;
-
-        if (nm && (*nm)[pos])
-            continue;
-
-        const auto & col = *impl.sort_columns[i];
-        if (auto cmp = col.compareAt(pos, pos + 1, col, 1); cmp != 0)
-            return false;
-    }
-    return true;
-}
-
 size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
     assert(impl.isValid());
-    size_t start_pos = impl.getRow();
-    while (sameNext(impl))
-    {
-        impl.next();
-    }
-    impl.next();
+    const size_t start_pos = impl.getRow();
+    size_t run_end = impl.rows;
 
-    if (impl.isValid())
-        return impl.getRow() - start_pos;
-    return impl.rows - start_pos;
+    /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
+    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+    {
+        const auto * nm = getNullMapData(impl.null_maps[i]);
+
+        if (nm)
+            run_end = impl.null_maps[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+
+        if (!nm || !(*nm)[start_pos])
+            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+
+        if (run_end <= start_pos + 1)
+            break;
+    }
+
+    impl.pos = run_end;
+    return run_end - start_pos;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
