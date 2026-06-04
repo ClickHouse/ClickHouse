@@ -125,6 +125,15 @@ public:
         /// serialized gamma defines the bins, so derive accuracy from it (inverse of the constructor)
         /// otherwise value() would mix the stored gamma with the accuracy from the aggregate type
         relative_accuracy = (gamma - 1) / (gamma + 1);
+        /// relative accuracy outside (0,1) will lead to huge gamma which will break on merge
+        if (!std::isfinite(relative_accuracy) || relative_accuracy <= 0.0 || relative_accuracy >= 1.0)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Invalid relative accuracy {} derived from gamma: {}",
+                relative_accuracy,
+                gamma);
+        }
         min_possible = std::numeric_limits<Float64>::min() * gamma;
         max_possible = std::numeric_limits<Float64>::max() / gamma;
     }
