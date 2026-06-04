@@ -3,9 +3,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
-#include <chrono>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -42,7 +40,7 @@ struct ACL
     static constexpr int32_t Admin = 16;
     static constexpr int32_t All = 0x1F;
 
-    int32_t permissions{};
+    int32_t permissions;
     String scheme;
     String id;
 
@@ -282,7 +280,7 @@ struct CheckWatchRequest : virtual Request
     };
 
     String path;
-    CheckWatchType type{};
+    CheckWatchType type;
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -307,7 +305,7 @@ struct RemoveWatchRequest : virtual Request
         PERSISTENT = 4,
         PERSISTENTRECURSIVE = 5,
         ANY = 3
-    } type{};
+    } type;
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -331,7 +329,7 @@ struct AddWatchRequest : virtual Request
     };
 
     String path;
-    AddWatchMode mode{};
+    AddWatchMode mode;
 
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
@@ -348,7 +346,7 @@ struct AddWatchResponse : virtual Response
 
 struct SetWatchesRequest : virtual Request
 {
-    int64_t zxid{};
+    int64_t zxid;
     std::vector<String> child_watches;
     std::vector<String> exist_watches;
     std::vector<String> data_watches;
@@ -620,7 +618,7 @@ struct ReconfigRequest : virtual Request
     String joining;
     String leaving;
     String new_members;
-    int32_t version{};
+    int32_t version;
 
     String getPath() const final { return keeper_config_path; }
 
@@ -762,13 +760,6 @@ public:
 
     virtual int64_t getLastZXIDSeen() const = 0;
 
-    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
-    /// last data received from the server (any kind: response, heartbeat, or
-    /// watch event). Used by progress-based timeout logic in sync wrappers.
-    /// Returns 0 (epoch) by default, meaning implementations without progress
-    /// tracking will fall back to plain timeout.
-    virtual Int64 getLastReceivedTimestamp() const { return 0; }
-
     virtual String tryGetAvailabilityZone() { return ""; }
 
     using WatchCallbackCreator = std::function<WatchCallback()>;
@@ -870,18 +861,9 @@ public:
     using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    struct WatchCreateInfo
-    {
-        std::chrono::system_clock::time_point create_time{};
-        XID request_xid{0};
-        OpNum op_num{OpNum::Error};
-    };
-
-    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
-
 protected:
     std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    mutable std::mutex watches_mutex;
+    std::mutex watches_mutex;
 };
 
 }

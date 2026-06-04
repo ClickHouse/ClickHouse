@@ -195,6 +195,9 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
+Use Parquet reader v3.
+)", 0) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
 )", 0) \
@@ -214,11 +217,8 @@ Verify page checksums when reading parquet files.
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
-Allow seeks (or range reads) while reading ORC, Parquet, and Arrow input formats.
-When enabled and the source supports it (e.g. local file, S3, HTTP with range support and known size),
-ClickHouse can read only the needed byte ranges and use less memory.
-When disabled, or when the source does not support seeks (e.g. no file size, or stream not seekable),
-some readers may fall back to loading the full file into memory.
+Allow seeks while reading in ORC/Parquet/Arrow input formats.
+
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
@@ -682,7 +682,7 @@ Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [Strin
 Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
     \
-    DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::BestEffort, R"(
+    DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
 Allows choosing a parser of the text representation of date and time.
 
 The setting does not apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
@@ -698,6 +698,8 @@ Possible values:
 - `'basic'` — Use basic parser.
 
     ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
+
+Cloud default value: `'best_effort'`.
 
 See also:
 
@@ -822,15 +824,6 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
 )", 0) \
     DECLARE(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
-)", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_connection_timeout, 1, R"(
-For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
-)", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_send_timeout, 1, R"(
-For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
-)", 0) \
-    DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
-For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
 )", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
@@ -1159,11 +1152,20 @@ Use Parquet String type instead of Binary for String columns.
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
 Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
+    DECLARE(ParquetVersion, output_format_parquet_version, "2.latest", R"(
+Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)
+)", 0) \
     DECLARE(ParquetCompression, output_format_parquet_compression_method, "zstd", R"(
 Compression method for Parquet output format. Supported codecs: snappy, lz4, brotli, zstd, gzip, none (uncompressed)
 )", 0) \
+    DECLARE(Bool, output_format_parquet_compliant_nested_types, true, R"(
+In parquet file schema, use name 'element' instead of 'item' for list elements. This is a historical artifact of Arrow library implementation. Generally increases compatibility, except perhaps with some old versions of Arrow.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_use_custom_encoder, true, R"(
+Use a faster Parquet encoder implementation.
+)", 0) \
     DECLARE(Bool, output_format_parquet_parallel_encoding, true, R"(
-Do Parquet encoding in multiple threads.
+Do Parquet encoding in multiple threads. Requires output_format_parquet_use_custom_encoder.
 )", 0) \
     DECLARE(UInt64, output_format_parquet_data_page_size, 1024 * 1024, R"(
 Target page size in bytes, before compression.
@@ -1175,7 +1177,7 @@ Check page size every this many rows. Consider decreasing if you have columns wi
 Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
-Write bloom filters in parquet files.
+Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
 )", 0) \
     DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
 Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
@@ -1206,6 +1208,9 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
     DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
 Put crc32 checksums in parquet page headers.
 )", 0) \
+    DECLARE(Bool, output_format_parquet_unsupported_types_as_binary, false, R"(
+Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1217,9 +1222,6 @@ For Avro format: regexp of String columns to select as AVRO string.
 )", 0) \
     DECLARE(UInt64, output_format_avro_rows_in_file, 1, R"(
 Max rows in a file (if permitted by storage)
-)", 0) \
-    DECLARE(String, output_format_avro_confluent_subject, "", R"(
-For AvroConfluent output format: the subject name under which the schema is registered in the Confluent Schema Registry. Required when writing AvroConfluent output.
 )", 0) \
     DECLARE(Bool, output_format_tsv_crlf_end_of_line, false, R"(
 If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
@@ -1235,17 +1237,10 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
-    DECLARE(UInt64, output_format_float_precision, 0, R"(
-When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
-When 0 (the default), use the shortest round-trip representation.
-
-Values too large for fixed notation, and values whose magnitude is so small that rounding to the requested precision would lose all significant digits (the mantissa would become `±0`), are emitted in scientific notation instead. In these fallback cases the mantissa may carry more than the requested number of fractional digits.
-
-Valid range: 0 to 100.
-)", 0) \
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
+    \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
@@ -1577,7 +1572,7 @@ Allow to write information about geo columns in parquet metadata and encode colu
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0) \
-    DECLARE(InputFormatColumnMatchingCaseSensitivity, input_format_column_name_matching_mode, FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO, R"(
+    DECLARE(InputFormatColumnMatchingCaseSensitivity, input_format_column_name_matching_mode, FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE, R"(
 Defines the column name matching mode when ingesting data through various formats (including but not limited to JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow, RowBinaryWithNames).
 Supported modes:
     - match_case: match case-sensitively
@@ -1595,11 +1590,6 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
-    MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
-    MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
-    MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \
-    MAKE_OBSOLETE(M, Bool, output_format_parquet_unsupported_types_as_binary, false) \
 
 #endif // __CLION_IDE__
 
