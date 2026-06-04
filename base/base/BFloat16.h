@@ -82,6 +82,11 @@ public:
         return !isFinite() && (x & 0b0000000001111111) != 0b0000000000000000;
     }
 
+    constexpr bool isInfinite() const
+    {
+        return (x & 0b0111111111111111) == 0b0111111110000000;
+    }
+
     constexpr bool signBit() const
     {
         return x & 0b1000000000000000;
