@@ -49,7 +49,10 @@ template <class ValueType>
 struct AggregateFunctionArgMinMaxDataGeneric
 {
 private:
-    SingleValueDataBaseMemoryBlock result_data;
+    /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
+    /// `DataTypePtr` constructor. Default-initializing with `{}` would zero the whole block on every
+    /// aggregate-state creation (hot for high-cardinality `GROUP BY`); skip it deliberately.
+    SingleValueDataBaseMemoryBlock result_data; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     ValueType value_data;
 
 public:
@@ -58,12 +61,13 @@ public:
     ValueType & value() { return value_data; }
     const ValueType & value() const { return value_data; }
 
-    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric()
+    [[noreturn]] AggregateFunctionArgMinMaxDataGeneric() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionArgMinMaxData initialized empty");
     }
 
-    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) : value_data()
+    explicit AggregateFunctionArgMinMaxDataGeneric(const DataTypePtr & result_type) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        : value_data()
     {
         generateSingleValueFromType(result_type, result_data);
     }
@@ -443,6 +447,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
 
 }
 
+void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinArgMax(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};

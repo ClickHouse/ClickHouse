@@ -1,3 +1,4 @@
+#include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
