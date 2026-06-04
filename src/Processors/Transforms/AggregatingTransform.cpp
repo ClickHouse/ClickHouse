@@ -991,6 +991,7 @@ void AggregatingTransform::consume(Chunk chunk)
             key.part_name = part_info->part_name;
             key.part_mutation_version = part_info->part_mutation_version;
 
+            /// PAC stores complete per-part states. After a hit, skip further chunks for this part key.
             if (partial_aggregate_cache_parts_served.contains(key))
                 return;
 

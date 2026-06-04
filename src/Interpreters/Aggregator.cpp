@@ -4250,6 +4250,9 @@ UInt64 partialAggregateCacheSemanticKey(
     if (select.with())
         return 0;
 
+    if (select.sampleSize())
+        return 0;
+
     /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
     if (hasJoinOrMutableTableInputs(select))
         return 0;

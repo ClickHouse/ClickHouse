@@ -191,7 +191,8 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
-    /// Part keys already merged via execution-time `PartialAggregateCache::get` hits.
+    /// Part keys for which a PAC hit already merged the complete per-part aggregate for this query hash.
+    /// Later raw chunks with the same key must be skipped to avoid double-counting (not a per-chunk cache).
     std::unordered_set<PartialAggregateCache::Key, PartialAggregateCache::KeyHasher> partial_aggregate_cache_parts_served;
 
     /// Per-part incremental aggregation on execution-time cache miss; `flushPartialAggregateMissBuffers` then `put` and merges into main variants.
