@@ -1,5 +1,6 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
@@ -7,6 +8,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -42,6 +44,7 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageSnapshot.h>
@@ -63,16 +66,13 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
             const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -94,6 +94,57 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
     buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -258,9 +309,7 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                auto hive_format_settings = format_settings;
-                hive_format_settings.allow_number_leading_zeros = true;
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
             }
         }
     }
@@ -299,7 +348,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -316,14 +366,17 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
+
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
             paths[i],
             /* idx */i,
-            getFormatSettings(context),
-            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
+            hive_format_settings,
+            parse_hive_columns);
     }
 
     filterBlockWithExpression(actions, block);
@@ -335,11 +388,18 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings)
 {
     HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+
+    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
+    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
+    const auto hive_format_settings = hive_map.empty()
+        ? FormatSettings{}
+        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -446,8 +506,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
-            FormatSettings hive_format_settings;
-            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
@@ -556,8 +614,24 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
                     /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
                     /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
+                    ///
+                    /// Use removeLowCardinalityAndNullable to get the nested scalar type's default
+                    /// (zero, not NULL).  DataTypeNullable::getDefault() returns Null(), but
+                    /// notEquals(x, NULL) always returns NULL (SQL three-valued logic), which is
+                    /// treated as false and would incorrectly filter out all rows/parts. See
+                    /// #101433 and #103049.  A LowCardinality wrapper must be stripped as well —
+                    /// removeNullable alone leaves LowCardinality(Nullable(X)) unchanged because
+                    /// the outer type is LowCardinality (not Nullable), so its getDefault falls
+                    /// through to the dictionary type's default which is Null again. See #104393.
+                    /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
+                    /// Nothing has no getDefault, so fall back to the Nullable default
+                    /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
                     ActionsDAG tmp_dag;
-                    auto zero_column = res->result_type->createColumnConst(1, res->result_type->getDefault());
+                    auto nested_type = removeLowCardinalityAndNullable(res->result_type);
+                    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
+                        ? res->result_type->getDefault()
+                        : nested_type->getDefault();
+                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
                     const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
@@ -742,6 +816,23 @@ Names filterVirtualColumns(
     if (result.empty())
         if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
             result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
 
     return result;
 }

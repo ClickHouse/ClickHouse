@@ -7,7 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from ci.jobs.scripts.clickhouse_proc import collect_and_encrypt_cores
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -97,7 +97,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     except Exception as e:
         logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
         relevant_tests = []
-        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.Status.OK, info=f"Skipped: {e}")
     logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
 
     # Merge all three sets preserving priority order (changed first)
@@ -225,16 +225,18 @@ def run_fuzz_job(check_name: str):
 
     # Fix file ownership after running docker as root
     logging.info("Fuzzer: Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
-    Shell.check(chown_cmd, verbose=True)
+    Utils.fix_ownership_after_docker(cwd, docker_image)
 
     server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
     paths = list(JOB_ARTIFACTS)
 
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
+
+    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
+    # Their contents are also merged into stderr.log/server.log, but upload the
+    # originals too for debugging truncated reports.
+    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
 
     server_died = False
     server_exit_code = 0
@@ -249,10 +251,17 @@ def run_fuzz_job(check_name: str):
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
         error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        # Runner may have aborted before writing status.tsv (e.g. early server
+        # abort); attach available artifacts (incl. sanitizer.log.*) so the report
+        # is not lost.
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                early_result.set_files(file)
+        early_result.complete_job()
 
     # parse runner script exit status
-    status = Result.Status.FAILED
+    status = Result.Status.FAIL
     info = []
     is_failed = True
     if server_died:
@@ -261,7 +270,7 @@ def run_fuzz_job(check_name: str):
     elif fuzzer_exit_code in (0, 137, 143):
         # normal exit with timeout or OOM kill
         is_failed = False
-        status = Result.Status.SUCCESS
+        status = Result.Status.OK
         if fuzzer_exit_code == 0:
             info.append("Fuzzer exited with success")
         elif fuzzer_exit_code == 137:
@@ -301,7 +310,7 @@ def run_fuzz_job(check_name: str):
             if sanitizer_oom:
                 print("Sanitizer OOM")
                 info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.SUCCESS
+                status = Result.Status.OK
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
@@ -332,7 +341,7 @@ def run_fuzz_job(check_name: str):
                 Result(
                     name=parsed_name,
                     info=parsed_info,
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     files=files,
                 )
             )
@@ -346,7 +355,7 @@ def run_fuzz_job(check_name: str):
     if is_failed:
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
-        result.set_files(collect_and_encrypt_cores(WORKSPACE_PATH, f"{cwd}/ci/defs/public.pem"))
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)

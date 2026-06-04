@@ -126,7 +126,7 @@ struct ZkNodeCache
     }
 };
 
-class ZooKeeperSink : public SinkToStorage
+class ZooKeeperSink final : public SinkToStorage
 {
     ContextPtr context;
     std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
@@ -251,7 +251,7 @@ private:
 };
 
 
-class SystemZooKeeperSource : public ISource
+class SystemZooKeeperSource final : public ISource
 {
 public:
     SystemZooKeeperSource(
@@ -351,16 +351,20 @@ ColumnsDescription StorageSystemZooKeeper::getColumnsDescription()
         {"path",           std::make_shared<DataTypeString>(), "The path to the node."},
     };
 
+    /// Mark read-only columns as MATERIALIZED with a constant expression to block INSERT
+    /// and ensure the attribute survives DDL serialization.
     for (auto & name : description.getAllRegisteredNames())
     {
         description.modify(name, [&](ColumnDescription & column)
         {
-            /// We only allow column `name`, `path`, `value` to insert.
             if (column.name != "name"
                 && column.name != "path"
                 && column.name != "value"
                 && column.name != "zookeeperName")
+            {
                 column.default_desc.kind = ColumnDefaultKind::Materialized;
+                column.default_desc.expression = make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(0)));
+            }
         });
     }
 
@@ -656,7 +660,7 @@ Chunk SystemZooKeeperSource::generate()
         if (zookeeper == zookeepers.end() || zookeeper->second->expired())
         {
             zookeepers[name] = ZooKeeperWithFaultInjection::createInstance(
-                settings[Setting::insert_keeper_fault_injection_probability],
+                static_cast<double>(settings[Setting::insert_keeper_fault_injection_probability]),
                 settings[Setting::insert_keeper_fault_injection_seed],
                 context->getDefaultOrAuxiliaryZooKeeper(name),
                 "",
@@ -670,7 +674,7 @@ Chunk SystemZooKeeperSource::generate()
     struct ListTask
     {
         String path;
-        ZkPathType path_type;
+        ZkPathType path_type{};
         String prefix;
         String path_corrected;
         String path_part;
