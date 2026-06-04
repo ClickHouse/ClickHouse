@@ -1,0 +1,8 @@
+-- Additional WHERE clause on skip index column. Expect vector index usage + skip index usage
+Description: vector_similarity GRANULARITY 10000
+Description: minmax GRANULARITY 1
+-- Run the query with use_skip_indexes_on_data_read=0/1 to verify
+1
+2
+1
+2
