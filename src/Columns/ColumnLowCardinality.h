@@ -312,9 +312,8 @@ public:
         }
     }
 
-    /// The distinct dictionary positions referenced by rows [offset, offset + limit),
-    /// in ascending order. Reads the index column's raw data directly, so it avoids a
-    /// per-row virtual/dispatch call.
+    /// The distinct dictionary positions used by rows [offset, offset + limit) of
+    /// getIndexes(), in first-seen order. Requires offset + limit <= getIndexes().size().
     PaddedPODArray<UInt64> getDistinctIndexes(size_t offset, size_t limit) const;
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }

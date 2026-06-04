@@ -634,29 +634,36 @@ ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 li
 
 PaddedPODArray<UInt64> ColumnLowCardinality::getDistinctIndexes(size_t offset, size_t limit) const
 {
-    const size_t dict_size = getDictionary().size();
-    PaddedPODArray<UInt8> seen(dict_size, 0);
+    /// De-duplicate the range's positions with a hash set sized to the range, so the
+    /// work and the memory are both O(limit): this never scans, allocates, or zero-fills
+    /// anything sized by the dictionary. That matters because the bloom aggregator calls
+    /// this once per granule over the same (large) block dictionary.
+    HashSet<UInt64> seen;
+    seen.reserve(limit);
+
+    PaddedPODArray<UInt64> distinct;
+    distinct.reserve(limit);
 
     const IColumn & indexes = getIndexes();
-    auto mark_seen = [&](const auto & positions)
+    auto collect_distinct = [&](const auto & positions)
     {
         for (size_t i = 0; i < limit; ++i)
-            seen[positions[offset + i]] = 1;
+        {
+            const UInt64 id = positions[offset + i];
+            if (seen.insert(id).second)
+                distinct.push_back(id);
+        }
     };
 
     switch (idx.getSizeOfIndexType())
     {
-        case sizeof(UInt8): mark_seen(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
-        case sizeof(UInt16): mark_seen(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
-        case sizeof(UInt32): mark_seen(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
-        case sizeof(UInt64): mark_seen(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        case sizeof(UInt8): collect_distinct(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): collect_distinct(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): collect_distinct(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): collect_distinct(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
         default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
     }
 
-    PaddedPODArray<UInt64> distinct;
-    for (size_t i = 0; i < dict_size; ++i)
-        if (seen[i])
-            distinct.push_back(i);
     return distinct;
 }
 
