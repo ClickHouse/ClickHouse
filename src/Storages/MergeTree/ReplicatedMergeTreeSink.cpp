@@ -1006,7 +1006,20 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             /// `/blocks/`, and it can not be inserted again.
             new_retry_controller.actionAfterLastFailedRetry([&]
             {
-                transaction.commit();
+                {
+                    /// While we were unable to verify in keeper whether the part was committed, the part could
+                    /// have been concurrently discarded by the restarting thread's failed-quorum cleanup
+                    /// (ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts). That moves the still
+                    /// PreActive part to detached and removes it from the working set under the parts lock,
+                    /// changing its state away from PreActive. In that case there is nothing left to commit, and
+                    /// trying to commit it would raise a "Part doesn't exist" logical error. Check the state under
+                    /// the parts lock so the decision cannot race with the cleanup.
+                    auto parts_lock = storage.lockParts();
+                    if (part->getState() == MergeTreeDataPartState::PreActive)
+                        transaction.commit(parts_lock);
+                    else
+                        transaction.clear();
+                }
                 storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
                 throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                         "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. "
