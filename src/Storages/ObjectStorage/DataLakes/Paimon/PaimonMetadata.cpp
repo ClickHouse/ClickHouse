@@ -179,7 +179,16 @@ DataLakeMetadataPtr PaimonMetadata::create(
     /// the user must DROP + re-CREATE the table with the desired setting.
     PaimonMetadataFilesCachePtr cache_ptr = nullptr;
     if (local_context->getSettingsRef()[Setting::use_paimon_metadata_files_cache])
+    {
         cache_ptr = local_context->getPaimonMetadataFilesCache();
+        if (cache_ptr && cache_ptr->maxSizeInBytes() == 0)
+        {
+            LOG_TRACE(
+                log,
+                "Not using in-memory cache for paimon metadata files, because the server cache size is 0.");
+            cache_ptr = nullptr;
+        }
+    }
     else
         LOG_TRACE(
             log,

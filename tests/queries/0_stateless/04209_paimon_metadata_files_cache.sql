@@ -80,3 +80,38 @@ WHERE log_comment = '04209-cache-on-hit'
 DROP TABLE paimon_cache_on;
 
 SYSTEM DROP PAIMON METADATA CACHE;
+
+-- ============ Table Function: cache ON, miss then hit ============
+-- Table functions create a fresh PaimonMetadata per query, but bind
+-- the same global cache with deterministic cache keys. Verify that
+-- the second paimonS3() call hits the cache populated by the first.
+
+SELECT count() FROM paimonS3(s3_conn, filename = 'paimon_all_types')
+SETTINGS use_paimon_metadata_files_cache = 1, log_comment = '04209-tf-miss'
+FORMAT Null;
+
+SELECT count() FROM paimonS3(s3_conn, filename = 'paimon_all_types')
+SETTINGS use_paimon_metadata_files_cache = 1, log_comment = '04209-tf-hit'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Expected: 1 1 (first query: hits == 0 AND misses > 0)
+SELECT
+    ProfileEvents['PaimonMetadataFilesCacheHits'] = 0,
+    ProfileEvents['PaimonMetadataFilesCacheMisses'] > 0
+FROM system.query_log
+WHERE log_comment = '04209-tf-miss'
+  AND type = 'QueryFinish'
+  AND current_database = currentDatabase();
+
+-- Expected: 1 1 (second query: hits > 0 AND misses == 0)
+SELECT
+    ProfileEvents['PaimonMetadataFilesCacheHits'] > 0,
+    ProfileEvents['PaimonMetadataFilesCacheMisses'] = 0
+FROM system.query_log
+WHERE log_comment = '04209-tf-hit'
+  AND type = 'QueryFinish'
+  AND current_database = currentDatabase();
+
+SYSTEM DROP PAIMON METADATA CACHE;
