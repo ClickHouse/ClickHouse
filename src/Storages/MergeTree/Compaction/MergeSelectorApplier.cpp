@@ -52,11 +52,10 @@ struct ChooseContext
     const bool aggressive;
 };
 
-MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
+MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type, bool apply_patch_parts)
 {
     auto create_choice = [&](PartsRange && parts, MergeType merge_type)
     {
-        const bool apply_patch_parts = ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
         PartsRange patch_parts = apply_patch_parts ? ctx.predicate.getPatchesToApplyOnMerge(parts) : PartsRange{};
         return MergeSelectorChoice{std::move(parts), std::move(patch_parts), merge_type};
     };
@@ -80,7 +79,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time, ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once]);
 
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop, ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]);
     }
 
     /// Delete rows - 2 priority
@@ -89,7 +88,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete, ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]);
     }
 
     /// Recompression - 3 priority
@@ -98,7 +97,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
         if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
-            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress, ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]);
     }
 
     return {};
@@ -163,7 +162,14 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 
     chassert(selector != nullptr);
     auto merge_ranges = selector->select(ctx.ranges, ctx.merge_constraints, ctx.range_filter);
-    return pack(ctx, std::move(merge_ranges), MergeType::Regular);
+
+    /// The manual selector predicts result part names from the scheduled data parts only, so the
+    /// produced part must not carry a patch version (which would make SYNC MERGES wait for a name
+    /// that never appears). Do not apply patches on manual merges; patches keep being applied on
+    /// the fly on reads and are materialized later by a normal merge or APPLY PATCHES.
+    const bool apply_patch_parts = algorithm.value != MergeSelectorAlgorithm::MANUAL
+        && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
+    return pack(ctx, std::move(merge_ranges), MergeType::Regular, apply_patch_parts);
 }
 
 }

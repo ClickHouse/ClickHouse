@@ -162,7 +162,6 @@ namespace ServerSetting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
-    extern const MergeTreeSettingsBool apply_patches_on_merge;
 }
 
 namespace ErrorCodes
@@ -2117,33 +2116,9 @@ void InterpreterSystemQuery::scheduleMerge(ASTSystemQuery & query)
     for (const auto & child : query.scheduled_merge_parts->children)
         parts_to_merge.emplace_back(child->as<ASTLiteral &>().value.safeGet<String>());
 
-    const auto data_parts = merge_tree.getDataPartsVectorForInternalUsage();
     ActiveDataPartSet active_set;
-    for (const auto & part : data_parts)
+    for (const auto & part : merge_tree.getDataPartsVectorForInternalUsage())
         active_set.add(part->info, part->name);
-
-    /// With apply_patches_on_merge a merge attaches pending patch parts, which fold their version
-    /// into the result name (e.g. all_1_2_1 becomes all_1_2_1_4). The manual selector predicts the
-    /// no-patch name, so the produced part would never match what was scheduled and SYNC MERGES
-    /// would hang. Reject up front, the same way other commands refuse parts with unapplied patches.
-    if ((*merge_tree.getSettings())[MergeTreeSetting::apply_patches_on_merge])
-    {
-        std::unordered_map<String, DataPartPtr> parts_by_name;
-        for (const auto & part : data_parts)
-            parts_by_name.emplace(part->name, part);
-
-        DataPartsVector scheduled_parts;
-        for (const auto & name : parts_to_merge)
-            if (auto it = parts_by_name.find(name); it != parts_by_name.end())
-                scheduled_parts.push_back(it->second);
-
-        if (!scheduled_parts.empty())
-        {
-            const auto & partition_id = scheduled_parts.front()->info.getPartitionId();
-            std::erase_if(scheduled_parts, [&](const auto & part) { return part->info.getPartitionId() != partition_id; });
-            merge_tree.assertNoPatchesForParts(scheduled_parts, merge_tree.getPatchPartsVectorForPartition(partition_id), "SCHEDULE MERGE");
-        }
-    }
 
     ManualMergeSelector::push(table_id, parts_to_merge, active_set);
     merge_tree.triggerBackgroundOperations();
