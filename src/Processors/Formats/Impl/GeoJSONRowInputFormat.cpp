@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/GeoJSONRowInputFormat.h>
 
 #include <array>
+#include <cmath>
 #include <unordered_set>
 
 #include <Columns/ColumnVariant.h>
@@ -31,23 +32,80 @@ namespace
 {
 
 
+/// Read a single number using the strict JSON grammar (RFC 8259) and return it as `Float64`.
+/// `readFloatText` is too permissive for validating JSON: it accepts non-JSON spellings such as
+/// `+1`, `.5`, `1.`, `+Inf` and `+NaN`, so a coordinate like `[+Inf, 0]` would be loaded as a
+/// `Geometry` instead of being rejected. This helper accepts only `-?(0|[1-9][0-9]*)(\.[0-9]+)?
+/// ([eE][+-]?[0-9]+)?` and additionally rejects values that overflow `Float64` to a non-finite
+/// result (e.g. a huge exponent like `1e400`).
+Float64 readStrictJSONNumber(ReadBuffer & buf)
+{
+    skipWhitespaceIfAny(buf);
+
+    String number;
+    auto peek = [&]() -> int { return buf.eof() ? -1 : static_cast<unsigned char>(*buf.position()); };
+    auto consume = [&]() { number += *buf.position(); ++buf.position(); };
+    auto is_digit = [](int c) { return c >= '0' && c <= '9'; };
+
+    if (peek() == '-')
+        consume();
+
+    int c = peek();
+    if (c == '0')
+        consume();
+    else if (c >= '1' && c <= '9')
+    {
+        consume();
+        while (is_digit(peek()))
+            consume();
+    }
+    else
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates");
+
+    if (peek() == '.')
+    {
+        consume();
+        if (!is_digit(peek()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates (missing fraction digits)");
+        while (is_digit(peek()))
+            consume();
+    }
+
+    c = peek();
+    if (c == 'e' || c == 'E')
+    {
+        consume();
+        c = peek();
+        if (c == '+' || c == '-')
+            consume();
+        if (!is_digit(peek()))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: invalid JSON number in coordinates (missing exponent digits)");
+        while (is_digit(peek()))
+            consume();
+    }
+
+    Float64 result = 0;
+    ReadBufferFromString number_buf(number);
+    readFloatText(result, number_buf);
+    if (!std::isfinite(result))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: coordinate value is not finite");
+    return result;
+}
+
 /// Reads a GeoJSON position [lon, lat, ...] into a Tuple{Float64, Float64}.
 Field readGeoJSONPoint(ReadBuffer & buf)
 {
     JSONUtils::skipArrayStart(buf);
 
-    Float64 lon;
-    Float64 lat;
-    readFloatText(lon, buf);
+    Float64 lon = readStrictJSONNumber(buf);
     JSONUtils::skipComma(buf);
-    readFloatText(lat, buf);
+    Float64 lat = readStrictJSONNumber(buf);
 
     /// Skip optional extra coordinates (e.g. altitude).
     while (!JSONUtils::checkAndSkipArrayEnd(buf))
     {
         JSONUtils::skipComma(buf);
-        Float64 ignored;
-        readFloatText(ignored, buf);
+        readStrictJSONNumber(buf);
     }
 
     return Tuple{lon, lat};
@@ -151,8 +209,16 @@ void skipJSONValueStrict(ReadBuffer & buf, const FormatSettings::JSON & json_set
     }
     else
     {
-        /// A scalar (string, number, boolean, or null) has no internal separators to validate.
-        skipJSONField(buf, "<ignored>", json_settings);
+        /// A scalar: string, boolean, null, or number. Strings/booleans/null have no internal
+        /// separators to validate, so the permissive `skipJSONField` is fine for them. Numbers,
+        /// however, must be validated against the strict JSON grammar even in ignored fields (e.g.
+        /// a skipped `bbox`), so that non-JSON spellings such as `+Inf` or `+NaN` are rejected
+        /// rather than silently tolerated in an otherwise-rejecting parser.
+        const char c = *buf.position();
+        if (c == '"' || c == 't' || c == 'f' || c == 'n')
+            skipJSONField(buf, "<ignored>", json_settings);
+        else
+            readStrictJSONNumber(buf);
     }
 }
 
@@ -236,6 +302,11 @@ void GeoJSONRowInputFormat::resetParser()
     IRowInputFormat::resetParser();
     first_row = true;
     done = false;
+    /// `StreamingFormatExecutor` reuses one parser across buffers (Kafka/FileLog/NATS/RabbitMQ/async
+    /// insert). The top-level `type` is validated per document, so the flag must be cleared too;
+    /// otherwise a later buffer missing the top-level `type` would inherit a stale `true` and skip
+    /// the missing-`type` exception in `readSuffix`.
+    top_level_type_validated = false;
 }
 
 void GeoJSONRowInputFormat::validateTopLevelTypeMember(ReadBuffer & buf)
@@ -424,12 +495,16 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
 
     String geo_type;
     String raw_coordinates;
+    String raw_geometries;
 
     forEachFieldInJSONObject(buf, format_settings.json, [&](const String & key)
     {
         if (key == "type") { readJSONString(geo_type, buf, format_settings.json); return true; }
         /// Always buffer coordinates as raw string so key order doesn't matter.
         if (key == "coordinates") { readJSONField(raw_coordinates, buf, format_settings.json); return true; }
+        /// `geometries` is the required member of a `GeometryCollection`; buffer it so we can verify
+        /// the object is well-formed even when it ends up being inserted as NULL.
+        if (key == "geometries") { readJSONField(raw_geometries, buf, format_settings.json); return true; }
         return false;
     });
 
@@ -447,6 +522,27 @@ void GeoJSONRowInputFormat::readGeometry(IColumn & col)
             /// Throw by default so that data is not silently lost; the user can opt into inserting NULL instead.
             if (format_settings.geojson.unsupported_geometry_handling == FormatSettings::UnsupportedGeometryHandling::Null)
             {
+                /// Even when the value is going to be inserted as NULL, validate that the object is a
+                /// well-formed GeoJSON geometry of its declared type, so truncated/malformed documents
+                /// are still rejected rather than being silently loaded as NULL.
+                if (geo_type == "MultiPoint")
+                {
+                    if (raw_coordinates.empty())
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "GeoJSON: geometry of type 'MultiPoint' is missing the 'coordinates' member");
+                    /// MultiPoint coordinates are an array of positions; parse them to validate the shape.
+                    ReadBufferFromString coord_buf(raw_coordinates);
+                    readGeoJSONLinearRing(coord_buf);
+                }
+                else if (geo_type == "GeometryCollection")
+                {
+                    if (raw_geometries.empty())
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "GeoJSON: geometry of type 'GeometryCollection' is missing the 'geometries' member");
+                }
+
                 variant_col.insertDefault();
                 return;
             }

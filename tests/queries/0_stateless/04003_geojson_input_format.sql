@@ -297,3 +297,69 @@ FROM format('GeoJSON', '{
     ]
 }'); -- { serverError INCORRECT_DATA }
 
+
+-- A MultiPoint without the required 'coordinates' member is malformed input and is rejected even
+-- with null handling, instead of being silently inserted as NULL.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "MultiPoint"}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- A GeometryCollection without the required 'geometries' member is rejected even with null handling.
+SELECT isNull(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "GeometryCollection"}, "properties": {}}
+    ]
+}')
+SETTINGS input_format_geojson_unsupported_geometry_handling = 'null'; -- { serverError INCORRECT_DATA }
+
+-- Coordinates must be strict JSON numbers: a non-finite value is rejected, not loaded as a Geometry.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [+Inf, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A 'NaN' coordinate (a non-JSON spelling) is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [NaN, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A '+1' coordinate (a non-JSON spelling with a leading plus) is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [+1, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A '.5' coordinate (a non-JSON spelling missing the integer part) is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [.5, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
+
+-- A coordinate that overflows Float64 to infinity (huge exponent) is rejected.
+SELECT variantType(geometry)
+FROM format('GeoJSON', '{
+    "type": "FeatureCollection",
+    "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1e400, 0]}, "properties": {}}
+    ]
+}'); -- { serverError INCORRECT_DATA }
