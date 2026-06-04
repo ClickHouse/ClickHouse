@@ -190,6 +190,16 @@ public:
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
     }
 
+    /// Returns whether a sample taken at `sample_timestamp` still falls within the trailing window
+    /// of size `window` ending at `current_timestamp`, i.e. `sample_timestamp + window > current_timestamp`.
+    /// The addition is performed in 128-bit arithmetic to avoid signed overflow of `TimestampType`
+    /// when `sample_timestamp` and `window` are near the `Int64` boundaries (reachable from adversarial
+    /// AST fuzzer inputs), which would trip UBSAN.
+    bool isWithinWindow(TimestampType sample_timestamp, TimestampType current_timestamp) const
+    {
+        return static_cast<Int128>(sample_timestamp) + static_cast<Int128>(window) > static_cast<Int128>(current_timestamp);
+    }
+
     static const State * data(ConstAggregateDataPtr __restrict place)
     {
         return reinterpret_cast<const State *>(place);
