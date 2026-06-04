@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -66,7 +67,8 @@ public:
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false,
-        bool allow_attach_while_readonly_ = false);
+        bool allow_attach_while_readonly_ = false,
+        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt);
 
     ~ReplicatedMergeTreeSink() override;
 
@@ -147,6 +149,7 @@ protected:
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     bool is_async_insert = true;
     InsertDeduplicationVersions insert_deduplication_version = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;

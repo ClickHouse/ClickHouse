@@ -423,13 +423,13 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
-    int start_version;
+    int start_version = 0;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
     auto & nodes_info = cluster_info.nodes_info;
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
-        int current_version;
+        int current_version = 0;
         getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
 
         if (current_version != start_version)
@@ -470,9 +470,7 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     if (nodes_info.empty())
     {
-        String name = cluster_info.name;
-        /// cluster_info removed inside removeCluster, can't use reference to name.
-        removeCluster(name);
+        removeCluster(cluster_info.name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
         return true;
     }
 
@@ -483,15 +481,21 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     return true;
 }
 
-void ClusterDiscovery::removeCluster(const String & name)
+void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
 {
     {
         std::lock_guard lock(mutex);
         cluster_impls.erase(name);
     }
-    clusters_to_update->remove(name);
-    get_nodes_callbacks.erase(name);
-    LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
+    /// For static clusters (defined in config), `clusters_to_update` and `get_nodes_callbacks`
+    /// are initialized once at startup and must persist so the cluster can be re-registered after
+    /// a ZooKeeper session loss. Dynamic clusters own their entries and must clean them up.
+    if (is_dynamic)
+    {
+        clusters_to_update->remove(name);
+        get_nodes_callbacks.erase(name);
+        LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
+    }
 }
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
@@ -719,7 +723,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             clusters_to_insert.insert(cluster_name);
 
         for (const auto & cluster_name : clusters_to_remove)
-            removeCluster(cluster_name);
+            removeCluster(cluster_name, /* is_dynamic_cluster */true);
 
         clusters_info.merge(new_dynamic_clusters_info);
 
