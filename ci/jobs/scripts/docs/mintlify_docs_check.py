@@ -2,32 +2,32 @@
 """
 Run the Mintlify docs checks for a slice of a larger docs site.
 
-Self-contained: a consuming repo vendors only this file. The host needs
-``docker``, ``git`` and ``python3`` -- ``mint`` is provided by the docs image,
-never installed locally.
+Run this inside the docs image (``clickhouse/docs-builder``), which provides
+``mint`` along with ``git`` and ``python3``; nothing is installed locally. A
+consuming repo vendors nothing -- its CI runs the image as the job container,
+fetches this one file from the aggregator, and runs it.
 
 Steps:
-  1. Pull the docs image (``clickhouse/docs-builder`` by default).
-  2. Shallow + sparse clone the aggregator docs repo (``docs`` and the docs CI
-     scripts at ``ci/jobs/scripts/docs``).
-  3. Replace one or more folders in it with local folders (e.g. drop the
+  1. Shallow + sparse clone the aggregator docs repo (the docs root and the
+     docs CI scripts at ``ci/jobs/scripts/docs``).
+  2. Replace one or more folders in it with local folders (e.g. drop the
      locally edited Python client docs over
      ``integrations/language-clients/python``). The destination is wiped first,
      so deletions and renames in the local source are reflected -- the docs sync
      is one-way, so the checks see exactly what the next sync would produce.
-  4. Run the checks inside the image against the resulting docs.
+  3. Run the checks from the docs root against the resulting docs.
 
 The check definitions live in ``DEFAULT_CHECKS`` so they are declared once and
-shared: this driver runs them via ``docker run``, while the Praktika job
-(``ci/jobs/docs_job_mintlify.py``) imports the same list and runs them natively
-inside the container. Add a new check here and both pick it up.
+shared: this driver runs them directly, as does the Praktika job
+(``ci/jobs/docs_job_mintlify.py``), which imports the same list. Add a new check
+here and both pick it up.
 
-A check can be any shell command, including ``python3 <script>``. The clone
-root is mounted into the container and checks run from the docs root, so a
-Python check script committed at ``ci/jobs/scripts/docs`` is referenced relative
-to the docs root -- ``python3 ../ci/jobs/scripts/docs/foo.py`` -- which resolves
-identically here and in the Praktika job. A consuming repo therefore gets those
-scripts for free from the clone; it never needs to vendor them.
+A check can be any shell command, including ``python3 <script>``. Checks run
+from the docs root, so a Python check script committed at
+``ci/jobs/scripts/docs`` is referenced relative to the docs root --
+``python3 ../ci/jobs/scripts/docs/foo.py`` -- which resolves because the sparse
+clone includes that directory. A consuming repo therefore gets those scripts
+for free from the clone; it never needs to vendor them.
 """
 
 import argparse
@@ -38,9 +38,9 @@ import subprocess
 import sys
 import tempfile
 
-# The checks to run (name, shell command), executed from the docs root inside
-# the image. Kept here, independent of any CI framework, as the single source
-# of truth shared with the Praktika job.
+# The checks to run (name, shell command), executed from the docs root. Kept
+# here, independent of any CI framework, as the single source of truth shared
+# with the Praktika job.
 #
 # A command may invoke a Python check script committed at ci/jobs/scripts/docs,
 # referenced relative to the docs root, e.g.:
@@ -88,22 +88,17 @@ def replace(src, dest):
     shutil.copytree(src, dest)
 
 
-def check_in_image(image, mount_root, workdir, name, command):
-    # Mount the whole clone root (not just the docs root) so check commands can
-    # reach sibling CI scripts (e.g. ../ci/jobs/scripts/docs) the same way the
-    # native Praktika run does. Checks still run from the docs root.
+def run_check(docs_root, name, command):
+    # Checks run from the docs root. A command may reach a sibling CI script via
+    # the docs root (e.g. ../ci/jobs/scripts/docs/foo.py); that path resolves
+    # because the sparse clone includes ci/jobs/scripts/docs. `mint` and friends
+    # come from the docs image this script is expected to run inside.
     print(f"\n=== {name} ===", flush=True)
-    return run(
-        ["docker", "run", "--rm", "-v", f"{mount_root}:/work", "-w", f"/work/{workdir}",
-         image, "sh", "-lc", command]
-    ).returncode == 0
+    return run(["sh", "-lc", command], cwd=docs_root).returncode == 0
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--image", default="clickhouse/docs-builder",
-                   help="Docker image providing mint (default: %(default)s).")
-    p.add_argument("--no-pull", action="store_true", help="Skip docker pull.")
     p.add_argument("--repo", required=True,
                    help="Aggregator docs repo to shallow/sparse clone.")
     p.add_argument("--ref", default="HEAD", help="Branch/tag/sha (default: HEAD).")
@@ -117,9 +112,6 @@ def main(argv=None):
                         "SRC, wiping DEST first; repeatable.")
     p.add_argument("--workdir", help="Where to clone (default: a temp dir).")
     args = p.parse_args(argv)
-
-    if not args.no_pull:
-        run(["docker", "pull", args.image], check=True)
 
     base = args.workdir or tempfile.mkdtemp(prefix="docs-check-")
     clone_dir = os.path.abspath(os.path.join(base, "aggregator"))
@@ -136,7 +128,7 @@ def main(argv=None):
             raise ValueError(f"Invalid --replace '{spec}'. Expected SRC:DEST.")
         replace(parts[0], os.path.join(docs_root, parts[1]))
 
-    results = [(name, check_in_image(args.image, clone_dir, args.docs_root, name, command))
+    results = [(name, run_check(docs_root, name, command))
                for name, command in DEFAULT_CHECKS]
 
     print("\n=== Summary ===", flush=True)
