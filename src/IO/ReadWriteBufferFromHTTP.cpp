@@ -745,6 +745,14 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
+    /// A request that carries a body (e.g. a POST whose payload is produced by `out_stream_callback`)
+    /// has no meaningful static file metadata to probe. Issuing a HEAD request here would re-send the
+    /// body — re-executing any subquery that generates it — and, since a HEAD with a streaming body
+    /// typically fails, it would be retried with exponential backoff, turning a normal read into a
+    /// multi-second hang. Skip the probe in that case: the response is read as a non-seekable stream.
+    if (out_stream_callback)
+        return HTTPFileInfo{};
+
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
     if (!read_settings.http_settings.make_head_request)
