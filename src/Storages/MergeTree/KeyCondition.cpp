@@ -944,30 +944,13 @@ static const ActionsDAG::Node * tryRewriteCoalesceComparison(
     return &inverted_dag.addFunction(or_func, std::move(or_children), "");
 }
 
-/// Boolean-producing functions: the only ones that legitimately appear in a WHERE/PREWHERE boolean
-/// position. Used to restrict `tryRewriteCoalesceBoolean` below so a value-context wrapper (e.g.
-/// `ifNull(col, 5)` as an argument of a comparison) is left to `tryRewriteCoalesceComparison`.
-static bool isBooleanProducingFunction(const String & name)
-{
-    static const std::unordered_set<std::string_view> names = {
-        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
-        "in", "notIn", "globalIn", "globalNotIn",
-        "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
-        "like", "notLike", "ilike", "notILike", "match",
-        "startsWith", "startsWithUTF8", "endsWith",
-        "isNull", "isNotNull", "empty", "notEmpty",
-        "and", "or", "not",
-    };
-    return names.contains(name);
-}
-
-/// Rewrite a truth-tested `ifNull(<predicate>, 0)` / `coalesce(<predicate>, 0)` to `<predicate>` for
-/// key analysis, so the inner comparison becomes a prunable key atom. `ifNull(X, 0)` has the same
-/// truthiness as `X` but not the same value, so the caller restricts this to non-inverted
-/// (`need_inversion == false`) boolean position (`boolean_context == true`); under `NOT` or as a value
-/// argument like `equals(ifNull(X, 0), 0)` it would change the result on NULL rows. Also requires a
-/// falsy (numeric zero) fallback and a boolean-producing inner function; returns nullptr otherwise.
-/// Two-argument form only. Complements `tryRewriteCoalesceComparison`.
+/// Rewrite a truth-tested `ifNull(X, 0)` / `coalesce(X, 0)` to `X` for key analysis, so the wrapped
+/// predicate becomes a prunable key atom. `ifNull(X, 0)` is truthy exactly when `X` is truthy, for any
+/// `X`, so no whitelist of inner functions is needed; but its value differs from `X` on NULL rows, so
+/// the caller restricts this to non-inverted (`need_inversion == false`) boolean position
+/// (`boolean_context == true`); under `NOT` or as a value argument like `equals(ifNull(X, 0), 0)` the
+/// rewrite would change the result. Also requires a falsy (numeric zero) constant fallback; returns
+/// nullptr otherwise. Two-argument form only. Complements `tryRewriteCoalesceComparison`.
 static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
     const ActionsDAG::Node & node,
     const String & name,
@@ -983,10 +966,6 @@ static const ActionsDAG::Node * tryRewriteCoalesceBoolean(
 
     const ActionsDAG::Node * predicate = node.children[0];
     const ActionsDAG::Node * fallback = node.children[1];
-
-    if (predicate->type != ActionsDAG::ActionType::FUNCTION
-        || !isBooleanProducingFunction(predicate->function_base->getName()))
-        return nullptr;
 
     if (fallback->type != ActionsDAG::ActionType::COLUMN || !fallback->column || !isColumnConst(*fallback->column))
         return nullptr;
@@ -1202,13 +1181,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     return *res;
 }
 
-static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context)
+static ActionsDAG cloneDAGWithInversionPushDown(const ActionsDAG::Node * predicate, const ContextPtr & context, bool boolean_context)
 {
     ActionsDAG res;
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> inputs_mapping;
 
-    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false, /* boolean_context */ true);
+    predicate = &DB::cloneDAGWithInversionPushDown(*predicate, res, inputs_mapping, context, false, boolean_context);
 
     res.getOutputs() = {predicate};
 
@@ -1314,7 +1293,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
     }
 }
 
-ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context)
+ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context)
 {
     if (!predicate_)
         return;
@@ -1326,7 +1305,7 @@ ActionsDAGWithInversionPushDown::ActionsDAGWithInversionPushDown(const ActionsDA
     * To overcome the problem, before parsing the AST we transform it to its semantically equivalent form where all NOT's
     * are pushed down and applied (when possible) to leaf nodes.
     */
-    dag = cloneDAGWithInversionPushDown(predicate_, context);
+    dag = cloneDAGWithInversionPushDown(predicate_, context, boolean_context);
 
     predicate = dag->getOutputs()[0];
 }

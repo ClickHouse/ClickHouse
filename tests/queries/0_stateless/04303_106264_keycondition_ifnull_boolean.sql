@@ -35,6 +35,15 @@ SELECT countIf(explain ILIKE '%k in 1-element set%') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0));
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(globalNullIn(k, (0)), 0);
 
+-- The rewrite has no inner-function whitelist (truthiness of ifNull(X, 0) equals truthiness of X for
+-- any X), so other indexable predicates work too, e.g. `has`, which KeyCondition turns into a set
+-- (printed as "k in 2-element set"). 80000 rows have k in {0, 3}.
+SELECT countIf(explain ILIKE '%k in 2-element set%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND has([0, 3], k));
+SELECT countIf(explain ILIKE '%k in 2-element set%') FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0));
+SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(has([0, 3], k), 0);
+
 -- Inversion guardrail with an INDEXED nullable key (granularity 1 so each row is its own granule).
 -- The non-inverted wrapper must build a `k` range; the inverted `NOT ifNull(...)` must not, because
 -- under NOT the wrapper is not equivalent to the bare comparison on NULL rows. A regressed
