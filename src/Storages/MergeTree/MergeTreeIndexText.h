@@ -267,6 +267,10 @@ struct TextIndexHeader
     {
         Initial = 0,
         WithCodec = 1,
+        /// Token info carries positional metadata (`position_offset`, `position_entries`) and a separate
+        /// `.pos` substream. Written only when `enable_phrase_query_support` is set so that binaries
+        /// predating phrase search reject such parts with a clean error instead of misparsing them.
+        WithPositions = 2,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
@@ -290,7 +294,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr, bool has_positions = false);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.

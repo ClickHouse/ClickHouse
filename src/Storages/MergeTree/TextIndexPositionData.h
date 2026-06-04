@@ -77,6 +77,7 @@ public:
 
     size_t size() const { return entries.size(); }
     bool empty() const { return entries.empty(); }
+    size_t memoryUsageBytes() const { return entries.capacity() * sizeof(RoaringishEntry); }
     const std::vector<RoaringishEntry> & getEntries() const { return entries; }
     std::vector<RoaringishEntry> & getEntries() { return entries; }
 

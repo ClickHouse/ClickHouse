@@ -1075,9 +1075,9 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, WriteBuffer & ostr, bool has_positions)
 {
-    UInt64 version = static_cast<UInt64>(TextIndexHeader::Version::WithCodec);
+    UInt64 version = static_cast<UInt64>(has_positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
     writeVarUInt(version, ostr);
@@ -1099,7 +1099,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithCodec))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1418,7 +1418,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         tokens_and_positions,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, index_stream->compressed_hashing, params.enable_phrase_query_support);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1432,11 +1432,22 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
     for (const auto & plist : posting_lists)
         posting_lists_size += plist.getSizeInBytes();
 
+    /// Position data (only present when `enable_phrase_query_support` is set) can be large:
+    /// the `position_map` owns the per-token `RoaringishEntry` lists, and `tokens_and_positions`
+    /// holds one `(string_view, PositionListBuilder *)` pair per token.
+    size_t positions_size = tokens_and_positions.capacity() * sizeof(SortedTokensAndPositions::value_type);
+    if (position_map)
+    {
+        positions_size += position_map->getBufferSizeInBytes();
+        position_map->forEachValue([&](const auto &, const auto & builder) { positions_size += builder.memoryUsageBytes(); });
+    }
+
     return sizeof(*this)
         /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
         + tokens_and_postings.capacity() * sizeof(SortedTokensAndPostings::value_type)
         + tokens_map.getBufferSizeInBytes()
         + posting_lists_size
+        + positions_size
         + arena->allocatedBytes();
 }
 
