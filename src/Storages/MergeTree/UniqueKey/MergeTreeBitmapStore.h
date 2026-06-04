@@ -40,6 +40,17 @@ public:
         BitmapVersion csn,
         const DeleteBitmap & bitmap);
 
+    /// Storage-level overload. The `IMergeTreeDataPart` version forwards to
+    /// this one after unpacking `part_id` and `part_name`. Exposed so unit
+    /// tests can exercise the install path without constructing a real
+    /// part. Same contract.
+    void installBitmap(
+        IDataPartStorage & storage,
+        const std::string & part_id,
+        const std::string & part_name,
+        BitmapVersion csn,
+        const DeleteBitmap & bitmap);
+
     /// Pick the bitmap visible at `snapshot_csn` for `(storage, part_id)`:
     /// the file with `max csn ≤ snapshot_csn`, or (empty non-null
     /// bitmap, 0) if none. The returned csn is the bitmap's csn.

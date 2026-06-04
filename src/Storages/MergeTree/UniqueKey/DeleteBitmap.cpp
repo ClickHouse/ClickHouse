@@ -446,6 +446,11 @@ bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
     return fileNameForCsn(parsed) == file_name;
 }
 
+bool DeleteBitmap::hasDeleteBitmapPrefix(std::string_view file_name)
+{
+    return file_name.starts_with(FILE_PREFIX);
+}
+
 BitmapVersion DeleteBitmap::parseCsnFromFileName(std::string_view file_name)
 {
     /// Caller is expected to have screened the name via `isDeleteBitmapFile`.

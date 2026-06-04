@@ -55,15 +55,6 @@ namespace
         }
 
         std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
-
-        void writeBitmap(UInt64 csn, UInt64 row) const
-        {
-            DeleteBitmap bm;
-            bm.add(row);
-            WriteBufferFromFile out(partFile(DeleteBitmap::fileNameForCsn(csn)).string());
-            bm.serialize(out);
-            out.finalize();
-        }
     };
 
     DeleteBitmapCache makeCache(size_t bytes = 8 * 1024 * 1024)
@@ -74,6 +65,13 @@ namespace
             CurrentMetrics::DeleteBitmapCacheEntries,
             /*max_size_in_bytes=*/bytes,
             /*size_ratio=*/0.5);
+    }
+
+    DeleteBitmap bitmapWithRow(UInt64 row)
+    {
+        DeleteBitmap bm;
+        bm.add(row);
+        return bm;
     }
 }
 
@@ -90,11 +88,10 @@ TEST(MergeTreeBitmapStoreTest, ReadBitmapEmptyDirReturnsZero)
 TEST(MergeTreeBitmapStoreTest, ReadBitmapPicksMaxLeqSnapshot)
 {
     PartStorageFixture fx;
-    fx.writeBitmap(3, 30);
-    fx.writeBitmap(7, 70);
-    fx.writeBitmap(10, 100);
-
     MergeTreeBitmapStore store{/*cache=*/nullptr};
+    store.installBitmap(*fx.storage, "p", "part", 3, bitmapWithRow(30));
+    store.installBitmap(*fx.storage, "p", "part", 7, bitmapWithRow(70));
+    store.installBitmap(*fx.storage, "p", "part", 10, bitmapWithRow(100));
 
     /// snapshot above the last installed csn → newest.
     {
@@ -125,10 +122,9 @@ TEST(MergeTreeBitmapStoreTest, ReadBitmapPicksMaxLeqSnapshot)
 TEST(MergeTreeBitmapStoreTest, ReadBitmapUsesCache)
 {
     PartStorageFixture fx;
-    fx.writeBitmap(/*csn=*/11, /*row=*/77);
-
     auto cache = makeCache();
     MergeTreeBitmapStore store{&cache};
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/11, bitmapWithRow(77));
 
     auto [first, _v1] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
     auto [second, _v2] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
@@ -138,12 +134,12 @@ TEST(MergeTreeBitmapStoreTest, ReadBitmapUsesCache)
 TEST(MergeTreeBitmapStoreTest, GcObsoleteRemovesVbWhenVnextLeqOldest)
 {
     PartStorageFixture fx;
-    fx.writeBitmap(3, 30);
-    fx.writeBitmap(5, 50);
-    fx.writeBitmap(7, 70);
-    fx.writeBitmap(10, 100);
-
     MergeTreeBitmapStore store{/*cache=*/nullptr};
+    store.installBitmap(*fx.storage, "p", "part", 3, bitmapWithRow(30));
+    store.installBitmap(*fx.storage, "p", "part", 5, bitmapWithRow(50));
+    store.installBitmap(*fx.storage, "p", "part", 7, bitmapWithRow(70));
+    store.installBitmap(*fx.storage, "p", "part", 10, bitmapWithRow(100));
+
     /// (3,5) and (5,7) qualify; (7,10) keeps 7 because V_next=10 > 7.
     /// 10 is the newest committed → never V_b.
     EXPECT_EQ(store.gcObsoleteBitmaps(*fx.storage, "p", /*committed_csn=*/10, /*oldest_snapshot_csn=*/7), 2u);
@@ -161,11 +157,11 @@ TEST(MergeTreeBitmapStoreTest, GcObsoleteRespectsCommittedFilter)
     /// In-flight bitmap (csn > committed_csn) must not act as V_next —
     /// otherwise GC would unlink its committed predecessor.
     PartStorageFixture fx;
-    fx.writeBitmap(3, 30);
-    fx.writeBitmap(5, 50);
-    fx.writeBitmap(100, 1000);
-
     MergeTreeBitmapStore store{/*cache=*/nullptr};
+    store.installBitmap(*fx.storage, "p", "part", 3, bitmapWithRow(30));
+    store.installBitmap(*fx.storage, "p", "part", 5, bitmapWithRow(50));
+    store.installBitmap(*fx.storage, "p", "part", 100, bitmapWithRow(1000));
+
     EXPECT_EQ(store.gcObsoleteBitmaps(
         *fx.storage, "p",
         /*committed_csn=*/5, /*oldest_snapshot_csn=*/std::numeric_limits<UInt64>::max()), 1u);
@@ -181,10 +177,9 @@ TEST(MergeTreeBitmapStoreTest, GcObsoleteRespectsCommittedFilter)
 TEST(MergeTreeBitmapStoreTest, DropPartErasesInMemoryStateAndCache)
 {
     PartStorageFixture fx;
-    fx.writeBitmap(/*csn=*/9, /*row=*/90);
-
     auto cache = makeCache();
     MergeTreeBitmapStore store{&cache};
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/9, bitmapWithRow(90));
 
     auto [bm_first, _v_first] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
     store.dropPart("p");
@@ -196,6 +191,59 @@ TEST(MergeTreeBitmapStoreTest, DropPartErasesInMemoryStateAndCache)
     /// shared_ptr was invalidated so this is a fresh object.
     auto [bm_after, _v_after] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
     EXPECT_NE(bm_after.get(), bm_first.get());
+}
+
+TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityAborts)
+{
+    /// Death-test: the LOGICAL_ERROR aborts in debug/sanitizer builds and
+    /// throws otherwise — both terminate the forked child, which is what
+    /// EXPECT_DEATH expects.
+    PartStorageFixture fx;
+    MergeTreeBitmapStore store{/*cache=*/nullptr};
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
+
+    EXPECT_DEATH(
+        store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)),
+        "must be strictly greater");
+    EXPECT_DEATH(
+        store.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(3)),
+        "must be strictly greater");
+}
+
+TEST(MergeTreeBitmapStoreTest, InstallBitmapAfterDropPartReseesAllVersions)
+{
+    PartStorageFixture fx;
+    MergeTreeBitmapStore store{/*cache=*/nullptr};
+
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/3, bitmapWithRow(30));
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/7, bitmapWithRow(70));
+
+    /// `dropPart` clears the in-memory index but never touches disk;
+    /// the next install must rebuild from disk truth, not from {csn} alone.
+    store.dropPart("p");
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/9, bitmapWithRow(90));
+
+    auto [bm_mid, chosen_mid] = store.readBitmap(*fx.storage, /*snapshot_csn=*/5, "p");
+    EXPECT_EQ(chosen_mid, 3u);
+    EXPECT_TRUE(bm_mid->contains(30));
+
+    auto [bm_latest, chosen_latest] = store.readBitmap(*fx.storage, /*snapshot_csn=*/100, "p");
+    EXPECT_EQ(chosen_latest, 9u);
+    EXPECT_TRUE(bm_latest->contains(90));
+}
+
+TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityHoldsAcrossDropPart)
+{
+    /// The monotonicity check re-snapshots from disk after a drop, so
+    /// reinstalling an existing on-disk csn still aborts.
+    PartStorageFixture fx;
+    MergeTreeBitmapStore store{/*cache=*/nullptr};
+    store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
+    store.dropPart("p");
+
+    EXPECT_DEATH(
+        store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)),
+        "must be strictly greater");
 }
 
 TEST(MergeTreeBitmapStoreTest, CorruptFileSurfacesError)

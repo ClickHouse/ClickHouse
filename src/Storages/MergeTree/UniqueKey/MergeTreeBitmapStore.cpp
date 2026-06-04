@@ -76,28 +76,36 @@ void MergeTreeBitmapStore::installBitmap(
     BitmapVersion csn,
     const DeleteBitmap & bitmap)
 {
-    const std::string part_id = part.getDeleteBitmapCacheIdentity();
-    auto & storage = const_cast<IDataPartStorage &>(part.getDataPartStorage());
+    installBitmap(
+        const_cast<IDataPartStorage &>(part.getDataPartStorage()),
+        part.getDeleteBitmapCacheIdentity(),
+        part.name,
+        csn,
+        bitmap);
+}
 
-    /// `snapshotCsns` returns a local copy so the monotonicity check is
-    /// immune to `dropPart` racing between this read and the check. The
-    /// caller's per-partition UK mutex guarantees no concurrent install
-    /// on this part, so disk for `part_id` cannot grow between the
-    /// snapshot and the check.
+void MergeTreeBitmapStore::installBitmap(
+    IDataPartStorage & storage,
+    const std::string & part_id,
+    const std::string & part_name,
+    BitmapVersion csn,
+    const DeleteBitmap & bitmap)
+{
+    /// Check against the local snapshot (not the map); the caller's
+    /// per-partition mutex serializes installs, so the snapshot is the
+    /// authoritative pre-install state even if `dropPart` races.
     auto pre_install_csns = snapshotCsns(storage, part_id);
     if (!pre_install_csns.empty() && csn <= pre_install_csns.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Bitmap version {} for part {} must be strictly greater "
             "than the latest installed version {}",
-            csn, part.name, pre_install_csns.back());
+            csn, part_name, pre_install_csns.back());
 
-    DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part.name);
+    DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part_name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
-    /// Refresh from disk under unique_lock — a racing `dropPart`+reader
-    /// pair can leave `csns_per_part[part_id]` in any of (absent,
-    /// pre-write list, pre-write + csn). Re-enumerate so the published
-    /// list matches disk truth regardless.
+    /// Rebuild the in-memory list from disk: a racing `dropPart`+reader pair
+    /// can leave the cached vector inconsistent in either direction.
     auto files = DeleteBitmapFileOps::enumerateFiles(storage);
     std::vector<BitmapVersion> csns;
     csns.reserve(files.size());

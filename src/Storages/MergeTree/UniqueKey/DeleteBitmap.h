@@ -117,6 +117,11 @@ public:
     /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
     static bool isDeleteBitmapFile(std::string_view file_name);
 
+    /// True for any `delete_bitmap_*` name — canonical `.rbm` files plus
+    /// `.rbm.tmp` crash residue. Used by enumeration callers that must
+    /// pick up both.
+    static bool hasDeleteBitmapPrefix(std::string_view file_name);
+
     /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
     /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
     static BitmapVersion parseCsnFromFileName(std::string_view file_name);

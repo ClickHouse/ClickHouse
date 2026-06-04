@@ -996,13 +996,8 @@ static NameSet collectFilesToSkip(
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
-    /// UNIQUE KEY delete-bitmap sidecars (`delete_bitmap_<csn>.rbm`) appear in
-    /// getFileNamesWithoutChecksums() because they carry no checksum entry, but unlike the other
-    /// entries there (columns.txt, checksums.txt, metadata files) mutation does NOT regenerate
-    /// them. Skipping them here would silently drop logical-delete state from the mutated part, so
-    /// keep them out of the skip set and let the unchanged-files loop hardlink them across.
-    /// Reconciling bitmaps against row-number changes (e.g. rebuilding after a DELETE mutation that
-    /// reorders rows) is owned by the UNIQUE KEY write-integration slice, not by this storage layer.
+    /// UK delete-bitmap sidecars are surfaced by getFileNamesWithoutChecksums but mutation
+    /// does not regenerate them; let the unchanged-files loop hardlink them across.
     std::erase_if(files_to_skip, [](const String & name) { return DeleteBitmap::isDeleteBitmapFile(name); });
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
@@ -2116,11 +2111,8 @@ private:
             }
         }
 
-        /// Preserve UNIQUE KEY delete-bitmap sidecars (`delete_bitmap_<csn>.rbm`) across a
-        /// full-rewrite mutation. They are not regenerated here, so without an explicit hardlink
-        /// they would be dropped and logical-delete state lost. Mirrors collectFilesToSkip on the
-        /// MutateSomePartColumns path; reconciling bitmaps against row-number changes is owned by
-        /// the UNIQUE KEY write-integration slice, not by this storage layer.
+        /// Preserve UK delete-bitmap sidecars across a full-rewrite mutation
+        /// (allowlist-based loop below would otherwise drop them).
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (DeleteBitmap::isDeleteBitmapFile(it->name()))
