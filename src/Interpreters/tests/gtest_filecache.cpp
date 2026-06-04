@@ -2485,7 +2485,6 @@ TEST_F(FileCacheTest, DiskCacheProviderGetReadsCommittedPrefixWhileDownloading)
     auto provider = std::make_shared<DiskCacheProvider>(
         cache, cache_settings, /*query_id_=*/String{},
         /*local_throttler_=*/nullptr,
-        /*cache_log_=*/nullptr,
         /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
         /*custom_origin_=*/std::nullopt);
 
@@ -2547,7 +2546,6 @@ TEST_F(FileCacheTest, DiskCacheHandleStatusCreditsDownloadingPrefix)
     auto provider = std::make_shared<DiskCacheProvider>(
         cache, cache_settings, /*query_id_=*/String{},
         /*local_throttler_=*/nullptr,
-        /*cache_log_=*/nullptr,
         /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
         /*custom_origin_=*/std::nullopt);
 
@@ -2627,7 +2625,6 @@ TEST_F(FileCacheTest, DiskCacheHandlePinSurvivesEviction)
     auto provider = std::make_shared<DiskCacheProvider>(
         cache, cache_settings, /*query_id_=*/String{},
         /*local_throttler_=*/nullptr,
-        /*cache_log_=*/nullptr,
         /*custom_cache_key_=*/std::optional<FileCacheKey>(key),
         /*custom_origin_=*/std::nullopt);
 
