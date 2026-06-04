@@ -16,6 +16,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <IO/SeekableReadBuffer.h>
+#include <IO/NetUtils.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -239,6 +242,59 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     }
 
     result.custom_metadata = parseMetadata(schema.custom_metadata());
+    return result;
+}
+
+ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
+{
+    static constexpr std::string_view ARROW_MAGIC = "ARROW1";
+
+    const off_t file_size = static_cast<off_t>(file_size_);
+    /// Minimum: leading "ARROW1" + 2 padding bytes, a footer length and the trailing "ARROW1".
+    if (file_size < static_cast<off_t>(2 * ARROW_MAGIC.size() + 2 + sizeof(int32_t)))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "File is too small to be an Arrow file");
+
+    char magic[6];
+    in.seek(0, SEEK_SET);
+    in.readStrict(magic, ARROW_MAGIC.size());
+    if (std::string_view(magic, ARROW_MAGIC.size()) != ARROW_MAGIC)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: missing leading magic");
+
+    /// Trailing layout: <footer> <int32 footer length LE> <"ARROW1">.
+    in.seek(file_size - static_cast<off_t>(ARROW_MAGIC.size()), SEEK_SET);
+    in.readStrict(magic, ARROW_MAGIC.size());
+    if (std::string_view(magic, ARROW_MAGIC.size()) != ARROW_MAGIC)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not an Arrow file: missing trailing magic");
+
+    int32_t footer_length;
+    in.seek(file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(int32_t)), SEEK_SET);
+    in.readStrict(reinterpret_cast<char *>(&footer_length), sizeof(footer_length));
+    footer_length = DB::fromLittleEndian(footer_length);
+    const off_t footer_offset
+        = file_size - static_cast<off_t>(ARROW_MAGIC.size()) - static_cast<off_t>(sizeof(int32_t)) - footer_length;
+    if (footer_length <= 0 || footer_offset < static_cast<off_t>(ARROW_MAGIC.size()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer length {}", footer_length);
+
+    PODArray<char> footer_storage(footer_length);
+    in.seek(footer_offset, SEEK_SET);
+    in.readStrict(footer_storage.data(), footer_length);
+
+    flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t *>(footer_storage.data()), footer_length);
+    if (!flatbuf::VerifyFooterBuffer(verifier))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow file footer");
+    const auto * footer = flatbuf::GetFooter(footer_storage.data());
+
+    if (!footer->schema())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file footer has no schema");
+
+    ArrowFileFooter result;
+    result.schema = parseSchema(*footer->schema());
+    if (footer->dictionaries())
+        for (const auto * block : *footer->dictionaries())
+            result.dictionary_blocks.push_back({block->offset(), block->bodyLength()});
+    if (footer->recordBatches())
+        for (const auto * block : *footer->recordBatches())
+            result.record_batch_blocks.push_back({block->offset(), block->bodyLength()});
     return result;
 }
 

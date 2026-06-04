@@ -12,6 +12,11 @@
 #include <optional>
 #include <vector>
 
+namespace DB
+{
+class SeekableReadBuffer;
+}
+
 namespace DB::ArrowIPC
 {
 
@@ -106,6 +111,25 @@ struct ArrowSchema
 
 /// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
 ArrowSchema parseSchema(const flatbuf::Schema & schema);
+
+/// A record-batch / dictionary-batch location inside an Arrow file (absolute offset + body length).
+struct ArrowFileBlock
+{
+    int64_t offset = 0;
+    int64_t body_length = 0;
+};
+
+/// The parsed footer of an Arrow file: schema plus the locations of all dictionary and record batches.
+struct ArrowFileFooter
+{
+    ArrowSchema schema;
+    std::vector<ArrowFileBlock> dictionary_blocks;
+    std::vector<ArrowFileBlock> record_batch_blocks;
+};
+
+/// Verifies the Arrow file magic and reads its footer. `file_size` is the total input size (the
+/// input must support `SEEK_SET`, but not necessarily `SEEK_END`).
+ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size);
 
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).

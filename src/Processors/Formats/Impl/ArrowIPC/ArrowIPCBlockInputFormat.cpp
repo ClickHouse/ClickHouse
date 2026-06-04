@@ -4,6 +4,10 @@
 
 #include <Processors/Port.h>
 #include <IO/ReadBuffer.h>
+#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WithFileSize.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
@@ -25,32 +29,9 @@ ArrowIPCBlockInputFormat::ArrowIPCBlockInputFormat(
     ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
     , stream(stream_)
-    , message_reader(in_)
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
 {
-}
-
-void ArrowIPCBlockInputFormat::prepareReader()
-{
-    if (!stream)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Native Arrow IPC reader supports only the streaming format so far");
-
-    ArrowIPC::MessageReader::Message msg;
-    if (!message_reader.readNextMessage(msg))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
-
-    if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
-
-    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
-    /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
-    message_reader.skipBody(msg.body_length);
-
-    collectDictionaryFields(arrow_schema->fields);
-
-    decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
-    prepared = true;
 }
 
 void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIPC::ArrowField> & fields)
@@ -65,6 +46,79 @@ void ArrowIPCBlockInputFormat::collectDictionaryFields(const std::vector<ArrowIP
             dictionary_value_fields[field.dictionary->id] = std::move(value_field);
         }
         collectDictionaryFields(field.type.children);
+    }
+}
+
+void ArrowIPCBlockInputFormat::prepareReader()
+{
+    if (stream)
+        prepareStreamReader();
+    else
+        prepareFileReader();
+
+    collectDictionaryFields(arrow_schema->fields);
+    decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+    prepared = true;
+}
+
+void ArrowIPCBlockInputFormat::prepareStreamReader()
+{
+    message_reader.emplace(*in);
+
+    ArrowIPC::MessageReader::Message msg;
+    if (!message_reader->readNextMessage(msg))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The Arrow stream is empty");
+    if (msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_Schema)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The first Arrow IPC message must be the schema");
+
+    arrow_schema = ArrowIPC::parseSchema(*msg.header->header_as_Schema());
+    /// The schema message has no body, but be defensive in case a producer emits a (zero-length) one.
+    message_reader->skipBody(msg.body_length);
+}
+
+void ArrowIPCBlockInputFormat::prepareFileReader()
+{
+    /// The file format requires random access. Use the input directly when it is seekable, otherwise
+    /// load it entirely into memory (matching the Apache Arrow library's behaviour for such inputs).
+    size_t file_size = 0;
+    seekable = dynamic_cast<SeekableReadBuffer *>(in);
+    if (seekable)
+    {
+        file_size = getFileSizeFromReadBuffer(*in);
+    }
+    else
+    {
+        readStringUntilEOF(file_data, *in);
+        file_size = file_data.size();
+        memory_buffer = std::make_unique<ReadBufferFromMemory>(file_data.data(), file_data.size());
+        seekable = assert_cast<SeekableReadBuffer *>(memory_buffer.get());
+    }
+    message_reader.emplace(*seekable);
+
+    ArrowIPC::ArrowFileFooter footer = ArrowIPC::readArrowFileFooter(*seekable, file_size);
+    arrow_schema = std::move(footer.schema);
+    for (const auto & block : footer.record_batch_blocks)
+        record_batch_blocks.push_back({block.offset, block.body_length});
+
+    /// Decode all dictionary batches up front (the registry must be populated before any record batch).
+    collectDictionaryFields(arrow_schema->fields);
+    auto temp_decoder = std::make_unique<ArrowIPC::RecordBatchDecoder>(*arrow_schema, format_settings, dictionaries);
+    for (const auto & block : footer.dictionary_blocks)
+    {
+        seekable->seek(block.offset, SEEK_SET);
+        ArrowIPC::MessageReader::Message msg;
+        if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_DictionaryBatch)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a dictionary batch in the Arrow file");
+
+        const auto * dict_batch = msg.header->header_as_DictionaryBatch();
+        const int64_t id = dict_batch->id();
+        auto field_it = dictionary_value_fields.find(id);
+        if (field_it == dictionary_value_fields.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow file dictionary batch for unknown id {}", id);
+
+        message_reader->readBody(msg.body_length, body_buffer);
+        auto decoded = temp_decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
+        dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
     }
 }
 
@@ -119,22 +173,14 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(std::vector<ArrowIPC::RecordBatchDeco
     return Chunk(std::move(columns), num_rows);
 }
 
-Chunk ArrowIPCBlockInputFormat::read()
+Chunk ArrowIPCBlockInputFormat::readStream()
 {
-    block_missing_values.clear();
-
-    if (!prepared)
-        prepareReader();
-
-    if (is_stopped)
-        return {};
-
     const size_t batch_start = in->count();
 
     while (true)
     {
         ArrowIPC::MessageReader::Message msg;
-        if (!message_reader.readNextMessage(msg))
+        if (!message_reader->readNextMessage(msg))
         {
             /// Drain the buffer so the underlying stream is fully consumed (HTTP keepalive, etc.).
             in->eof();
@@ -150,11 +196,11 @@ Chunk ArrowIPCBlockInputFormat::read()
 
                 if (need_only_count)
                 {
-                    message_reader.skipBody(msg.body_length);
+                    message_reader->skipBody(msg.body_length);
                     return getChunkForCount(num_rows);
                 }
 
-                message_reader.readBody(msg.body_length, body_buffer);
+                message_reader->readBody(msg.body_length, body_buffer);
                 auto decoded = decoder->decodeBatch(*batch, body_buffer);
                 Chunk chunk = buildChunk(decoded, num_rows);
 
@@ -172,20 +218,56 @@ Chunk ArrowIPCBlockInputFormat::read()
                     throw Exception(
                         ErrorCodes::INCORRECT_DATA, "Arrow IPC dictionary batch for unknown dictionary id {}", id);
 
-                message_reader.readBody(msg.body_length, body_buffer);
+                message_reader->readBody(msg.body_length, body_buffer);
                 auto decoded = decoder->decodeColumns(*dict_batch->data(), body_buffer, {field_it->second});
                 dictionaries.set(id, decoded.at(0).column, dict_batch->isDelta());
                 continue;
             }
             case ArrowIPC::flatbuf::MessageHeader_Schema:
                 /// A redundant schema message; it carries no body. Ignore and continue.
-                message_reader.skipBody(msg.body_length);
+                message_reader->skipBody(msg.body_length);
                 continue;
             default:
-                message_reader.skipBody(msg.body_length);
+                message_reader->skipBody(msg.body_length);
                 continue;
         }
     }
+}
+
+Chunk ArrowIPCBlockInputFormat::readFile()
+{
+    if (record_batch_current >= record_batch_blocks.size())
+        return {};
+
+    const BlockInfo & block = record_batch_blocks[record_batch_current++];
+    seekable->seek(block.offset, SEEK_SET);
+
+    ArrowIPC::MessageReader::Message msg;
+    if (!message_reader->readNextMessage(msg) || msg.header->header_type() != ArrowIPC::flatbuf::MessageHeader_RecordBatch)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a record batch in the Arrow file");
+
+    const auto * batch = msg.header->header_as_RecordBatch();
+    const size_t num_rows = static_cast<size_t>(batch->length());
+
+    if (need_only_count)
+        return getChunkForCount(num_rows);
+
+    message_reader->readBody(msg.body_length, body_buffer);
+    auto decoded = decoder->decodeBatch(*batch, body_buffer);
+    return buildChunk(decoded, num_rows);
+}
+
+Chunk ArrowIPCBlockInputFormat::read()
+{
+    block_missing_values.clear();
+
+    if (!prepared)
+        prepareReader();
+
+    if (is_stopped)
+        return {};
+
+    return stream ? readStream() : readFile();
 }
 
 void ArrowIPCBlockInputFormat::resetParser()
@@ -194,6 +276,13 @@ void ArrowIPCBlockInputFormat::resetParser()
     prepared = false;
     decoder.reset();
     arrow_schema.reset();
+    message_reader.reset();
+    dictionary_value_fields.clear();
+    record_batch_blocks.clear();
+    record_batch_current = 0;
+    seekable = nullptr;
+    memory_buffer.reset();
+    file_data.clear();
     block_missing_values.clear();
     approx_bytes_read_for_chunk = 0;
 }
