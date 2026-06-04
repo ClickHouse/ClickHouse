@@ -10,6 +10,7 @@
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include "dpTable.h"
 
 namespace DB
 {
@@ -63,55 +64,6 @@ struct DPJoinEntry
     bool isLeaf() const;
 
     String dump() const;
-};
-
-template<std::unsigned_integral Tuint, class Tentry>
-class DpTable {
-  public:
-    struct DPEntry : Tentry
-    {
-      uint64_t count{0};
-      DPEntry() : Tentry() {}
-    };
-    using map_t = std::unordered_map<Tuint, DPEntry>;
-    DpTable(size_t nrRelations) : nr_relations(nrRelations), nr_ccp(0), nr_reordered(0)
-    {
-        dp_tab.reserve(static_cast<Tuint>(1) << n());
-
-        for (Tuint i = 1; i <= n(); ++i)
-            dp_tab[(static_cast<Tuint>(1) << i)].count = 1;
-    }
-    void insert(Tuint S, Tuint S1, Tuint S2)
-    {
-        chassert(0 == (S1 & S2));
-        chassert(S == (S1 | S2));
-        if (S1 > S2)
-        {
-            ++nr_reordered;
-        }
-        ++(dp_tab[S].count);
-        ++nr_ccp;
-    }
-    const DPEntry& operator[](Tuint x) const { return (*dp_tab.find(x)).second; }
-    DPEntry& operator[](Tuint x) { return dp_tab[x]; }
-    bool isConnected(const Tuint S) const { return dp_tab.count(S); }
-    inline size_t     n() const { return nr_relations; }
-    inline uint64_t noCcp() const { return nr_ccp; }
-    inline uint64_t noCsg() const { return map().size(); }
-    inline uint64_t noReordered() const { return nr_reordered; }
-    void printStatistics(std::ostream& os) const
-    {
-        os << "DP Table Statistics:\n";
-        os << "Number of CSGs: " << noCsg() << "\n";
-        os << "Number of CCPs: " << noCcp() << "\n";
-        os << "Number of reordered joins: " << noReordered() << "\n";
-    }
-    inline const map_t& map() const { return dp_tab; }
-  private:
-    const size_t nr_relations; 
-    map_t    dp_tab;
-    UInt64   nr_ccp;
-    UInt64   nr_reordered;
 };
 
 template <class Tuint, class Tdptable>
@@ -193,11 +145,11 @@ public:
 
     void enumerate(consumer_t & consumer, acceptor_fn acceptor, const graph_t & query_graph)
     {
-        const uint_t all_sets = (static_cast<Tuint>(1) << n()) - 1;
+        const uint_t full_set_mask = (static_cast<Tuint>(1) << n()) - 1;
 
         initDPTable(consumer.dptable(), query_graph);
 
-        for (Tuint s = 1; s <= all_sets; ++s)
+        for (Tuint s = 1; s <= full_set_mask; ++s)
         {
             if (std::popcount(s) <= 1)
                 continue;

@@ -159,9 +159,29 @@ void QueryGraph::buildColumnEquivalences()
 
 bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & right) const
 {
+    // TODO
+    LOG_TRACE(
+        &Poco::Logger::get("JoinOrderOptimizer"),
+        "Checking equivalence connectivity between sets {} and {}",
+        toString(left),
+        toString(right));
+
     for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
     {
+
+        // TODO
+        LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
+            "Checking equivalence class member: relation `{}`; connectivity between sets {} and {}",
+            member.getColumnName(), toString(left), toString(right));
+
         auto member_rel = member.getSourceRelations().getSingleBit();
+
+
+        // TODO
+        LOG_TRACE(&Poco::Logger::get("JoinOrderOptimizer"),
+            "Equivalence class member: relation {} `{}`; checking connectivity between sets {} and {}",
+            *member_rel, member.getColumnName(), toString(left), toString(right));
+
         if (!member_rel || !left.test(*member_rel))
             continue;
 
@@ -701,7 +721,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         UInt32 neighbor{0};
         std::optional<UInt64> estimated_rows = {};
         double cost{0.0};
-        std::unordered_map<String, ColumnStats> column_stats = {};
     };
     using dptable_t = DpTable<UInt32, DPEntry>;
     using checker_t = EnumeratorChecker<UInt32, dptable_t>;
@@ -711,9 +730,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
     checker_t checker(n);
     enumerator_t enumerator(n, log);
     enumerator.enumerate(checker, &checker_t::accept, query_graph);
-    checker.dptable().printStatistics(std::cout);
+    checker.dptable().printStatistics();
 
-    
     return nullptr; /// FIXME: return proper plan after implementing the algorithm
 }
 
