@@ -138,14 +138,14 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
-    ParserCompoundColumnDeclaration parser_col_decl;
+    ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
     ParserIndexDeclaration parser_idx_decl;
     ParserIndexDeclaration parser_lookup_idx_decl(false);
     ParserStatisticsDeclaration parser_stat_decl;
     ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
     ParserProjectionDeclaration parser_projection_decl;
-    ParserCompoundColumnDeclaration parser_modify_col_decl(false, false, true);
+    ParserCompoundColumnDeclaration parser_modify_col_decl(/* require_type = */ false, /* allow_null_modifiers = */ true, /* check_keywords_after_name = */ true);
     ParserPartition parser_partition;
     ParserExpressionWithOptionalAlias parser_exp_elem(false);
     ParserList parser_assignment_list(
@@ -807,6 +807,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (!parser_modify_col_decl.parse(pos, command_col_decl, expected))
                     return false;
+
+                /// A trailing NULL / NOT NULL modifier needs an explicit column type to apply it
+                /// to, the same way ADD COLUMN / CREATE TABLE do. A type-less MODIFY / ALTER COLUMN
+                /// has no type, so reject it here instead of silently ignoring the modifier.
+                if (const auto & col_decl = command_col_decl->as<const ASTColumnDeclaration &>();
+                    col_decl.null_modifier.has_value() && !col_decl.getType())
+                {
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR,
+                        "NULL / NOT NULL modifier requires an explicit column type");
+                }
 
                 auto check_no_type = [&](const std::string_view keyword)
                 {
