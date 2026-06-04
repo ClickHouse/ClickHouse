@@ -451,8 +451,16 @@ size_t tryPushDownVolumeReducingFunction(QueryPlan::Node * parent_node, QueryPla
     child_node->children = {&pushed_node};
 
     pushed_node.step = std::make_unique<ExpressionStep>(pushed_node.children.front()->step->getOutputHeader(), std::move(pushed));
-    pushed_node.step->setStepDescription(
-        fmt::format("{} [volume-reducing functions]", parent_expression->getStepDescription()), settings.max_step_description_length);
+    /// `tryPushDownVolumeReducingFunction` may re-fire on a node it just
+    /// produced (a chain of `Filter` over our pushed step is itself a valid
+    /// push-down candidate). Without the guard the marker would be appended
+    /// once per round, yielding `Projection [vrf] [vrf] [vrf]`.
+    auto base_description = parent_expression->getStepDescription();
+    constexpr std::string_view marker = " [volume-reducing functions]";
+    auto description = base_description.ends_with(marker)
+        ? std::string{base_description}
+        : fmt::format("{}{}", base_description, marker);
+    pushed_node.step->setStepDescription(std::move(description), settings.max_step_description_length);
 
     /// Update the child's input header to reflect the new (wider) header
     /// produced by the pushed step. The parent ExpressionStep's input
