@@ -71,3 +71,6 @@ h{sum="bytes"} 7
 s{count="oops"} 8
 
 # EOF
+m{k="a\nb"} 1
+
+# EOF

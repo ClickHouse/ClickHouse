@@ -69,6 +69,7 @@ private:
 
     ColumnPositions pos;
     CurrentMetric current_metric;
+    bool wrote_exposition = false;
     SerializationPtr string_serialization;
     const FormatSettings format_settings;
 };

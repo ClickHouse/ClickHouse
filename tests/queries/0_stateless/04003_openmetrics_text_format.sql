@@ -323,3 +323,17 @@ FORMAT OpenMetrics;
 -- Summary + non-empty `count` label -> kept as a normal label (no `_count` rewrite).
 SELECT 's' AS name, 8.0 AS value, '' AS help, 'summary' AS type, map('count', 'oops') AS labels, CAST(NULL AS Nullable(Int64)) AS timestamp, '' AS unit
 FORMAT OpenMetrics;
+
+-- ----------------------------------------------------------------------------
+-- Output label serialization contract.
+--   * Only `\\`, `\"`, and `\n` escapes are emitted; other control characters are
+--     rejected so output round-trips through the OpenMetrics input parser.
+--   * Duplicate label keys in the `labels` map are rejected (OpenMetrics requires
+--     unique names; the input side already treats duplicates as `INCORRECT_DATA`).
+-- ----------------------------------------------------------------------------
+-- Newline is escaped as `\n` and remains readable by `FORMAT OpenMetrics` input.
+SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(10), 'b')) AS labels FORMAT OpenMetrics;
+-- Tab and other unsupported control characters are rejected at output time.
+SELECT 'm' AS name, 1.0 AS value, map('k', concat('a', char(9), 'b')) AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }
+-- Duplicate keys in the `labels` map are rejected instead of silently keeping the first.
+SELECT 'm' AS name, 1.0 AS value, map('a', '1', 'a', '2') AS labels FORMAT OpenMetrics; -- { clientError BAD_ARGUMENTS }

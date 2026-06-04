@@ -129,6 +129,47 @@ Float64 tryParseFloat(const String & s)
     return t;
 }
 
+/// OpenMetrics label values only permit `\\`, `\"`, and `\n` escapes (matching the input
+/// parser's `readQuotedString`). Generic `writeDoubleQuotedString` also emits `\t`, `\r`,
+/// `\0`, etc., which our reader rejects and strict consumers can reject too.
+void validateOpenMetricsLabelValue(std::string_view s)
+{
+    for (char c : s)
+    {
+        if (c == '\\' || c == '"' || c == '\n')
+            continue;
+        if (static_cast<unsigned char>(c) < 32)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Label value for output format '{}' contains unsupported control character U+{:04X}",
+                FORMAT_NAME, static_cast<unsigned char>(c));
+    }
+}
+
+void writeOpenMetricsQuotedLabelValue(std::string_view s, WriteBuffer & buf)
+{
+    validateOpenMetricsLabelValue(s);
+    writeChar('"', buf);
+    for (char c : s)
+    {
+        switch (c)
+        {
+            case '\\':
+                writeCString("\\\\", buf);
+                break;
+            case '"':
+                writeCString("\\\"", buf);
+                break;
+            case '\n':
+                writeCString("\\n", buf);
+                break;
+            default:
+                writeChar(c, buf);
+        }
+    }
+    writeChar('"', buf);
+}
+
 template <typename Container>
 void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container & result)
 {
@@ -145,7 +186,12 @@ void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Container &
             && map_entry[0].tryGet<String>(entry_key)
             && map_entry[1].tryGet<String>(entry_value))
         {
-            result.emplace(entry_key, entry_value);
+            const auto [it, inserted] = result.emplace(entry_key, entry_value);
+            if (!inserted)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Duplicate label name '{}' for output format '{}'",
+                    it->first, FORMAT_NAME);
         }
     }
 }
@@ -260,6 +306,8 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
         return;
     }
 
+    wrote_exposition = true;
+
     auto write_attribute = [this](const char * marker, const String & value)
     {
         if (value.empty())
@@ -281,6 +329,9 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
 
     for (auto & val : current_metric.values)
     {
+        for (const auto & [label_name, label_value] : val.labels)
+            validateOpenMetricsLabelValue(label_value);
+
         writeString(current_metric.name, out);
 
         /// Suffix-marker rewrite. The documented table contract is:
@@ -325,7 +376,7 @@ void OpenMetricsTextOutputFormat::flushCurrentMetric()
                 is_first = false;
                 writeString(name, out);
                 writeChar('=', out);
-                writeDoubleQuotedString(value, out);
+                writeOpenMetricsQuotedLabelValue(value, out);
             }
             writeChar('}', out);
         }
@@ -385,6 +436,16 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         std::replace(current_metric.unit.begin(), current_metric.unit.end(), '\n', ' ');
     }
 
+    std::optional<std::map<String, String>> labels;
+    if (pos.labels.has_value())
+    {
+        if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(columns[*pos.labels].get()))
+        {
+            labels.emplace();
+            columnMapToContainer(col_map, row_num, *labels);
+        }
+    }
+
     auto & row = current_metric.values.emplace_back();
     row.value = getString(columns, row_num, pos.value);
 
@@ -399,17 +460,15 @@ void OpenMetricsTextOutputFormat::write(const Columns & columns, size_t row_num)
         row.timestamp = formatTimestampMsAsSeconds(ms);
     }
 
-    if (pos.labels.has_value())
-    {
-        if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(columns[*pos.labels].get()))
-            columnMapToContainer(col_map, row_num, row.labels);
-    }
+    if (labels)
+        row.labels = std::move(*labels);
 }
 
 void OpenMetricsTextOutputFormat::finalizeImpl()
 {
     flushCurrentMetric();
-    writeCString("# EOF\n", out);
+    if (wrote_exposition)
+        writeCString("# EOF\n", out);
 }
 
 void registerOutputFormatOpenMetrics(FormatFactory & factory);
