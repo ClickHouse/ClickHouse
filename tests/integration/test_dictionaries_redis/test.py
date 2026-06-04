@@ -3,6 +3,7 @@ import os
 import shutil
 
 import pytest
+import redis
 
 from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
@@ -18,9 +19,30 @@ KEY_FIELDS = {
         Field("KeyField1", "UInt64", is_key=True, default_value_for_get=9999999),
         Field("KeyField2", "String", is_key=True, default_value_for_get="xxxxxxxxx"),
     ],
+    "complex_single": [
+        Field("KeyField", "String", is_key=True, default_value_for_get="xxxxxxxxx")
+    ],
 }
 
-KEY_VALUES = {"simple": [[1], [2]], "complex": [[1, "world"], [2, "qwerty2"]]}
+KEY_VALUES = {
+    "simple": [[1], [2]],
+    "complex": [[1, "world"], [2, "qwerty2"]],
+    "complex_single": [["hello"], ["world"]],
+}
+
+
+def get_key_kind(source, layout):
+    """Pick the key structure for a (source, layout) pair.
+
+    'hash_map' Redis storage encodes composite (two-column) complex keys, while
+    'simple' storage is a flat key-value map and only fits a single key column.
+    """
+    if not layout.is_complex:
+        return "simple"
+    if source.storage_type == "hash_map":
+        return "complex"
+    return "complex_single"
+
 
 FIELDS = [
     Field("UInt8_", "UInt8", default_value_for_get=55),
@@ -90,45 +112,30 @@ def generate_dict_configs():
         shutil.rmtree(dict_configs_path)
     os.mkdir(dict_configs_path)
 
+    def make_source(name, db_index, storage_type):
+        return SourceRedis(
+            name,
+            "localhost",
+            cluster.redis_port,
+            cluster.redis_host,
+            "6379",
+            "",
+            "clickhouse",
+            db_index,
+            storage_type=storage_type,
+        )
+
+    db_index = 0
     for i, field in enumerate(FIELDS):
         DICTIONARIES.append([])
-        sources = []
-        sources.append(
-            SourceRedis(
-                "RedisSimple",
-                "localhost",
-                cluster.redis_port,
-                cluster.redis_host,
-                "6379",
-                "",
-                "clickhouse",
-                i * 2,
-                storage_type="simple",
-            )
-        )
-        sources.append(
-            SourceRedis(
-                "RedisHash",
-                "localhost",
-                cluster.redis_port,
-                cluster.redis_host,
-                "6379",
-                "",
-                "clickhouse",
-                i * 2 + 1,
-                storage_type="hash_map",
-            )
-        )
-        for source in sources:
+        for storage_type in ["simple", "hash_map"]:
             for layout in LAYOUTS:
+                source = make_source(f"Redis_{storage_type}", db_index, storage_type)
                 if not source.compatible_with_layout(layout):
-                    logging.debug(
-                        f"Source {source.name} incompatible with layout {layout.name}"
-                    )
                     continue
-
-                fields = KEY_FIELDS[layout.layout_type] + [field]
+                fields = KEY_FIELDS[get_key_kind(source, layout)] + [field]
                 DICTIONARIES[i].append(get_dict(source, layout, fields, field.name))
+                db_index += 1
 
     main_configs = []
     dictionaries = []
@@ -178,9 +185,9 @@ def test_redis_dictionaries(started_cluster, id):
 
     for dct in dicts:
         data = []
-        dict_type = dct.structure.layout.layout_type
-        key_fields = KEY_FIELDS[dict_type]
-        key_values = KEY_VALUES[dict_type]
+        key_kind = get_key_kind(dct.source, dct.structure.layout)
+        key_fields = KEY_FIELDS[key_kind]
+        key_values = KEY_VALUES[key_kind]
 
         for key_value, value in zip(key_values, values):
             data.append(Row(key_fields + [field], key_value + [value]))
@@ -205,3 +212,80 @@ def test_redis_dictionaries(started_cluster, id):
 
     # Checks, that dictionaries can be reloaded.
     node.query("system reload dictionaries")
+
+
+def test_redis_storage_type_key_constraints(started_cluster):
+    node = started_cluster.instances["node"]
+    host = started_cluster.redis_host
+
+    DB_INDEX = sum(len(dicts) for dicts in DICTIONARIES) + 1  # Pick a DB index that is not used by any dictionary.
+
+    redis_client = redis.Redis(
+        host="localhost", port=started_cluster.redis_port, password="clickhouse", db=DB_INDEX
+    )
+    redis_client.set("k1", "v1")
+    redis_client.flushdb()
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_simple_single (key String, value String)
+        PRIMARY KEY key
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    assert node.query("SELECT dictGet('test_redis_simple_single', 'value', tuple('k1'))") == "v1\n"
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_single")
+
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_simple_composite (key1 UInt64, key2 String, value String)
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_simple_composite', 'value', tuple(toUInt64(1), 'a'))"
+    )
+    assert "single key column" in error, error
+    assert "hash_map" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_simple_composite")
+
+    # Unsupported: 'hash_map' storage requires exactly two key columns (one given).
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_single")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_hash_single (key String, value String)
+        PRIMARY KEY key
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_hash_single', 'value', tuple('k1'))"
+    )
+    assert "requires 2 keys" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_single")
+
+    # Unsupported: 'hash_map' storage requires exactly two key columns (three given).
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
+    node.query(
+        f"""
+        CREATE DICTIONARY test_redis_hash_triple (key1 UInt64, key2 String, key3 UInt64, value String)
+        PRIMARY KEY key1, key2, key3
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
+        """
+    )
+    error = node.query_and_get_error(
+        "SELECT dictGet('test_redis_hash_triple', 'value', tuple(toUInt64(1), 'a', toUInt64(2)))"
+    )
+    assert "requires 2 keys" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
