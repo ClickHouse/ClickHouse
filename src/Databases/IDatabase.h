@@ -64,7 +64,7 @@ public:
 
     virtual UUID uuid() const { return UUIDHelpers::Nil; }
 
-    const String & databaseName() const { chassert(!database_name.empty()); return database_name; }
+    const String & databaseName() const { assert(!database_name.empty()); return database_name; }
 
 protected:
     String database_name;
@@ -410,11 +410,6 @@ public:
         return database_name;
     }
 
-    virtual void checkDatabase() const
-    {
-        //No-op
-    }
-
     // Alter comment of database.
     virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
@@ -440,7 +435,7 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/, std::function<void()> /*throw_if_cancelled*/) { }
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { }
     virtual void checkDetachedTableNotInUse(const UUID & /*uuid*/) { }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
