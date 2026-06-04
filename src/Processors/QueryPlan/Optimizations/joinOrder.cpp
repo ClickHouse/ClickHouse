@@ -294,8 +294,9 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
         : query_graph(std::move(query_graph_))
+        , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
     {
         auto context = CurrentThread::tryGetQueryContext();
@@ -324,6 +325,11 @@ private:
 
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
+
+    /// Polled inside the DPhyp enumeration loops. Returns false to stop enumeration when a partial plan
+    /// cannot be handled or the search budget is exhausted, so `solveDPhyp` returns nullptr and the next
+    /// algorithm in the chain runs. Throws via `checkLimits` on query timeout or cancellation.
+    bool continueEnumeration();
 
     /// Try to build the best join plan between left_rels and right_rels.
     /// Updates dp_table if a better plan is found.
@@ -374,6 +380,13 @@ private:
     /// algorithm chain (e.g. `dphyp,greedy`) can produce a valid plan.
     bool dphyp_unsupported_predicate = false;
 
+    /// Number of partial plans enumerated so far and the deterministic budget that bounds it.
+    /// When the budget is exceeded the current solver gives up and returns `nullptr` so the next
+    /// algorithm in the chain runs. Both are reset at the start of each solver.
+    size_t searched_plans = 0;
+    bool search_budget_exceeded = false;
+    const UInt64 max_searched_plans;
+
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
@@ -387,6 +400,20 @@ void JoinOrderOptimizer::checkLimits()
         query_status->checkTimeLimit();
     if (interactive_cancel_callback)
         interactive_cancel_callback();
+}
+
+bool JoinOrderOptimizer::continueEnumeration()
+{
+    if (dphyp_unsupported_predicate || search_budget_exceeded)
+        return false;
+    if (max_searched_plans && ++searched_plans > max_searched_plans)
+    {
+        search_budget_exceeded = true;
+        LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
+        return false;
+    }
+    checkLimits();
+    return true;
 }
 
 size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
@@ -752,6 +779,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     /// fallback chain cannot leak cached `1.0` defaults from a partial `dp_table`.
     dp_table.clear();
     expression_selectivity.clear();
+    searched_plans = 0;
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
@@ -780,6 +808,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     /// If both components are of the same size then check each pair just once, not twice
                     if (smaller_component_size == bigger_component_size && *left->relations.begin() > *right->relations.begin())
                         continue;
+
+                    if (max_searched_plans && ++searched_plans > max_searched_plans)
+                    {
+                        LOG_TRACE(log, "Exceeded the limit of {} searched plans, falling back", max_searched_plans);
+                        return nullptr;
+                    }
 
                     auto join_kind = isValidJoinOrder(left->relations, right->relations);
                     if (!join_kind)
@@ -1100,7 +1134,9 @@ static void forEachNonEmptySubset(const BitSet & mask, F && func)
         for (size_t i = 0; i < num_bits; ++i)
             if (subset_mask & (1ULL << i))
                 subset.set(bit_positions[i]);
-        func(subset);
+        /// The callback returns false to stop enumeration early.
+        if (!func(subset))
+            return;
     }
 }
 
@@ -1150,16 +1186,22 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
     /// First pass: emit pairs for every connected extension of the complement.
     forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
     {
+        if (!continueEnumeration())
+            return false;
         BitSet extended_complement = complement | extension;
         if (dp_table.contains(extended_complement))
             emitCsgCmp(csg, extended_complement);
+        return true;
     });
 
     /// Second pass: recurse with extended exclusion (paper: X = X | N(S2, X)).
     BitSet incremental_exclusion = exclusion | complement_neighborhood;
     forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
     {
+        if (!continueEnumeration())
+            return false;
         enumerateCmpRec(csg, complement | extension, incremental_exclusion);
+        return true;
     });
 }
 
@@ -1193,6 +1235,8 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 
     for (auto it = neighbor_nodes.rbegin(); it != neighbor_nodes.rend(); ++it)
     {
+        if (!continueEnumeration())
+            return;
         BitSet single_node;
         single_node.set(*it);
         emitCsgCmp(csg, single_node);
@@ -1222,16 +1266,22 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
     /// First pass: emit complements for every connected extension of S1.
     forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
     {
+        if (!continueEnumeration())
+            return false;
         BitSet extended_csg = csg | extension;
         if (dp_table.contains(extended_csg))
             emitCsg(extended_csg);
+        return true;
     });
 
     /// Second pass: recurse with extended exclusion (paper: X = X | N(S1, X)).
     BitSet extended_exclusion = exclusion | neighborhood;
     forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
     {
+        if (!continueEnumeration())
+            return false;
         enumerateCsgRec(csg | extension, extended_exclusion);
+        return true;
     });
 }
 
@@ -1248,6 +1298,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     }
 
     dphyp_unsupported_predicate = false;
+    search_budget_exceeded = false;
+    searched_plans = 0;
 
     /// Initialize dp_table with a leaf entry for each base relation.
     /// Also reset the per-edge selectivity cache so this run is independent of any
@@ -1286,9 +1338,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         enumerateCsgRec(seed, exclusion);
     }
 
-    if (dphyp_unsupported_predicate)
+    if (dphyp_unsupported_predicate || search_budget_exceeded)
     {
-        LOG_TRACE(log, "DPhyp encountered an unsupported predicate, falling back");
+        LOG_TRACE(log, "DPhyp could not produce a plan ({}), falling back",
+            dphyp_unsupported_predicate ? "unsupported predicate" : "search budget exceeded");
         return nullptr;
     }
 
@@ -1367,7 +1420,10 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         column_equivalences = query_graph.column_equivalences;
     }
 
-    JoinOrderOptimizer reorderer(std::move(query_graph), optimization_settings.query_plan_optimize_join_order_algorithm);
+    JoinOrderOptimizer reorderer(
+        std::move(query_graph),
+        optimization_settings.query_plan_optimize_join_order_algorithm,
+        optimization_settings.query_plan_optimize_join_order_max_searched_plans);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
