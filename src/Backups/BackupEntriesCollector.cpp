@@ -15,8 +15,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Common/typeid_cast.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -570,10 +568,16 @@ void BackupEntriesCollector::gatherTablesMetadata()
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
 
-            if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
+            /// Record REPLACE targets of refreshable materialized views from the create query, not
+            /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
+            /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
+            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append
+                && create.hasTargetTableID(ViewTarget::To))
             {
-                if (mv->isRefreshable() && !mv->isAppendRefreshStrategy())
-                    rmv_replace_target_ids.insert(mv->getTargetTableId());
+                StorageID target_id = create.getTargetTableID(ViewTarget::To);
+                if (!target_id.hasDatabase())
+                    target_id.database_name = database_name;
+                rmv_replace_target_ids.insert(target_id);
             }
         }
     }
