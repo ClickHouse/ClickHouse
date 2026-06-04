@@ -700,7 +700,7 @@ void QueryOracle::dumpTableContent(
             for (const auto & entry : gen.entries)
             {
                 ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-                const String alias = "c" + std::to_string(col_idx++);
+                const String alias = "a" + std::to_string(col_idx++);
 
                 ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
                 gen.columnPathRef(entry, eca->mutable_expr());
@@ -984,7 +984,7 @@ void QueryOracle::dumpDictionaryContent(
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-        const String alias = "c" + std::to_string(col_idx++);
+        const String alias = "a" + std::to_string(col_idx++);
 
         ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
         gen.columnPathRef(entry, eca->mutable_expr());
@@ -1056,7 +1056,7 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     for (const auto & col : v.cols)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-        const String alias = "c" + std::to_string(col_idx++);
+        const String alias = "a" + std::to_string(col_idx++);
 
         ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
         eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
