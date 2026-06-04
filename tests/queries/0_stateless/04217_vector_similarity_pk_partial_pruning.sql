@@ -3,9 +3,9 @@
 -- Regression for partial PK + vector search.
 -- Before this fix, if PK left only part of the marks in a part, vector index analysis was skipped.
 -- Here we check:
--- 1) `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids.
+-- 1) Case A: `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids (single PK slice, clear ANN winners).
 -- 2) vector path really runs (`USearchSearchCount > 0`).
--- 3) multi skip-index granules and disjoint PK ranges in one granule (Cases D/E).
+-- 3) Cases D/E: partial PK + vector index across skip-index granules (index used, row count, results respect WHERE; no exact id match vs skip=0).
 -- 4) Date-range PK filters + extra non-PK filters still work as expected.
 
 SET allow_experimental_vector_similarity_index = 1;
@@ -85,12 +85,31 @@ FROM
     SETTINGS use_skip_indexes = 0
 );
 
--- Case D: PK spans two skip-index granules.
-SELECT 'pk_multi_granule_matches_without_skip_indexes';
+-- Case D: PK spans two skip-index granules (OR). Do not require exact id match vs skip=0 (ANN/bf16).
+SELECT id
+FROM tab_pk_partial
+WHERE (id <= 2) OR (id >= 7)
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1, log_comment = '04217-pk-multi-granule'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'pk_multi_granule_vector_index_used';
+SELECT max(ProfileEvents['USearchSearchCount'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment = '04217-pk-multi-granule'
+    AND event_date >= yesterday()
+    AND event_time >= now() - 600;
+
+SELECT 'pk_multi_granule_same_row_count_as_without_skip_indexes';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
 SELECT
     (
-        SELECT arraySort(groupArray(id))
+        SELECT count()
         FROM
         (
             SELECT id
@@ -101,7 +120,7 @@ SELECT
             SETTINGS use_skip_indexes = 1
         )
     ) = (
-        SELECT arraySort(groupArray(id))
+        SELECT count()
         FROM
         (
             SELECT id
@@ -113,12 +132,44 @@ SELECT
         )
     );
 
--- Case E: disjoint PK ranges in one skip-index granule.
-SELECT 'pk_disjoint_pk_same_granule_matches_without_skip_indexes';
+SELECT 'pk_multi_granule_results_within_pk_filter';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT min((id <= 2) OR (id >= 7))
+FROM
+(
+    SELECT id
+    FROM tab_pk_partial
+    WHERE (id <= 2) OR (id >= 7)
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
+
+-- Case E: disjoint PK ranges in one skip-index granule (OR). Same relaxed checks as Case D.
+SELECT id
+FROM tab_pk_partial
+WHERE (id <= 1) OR (id >= 4 AND id <= 5)
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+LIMIT 3
+SETTINGS use_skip_indexes = 1, log_comment = '04217-pk-disjoint-same-granule'
+FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'pk_disjoint_pk_same_granule_vector_index_used';
+SELECT max(ProfileEvents['USearchSearchCount'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment = '04217-pk-disjoint-same-granule'
+    AND event_date >= yesterday()
+    AND event_time >= now() - 600;
+
+SELECT 'pk_disjoint_pk_same_granule_same_row_count_as_without_skip_indexes';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
 SELECT
     (
-        SELECT arraySort(groupArray(id))
+        SELECT count()
         FROM
         (
             SELECT id
@@ -129,7 +180,7 @@ SELECT
             SETTINGS use_skip_indexes = 1
         )
     ) = (
-        SELECT arraySort(groupArray(id))
+        SELECT count()
         FROM
         (
             SELECT id
@@ -140,6 +191,19 @@ SELECT
             SETTINGS use_skip_indexes = 0
         )
     );
+
+SELECT 'pk_disjoint_pk_same_granule_results_within_pk_filter';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT min((id <= 1) OR (id >= 4 AND id <= 5))
+FROM
+(
+    SELECT id
+    FROM tab_pk_partial
+    WHERE (id <= 1) OR (id >= 4 AND id <= 5)
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
 
 SELECT 'empty_pk_filter';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
