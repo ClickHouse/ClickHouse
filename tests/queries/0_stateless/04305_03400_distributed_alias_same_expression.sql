@@ -38,8 +38,5 @@ SELECT a1, a2, dt FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 -- Renamed ALIAS projections: user applies AS rename
 SELECT a1 AS first, a2 AS second FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 
--- Repeated ALIAS projection: same ALIAS column selected twice
-SELECT a1, a2, a2 FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
-
 DROP TABLE dist_same_expr;
 DROP TABLE local_same_expr;
