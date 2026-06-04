@@ -135,7 +135,7 @@ struct LinfNorm
 
 
 template <class Kernel>
-class FunctionArrayNorm final : public IFunction
+class FunctionArrayNorm : public IFunction
 {
 public:
     String getName() const override { static auto name = String("array") + Kernel::name + "Norm"; return name; }
@@ -314,11 +314,6 @@ LpNorm::ConstParams FunctionArrayNorm<LpNorm>::initConstParams(const ColumnsWith
 
 
 /// These functions are used by TupleOrArrayFunction
-FunctionPtr createFunctionArrayL1Norm(ContextPtr context_);
-FunctionPtr createFunctionArrayL2Norm(ContextPtr context_);
-FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_);
-FunctionPtr createFunctionArrayLpNorm(ContextPtr context_);
-FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 FunctionPtr createFunctionArrayL1Norm(ContextPtr context_) { return FunctionArrayNorm<L1Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2Norm(ContextPtr context_) { return FunctionArrayNorm<L2Norm>::create(context_); }
 FunctionPtr createFunctionArrayL2SquaredNorm(ContextPtr context_) { return FunctionArrayNorm<L2SquaredNorm>::create(context_); }

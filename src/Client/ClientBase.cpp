@@ -8,7 +8,6 @@
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
-#include <Core/UUID.h>
 #include <Interpreters/sortBlock.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -53,7 +52,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -70,7 +68,6 @@
 #include <IO/ForkWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
-#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/InterpreterSetQuery.h>
@@ -185,22 +182,8 @@ namespace ProfileEvents
 
 namespace
 {
-
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-/// Returns true if any `ASTTableExpression` in the query tree carries a `STREAM` modifier.
-bool hasStreamingTableExpression(const DB::IAST & ast)
-{
-    if (const auto * table_expression = ast.as<DB::ASTTableExpression>())
-        if (table_expression->stream_settings)
-            return true;
-
-    for (const auto & child : ast.children)
-        if (hasStreamingTableExpression(*child))
-            return true;
-
-    return false;
-}
 
 void cleanupTempFile(const DB::ASTPtr & parsed_query, const String & tmp_file)
 {
@@ -382,44 +365,6 @@ public:
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
-/// Wrapper for write buffer to execute callback before flush.
-/// Used to prevent progress flickering.
-/// The nested buffer is treated as a borrowed reference: this wrapper
-/// neither finalizes nor cancels it, because the nested buffer (e.g. the client's
-/// persistent `std_out`) is shared and reused across queries.
-class FlushCallbackWriteBuffer : public WriteBufferWithOwnMemoryDecorator
-{
-public:
-    template <typename WriteBufferT>
-    FlushCallbackWriteBuffer(WriteBufferT && out_, std::function<void()> on_flush_callback_)
-        : WriteBufferWithOwnMemoryDecorator(std::forward<WriteBufferT>(out_))
-        , on_flush_callback(std::move(on_flush_callback_))
-    {
-    }
-
-    void nextImpl() override
-    {
-        if (on_flush_callback)
-            on_flush_callback();
-
-        if (out->isCanceled())
-            return;
-
-        out->write(working_buffer.begin(), offset());
-        /// Propagate the explicit flush to the nested buffer so that small result blocks
-        /// are streamed to the underlying sink immediately instead of waiting for the
-        /// nested buffer to fill up.
-        out->next();
-    }
-
-    void finalizeImpl() override { next(); }
-
-    /// Do not propagate cancellation to the nested buffer.
-    void cancelImpl() noexcept override {}
-
-private:
-    std::function<void()> on_flush_callback;
-};
 
 ClientBase::~ClientBase() = default;
 
@@ -504,6 +449,24 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
+    if (is_interactive)
+    {
+        WriteBufferFromOwnString res_buf;
+        IAST::FormatSettings format_settings(/* one_line */ false);
+        format_settings.show_secrets = true;
+        format_settings.print_pretty_type_names = true;
+        res->format(res_buf, format_settings);
+        res_buf.finalize();
+
+        output_stream << std::endl;
+#if USE_REPLXX
+        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
+#else
+        output_stream << res_buf.str();
+#endif
+        output_stream << std::endl << std::endl;
+    }
+
     return res;
 }
 
@@ -542,7 +505,7 @@ void ClientBase::adjustQueryEnd(
     // all_queries_end);
     if (newline <= next_query_begin)
     {
-        chassert(newline >= this_query_end);
+        assert(newline >= this_query_end);
         this_query_end = newline;
     }
     else
@@ -586,6 +549,18 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
+
+    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+    if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_indication.clearProgressOutput(*tty_buf, lock);
+    }
+    if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
+    {
+        std::unique_lock lock(tty_mutex);
+        progress_table.clearTableOutput(*tty_buf, lock);
+    }
 
     try
     {
@@ -698,7 +673,7 @@ try
             return;
         }
 
-        WriteBuffer * underlying_buf = nullptr;
+        WriteBuffer * out_buf = nullptr;
         if (!pager.empty() && !isEmbeeddedClient())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
@@ -711,33 +686,12 @@ try
             config.terminate_in_destructor_strategy.terminate_in_destructor = true;
             config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
-            underlying_buf = &pager_cmd->in;
+            out_buf = &pager_cmd->in;
         }
         else
         {
-            underlying_buf = std_out.get();
+            out_buf = std_out.get();
         }
-
-        /// Use the flush callback wrapper to prevent progress flickering
-        std_out_wrapper = std::make_unique<FlushCallbackWriteBuffer>(
-            underlying_buf,
-            [this]()
-            {
-                /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
-                if (need_render_progress && tty_buf && (!select_into_file || select_into_file_and_stdout))
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_indication.clearProgressOutput(*tty_buf, lock);
-                }
-                if (need_render_progress_table && tty_buf && (!select_into_file || select_into_file_and_stdout))
-                {
-                    std::unique_lock lock(tty_mutex);
-                    progress_table.clearTableOutput(*tty_buf, lock);
-                }
-            }
-        );
-
-        WriteBuffer * out_buf = std_out_wrapper.get();
 
         select_into_file = false;
         select_into_file_and_stdout = false;
@@ -794,7 +748,7 @@ try
                 if (query_with_output->isIntoOutfileWithStdout())
                 {
                     select_into_file_and_stdout = true;
-                    out_file_buf = std::make_unique<ForkWriteBuffer>(ForkWriteBuffer::WriteBufferPtrs{std::move(out_file_buf),
+                    out_file_buf = std::make_unique<ForkWriteBuffer>(std::vector<WriteBufferPtr>{std::move(out_file_buf),
                         std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd)});
                 }
 
@@ -833,14 +787,6 @@ try
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
-
-        /// We need to disable output format squashing semantics for streaming queries
-        /// because otherwise data may not be disaplayed forever.
-        if (parsed_query && hasStreamingTableExpression(*parsed_query))
-        {
-            format_settings.pretty.squash_consecutive_ms = 0;
-            format_settings.pretty.squash_max_wait_ms = 0;
-        }
 
         /// It is not clear how to write progress and logs
         /// intermixed with data with parallel formatting.
@@ -884,10 +830,6 @@ catch (...)
     if (out_file_buf)
         out_file_buf->cancel();
     out_file_buf.reset();
-
-    if (std_out_wrapper)
-        std_out_wrapper->cancel();
-    std_out_wrapper.reset();
 
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
@@ -965,7 +907,7 @@ void ClientBase::initClientContext(ContextMutablePtr context)
 
 bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 {
-    struct stat file_stat{};
+    struct stat file_stat;
     return fstat(fd, &file_stat) == 0
         && (S_ISREG(file_stat.st_mode) || S_ISLNK(file_stat.st_mode));
 }
@@ -1451,7 +1393,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             }
         }
     }
-    chassert(retries_left > 0);
+    assert(retries_left > 0);
 }
 
 
@@ -1807,27 +1749,11 @@ void ClientBase::resetOutput()
     output_format.reset();
     pending_progress.reset();
 
-    /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
-    /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
-    if (out_file_buf)
-    {
-        if (out_file_buf->isCanceled())
-            out_file_buf.reset();
-        else
-            out_file_buf->finalize();
-    }
-    out_file_buf.reset();
-
-    if (std_out_wrapper)
-    {
-        if (std_out_wrapper->isCanceled())
-            std_out_wrapper.reset();
-        else
-            std_out_wrapper->finalize();
-    }
-    std_out_wrapper.reset();
-
     logs_out_stream.reset();
+
+    if (out_file_buf)
+        out_file_buf->finalize();
+    out_file_buf.reset();
 
     out_logs_buf.reset();
 
@@ -2408,14 +2334,10 @@ void ClientBase::processParsedSingleQuery(
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
 
-    /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
-    /// In batch mode we only do this when we are going to print the query_id, so that the printed
-    /// value matches the one actually used for execution (otherwise the server generates its own).
-    if (is_interactive || (echo_query_id && query_id.empty()))
-        client_context->setCurrentQueryId("");
-
-    if (echo_query_id)
+    if (is_interactive)
     {
+        client_context->setCurrentQueryId("");
+        // Generate a new query_id
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, *std_out);
@@ -2749,60 +2671,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
 }
 
 
-void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
-{
-    const auto & config = getClientConfiguration();
-
-    /// By default, echoing and formatting are enabled in interactive mode and disabled in batch mode.
-    /// In `clickhouse-local`, `--verbose` enables echoing as well (historical behavior, opt-in here).
-    const bool echo_default = is_interactive || (verbose_implies_echo && config.getBool("verbose", false));
-    echo_queries = config.getBool("echo", echo_default);
-    echo_query_formatted = config.getBool("echo-formatted", is_interactive);
-    echo_query_id = config.getBool("echo-query-id", is_interactive);
-    highlight_queries = config.getBool("highlight", true);
-}
-
-
-void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_query)
-{
-    String text;
-    if (echo_query_formatted && parsed_query)
-    {
-        WriteBufferFromOwnString res_buf;
-        IAST::FormatSettings format_settings(/* one_line */ false);
-        format_settings.show_secrets = true;
-        format_settings.print_pretty_type_names = true;
-        parsed_query->format(res_buf, format_settings);
-        res_buf.finalize();
-        text = res_buf.str();
-    }
-    else
-    {
-        text = String{full_query};
-    }
-
-#if USE_REPLXX
-    /// Highlighting produces ANSI escape sequences, so it only makes sense when writing to a terminal.
-    if (highlight_queries && stdout_is_a_tty)
-        text = highlighted(text, *client_context, rainbow_parentheses);
-#endif
-
-    if (echo_query_formatted)
-    {
-        /// Surround the formatted query with blank lines, as in interactive mode.
-        writeChar('\n', *std_out);
-        writeString(text, *std_out);
-        writeString("\n\n", *std_out);
-    }
-    else
-    {
-        writeString(text, *std_out);
-        writeChar('\n', *std_out);
-    }
-    std_out->next();
-}
-
-
 bool ClientBase::executeMultiQuery(const String & all_queries_text)
 {
     bool echo_query = echo_queries;
@@ -2830,7 +2698,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     /// An exception is VALUES format where we also support semicolon in
     /// addition to end of line.
     const char * this_query_begin = all_queries_text.data() + test_tags_length;
-    const char * this_query_end = nullptr;
+    const char * this_query_end;
     const char * all_queries_end = all_queries_text.data() + all_queries_text.size();
 
     const char * prev_query_begin = all_queries_text.data();
@@ -2957,7 +2825,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool is_async_insert_with_inlined_data = false;
 
                 if (echo_query)
-                    echoQuery(full_query, parsed_query);
+                {
+                    writeString(full_query, *std_out);
+                    writeChar('\n', *std_out);
+                    std_out->next();
+                }
 
                 try
                 {
@@ -3516,9 +3388,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")
         ("memory-usage", po::value<std::string>()->implicit_value("default")->default_value("none"), "Print memory usage to stderr in non-interactive mode (for benchmarks). Values: 'none', 'default', 'readable'")
 
-        ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
-        ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
-        ("echo-query-id", po::value<bool>()->implicit_value(true), "Print the query_id before execution. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo", "In batch mode, print query before execution")
 
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
@@ -3527,7 +3397,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
-        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
+        ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting in interactive mode (can also use --hilite)")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -3649,11 +3519,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("enable-progress-table-toggle"))
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.contains("echo"))
-        getClientConfiguration().setBool("echo", options["echo"].as<bool>());
-    if (options.contains("echo-formatted"))
-        getClientConfiguration().setBool("echo-formatted", options["echo-formatted"].as<bool>());
-    if (options.contains("echo-query-id"))
-        getClientConfiguration().setBool("echo-query-id", options["echo-query-id"].as<bool>());
+        getClientConfiguration().setBool("echo", true);
     if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
@@ -4004,7 +3870,7 @@ bool ClientBase::processMultiQueryFromFile(const String & file_name)
 
 void ClientBase::runNonInteractive()
 {
-    if (delayed_interactive || echo_query_id)
+    if (delayed_interactive)
         initQueryIdFormats();
 
 #if USE_CLIENT_AI
