@@ -124,6 +124,24 @@ TEST(MemoryPressureMonitor, SetThresholdsRejectsInvalid)
     EXPECT_NO_THROW(fake.setThresholds(75, 75, 90));   // equality allowed
 }
 
+/// Reloading the ladder resets the sticky cooldown: a level classified under the
+/// old thresholds must not persist when the new ladder would classify the same
+/// pressure lower. Without the reset the old level would stay until the 60 s
+/// cooldown stepped it down, even though the active ladder no longer warrants it.
+TEST(MemoryPressureMonitor, ThresholdReloadResetsCooldown)
+{
+    FakeMemoryPressureMonitor fake(0.92, SECOND);
+    ScopedMemoryPressureMonitor scope(fake);
+
+    /// 0.92 is High under the default 75 / 90 / 95 ladder.
+    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::High);
+
+    /// Raise the ladder so 0.92 is now below Elevated. Time does not advance, so
+    /// only the cooldown reset (not a step-down) can lower the level here.
+    fake.setThresholds(95, 96, 97);
+    EXPECT_EQ(fake.currentLevel(), MemoryPressureLevel::Normal);
+}
+
 TEST(MemoryPressureMonitor, ScopedRestoresPriorMonitor)
 {
     /// After the scope ends, `memoryPressureMonitor()` must hand back the

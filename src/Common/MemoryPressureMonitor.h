@@ -38,6 +38,13 @@ struct MemoryPressureThresholds
 /// concrete sizes (read window, block) lives with the consumer (e.g.
 /// `ReaderExecutor`). The interface intentionally exposes only the level
 /// and the configurable thresholds.
+
+/// Validate the three thresholds: each in [0, 100] and `l1 <= l2 <= l3`;
+/// throws `BAD_ARGUMENTS` otherwise. Exposed so the config-reload path can
+/// reject an invalid triple BEFORE applying any other live setting, instead of
+/// leaving earlier settings from the same rejected reload partially applied.
+void validateMemoryPressureThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct);
+
 class IMemoryPressureMonitor
 {
 public:

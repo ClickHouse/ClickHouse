@@ -40,9 +40,12 @@ MemoryPressureLevel PressureLevelMachine::levelForPressure(double pressure) cons
 
 MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
 {
-    const uint8_t raw_level = rawLevel(pressure);
-
     std::lock_guard lk(mutex);
+
+    /// Classify under the lock: a concurrent `setThresholds` swaps the ladder and
+    /// resets the cooldown under this same lock, so the thresholds can't change
+    /// between this classification and the cooldown update below.
+    const uint8_t raw_level = rawLevel(pressure);
 
     if (raw_level >= level)
     {
@@ -63,7 +66,7 @@ MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_n
     return static_cast<MemoryPressureLevel>(level);
 }
 
-void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
+void validateMemoryPressureThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
 {
     /// Validate range and ordering loudly. Silent clamping/sorting (the
     /// previous behavior) hid config typos — e.g. `300` would wrap to `44`
@@ -79,13 +82,26 @@ void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3
             "Memory pressure thresholds must satisfy level_1 <= level_2 <= level_3, got "
             "level_1={}, level_2={}, level_3={}",
             l1_pct, l2_pct, l3_pct);
+}
 
-    /// Publish all three as one atomic so `rawLevel` never sees a half-applied
-    /// ladder. No mutex needed — the packed value is self-consistent.
+void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
+{
+    validateMemoryPressureThresholds(l1_pct, l2_pct, l3_pct);
+
+    /// Publish all three as one packed value so `rawLevel` never sees a
+    /// half-applied ladder.
     const uint32_t packed = (static_cast<uint32_t>(l1_pct) << 16)
                           | (static_cast<uint32_t>(l2_pct) << 8)
                           | static_cast<uint32_t>(l3_pct);
+
+    std::lock_guard lk(mutex);
     thresholds_packed.store(packed, std::memory_order_relaxed);
+    /// Reset the cooldown under the same lock `sample` uses: a level classified
+    /// under the old ladder must not stick after the ladder changes. The next
+    /// `sample` reclassifies (snap-up is immediate, so genuinely-high pressure
+    /// re-escalates at once rather than waiting out a stale cooldown).
+    level = 0;
+    last_at_or_above_ns = 0;
 }
 
 MemoryPressureThresholds PressureLevelMachine::getThresholds() const

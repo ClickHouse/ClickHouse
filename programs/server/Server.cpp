@@ -2300,6 +2300,15 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
+            /// Reject an invalid memory-pressure threshold triple BEFORE applying any
+            /// live setting below: `setThresholds` validates too, but it runs after the
+            /// pools/throttlers/workloads are already reloaded, so a late throw would
+            /// leave those earlier settings from the same rejected reload published.
+            validateMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
@@ -2543,12 +2552,9 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// Validate the memory-pressure thresholds before mutating the live
-            /// connection cap. `setThresholds` throws `BAD_ARGUMENTS` on an invalid
-            /// triple before it stores anything, and `setCapacity` does not throw,
-            /// so applying the cap second makes the pair transactional: a reload
-            /// that changes both but carries an invalid threshold leaves neither
-            /// the cap nor the thresholds half-applied.
+            /// Apply the thresholds (already validated above, so this won't throw)
+            /// and reset the monitor's cooldown so the next sample reclassifies
+            /// against the new ladder.
             memoryPressureMonitor().setThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
