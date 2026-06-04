@@ -61,8 +61,12 @@ bool isSimpleDataType(TypeIndex type_index)
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::UUID: [[fallthrough]];
-        case TypeIndex::String: return true;
-        default: return false;
+        case TypeIndex::String: {
+            return true;
+        }
+        default: {
+            return false;
+        }
     }
 }
 }
