@@ -327,9 +327,11 @@
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeLog, "Number of watch notifications dispatched to ReplicatedMergeTree log entries.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeMutations, "Number of watch notifications dispatched to ReplicatedMergeTree mutations.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection, "Number of watch notifications dispatched to ReplicatedMergeTree leader election / replica locks.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync, "Number of watch notifications dispatched while waiting for replicas to process log entries (SYNC REPLICA, ALTER, mutations).", ValueType::Number) \
     M(ZooKeeperWatchTriggeredDistributedDDL, "Number of watch notifications dispatched to DDLWorker queue.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredReplicatedAccessControl, "Number of watch notifications dispatched to ReplicatedAccessStorage.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredUserDefinedSQLObjects, "Number of watch notifications dispatched to UserDefinedSQLObjectsZooKeeperStorage.", ValueType::Number) \
+    M(ZooKeeperWatchTriggeredWorkloadEntity, "Number of watch notifications dispatched to WorkloadEntityKeeperStorage.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredBackupCoordination, "Number of watch notifications dispatched to backup / restore coordination.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredObjectStorageQueue, "Number of watch notifications dispatched to ObjectStorageQueue / S3Queue.", ValueType::Number) \
     M(ZooKeeperWatchTriggeredClusterDiscovery, "Number of watch notifications dispatched to ClusterDiscovery.", ValueType::Number) \

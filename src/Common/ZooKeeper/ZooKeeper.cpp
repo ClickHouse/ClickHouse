@@ -1308,7 +1308,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1332,6 +1332,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
+    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
