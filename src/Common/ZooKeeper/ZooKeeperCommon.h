@@ -245,10 +245,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
 
     OpNum getOpNum() const override
     {
-        /// include_stats and include_ttl are mutually exclusive — readImpl rejects
-        /// the combination, so a request reaching here with both set was built
-        /// inconsistently in-process. Classify CreateTTL first so a TTL request is
-        /// never silently feature-gated as a plain Create2.
+        /// include_stats and include_ttl are mutually exclusive
         if (include_ttl)
             return OpNum::CreateTTL;
         if (include_stats)
