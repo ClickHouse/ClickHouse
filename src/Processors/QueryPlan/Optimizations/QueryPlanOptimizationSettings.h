@@ -56,6 +56,7 @@ struct QueryPlanOptimizationSettings
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
     bool aggregate_partitions_independently;
+    bool limit_by_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -89,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool use_query_condition_cache;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
+    bool push_limit_by_into_sort;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -115,6 +117,12 @@ struct QueryPlanOptimizationSettings
     bool optimize_use_implicit_projections;
     bool force_use_projection;
     String force_projection_name;
+
+    /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
+    /// projection). Sets larger than this are treated as non-matching. Zero disables content-hash
+    /// comparison for IN-clause sets entirely (projection match never succeeds for nodes
+    /// containing such sets).
+    size_t max_set_size_for_projection_match = 0;
 
     /// When optimizing projections for parallel replicas reading, the initiator and the remote replicas require different handling.
     /// This parameter is used to distinguish between the initiator and the remote replicas.
@@ -157,7 +165,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
 
     /// JOIN runtime filter settings

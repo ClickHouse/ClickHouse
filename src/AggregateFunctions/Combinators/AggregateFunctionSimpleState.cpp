@@ -25,6 +25,7 @@ namespace
 
 }
 
+void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorSimpleState(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorSimpleState>());
