@@ -6,6 +6,7 @@
 
 #include <Processors/Formats/Impl/ArrowIPC/FlatBuffersCommon.h>
 #include <DataTypes/IDataType.h>
+#include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 
 #include <map>
@@ -112,10 +113,11 @@ struct ArrowSchema
 /// Parses the IPC Schema FlatBuffer into the Arrow-free description above.
 ArrowSchema parseSchema(const flatbuf::Schema & schema);
 
-/// A record-batch / dictionary-batch location inside an Arrow file (absolute offset + body length).
+/// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
 {
     int64_t offset = 0;
+    int32_t metadata_length = 0; /// only set/used when writing the footer
     int64_t body_length = 0;
 };
 
@@ -131,9 +133,22 @@ struct ArrowFileFooter
 /// input must support `SEEK_SET`, but not necessarily `SEEK_END`).
 ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size);
 
+/// Builds the Arrow file `Footer` FlatBuffer (schema + record-batch blocks) into `builder` (Finished).
+void buildFooter(
+    flatbuffers::FlatBufferBuilder & builder,
+    const Names & names,
+    const DataTypes & types,
+    const FormatSettings & settings,
+    const std::vector<ArrowFileBlock> & record_blocks);
+
 /// Maps a parsed Arrow field to the ClickHouse data type used for schema inference / the natural
 /// decode type. `make_nullable` forces a Nullable wrapper (used for schema_inference_make_columns_nullable).
 DataTypePtr fieldToCHType(const ArrowField & field, const FormatSettings & settings, bool make_nullable);
+
+/// Builds the IPC `Schema` message FlatBuffer for a ClickHouse header into `builder` (left Finished),
+/// mirroring the type choices of the native writer's record-batch encoder.
+void buildSchemaMessage(
+    flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings);
 
 }
 

@@ -15,7 +15,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/DateLUTImpl.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
@@ -245,6 +247,209 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema)
     return result;
 }
 
+namespace
+{
+
+int arrowTimeUnitForScale(UInt32 scale)
+{
+    if (scale == 0)
+        return flatbuf::TimeUnit_SECOND;
+    if (scale <= 3)
+        return flatbuf::TimeUnit_MILLISECOND;
+    if (scale <= 6)
+        return flatbuf::TimeUnit_MICROSECOND;
+    return flatbuf::TimeUnit_NANOSECOND;
+}
+
+flatbuffers::Offset<flatbuf::Field>
+buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings);
+
+flatbuffers::Offset<flatbuf::Field>
+buildMapEntriesField(flatbuffers::FlatBufferBuilder & b, const DataTypeMap & map_type, const FormatSettings & settings)
+{
+    /// Arrow map child: a non-nullable struct "entries" with children "key" (non-nullable) and "value".
+    std::vector<flatbuffers::Offset<flatbuf::Field>> kv;
+    kv.push_back(buildField(b, "key", removeNullable(map_type.getKeyType()), settings));
+    kv.push_back(buildField(b, "value", map_type.getValueType(), settings));
+    auto kv_vec = b.CreateVector(kv);
+    auto entries_name = b.CreateString("entries");
+    auto struct_type = flatbuf::CreateStruct_(b).Union();
+    return flatbuf::CreateField(b, entries_name, false, flatbuf::Type_Struct_, struct_type, 0, kv_vec);
+}
+
+flatbuffers::Offset<flatbuf::Field>
+buildField(flatbuffers::FlatBufferBuilder & b, const std::string & name, const DataTypePtr & type, const FormatSettings & settings)
+{
+    DataTypePtr t = removeLowCardinality(type);
+    const bool nullable = t->isNullable();
+    t = removeNullable(t);
+
+    flatbuf::Type type_type = flatbuf::Type_NONE;
+    flatbuffers::Offset<void> type_offset;
+    std::vector<flatbuffers::Offset<flatbuf::Field>> children;
+
+    auto make_int = [&](int bits, bool is_signed) {
+        type_type = flatbuf::Type_Int;
+        type_offset = flatbuf::CreateInt(b, bits, is_signed).Union();
+    };
+
+    if (isBool(t))
+    {
+        type_type = flatbuf::Type_Bool;
+        type_offset = flatbuf::CreateBool(b).Union();
+    }
+    else
+    {
+        const WhichDataType which(t);
+        switch (which.idx)
+        {
+            case TypeIndex::UInt8: make_int(8, false); break;
+            case TypeIndex::UInt16: make_int(16, false); break;
+            case TypeIndex::UInt32: make_int(32, false); break;
+            case TypeIndex::UInt64: make_int(64, false); break;
+            case TypeIndex::Int8: case TypeIndex::Enum8: make_int(8, true); break;
+            case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
+            case TypeIndex::Int32: make_int(32, true); break;
+            case TypeIndex::Int64: make_int(64, true); break;
+            case TypeIndex::DateTime: make_int(32, false); break;
+            case TypeIndex::Float32:
+                type_type = flatbuf::Type_FloatingPoint;
+                type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_SINGLE).Union();
+                break;
+            case TypeIndex::Float64:
+                type_type = flatbuf::Type_FloatingPoint;
+                type_offset = flatbuf::CreateFloatingPoint(b, flatbuf::Precision_DOUBLE).Union();
+                break;
+            case TypeIndex::Date: case TypeIndex::Date32:
+                type_type = flatbuf::Type_Date;
+                type_offset = flatbuf::CreateDate(b, flatbuf::DateUnit_DAY).Union();
+                break;
+            case TypeIndex::DateTime64:
+            {
+                const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*t);
+                const int unit = arrowTimeUnitForScale(dt64.getScale());
+                flatbuffers::Offset<flatbuffers::String> tz_off = 0;
+                if (dt64.hasExplicitTimeZone())
+                    tz_off = b.CreateString(dt64.getTimeZone().getTimeZone());
+                type_type = flatbuf::Type_Timestamp;
+                type_offset = flatbuf::CreateTimestamp(b, static_cast<flatbuf::TimeUnit>(unit), tz_off).Union();
+                break;
+            }
+            case TypeIndex::Decimal32: case TypeIndex::Decimal64: case TypeIndex::Decimal128: case TypeIndex::Decimal256:
+            {
+                const int bit_width = which.idx == TypeIndex::Decimal256 ? 256 : 128;
+                type_type = flatbuf::Type_Decimal;
+                type_offset = flatbuf::CreateDecimal(
+                    b, static_cast<int32_t>(getDecimalPrecision(*t)), static_cast<int32_t>(getDecimalScale(*t)), bit_width).Union();
+                break;
+            }
+            case TypeIndex::String:
+                if (settings.arrow.output_string_as_string)
+                {
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                }
+                else
+                {
+                    type_type = flatbuf::Type_Binary;
+                    type_offset = flatbuf::CreateBinary(b).Union();
+                }
+                break;
+            case TypeIndex::FixedString:
+                if (settings.arrow.output_fixed_string_as_fixed_byte_array)
+                {
+                    type_type = flatbuf::Type_FixedSizeBinary;
+                    type_offset = flatbuf::CreateFixedSizeBinary(
+                        b, static_cast<int32_t>(assert_cast<const DataTypeFixedString &>(*t).getN())).Union();
+                }
+                else if (settings.arrow.output_string_as_string)
+                {
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                }
+                else
+                {
+                    type_type = flatbuf::Type_Binary;
+                    type_offset = flatbuf::CreateBinary(b).Union();
+                }
+                break;
+            case TypeIndex::Array:
+                children.push_back(buildField(b, "item", assert_cast<const DataTypeArray &>(*t).getNestedType(), settings));
+                type_type = flatbuf::Type_List;
+                type_offset = flatbuf::CreateList(b).Union();
+                break;
+            case TypeIndex::Tuple:
+            {
+                const auto & tuple = assert_cast<const DataTypeTuple &>(*t);
+                const auto & elems = tuple.getElements();
+                const auto & elem_names = tuple.getElementNames();
+                for (size_t i = 0; i < elems.size(); ++i)
+                    children.push_back(buildField(b, elem_names[i], elems[i], settings));
+                type_type = flatbuf::Type_Struct_;
+                type_offset = flatbuf::CreateStruct_(b).Union();
+                break;
+            }
+            case TypeIndex::Map:
+            {
+                children.push_back(buildMapEntriesField(b, assert_cast<const DataTypeMap &>(*t), settings));
+                type_type = flatbuf::Type_Map;
+                type_offset = flatbuf::CreateMap(b, false).Union();
+                break;
+            }
+            default:
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Native Arrow IPC writer does not support type {} yet", type->getName());
+        }
+    }
+
+    auto name_off = b.CreateString(name);
+    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<flatbuf::Field>>> children_off = 0;
+    if (!children.empty())
+        children_off = b.CreateVector(children);
+    return flatbuf::CreateField(b, name_off, nullable, type_type, type_offset, 0, children_off);
+}
+
+flatbuffers::Offset<flatbuf::Schema> buildSchemaTable(
+    flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings)
+{
+    std::vector<flatbuffers::Offset<flatbuf::Field>> field_offsets;
+    field_offsets.reserve(names.size());
+    for (size_t i = 0; i < names.size(); ++i)
+        field_offsets.push_back(buildField(builder, names[i], types[i], settings));
+    auto fields_vec = builder.CreateVector(field_offsets);
+    return flatbuf::CreateSchema(builder, flatbuf::Endianness_Little, fields_vec, 0, 0);
+}
+
+}
+
+void buildSchemaMessage(
+    flatbuffers::FlatBufferBuilder & builder, const Names & names, const DataTypes & types, const FormatSettings & settings)
+{
+    auto schema = buildSchemaTable(builder, names, types, settings);
+    auto message = flatbuf::CreateMessage(builder, flatbuf::MetadataVersion_V5, flatbuf::MessageHeader_Schema, schema.Union(), 0);
+    builder.Finish(message);
+}
+
+void buildFooter(
+    flatbuffers::FlatBufferBuilder & builder,
+    const Names & names,
+    const DataTypes & types,
+    const FormatSettings & settings,
+    const std::vector<ArrowFileBlock> & record_blocks)
+{
+    auto schema = buildSchemaTable(builder, names, types, settings);
+
+    std::vector<flatbuf::Block> blocks;
+    blocks.reserve(record_blocks.size());
+    for (const auto & b : record_blocks)
+        blocks.emplace_back(b.offset, b.metadata_length, b.body_length);
+    auto record_batches = builder.CreateVectorOfStructs(blocks);
+
+    auto footer = flatbuf::CreateFooter(builder, flatbuf::MetadataVersion_V5, schema, 0, record_batches, 0);
+    builder.Finish(footer);
+}
+
 ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
 {
     static constexpr std::string_view ARROW_MAGIC = "ARROW1";
@@ -291,10 +496,10 @@ ArrowFileFooter readArrowFileFooter(SeekableReadBuffer & in, size_t file_size_)
     result.schema = parseSchema(*footer->schema());
     if (footer->dictionaries())
         for (const auto * block : *footer->dictionaries())
-            result.dictionary_blocks.push_back({block->offset(), block->bodyLength()});
+            result.dictionary_blocks.push_back({.offset = block->offset(), .metadata_length = 0, .body_length = block->bodyLength()});
     if (footer->recordBatches())
         for (const auto * block : *footer->recordBatches())
-            result.record_batch_blocks.push_back({block->offset(), block->bodyLength()});
+            result.record_batch_blocks.push_back({.offset = block->offset(), .metadata_length = 0, .body_length = block->bodyLength()});
     return result;
 }
 
