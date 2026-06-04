@@ -121,6 +121,18 @@ struct Part
     /// mixed-version compatibility.
     size_t initial_total_marks_in_part = 0;
 
+    /// Content fingerprint of the underlying part on the first announcing replica's local disk
+    /// (snapshotted from `description.part_checksum_*` at first insertion). The two halves
+    /// together hold the `getTotalChecksumUInt128` of the part's `checksums.txt`, which is
+    /// computed over file contents and is therefore identical across replicas that share the
+    /// same on-disk data. Two replicas that hold genuinely different parts which happen to share
+    /// a name produce different fingerprints, so the coordinator can reject that case even when
+    /// `total_marks_in_part` happens to coincide. A value of `(0, 0)` means the field was unset
+    /// (older protocol replica or part with no loaded checksums); the coordinator skips
+    /// fingerprint validation and falls back to `initial_total_marks_in_part` in that case.
+    UInt64 initial_part_checksum_low64 = 0;
+    UInt64 initial_part_checksum_high64 = 0;
+
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 }
@@ -153,32 +165,54 @@ namespace
 /// Returns true when an announcement describes the same underlying part as the first replica's
 /// initial snapshot.
 ///
-/// We compare the total number of marks in the underlying part — `total_marks_in_part` —
-/// which is sourced from `data_part->index_granularity->getMarksCountWithoutFinal` and is
-/// invariant across replicas that share the same on-disk data. We deliberately do NOT compare
-/// `description.rows`, `description.ranges`, `getLastMark`, or any other analyzed-view field
-/// because:
+/// Identity check, in priority order:
 ///
-///   1. Per-replica PK and skip-index analysis can legitimately select different mark subsets
-///      from the same underlying part (for example, when local statistics differ); two such
-///      announcements describe the same data even though their analyzed views diverge.
+///   1. **Content fingerprint** — `(part_checksum_low64, part_checksum_high64)`, which is the
+///      `getTotalChecksumUInt128` of the part's `checksums.txt`. The fingerprint is computed
+///      over the part's file contents and is therefore the strongest available cross-replica
+///      identity. Two replicas that hold the same on-disk part agree on the fingerprint; two
+///      replicas that hold genuinely different parts produce different fingerprints even when
+///      `total_marks_in_part` happens to coincide (for example, two non-replicated `MergeTree`
+///      instances that each created a part named `all_1_1_0` from independent local inserts).
+///      When both sides carry a non-zero fingerprint, mismatch means divergent underlying data.
 ///
-///   2. `description.ranges` is consumed in place by `handleRequest` as ranges are dispatched
-///      (`pop_front`, `pop_back`, `range.begin += taken`), so it shrinks below its original
-///      layout between announcements.
+///   2. **Total mark count** — fallback used when either side's fingerprint is unset (older
+///      protocol replica that predates `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`,
+///      coordinator-internal queue entry, or part whose checksums were not loaded). Catches the
+///      common AST-fuzzer shape where mark counts diverge.
 ///
-/// A mismatch in `total_marks_in_part` signals that the replicas hold genuinely different
-/// underlying parts (for example, two non-replicated `MergeTree` instances that each created a
-/// part named `all_1_1_0` from independent local inserts). Merging them would later let the
-/// coordinator dispatch a mark from the larger replica's view to a replica whose underlying
-/// part has fewer marks, hitting `MergeTreeIndexGranularityConstant::getMarkRows`.
+/// We deliberately do NOT compare `description.rows`, `description.ranges`, `getLastMark`, or
+/// any other analyzed-view field because:
 ///
-/// `total_marks_in_part == 0` on either side means the field was unset — either because the
-/// announcing replica speaks an older `DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION` or because the
-/// description was synthesized internally by the coordinator (queue entries). In both cases we
-/// skip validation to preserve mixed-version compatibility; a zero value carries no information.
+///   * Per-replica PK and skip-index analysis can legitimately select different mark subsets
+///     from the same underlying part (for example, when local statistics differ); two such
+///     announcements describe the same data even though their analyzed views diverge.
+///
+///   * `description.ranges` is consumed in place by `handleRequest` as ranges are dispatched
+///     (`pop_front`, `pop_back`, `range.begin += taken`), so it shrinks below its original
+///     layout between announcements.
+///
+/// A mismatch in fingerprint (or in mark count, when fingerprint is unset) signals that the
+/// replicas hold genuinely different underlying parts. Merging them would later let the
+/// coordinator dispatch a range from the first replica's snapshot to a replica whose underlying
+/// data does not contain it, hitting `MergeTreeIndexGranularityConstant::getMarkRows` or
+/// returning incorrect results.
 bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & announced)
 {
+    const bool known_has_fingerprint
+        = known.initial_part_checksum_low64 != 0 || known.initial_part_checksum_high64 != 0;
+    const bool announced_has_fingerprint
+        = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
+
+    if (known_has_fingerprint && announced_has_fingerprint)
+    {
+        return known.initial_part_checksum_low64 == announced.part_checksum_low64
+            && known.initial_part_checksum_high64 == announced.part_checksum_high64;
+    }
+
+    /// Fingerprint is unset on at least one side. Fall back to the cheaper mark-count check, which
+    /// still catches divergent underlying parts whose mark counts disagree. Skip the check when
+    /// either side's mark count is unset (older protocol or coordinator-internal queue entry).
     if (known.initial_total_marks_in_part == 0 || announced.total_marks_in_part == 0)
         return true;
     return known.initial_total_marks_in_part == announced.total_marks_in_part;
@@ -189,6 +223,27 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
     const RangesInDataPartDescription & announced,
     const Part & known)
 {
+    const bool known_has_fingerprint
+        = known.initial_part_checksum_low64 != 0 || known.initial_part_checksum_high64 != 0;
+    const bool announced_has_fingerprint
+        = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
+
+    if (known_has_fingerprint && announced_has_fingerprint)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Replica {} announced part {} with content fingerprint {:016x}{:016x}, but an earlier "
+            "replica announced a same-named part with fingerprint {:016x}{:016x}. Parallel replicas "
+            "requires consistent data across cluster members. Use ReplicatedMergeTree or disable "
+            "parallel_replicas_for_non_replicated_merge_tree.",
+            replica_num,
+            announced.info.getPartNameV1(),
+            announced.part_checksum_high64,
+            announced.part_checksum_low64,
+            known.initial_part_checksum_high64,
+            known.initial_part_checksum_low64);
+    }
+
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
         "Replica {} announced part {} with {} marks in the underlying part, but an earlier "
@@ -208,6 +263,8 @@ bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & ann
 void captureInitialLayout(Part & p)
 {
     p.initial_total_marks_in_part = p.description.total_marks_in_part;
+    p.initial_part_checksum_low64 = p.description.part_checksum_low64;
+    p.initial_part_checksum_high64 = p.description.part_checksum_high64;
 }
 
 }

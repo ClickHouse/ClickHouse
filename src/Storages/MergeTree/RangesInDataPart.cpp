@@ -45,6 +45,12 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
         writeVarUInt(total_marks_in_part, out);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT)
+    {
+        writeVarUInt(part_checksum_low64, out);
+        writeVarUInt(part_checksum_high64, out);
+    }
 }
 
 String RangesInDataPartDescription::describe() const
@@ -76,6 +82,12 @@ void RangesInDataPartDescription::deserialize(ReadBuffer & in, UInt64 parallel_r
 
     if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_TOTAL_MARKS_IN_PART)
         readVarUInt(total_marks_in_part, in);
+
+    if (parallel_replicas_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT)
+    {
+        readVarUInt(part_checksum_low64, in);
+        readVarUInt(part_checksum_high64, in);
+    }
 }
 
 void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const
@@ -139,6 +151,21 @@ RangesInDataPart::RangesInDataPart(
 RangesInDataPartDescription RangesInDataPart::getDescription() const
 {
     chassert(!data_part->isProjectionPart() || parent_part);
+
+    /// Content fingerprint of the underlying part. Identifies the actual on-disk data, so two
+    /// genuinely-different same-named parts produce different fingerprints (used by
+    /// `ParallelReplicasReadingCoordinator` to reject divergent local data even when mark counts
+    /// happen to coincide). When `checksums` is empty (rare paths where the file is not loaded),
+    /// the fingerprint is left at `(0, 0)` and the coordinator falls back to `total_marks_in_part`.
+    UInt64 fingerprint_low64 = 0;
+    UInt64 fingerprint_high64 = 0;
+    if (!data_part->checksums.empty())
+    {
+        const auto fingerprint = data_part->checksums.getTotalChecksumUInt128();
+        fingerprint_low64 = fingerprint.low64;
+        fingerprint_high64 = fingerprint.high64;
+    }
+
     return RangesInDataPartDescription{
         .info = data_part->isProjectionPart() ? parent_part->info : data_part->info,
         .ranges = ranges,
@@ -146,8 +173,10 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
         .projection_name = data_part->isProjectionPart() ? data_part->name : "",
         /// Total mark count of the underlying part — invariant across replicas with the same
         /// underlying data and unaffected by per-replica PK or skip-index analysis. Used by
-        /// `ParallelReplicasReadingCoordinator` to detect cross-replica part divergence.
+        /// `ParallelReplicasReadingCoordinator` as a cheap sanity check.
         .total_marks_in_part = data_part->index_granularity->getMarksCountWithoutFinal(),
+        .part_checksum_low64 = fingerprint_low64,
+        .part_checksum_high64 = fingerprint_high64,
     };
 }
 

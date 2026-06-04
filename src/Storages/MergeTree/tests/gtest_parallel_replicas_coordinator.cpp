@@ -16,7 +16,8 @@ namespace
 
 /// Builds a `RangesInDataPartDescription` whose analyzed view (`ranges` / `rows`) AND underlying
 /// total mark count both equal `marks`. This is the simplest shape: the part has `marks` marks
-/// on disk and the announcing replica analyzed all of them.
+/// on disk and the announcing replica analyzed all of them. Leaves the part fingerprint at
+/// `(0, 0)` so the coordinator falls back to the mark-count divergence check.
 RangesInDataPartDescription makePart(const String & partition_id, Int64 min_block, Int64 max_block, UInt32 level, size_t marks)
 {
     RangesInDataPartDescription desc;
@@ -24,6 +25,24 @@ RangesInDataPartDescription makePart(const String & partition_id, Int64 min_bloc
     desc.ranges = MarkRanges{MarkRange{0, marks}};
     desc.rows = marks * 8192;
     desc.total_marks_in_part = marks;
+    return desc;
+}
+
+/// Like `makePart` but additionally sets the part fingerprint
+/// (`getTotalChecksumUInt128` halves) on the description, exercising the fingerprint
+/// branch of `sameLocalLayout`. Used by the divergent-checksum tests.
+RangesInDataPartDescription makePartWithFingerprint(
+    const String & partition_id,
+    Int64 min_block,
+    Int64 max_block,
+    UInt32 level,
+    size_t marks,
+    UInt64 fingerprint_low64,
+    UInt64 fingerprint_high64)
+{
+    auto desc = makePart(partition_id, min_block, max_block, level, marks);
+    desc.part_checksum_low64 = fingerprint_low64;
+    desc.part_checksum_high64 = fingerprint_high64;
     return desc;
 }
 
@@ -402,4 +421,117 @@ TEST(ParallelReplicasCoordinator, InOrderSkipsValidationWhenTotalMarksUnset)
     parts2.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
     EXPECT_NO_THROW(
         coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(parts2))));
+}
+
+/// `total_marks_in_part` alone is not a part identity: two genuinely different non-replicated
+/// `MergeTree` parts that happen to share a name AND coincidentally have the same mark count
+/// would slip past the previous mark-only check. The fingerprint is the
+/// `getTotalChecksumUInt128` of the part's `checksums.txt` and disambiguates such cases. Same
+/// fingerprint = same on-disk content; different fingerprint = different content.
+TEST(ParallelReplicasCoordinator, InOrderRejectsDivergentChecksumWithSameMarks)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Replica 0 announces a part with fingerprint `0x...AAAA / 0x...BBBB`.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
+            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull));
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Replica 1 announces a same-named part with the SAME mark count (8) but a DIFFERENT
+    /// fingerprint. Without the fingerprint check the announcement would be silently merged.
+    /// With the fingerprint check it raises `BAD_ARGUMENTS`.
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePartWithFingerprint(
+        "all", 1, 1, 0, /*marks=*/8,
+        /*fingerprint_low64=*/0xCCCCCCCCCCCCCCCCull,
+        /*fingerprint_high64=*/0xDDDDDDDDDDDDDDDDull));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent))),
+        DB::Exception);
+}
+
+/// Same regression in `Default` coordination mode.
+TEST(ParallelReplicasCoordinator, DefaultRejectsDivergentChecksumWithSameMarks)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0x1111111111111111ull,
+            /*fingerprint_high64=*/0x2222222222222222ull));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    RangesInDataPartsDescription divergent;
+    divergent.push_back(makePartWithFingerprint(
+        "all", 1, 1, 0, /*marks=*/8,
+        /*fingerprint_low64=*/0x3333333333333333ull,
+        /*fingerprint_high64=*/0x4444444444444444ull));
+    EXPECT_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(divergent))),
+        DB::Exception);
+}
+
+/// The complement: same fingerprint must be accepted even when other analyzed-view fields
+/// (rows, ranges) diverge. This guards against tightening the fingerprint check into another
+/// false-positive class similar to the iteration-3 regression on this PR.
+TEST(ParallelReplicasCoordinator, InOrderAcceptsSameChecksumWithDivergentAnalyzedView)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// Replica 0 announces a part where local PK analysis selected only 4 marks out of 10000.
+    {
+        RangesInDataPartsDescription parts;
+        auto desc = makePartWithAnalyzedAndTotal(
+            "all", 1, 1, 0, /*analyzed_marks=*/4, /*total_marks=*/10000, /*rows=*/4);
+        desc.part_checksum_low64 = 0xCAFEBABE12345678ull;
+        desc.part_checksum_high64 = 0xDEADBEEF87654321ull;
+        parts.push_back(desc);
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Replica 1 reports the same on-disk part (same fingerprint, same mark count) but selected
+    /// all 10000 marks. Identity matches, divergent analyzed view is fine.
+    RangesInDataPartsDescription divergent_view;
+    auto desc = makePartWithAnalyzedAndTotal(
+        "all", 1, 1, 0, /*analyzed_marks=*/10000, /*total_marks=*/10000, /*rows=*/10000);
+    desc.part_checksum_low64 = 0xCAFEBABE12345678ull;
+    desc.part_checksum_high64 = 0xDEADBEEF87654321ull;
+    divergent_view.push_back(desc);
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeAnnouncement(/*replica_num=*/1, std::move(divergent_view))));
+}
+
+/// Backward-compatibility for the fingerprint check: an older replica that does not populate
+/// `part_checksum_*` (protocol below `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`)
+/// must still interoperate with newer replicas. When either side's fingerprint is unset, the
+/// coordinator falls back to the cheaper `total_marks_in_part` check.
+TEST(ParallelReplicasCoordinator, DefaultFallsBackToMarksWhenChecksumUnset)
+{
+    ParallelReplicasReadingCoordinator coordinator(/*replicas_count_=*/2);
+
+    /// First announcement: newer replica that DOES populate the fingerprint.
+    {
+        RangesInDataPartsDescription parts;
+        parts.push_back(makePartWithFingerprint(
+            "all", 1, 1, 0, /*marks=*/8,
+            /*fingerprint_low64=*/0xAAAAAAAAAAAAAAAAull,
+            /*fingerprint_high64=*/0xBBBBBBBBBBBBBBBBull));
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/0, std::move(parts)));
+    }
+
+    /// Second announcement: older replica without the fingerprint, but matching `total_marks_in_part`.
+    /// The coordinator skips the fingerprint check (one side unset) and falls through to the
+    /// mark-count check, which agrees, so the announcement is accepted.
+    RangesInDataPartsDescription parts_old;
+    parts_old.push_back(makePart("all", 1, 1, 0, /*marks=*/8));
+    EXPECT_NO_THROW(
+        coordinator.handleInitialAllRangesAnnouncement(makeDefaultAnnouncement(/*replica_num=*/1, std::move(parts_old))));
 }
