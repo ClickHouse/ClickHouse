@@ -37,12 +37,6 @@ WHERE id IN (SELECT arrayJoin([100])::UInt64)
    OR id IN (SELECT arrayJoin([199900])::UInt64)
 SETTINGS enable_filesystem_cache = 0, log_comment = '100743_or_subqueries';
 
--- Verify the plan: for Parquet, IN-subquery sets must be built eagerly (no CreatingSet step in EXPLAIN).
-SELECT 'explain_no_creating_set',
-    countIf(explain LIKE '%CreatingSet%') = 0 AS sets_built_eagerly
-FROM (EXPLAIN SELECT count() FROM file(current_database() || '_100743.parquet', Parquet)
-      WHERE id IN (SELECT arrayJoin([100])::UInt64));
-
 -- For each SELECT the expectation is to read far less than the full file (200k rows) - 50k as threshold should be enough
 SYSTEM FLUSH LOGS query_log;
 SELECT

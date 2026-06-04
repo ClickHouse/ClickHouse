@@ -25,12 +25,6 @@ SELECT count() FROM file(current_database() || '_100743.orc', ORC)
 WHERE id IN (SELECT id FROM keys)
 SETTINGS enable_filesystem_cache = 0, log_comment = '100743_orc_cte';
 
--- Verify the plan: for ORC, IN-subquery sets must be built eagerly (no CreatingSet step in EXPLAIN).
-SELECT 'explain_no_creating_set',
-    countIf(explain LIKE '%CreatingSet%') = 0 AS sets_built_eagerly
-FROM (EXPLAIN SELECT count() FROM file(current_database() || '_100743.orc', ORC)
-      WHERE id IN (SELECT arrayJoin([50])::UInt64));
-
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,

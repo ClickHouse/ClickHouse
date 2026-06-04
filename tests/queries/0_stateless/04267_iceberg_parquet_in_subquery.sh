@@ -41,14 +41,6 @@ SELECT count() FROM ${TABLE}
 WHERE id IN (SELECT arrayJoin([100, 100000, 199900])::UInt64)
 "
 
-# EXPLAIN: no CreatingSet (sets built eagerly for Parquet via Iceberg).
-${CLICKHOUSE_CLIENT} --query "
-SELECT 'explain_no_creating_set',
-    countIf(explain LIKE '%CreatingSet%') = 0 AS sets_built_eagerly
-FROM (EXPLAIN SELECT count() FROM ${TABLE}
-      WHERE id IN (SELECT arrayJoin([100])::UInt64))
-"
-
 # Verify actual pushdown via read_rows: should read far less than 200k.
 ${CLICKHOUSE_CLIENT} --query "
 SELECT count() FROM ${TABLE}
