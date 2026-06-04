@@ -80,6 +80,14 @@ namespace ProfileEvents
     extern const Event DataLakeRestCatalogGetTableMetadataMicroseconds;
     extern const Event DataLakeRestCatalogGetCredentials;
     extern const Event DataLakeRestCatalogGetCredentialsMicroseconds;
+    extern const Event DataLakeRestCatalogCreateNamespace;
+    extern const Event DataLakeRestCatalogCreateNamespaceMicroseconds;
+    extern const Event DataLakeRestCatalogCreateTable;
+    extern const Event DataLakeRestCatalogCreateTableMicroseconds;
+    extern const Event DataLakeRestCatalogUpdateTable;
+    extern const Event DataLakeRestCatalogUpdateTableMicroseconds;
+    extern const Event DataLakeRestCatalogDropTable;
+    extern const Event DataLakeRestCatalogDropTableMicroseconds;
 }
 
 namespace DataLake
@@ -1198,6 +1206,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCreateNamespace);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogCreateNamespaceMicroseconds);
         sendRequest(endpoint, request_body);
     }
     catch (...)
@@ -1240,6 +1250,8 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogCreateTable);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogCreateTableMicroseconds);
         sendRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException & ex)
@@ -1305,6 +1317,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogUpdateTable);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogUpdateTableMicroseconds);
         sendRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException & ex)
@@ -1384,6 +1398,8 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogDropTable);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogDropTableMicroseconds);
         sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
     }
     catch (const DB::HTTPException & ex)
