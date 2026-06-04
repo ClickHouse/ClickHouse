@@ -430,8 +430,7 @@ protected:
     }
 
     /// Remove up to `max_batch` pending invalidated entries, draining each from the
-    /// queue under the write lock. Returns the number of pending entries processed.
-    /// Implemented by leaf priorities (LRU); composites fan out to their sub-queues.
+    /// queue under the write lock. Returns the number of pending entries removed.
     virtual size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) = 0;
 
     std::atomic<size_t> max_size = 0;

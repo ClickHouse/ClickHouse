@@ -125,8 +125,6 @@ void IFileCachePriority::cleanupTaskFunc()
     }
     catch (...)
     {
-        /// Must still reschedule below, or cleanup stops for good. The failed entry
-        /// keeps its ref and is retried next pass.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
