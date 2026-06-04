@@ -146,7 +146,20 @@ possible_properties = {
     "concurrent_threads_soft_limit_num": threads_lambda,
     "concurrent_threads_soft_limit_ratio_to_cores": threads_lambda,
     "cpu_slot_preemption": true_false_lambda,
+    "cpu_slot_preemption_timeout_ms": threshold_generator(0.2, 0.2, 0, 5000),
+    "cpu_slot_quantum_ns": threshold_generator(0.2, 0.2, 0, 100000000),
+    "database_atomic_delay_before_drop_table_sec": threshold_generator(0.2, 0.2, 0, 60),
+    "database_catalog_drop_error_cooldown_sec": threshold_generator(0.2, 0.2, 0, 30),
     "database_catalog_drop_table_concurrency": threads_lambda,
+    "database_catalog_unused_dir_cleanup_period_sec": threshold_generator(
+        0.2, 0.2, 60, 86400
+    ),
+    "database_catalog_unused_dir_hide_timeout_sec": threshold_generator(
+        0.2, 0.2, 60, 3600
+    ),
+    "database_catalog_unused_dir_rm_timeout_sec": threshold_generator(
+        0.2, 0.2, 3600, 2592000
+    ),
     "database_replicated_allow_detach_permanently": true_false_lambda,
     "database_replicated_drop_broken_tables": true_false_lambda,
     "distributed_ddl_cleanup_delay_period": threshold_generator(0.2, 0.2, 0, 300),
@@ -174,6 +187,7 @@ possible_properties = {
     "dns_cache_update_period": threshold_generator(0.2, 0.2, 1, 600),
     "dns_max_consecutive_failures": threshold_generator(0.2, 0.2, 1, 10),
     "drop_distributed_cache_pool_size": threads_lambda,
+    "drop_distributed_cache_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "enable_azure_sdk_logging": true_false_lambda,
     "enable_system_unfreeze": true_false_lambda,
     "format_parsing_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
@@ -186,6 +200,8 @@ possible_properties = {
     "iceberg_background_schedule_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_pool_size": threads_lambda,
     "iceberg_catalog_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
+    "iceberg_compaction_threadpool_pool_size": threads_lambda,
+    "iceberg_compaction_threadpool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "iceberg_metadata_files_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
     "iceberg_metadata_files_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "iceberg_metadata_files_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
@@ -272,6 +288,7 @@ possible_properties = {
     "max_view_num_to_throw": threshold_generator(0.2, 0.2, 0, 10),
     "max_waiting_queries": threshold_generator(0.2, 0.2, 0, 100),
     "memory_worker_correct_memory_tracker": true_false_lambda,
+    "memory_worker_decay_adjustment_period_ms": threshold_generator(0.2, 0.2, 0, 30000),
     "memory_worker_use_cgroup": true_false_lambda,
     "merges_mutations_memory_usage_soft_limit": threshold_generator(0.2, 0.2, 0, 1000),
     "merges_mutations_memory_usage_to_ram_ratio": threshold_generator(
@@ -281,6 +298,7 @@ possible_properties = {
     "mlock_executable_min_total_memory_amount_bytes": threshold_generator(
         0.2, 0.2, 0, 10 * 1024 * 1024
     ),
+    "message_queue_disable_insertion": true_false_lambda,
     "mmap_cache_size": threshold_generator(0.2, 0.2, 0, 2000),
     "os_collect_psi_metrics": true_false_lambda,
     "os_threads_nice_value_distributed_cache_tcp_handler": threshold_generator(
@@ -320,9 +338,14 @@ possible_properties = {
         "max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 10000),
         "max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     },
+    "query_cache_max_entries": threshold_generator(0.2, 0.2, 0, 1024),
+    "query_cache_max_entry_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1048576),
+    "query_cache_max_entry_size_in_rows": threshold_generator(0.2, 0.2, 0, 30000000),
+    "query_cache_max_size_in_bytes": threshold_generator(0.2, 0.2, 0, 1073741824),
     "query_condition_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "query_condition_cache_size": threshold_generator(0.2, 0.2, 0, 104857600),
     "query_condition_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
+    "prepare_system_log_tables_on_startup": true_false_lambda,
     "remap_executable": true_false_lambda,
     "restore_threads": no_zero_threads_lambda,
     "s3_credentials_provider_max_cache_size": threshold_generator(
@@ -332,8 +355,11 @@ possible_properties = {
     "shutdown_wait_backups_and_restores": true_false_lambda,
     "shutdown_wait_unfinished": threshold_generator(0.2, 0.2, 0, 30),
     "shutdown_wait_unfinished_queries": true_false_lambda,
+    "snapshot_cleaner_period": threshold_generator(0.2, 0.2, 0, 600),
     "snapshot_cleaner_pool_size": threads_lambda,
+    "skip_check_for_incorrect_settings": true_false_lambda,
     "startup_mv_delay_ms": threshold_generator(0.2, 0.2, 0, 1000),
+    "storage_metadata_write_full_object_key": true_false_lambda,
     "storage_connections_hard_limit": threshold_generator(0.2, 0.2, 0, 400000),
     "storage_connections_rcvbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),
     "storage_connections_sndbuf": threshold_generator(0.2, 0.2, 0, 16 * 1024 * 1024),

@@ -404,8 +404,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
-    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
+    const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
+    auto it = node_map.find(identifier_full_name);
+    if (it != node_map.end())
         return it->second;
 
     /// Check if it's a subcolumn
@@ -546,7 +547,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    const auto & node_map = table_expression_data.getColumnNodeMap();
+    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
     {
         result_expression = it->second;
     }
@@ -615,8 +617,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             if (prefix_size != 1)
                 continue;
 
-            auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
-            if (column_node_it == table_expression_data.column_name_to_column_node.end())
+            auto column_node_it = node_map.find(column_name);
+            if (column_node_it == node_map.end())
                 continue;
 
             const auto & column_node = column_node_it->second;
