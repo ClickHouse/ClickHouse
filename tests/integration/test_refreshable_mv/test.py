@@ -617,7 +617,9 @@ def test_adding_replica(started_cluster, cleanup):
     )
 
 
-def test_backup_skips_rmv_target_when_target_storage_unresolved(started_cluster, cleanup):
+def test_backup_skips_rmv_target_when_target_storage_unresolved(
+    started_cluster, cleanup
+):
     # Like the previous test, but the target itself resolves to a null storage on node1: the MV's
     # initial refresh EXCHANGEs re.repro_tgt to a new UUID that paused node1 never applies. It must
     # still be skipped, else a null storage delegates the data to another replica, racing the EXCHANGE.
