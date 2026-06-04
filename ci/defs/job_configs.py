@@ -1591,13 +1591,8 @@ class JobConfigs:
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
         ],
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/promql_compliance_job.py",
-                "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
-                "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
-            ],
-        ),
+        # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
+        # would skip later labeled PRs after one successful run (see PR review).
         timeout=600,
         enable_gh_auth=True,
         allow_failure=True,
