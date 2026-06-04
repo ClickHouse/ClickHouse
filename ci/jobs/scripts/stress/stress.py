@@ -157,11 +157,11 @@ class RandomRestarter(ChaosThread):
 
     @staticmethod
     def _wait_port_free(port: int, timeout: float = 60.0) -> None:
-        """Wait until *port* is no longer in LISTEN state."""
+        """Wait until *port* has no sockets in any state (LISTEN, TIME_WAIT, etc)."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             ret = subprocess.run(
-                f"ss -tlnp | grep -q ':{port}\\b'",
+                f"ss -tanH 'sport = :{port}' | grep -q .",
                 shell=True,
                 capture_output=True,
             )
@@ -204,8 +204,10 @@ class RandomServerRestarter(RandomRestarter):
         except (FileNotFoundError, ValueError):
             return None
 
-    def _wait_server_up(self) -> bool:
-        deadline = time.monotonic() + self._server_start_timeout
+    def _wait_server_up(self, timeout: float = 0) -> bool:
+        if timeout <= 0:
+            timeout = self._server_start_timeout
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
@@ -277,15 +279,28 @@ class RandomServerRestarter(RandomRestarter):
             self.NAME,
             self._server_start_timeout,
         )
-        subprocess.run(
-            "clickhouse start --user root "
-            ">>/var/log/clickhouse-server/stdout.log "
-            "2>>/var/log/clickhouse-server/stderr.log",
-            shell=True,
-            timeout=30,
-        )
 
-        if self._wait_server_up():
+        deadline = time.monotonic() + self._server_start_timeout
+        started = False
+        while time.monotonic() < deadline:
+            subprocess.run(
+                "clickhouse start --user root "
+                ">>/var/log/clickhouse-server/stdout.log "
+                "2>>/var/log/clickhouse-server/stderr.log",
+                shell=True,
+                timeout=30,
+            )
+            remaining = max(0, deadline - time.monotonic())
+            if self._wait_server_up(min(remaining, 20)):
+                started = True
+                break
+            logging.warning(
+                "%s: server not up yet, retrying clickhouse start (%.0fs left)",
+                self.NAME,
+                max(0, deadline - time.monotonic()),
+            )
+
+        if started:
             logging.info("%s: server back up", self.NAME)
         else:
             logging.error(
