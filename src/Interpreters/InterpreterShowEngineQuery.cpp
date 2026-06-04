@@ -20,7 +20,6 @@ BlockIO InterpreterShowEnginesQuery::execute()
     return executeQuery("SELECT * FROM system.table_engines ORDER BY name", query_context, QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowEnginesQuery(InterpreterFactory & factory);
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

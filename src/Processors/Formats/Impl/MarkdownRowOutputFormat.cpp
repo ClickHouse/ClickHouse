@@ -57,7 +57,6 @@ void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerializ
     serialization.serializeTextMarkdown(column, row_num, out, format_settings);
 }
 
-void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory)
 {
     auto registerWithName = [&](const auto & name)

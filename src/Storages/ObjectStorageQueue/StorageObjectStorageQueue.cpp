@@ -3,10 +3,8 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
+#include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -60,7 +58,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
-    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
 
@@ -126,7 +123,6 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
-    extern const ObjectStorageQueueSettingsBool after_processing_move_preserve_path;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
     extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
     extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
@@ -287,7 +283,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
-        .after_processing_move_preserve_path = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_preserve_path],
         .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
         .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
         .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
@@ -618,7 +613,7 @@ void StorageObjectStorageQueue::read(
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. "
                         "To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
     }
-    bool do_commit_on_select = false;
+    bool do_commit_on_select;
     {
         std::lock_guard lock(mutex);
         do_commit_on_select = commit_on_select;
@@ -692,7 +687,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 {
     CommitSettings commit_settings_copy;
     AfterProcessingSettings after_processing_settings_copy;
-    bool add_deduplication_info = false;
+    bool add_deduplication_info;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
@@ -796,7 +791,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     if (!shutdown_called)
     {
-        UInt64 reschedule_interval_ms = 0;
+        UInt64 reschedule_interval_ms;
         {
             std::lock_guard lock(mutex);
             reschedule_interval_ms = reschedule_processing_interval_ms;
@@ -836,9 +831,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
-    size_t min_insert_block_size_rows = 0;
-    size_t min_insert_block_size_bytes = 0;
-    bool is_deduplication_v2 = false;
+    size_t min_insert_block_size_rows;
+    size_t min_insert_block_size_bytes;
+    bool is_deduplication_v2;
     {
         std::lock_guard lock(mutex);
         min_insert_block_size_rows = min_insert_block_size_rows_for_materialized_views;
@@ -1182,7 +1177,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
-    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1216,7 +1210,6 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "after_processing_retries",
     "after_processing_move_uri",
     "after_processing_move_prefix",
-    "after_processing_move_preserve_path",
     "after_processing_move_access_key_id",
     "after_processing_move_secret_access_key",
     "after_processing_move_connection_string",
@@ -1237,7 +1230,7 @@ static std::string normalizeSetting(const std::string & name)
     return name;
 }
 
-static void checkNormalizedSetting(const std::string & name)
+void checkNormalizedSetting(const std::string & name)
 {
     if (name.starts_with("s3queue_"))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
@@ -1526,8 +1519,6 @@ void StorageObjectStorageQueue::alter(
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
                 after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
-            else if (change.name == "after_processing_move_preserve_path")
-                after_processing_settings.after_processing_move_preserve_path = change.value.safeGet<bool>();
             else if (change.name == "after_processing_move_access_key_id")
                 after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_secret_access_key")
@@ -1577,8 +1568,8 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
-    size_t list_objects_batch_size_copy = 0;
-    bool enable_hash_ring_filtering_copy = false;
+    size_t list_objects_batch_size_copy;
+    bool enable_hash_ring_filtering_copy;
     {
         std::lock_guard lock(mutex);
         list_objects_batch_size_copy = list_objects_batch_size;
@@ -1648,7 +1639,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
-        settings[ObjectStorageQueueSetting::after_processing_move_preserve_path] = after_processing_settings.after_processing_move_preserve_path;
         settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
         settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
         settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;
@@ -1828,23 +1818,18 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
                 if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
+                    zk->existsWatch(processed_node_path, nullptr, event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(
-                    processed_node_path, nullptr,
-                    Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
+                zk->existsWatch(processed_node_path, nullptr, event);
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(
-                failed_node_path, nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
+            zk->existsWatch(failed_node_path, nullptr, event);
         });
 
         std::string failure_message;

@@ -12,7 +12,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 
 
 #include <Core/NamesAndTypes.h>
@@ -27,7 +26,6 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
-#include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -124,8 +122,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     if (beg_it != end_it)
     {
         auto previous_it = std::prev(end_it);
-        chassert(*beg_it);
-        chassert(*previous_it);
+        assert(*beg_it);
+        assert(*previous_it);
         LOG_DEBUG(
             logger,
             "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
@@ -270,6 +268,7 @@ IcebergIterator::IcebergIterator(
           data_snapshot_,
           persistent_components_)
     , blocking_queue(100)
+    , producer_task(std::nullopt)
     , callback(std::move(callback_))
 {
     auto delete_file = deletes_iterator.next();
@@ -288,7 +287,7 @@ IcebergIterator::IcebergIterator(
     LOG_DEBUG(logger, "Taken {} position deletes file and {} equality deletes files in iceberg iterator", position_deletes_files.size(), equality_deletes_files.size());
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-    producer_task = std::make_unique<ThreadFromGlobalPool>(
+    producer_task.emplace(
         [this, thread_group = CurrentThread::getGroup()]()
         {
             DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
@@ -399,16 +398,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
-
-        /// Report the data file size for file-level progress tracking. Without this the
-        /// generic plumbing in `StorageObjectStorageSource::ReadTaskIterator`/`KeysIterator`
-        /// updates `total_bytes_to_read`, but Iceberg substitutes its own iterator and the
-        /// progress bar shows nothing for `total_bytes_to_read`. Position/equality delete
-        /// sizes are intentionally excluded - they're internal and not part of the user
-        /// data scan estimate.
-        if (callback)
-            callback(FileProgress(0, size_t(manifest_file_entry->parsed_entry->file_size_in_bytes)));
-
         return object_info;
     }
     {

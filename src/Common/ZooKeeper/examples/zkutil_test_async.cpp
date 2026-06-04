@@ -1,7 +1,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
 #include <iostream>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleZkutilTestAsync(int argc, char ** argv)
