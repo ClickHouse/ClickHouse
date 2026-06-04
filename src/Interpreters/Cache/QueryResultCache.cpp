@@ -1175,7 +1175,14 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     /// users.xml change.
     /// user_id == std::nullopt is the internal user for which no quota can be configured
     if (key.user_id.has_value())
+    {
         memory_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+        /// `disk_cache` uses the same `PerUserTTLCachePolicyUserQuota`. Without registering the quota here a user
+        /// whose per-user query-cache quota blocks memory entries could still fill the disk cache up to the global
+        /// `query_cache.max_disk_size_in_bytes` / `query_cache.max_disk_entries` limits. Apply the same per-user
+        /// limits to the disk cache so they are enforced consistently for memory and disk writes.
+        disk_cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
+    }
 
     std::lock_guard lock(mutex);
     return QueryResultCacheWriter(shared_from_this(),
@@ -1213,6 +1220,17 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     if (!disk || disk->isBroken())
         return;
 
+    /// Serialize all disk publishing under the cache `mutex`. Reads also hold this mutex
+    /// (`QueryResultCacheReader` is constructed with it held, so `readFromDisk` runs under it), and the only
+    /// other places that touch the on-disk tree (`reset`, `updateConfiguration`, `dump`, `loadEntrysFromDisk`)
+    /// hold it too. Without this lock two `QueryResultCacheWriter`s for the same key (each holds only its own
+    /// writer mutex) could both pass the memory-only `isStale` check and then write the same `entry_path`
+    /// concurrently: one truncating/writing `results.bin` while the other's `disk_cache.remove`/`set` runs a
+    /// `DiskEntry` deleter that `removeRecursive`s the same directory, publishing an entry that points at
+    /// missing or mixed files. Holding the mutex makes `remove` + file write + `set` atomic per key and ensures
+    /// every `removeRecursive` of an `entry_path` happens while no reader or writer is touching that path.
+    std::lock_guard lock(mutex);
+
     /// Remove any existing entry under this key first. Otherwise, when we later call
     /// `disk_cache.set(key, ...)`, the old `DiskEntry`'s deleter would run after the new
     /// files were written and would `removeRecursive(entry_path)` of the freshly written data
@@ -1249,7 +1267,17 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
 
         serializeEntry(key, entry, disk_entry);
         disk_cache.set(key, disk_entry);
-        LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
+
+        /// `disk_cache.set` can silently decline the entry (e.g. `max_disk_size_in_bytes` / `max_disk_entries`
+        /// or a per-user quota is exceeded) - `CacheBase::set` reports nothing. In that case the local
+        /// `disk_entry` is the sole owner, so its deleter removes `entry_path` when this function returns (the
+        /// `DiskEntry` is declared after `lock`, so it is destroyed - and the files removed - while the cache
+        /// `mutex` is still held). Hence a declined entry leaves no files on disk and does not bypass the
+        /// configured disk-size limit. Only claim a successful store when the entry was actually admitted.
+        if (disk_cache.contains(key))
+            LOG_TRACE(logger, "Stored query result of query {} to disk, size {}", doubleQuoteString(key.query_string), disk_cache.count());
+        else
+            LOG_TRACE(logger, "Query result of query {} was not stored to disk (disk cache capacity or quota exceeded); its files are removed", doubleQuoteString(key.query_string));
     }
     catch (...)
     {
