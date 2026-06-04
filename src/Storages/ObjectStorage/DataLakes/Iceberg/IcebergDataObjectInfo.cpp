@@ -68,9 +68,6 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           data_manifest_file_entry_->parsed_entry->record_count,
           data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
 {
-    ObjectMetadata meta;
-    meta.size_bytes = static_cast<uint64_t>(data_manifest_file_entry_->parsed_entry->file_size_in_bytes);
-    relative_path_with_metadata.metadata = std::move(meta);
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)

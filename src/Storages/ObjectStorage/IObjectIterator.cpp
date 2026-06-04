@@ -95,8 +95,12 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
         }
 
         if (file_progress_callback)
+        {
             if (auto metadata = object->getObjectMetadata())
                 file_progress_callback(FileProgress(0, metadata->size_bytes));
+            else if (auto hint = object->getFileSizeHint())
+                file_progress_callback(FileProgress(0, *hint));
+        }
 
         return object;
     }
