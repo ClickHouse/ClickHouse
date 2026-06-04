@@ -500,9 +500,12 @@ size_t ReaderExecutor::effectiveBlockSize() const
 size_t ReaderExecutor::effectiveWindowSize() const
 {
     const auto sizes = sizesAtCurrentPressure(window_size, block_size);
-    /// Live path and local reads stream one block at a time; only stateless
-    /// remote reads keep the full (pressure-scaled) window to amortise setup.
-    if (live_buffer || pre_acquired_slot || !buffer_limit)
+    /// Only the live path streams one block at a time, reusing the open
+    /// connection across windows. Stateless reads - local files and remote
+    /// reads with live connections disabled - keep the full (pressure-scaled)
+    /// window so each one-shot open amortises its setup over a window, not a
+    /// block.
+    if (live_buffer || pre_acquired_slot)
         return sizes.block_bytes;
     return sizes.window_bytes;
 }

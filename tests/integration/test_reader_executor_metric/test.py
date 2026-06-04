@@ -14,6 +14,7 @@ The unit grid (deterministic) remains the tight value gate.
 """
 
 import logging
+import os
 import uuid
 
 import pytest
@@ -96,21 +97,21 @@ LOADS = {
 # executor change intentionally moves its magnitudes. Warm cells are ~0, gated by invariants.
 BASELINE = {
     ("sequential", "cold", "live"): {"R": (96, 124), "I": (49, 77), "O": (101, 166), "cost/MiB": (33.5, 42.6)},
-    ("sequential", "cold", "stateless"): {"R": (171, 219), "O": (91, 146), "cost/MiB": (42.2, 53.7)},
+    ("sequential", "cold", "stateless"): {"R": (103, 139), "O": (91, 146), "cost/MiB": (35.0, 48.0)},
     ("sequential", "fragmented", "live"): {"R": (39, 63), "I": (27, 38), "O": (32, 86), "cost/MiB": (15.0, 19.0)},
-    ("sequential", "fragmented", "stateless"): {"R": (74, 110), "O": (25, 65), "cost/MiB": (19.0, 24.2)},
+    ("sequential", "fragmented", "stateless"): {"R": (53, 79), "O": (25, 65), "cost/MiB": (16.0, 24.0)},
     ("selective", "cold", "live"): {"R": (29, 39), "I": (24, 32), "O": (58, 75), "cost/MiB": (112.4, 143.1)},
-    ("selective", "cold", "stateless"): {"R": (52, 68), "O": (58, 75), "cost/MiB": (132.5, 168.6)},
+    ("selective", "cold", "stateless"): {"R": (31, 41), "O": (15, 23), "cost/MiB": (58.0, 79.0)},
     ("selective", "fragmented", "live"): {"R": (10, 14), "I": (10, 14), "O": (0, 1), "cost/MiB": (27.7, 35.2)},
-    ("selective", "fragmented", "stateless"): {"R": (21, 27), "O": (0, 1), "cost/MiB": (37.3, 47.5)},
+    ("selective", "fragmented", "stateless"): {"R": (21, 31), "O": (0, 1), "cost/MiB": (20.0, 30.0)},
     ("aggregation", "cold", "live"): {"R": (156, 200), "I": (1, 19), "O": (33, 110), "cost/MiB": (39.7, 50.5)},
-    ("aggregation", "cold", "stateless"): {"R": (264, 338), "O": (37, 79), "cost/MiB": (51.5, 65.6)},
-    ("aggregation", "fragmented", "live"): {"R": (52, 73), "I": (17, 25), "O": (36, 54), "cost/MiB": (15.5, 19.8)},
-    ("aggregation", "fragmented", "stateless"): {"R": (104, 134), "O": (0, 41), "cost/MiB": (20.3, 25.8)},
+    ("aggregation", "cold", "stateless"): {"R": (154, 208), "O": (37, 79), "cost/MiB": (38.0, 51.0)},
+    ("aggregation", "fragmented", "live"): {"R": (52, 73), "I": (14, 25), "O": (33, 54), "cost/MiB": (15.5, 19.8)},
+    ("aggregation", "fragmented", "stateless"): {"R": (54, 80), "O": (0, 41), "cost/MiB": (14.0, 21.0)},
     ("prewhere", "cold", "live"): {"R": (22, 48), "I": (8, 19), "O": (29, 61), "cost/MiB": (25.8, 32.9)},
-    ("prewhere", "cold", "stateless"): {"R": (210, 268), "O": (29, 55), "cost/MiB": (49.1, 62.4)},
+    ("prewhere", "cold", "stateless"): {"R": (38, 58), "O": (29, 55), "cost/MiB": (23.0, 37.0)},
     ("prewhere", "fragmented", "live"): {"R": (14, 35), "I": (7, 11), "O": (7, 10), "cost/MiB": (11.5, 14.7)},
-    ("prewhere", "fragmented", "stateless"): {"R": (106, 137), "O": (7, 11), "cost/MiB": (23.0, 29.3)},
+    ("prewhere", "fragmented", "stateless"): {"R": (28, 42), "O": (7, 11), "cost/MiB": (12.0, 18.0)},
 }
 
 
@@ -235,6 +236,29 @@ def _warm_even_blocks(live):
     node.query(f"SELECT sum(v), sum(k) FROM t WHERE {ranges}", settings=_settings(live))
 
 
+def _collect_samples(query, live, state):
+    """Gather SAMPLES measurements for one (load, mode, cache-state) cell."""
+    if state == "warm":
+        _drop_caches()
+        _measure(query, live)  # prime once, then measure the warm cache
+        return [_measure(query, live) for _ in range(SAMPLES)]
+    if state == "fragmented":
+        # Re-establish the half-warm cache per sample (measuring it would
+        # otherwise populate the cold blocks and turn the cache fully warm).
+        samples = []
+        for _ in range(SAMPLES):
+            _drop_caches()
+            _warm_even_blocks(live)
+            samples.append(_measure(query, live))
+        return samples
+    # cold
+    samples = []
+    for _ in range(SAMPLES):
+        _drop_caches()
+        samples.append(_measure(query, live))
+    return samples
+
+
 def _stats(samples):
     out = {}
     n = len(samples)
@@ -274,23 +298,7 @@ def test_metric_values_and_stability(started_cluster):
         mode = "live" if live else "stateless"
         for name, query in LOADS.items():
             for state in ("cold", "warm", "fragmented"):
-                if state == "warm":
-                    _drop_caches()
-                    _measure(query, live)  # prime once, then measure the warm cache
-                    samples = [_measure(query, live) for _ in range(SAMPLES)]
-                elif state == "fragmented":
-                    # Re-establish the half-warm cache per sample (measuring it would
-                    # otherwise populate the cold blocks and turn the cache fully warm).
-                    samples = []
-                    for _ in range(SAMPLES):
-                        _drop_caches()
-                        _warm_even_blocks(live)
-                        samples.append(_measure(query, live))
-                else:  # cold
-                    samples = []
-                    for _ in range(SAMPLES):
-                        _drop_caches()
-                        samples.append(_measure(query, live))
+                samples = _collect_samples(query, live, state)
 
                 st = _stats(samples)
                 cost = sum(_cost_ms(s) for s in samples) / len(samples)
@@ -398,3 +406,58 @@ def test_page_cache_path(started_cluster):
     banner = "\n=== ReaderExecutor page-cache path (state x mode) ===\n" + "\n".join(report) + "\n"
     logging.info(banner)
     print(banner)
+
+
+# Per-cache-state band margins used when regenerating the baseline: cold reads are
+# stable, the half-warm fragmented state varies more across runs.
+RECOMPUTE_MARGIN = {"cold": 0.15, "fragmented": 0.20}
+
+
+def _band(values, margin, ndigits):
+    """Suggest a [lo, hi] band that covers every sample and is at least +/-margin
+    around the mean, rounded to ndigits (0 -> int)."""
+    mean = sum(values) / len(values)
+    lo = round(min(mean * (1.0 - margin), min(values)), ndigits)
+    hi = round(max(mean * (1.0 + margin), max(values)), ndigits)
+    return (int(lo), int(hi)) if ndigits == 0 else (lo, hi)
+
+
+def test_recompute_baseline(started_cluster):
+    """Disabled helper to regenerate the BASELINE dict after an intended metric change.
+
+    Skipped unless RECOMPUTE_METRIC_BASELINE is set, so it never runs in CI. To run it,
+    inject the variable through praktika's --param (a bare shell env var is not forwarded
+    into the test container):
+
+        python3 -m ci.praktika run integration --test test_reader_executor_metric \
+            --param RECOMPUTE_METRIC_BASELINE=1
+
+    It measures the same load x state x mode matrix the gate test uses and reports a
+    ready-to-paste BASELINE dict. It deliberately fails to surface that dict (pytest
+    hides output for passing tests), so a "failure" here is the expected outcome.
+    Review the suggested bands before committing - small or near-zero counters (e.g.
+    live `I`) may need a wider band than the margin alone gives."""
+    if not os.environ.get("RECOMPUTE_METRIC_BASELINE"):
+        pytest.skip("manual: set RECOMPUTE_METRIC_BASELINE=1 to regenerate the BASELINE dict")
+
+    lines = ["BASELINE = {"]
+    for live in (True, False):
+        mode = "live" if live else "stateless"
+        for name, query in LOADS.items():
+            for state in ("cold", "fragmented"):
+                samples = _collect_samples(query, live, state)
+                margin = RECOMPUTE_MARGIN[state]
+                cells = [("R", [s["R"] for s in samples], 0)]
+                if live:  # stateless I is always 0 and gated by a separate invariant
+                    cells.append(("I", [s["I"] for s in samples], 0))
+                cells.append(("O", [s["O"] / (1024.0 * 1024.0) for s in samples], 0))
+                cells.append(("cost/MiB", [_cost_per_mib(s) for s in samples], 1))
+                body = ", ".join(f'"{metric}": {_band(vals, margin, nd)}' for metric, vals, nd in cells)
+                lines.append(f'    ("{name}", "{state}", "{mode}"): {{{body}}},')
+    lines.append("}")
+    text = "\n".join(lines)
+    # Surface the dict in the report. The suite runs with
+    # --report-log-exclude-logs-on-passed-tests, which hides captured stdout/logs for
+    # passing tests, so fail on purpose to print the regenerated BASELINE - this
+    # "failure" is the expected outcome when regenerating.
+    pytest.fail("Regenerated BASELINE (copy into the module-level BASELINE dict):\n" + text)

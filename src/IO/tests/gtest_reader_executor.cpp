@@ -1107,13 +1107,12 @@ TEST(ReaderExecutor, DestructorAfterThrownReadNextWindowDoesNotSegfault)
     SUCCEED();
 }
 
-TEST(ReaderExecutor, LocalReadUsesSingleBlockWindow)
+TEST(ReaderExecutor, LocalReadUsesFullWindow)
 {
-    /// Local reads have no SourceBufferLimit / live buffer, so without a shrink
-    /// they would allocate the full DEFAULT_WINDOW_SIZE (8 MiB) rope per window
-    /// even though local buffers are tiny. Like the live-connection path, a
-    /// local read should use a single ROPE_BLOCK_SIZE node; the wide window is
-    /// kept only for stateless remote reads (to amortise connection setup).
+    /// Local reads have no SourceBufferLimit / live buffer, so they take the
+    /// stateless path. Like stateless remote reads, they keep the full window
+    /// (not a single block) so one open amortises its setup over a window
+    /// instead of reopening the source per block.
     constexpr size_t file_size = 2 * ReaderExecutor::ROPE_BLOCK_SIZE;
     String content(file_size, 'L');
     auto source = std::make_shared<MemorySourceReader>(
@@ -1121,32 +1120,33 @@ TEST(ReaderExecutor, LocalReadUsesSingleBlockWindow)
     StoredObjects objects;
     objects.emplace_back("obj", "", file_size);
 
-    /// No buffer_limit, no caches -> local read path; default 8 MiB window.
+    /// No buffer_limit, no caches -> stateless local path; default 8 MiB window.
     ReaderExecutor executor(source, objects, {});
 
     auto w = executor.readNextWindow();
     ASSERT_FALSE(w.empty());
-    EXPECT_LE(w.range().size, ReaderExecutor::ROPE_BLOCK_SIZE)
-        << "local read window must be shrunk to a single block, not the full 8 MiB window";
-    EXPECT_EQ(w.getNodes().size(), 1u) << "a single-block window is one rope node";
+    EXPECT_EQ(w.range().size, file_size)
+        << "local read must keep the full window (whole 2 MiB file), not shrink to one block";
+    EXPECT_EQ(w.getNodes().size(), file_size / ReaderExecutor::ROPE_BLOCK_SIZE)
+        << "the window is split into block-sized rope nodes";
 }
 
-TEST(ReaderExecutor, ConfiguredBlockSizeControlsWindow)
+TEST(ReaderExecutor, ConfiguredBlockSizeControlsNodeSize)
 {
-    /// A local read shrinks the window to one configured block (see
-    /// `LocalReadUsesSingleBlockWindow`). Construct with a non-default block
-    /// size and confirm the first window honours it: the window must be
-    /// capped at the configured 256 KiB block, not the default 1 MiB, proving
-    /// the `block_size` ctor arg drives `effectiveBlockSize`/`effectiveWindowSize`.
+    /// A stateless (local) read keeps the full window but splits it into rope
+    /// nodes of the configured block size. With a non-default block size the
+    /// window still spans the whole file, while each node is one configured
+    /// block - proving `block_size` drives the node granularity and
+    /// `window_size` drives the window.
     constexpr size_t configured_block = 256 * 1024;
-    constexpr size_t file_size = 4 * configured_block;
+    constexpr size_t file_size = 4 * configured_block;  /// 1 MiB
     String content(file_size, 'B');
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"obj", content}});
     StoredObjects objects;
     objects.emplace_back("obj", "", file_size);
 
-    /// No buffer_limit, no caches -> local read path.
+    /// No buffer_limit, no caches -> stateless local path.
     ReaderExecutor executor(
         source, objects, {},
         /*window_size=*/4 * 1024 * 1024,
@@ -1155,9 +1155,10 @@ TEST(ReaderExecutor, ConfiguredBlockSizeControlsWindow)
 
     auto w = executor.readNextWindow();
     ASSERT_FALSE(w.empty());
-    EXPECT_LE(w.range().size, configured_block)
-        << "window must shrink to the configured block size, not the default 1 MiB block";
-    EXPECT_EQ(w.getNodes().size(), 1u) << "a single-block window is one rope node";
+    EXPECT_EQ(w.range().size, file_size)
+        << "window must span the whole file, not be capped at the 256 KiB block";
+    EXPECT_EQ(w.getNodes().size(), file_size / configured_block)
+        << "the window is split into configured-block-sized rope nodes";
 }
 
 TEST(ReaderExecutor, ConsumePathCancelledPrefetchIsStashedForDrain)
