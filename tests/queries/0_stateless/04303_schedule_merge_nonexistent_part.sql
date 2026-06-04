@@ -72,3 +72,17 @@ INSERT INTO t_manual_parts VALUES (2, 20);
 SYSTEM SCHEDULE MERGE t_manual_parts PARTS '1_1_1_0', '2_2_2_0'; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_manual_parts;
+
+-- Parts must be listed in ascending order: lookupRange matches them positionally against the
+-- parts (which are ascending), so an out-of-order list can never be selected and would hang.
+DROP TABLE IF EXISTS t_manual_order;
+
+CREATE TABLE t_manual_order (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS merge_selector_algorithm = 'Manual';
+
+INSERT INTO t_manual_order VALUES (1);
+INSERT INTO t_manual_order VALUES (2);
+
+SYSTEM SCHEDULE MERGE t_manual_order PARTS 'all_2_2_0', 'all_1_1_0'; -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE t_manual_order;

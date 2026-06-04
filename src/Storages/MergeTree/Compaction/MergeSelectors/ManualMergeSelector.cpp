@@ -183,6 +183,15 @@ void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merg
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "SCHEDULE MERGE: parts {} and {} are in different partitions", parts_to_merge.front(), name);
 
+    /// lookupRange matches the listed names positionally against the parts, which are in ascending
+    /// order, so a merge listed out of order (or with a duplicate) can never be selected. Require
+    /// strictly ascending order rather than let SYNC MERGES wait for it to time out.
+    for (size_t i = 0; i + 1 < parts_to_merge.size(); ++i)
+        if (!(partInfoFromName(parts_to_merge[i]) < partInfoFromName(parts_to_merge[i + 1])))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SCHEDULE MERGE: parts must be listed in ascending order without duplicates, but {} is listed before {}",
+                parts_to_merge[i], parts_to_merge[i + 1]);
+
     /// Reject inputs that can never be merged, so SYNC MERGES does not wait for them until it times
     /// out. Validate against the parts that will exist once the merges scheduled so far have run:
     /// an input must be present there, i.e. active now and not already consumed by an earlier
