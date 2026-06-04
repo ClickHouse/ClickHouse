@@ -40,7 +40,7 @@ VirtualColumnsDescription StorageInput::createVirtuals()
 }
 
 
-class StorageInputSource : public ISource, WithContext
+class StorageInputSource final : public ISource, WithContext
 {
 public:
     StorageInputSource(ContextPtr context_, SharedHeader sample_block) : ISource(std::move(sample_block)), WithContext(context_) {}
