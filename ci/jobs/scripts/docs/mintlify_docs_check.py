@@ -57,10 +57,19 @@ def run(cmd, **kw):
 
 
 def clone_aggregator(repo, ref, sparse, dest):
-    run(["git", "clone", "--filter=blob:none", "--no-checkout", repo, dest], check=True)
+    # Fetch only what the checks need: the tip of `ref` with no history
+    # (--depth 1), only the trees/blobs under the sparse paths (blob:none filter
+    # + sparse-checkout), and nothing else. `git clone` without --depth would
+    # download the aggregator's entire commit history -- enormous for a repo like
+    # ClickHouse -- so build the repo with `git init` + a single shallow fetch
+    # instead, which never materialises history or out-of-slice files.
+    run(["git", "init", "-q", dest], check=True)
+    run(["git", "-C", dest, "remote", "add", "origin", repo], check=True)
+    run(["git", "-C", dest, "config", "remote.origin.promisor", "true"], check=True)
+    run(["git", "-C", dest, "config", "remote.origin.partialclonefilter", "blob:none"], check=True)
     run(["git", "-C", dest, "sparse-checkout", "init", "--cone"], check=True)
     run(["git", "-C", dest, "sparse-checkout", "set", *sparse], check=True)
-    run(["git", "-C", dest, "fetch", "--depth", "1", "origin", ref], check=True)
+    run(["git", "-C", dest, "fetch", "--depth", "1", "--filter=blob:none", "origin", ref], check=True)
     run(["git", "-C", dest, "checkout", "FETCH_HEAD"], check=True)
 
 
