@@ -2658,7 +2658,7 @@ Aggregator::prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variant
     /// (and in prepareChunksAndFillTwoLevel), because insertResultsIntoColumns sees
     /// only per-chunk places and cannot merge globally.
     if (final)
-    computePostAggregationStates(data_variants);
+        computePostAggregationStates(data_variants);
 
     Chunks res_variant;
     const size_t rows = data_variants.sizeWithoutOverflowRow();
