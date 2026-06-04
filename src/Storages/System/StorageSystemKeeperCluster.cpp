@@ -1,5 +1,9 @@
 #include <Storages/System/StorageSystemKeeperCluster.h>
 
+#include "config.h"
+
+#if USE_NURAFT
+
 #include <Coordination/KeeperDispatcher.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -63,3 +67,5 @@ void StorageSystemKeeperCluster::fillData(MutableColumns & res_columns, ContextP
 }
 
 }
+
+#endif

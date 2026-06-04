@@ -2968,7 +2968,11 @@ try
         buildLoggers(config(), logger());
         initializeAzureSDKLogger(server_settings, logger().getLevel());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+#if USE_NURAFT
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, global_context->tryGetKeeperDispatcher() != nullptr);
+#else
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper, false);
+#endif
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,

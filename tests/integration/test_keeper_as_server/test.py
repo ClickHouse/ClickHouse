@@ -108,6 +108,9 @@ def _read_keeper_cluster_view(node):
 
 
 def test_keeper_cluster_invariants(start_cluster):
+    if cluster_node1.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers: slow queries can cause leader changes due to timeouts, making leader invariants flaky")
+
     for n in (cluster_node1, cluster_node2, cluster_node3):
         keeper_utils.wait_until_connected(cluster, n)
 
