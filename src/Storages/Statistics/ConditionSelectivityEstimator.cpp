@@ -804,11 +804,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & column_name : null_check_columns)
     {
-        Float64 cur_selectivity;
+        Float64 cur_selectivity = default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNull();
-        else
-            cur_selectivity = default_cond_equal_factor;
 
         if (!estimate_results.contains(column_name))
         {
@@ -832,11 +830,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & column_name : not_null_check_columns)
     {
-        Float64 cur_selectivity;
+        Float64 cur_selectivity = 1.0 - default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNotNull();
-        else
-            cur_selectivity = 1.0 - default_cond_equal_factor;
 
         if (!estimate_results.contains(column_name))
         {

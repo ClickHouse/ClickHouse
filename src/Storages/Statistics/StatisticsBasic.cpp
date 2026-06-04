@@ -77,9 +77,10 @@ const NullMap * tryGetNullMap(const IColumn & column)
 /// (the null map lives on the inner `Nullable`, not the outer LC).
 UInt64 sumNonNullStringBytes(const ColumnPtr & column)
 {
-    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
-    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
-        full = lc->convertToFullColumn();
+    auto full = column
+        ->convertToFullColumnIfConst()
+        ->convertToFullColumnIfSparse()
+        ->convertToFullColumnIfLowCardinality();
     const NullMap * null_map = tryGetNullMap(*full);
 
     ColumnPtr values = full;
@@ -96,14 +97,7 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
     }
     if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
     {
-        UInt64 total = 0;
-        for (size_t i = 0; i < column_size; ++i)
-        {
-            if (null_map && (*null_map)[i])
-                continue;
-            total += s->getDataAt(i).size();
-        }
-        return total;
+        return s->byteSize();
     }
     return 0;
 }
