@@ -20,10 +20,11 @@ namespace
 /// index atoms from them. Without this, `WHERE id` (a bare INPUT node) produces
 /// no primary-key condition, while the equivalent `WHERE id != 0` does.
 ///
-/// Only nodes that are direct boolean leaves are rewritten: the DAG output itself,
-/// or children of `not` / `and` / `or` (the operators that `RPNBuilder` traverses).
-/// This is intentionally scoped to the second-pass filter-to-source attachment and
-/// never runs on projection candidate DAGs or join-marker filters. See #89222.
+/// The rewrite recursively descends through the same logical operators that
+/// `RPNBuilder` traverses (`not` / `and` / `or`), so nested expressions like
+/// `WHERE (id OR flag) AND value` are fully handled. This is intentionally
+/// scoped to the second-pass filter-to-source attachment and never runs on
+/// projection candidate DAGs or join-marker filters. See #89222.
 void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name)
 {
     auto is_bare_column = [](const ActionsDAG::Node * n) -> bool
@@ -52,7 +53,7 @@ void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name
 
     FunctionOverloadResolverPtr ne_resolver;
 
-    auto rewrite_node = [&](const ActionsDAG::Node * bare_node) -> const ActionsDAG::Node *
+    auto rewrite_bare = [&](const ActionsDAG::Node * bare_node) -> const ActionsDAG::Node *
     {
         if (!is_bare_column(bare_node) || !is_numeric_filter_type(bare_node->result_type))
             return nullptr;
@@ -66,38 +67,42 @@ void rewriteBareColumnFilters(ActionsDAG & dag, std::string & filter_column_name
         return &dag.addFunction(ne_resolver, {bare_node, &zero_node}, {});
     };
 
+    /// Recursively rewrite bare-column leaves inside logical (`not`/`and`/`or`)
+    /// sub-trees, mirroring the descent that `RPNBuilder` performs.
+    std::function<const ActionsDAG::Node *(const ActionsDAG::Node *)> rewrite_recursive =
+        [&](const ActionsDAG::Node * node) -> const ActionsDAG::Node *
+    {
+        if (const auto * r = rewrite_bare(node))
+            return r;
+
+        if (!is_logical(node))
+            return nullptr;
+
+        bool any_changed = false;
+        ActionsDAG::NodeRawConstPtrs new_children = node->children;
+        for (auto *& child : new_children)
+        {
+            if (const auto * r = rewrite_recursive(child))
+            {
+                child = r;
+                any_changed = true;
+            }
+        }
+        if (!any_changed)
+            return nullptr;
+
+        return &dag.addFunction(node->function_base, std::move(new_children), {});
+    };
+
     for (auto *& output : dag.getOutputs())
     {
         if (output->result_name != filter_column_name)
             continue;
 
-        /// Direct bare column as the filter predicate (e.g. `WHERE id`).
-        if (const auto * replacement = rewrite_node(output))
+        if (const auto * replacement = rewrite_recursive(output))
         {
             filter_column_name = replacement->result_name;
             output = replacement;
-            break;
-        }
-
-        /// Bare-column children of a top-level logical operator
-        /// (e.g. `WHERE NOT id` or `WHERE id AND other`).
-        if (is_logical(output))
-        {
-            bool any_changed = false;
-            ActionsDAG::NodeRawConstPtrs new_children = output->children;
-            for (auto *& child : new_children)
-            {
-                if (const auto * r = rewrite_node(child))
-                {
-                    child = r;
-                    any_changed = true;
-                }
-            }
-            if (any_changed)
-            {
-                output = &dag.addFunction(output->function_base, std::move(new_children), {});
-                filter_column_name = output->result_name;
-            }
         }
 
         break;

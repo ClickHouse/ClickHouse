@@ -63,3 +63,35 @@ EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_flag WHERE flag;
 SELECT value FROM test_bool_flag WHERE flag ORDER BY value;
 
 DROP TABLE test_bool_flag;
+
+SELECT '--- Test 5: WHERE NOT id (negated bare column)';
+
+DROP TABLE IF EXISTS test_not_id;
+
+CREATE TABLE test_not_id (id Int32, value String)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192;
+
+INSERT INTO test_not_id SELECT number, toString(number) FROM numbers(1000);
+
+EXPLAIN indexes = 1, description = 0 SELECT * FROM test_not_id WHERE NOT id;
+
+SELECT id, value FROM test_not_id WHERE NOT id;
+
+DROP TABLE test_not_id;
+
+SELECT '--- Test 6: Minmax skip index with bare column';
+
+DROP TABLE IF EXISTS test_minmax_skip;
+
+CREATE TABLE test_minmax_skip (id Int32, value String, INDEX id_minmax id TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 8192;
+
+INSERT INTO test_minmax_skip VALUES (0, 'zero'), (1, 'one'), (2, 'two');
+
+SELECT id, value FROM test_minmax_skip WHERE id SETTINGS force_data_skipping_indices = 'id_minmax';
+
+DROP TABLE test_minmax_skip;
