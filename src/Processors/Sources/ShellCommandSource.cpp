@@ -542,12 +542,14 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            /// Pool path only: sample procfs once more BEFORE the worker is torn down
-            /// or the slot is returned to the pool — either path destroys
-            /// `/proc/<pid>/{stat,status}` and a later sampler read would see zeros.
-            /// `recordReleased` reads procfs and may throw; `cleanup` is called from
-            /// the destructor, so swallow exceptions.
-            if (configuration.sampler && configuration.sampler->borrowAcquired())
+            /// Resource accounting must observe the borrow's resident set before
+            /// the worker is torn down or the slot is handed back to the pool —
+            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+            /// would then read zero CPU and zero `VmHWM`.
+            /// `recordReleased` reads procfs and may throw, but `cleanup` is
+            /// called from the destructor — swallow any exception so the
+            /// destructor stays noexcept.
+            if (configuration.sampler)
             {
                 try
                 {
@@ -557,47 +559,6 @@ namespace
                 {
                     tryLogCurrentException("ShellCommandSource");
                 }
-            }
-
-            /// Executable (non-pool) path: `wait4` populated the child rusage when it
-            /// exited (see `ShellCommand::tryWaitImpl`). With `check_exit_code=true`,
-            /// `prepare()` already reaped via `command->wait()`, so `isWaitCalled()` is
-            /// true and we fall straight through to read the captured usage. With
-            /// `check_exit_code=false` the child is still unreaped here, so we reap it
-            /// below (see the inner comment) before the `ShellCommand` destructor would —
-            /// the destructor reaps via `waitForPid`/`waitpid`, which yields no rusage.
-            ///
-            /// `tryWaitImpl` sets `last_resource_usage` on the `wait4` success branch
-            /// BEFORE any throw for `WIFSIGNALED` / `WIFSTOPPED` / non-zero exit, so
-            /// `wasChildReaped` is reliable regardless of whether the reap threw.
-            if (configuration.sampler && command && !process_pool)
-            {
-                if (!command->isWaitCalled())
-                {
-                    try
-                    {
-                        /// Normal finish: the child closed stdout and is expected to exit
-                        /// imminently, so block until it is reaped to capture `wait4` rusage —
-                        /// this matches the `check_exit_code=true` path, where `prepare` already
-                        /// blocks in `command->wait`. On an error/timeout unwind the child may be
-                        /// stuck, so keep the non-blocking reap and let `~ShellCommand` apply its
-                        /// bounded SIGTERM teardown.
-                        if (!command_is_invalid)
-                            command->tryWait();
-                        else
-                            command->waitIfProccesTerminated();
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("ShellCommandSource");
-                    }
-                }
-
-                if (command->wasChildReaped())
-                    configuration.sampler->recordExecutableFinished(
-                        command->getLastChildUserTimeMicroseconds(),
-                        command->getLastChildSystemTimeMicroseconds(),
-                        command->getLastChildPeakRssBytes());
             }
 
             if (command_is_invalid)
@@ -833,8 +794,26 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
         /// runs here so `clear_refs` and the utime/stime baseline cover only
         /// the work attributable to this borrow.
+        ///
+        /// `recordPidAcquired` allocates (vector return from `walkSubtree`,
+        /// `unordered_set` and `unordered_map` inserts) and is not noexcept.
+        /// If it throws here, `process_holder` is still a local — ownership
+        /// does not transfer to `ShellCommandSource` until further below — so
+        /// stack unwinding would destroy it without calling `returnObject`,
+        /// permanently shrinking the pool's effective capacity by one. Swallow
+        /// the exception so the local stays intact for the normal hand-off;
+        /// sampling is best-effort and dropping one pre baseline is harmless.
         if (source_configuration.sampler)
-            source_configuration.sampler->recordPidAcquired(process->getPid());
+        {
+            try
+            {
+                source_configuration.sampler->recordPidAcquired(process->getPid());
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandSource");
+            }
+        }
     }
     else
     {

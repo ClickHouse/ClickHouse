@@ -45,6 +45,12 @@ def started_cluster():
             "pool_udf_cpu.py",
             "pool_udf_mem.py",
             "pool_udf_syscall.py",
+            "pool_udf_persistent_helper.py",
+            "pool_udf_helper_reaped.py",
+            "pool_udf_per_row_child.py",
+            "pool_udf_multi_layer.py",
+            "pool_udf_lazy_pool.py",
+            "pool_udf_multi_mem.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -199,3 +205,130 @@ def test_output_bytes(started_cluster):
     )
     output_bytes = _profile_event_value(qid, "ExecutableUserDefinedFunctionOutputBytes")
     assert 2000 <= output_bytes <= 20000, f"OutputBytes out of expected range: {output_bytes}"
+
+
+# -----------------------------------------------------------------------------
+# Reaping-scenario coverage: each test exercises one way a UDF can move CPU
+# between processes. The sampler should attribute every variant correctly via
+# the subtree walk + per-pid `c{u,s}time` plus the 3-bucket post-walk dispatch.
+# -----------------------------------------------------------------------------
+
+
+def test_persistent_helper_alive(started_cluster):
+    """(a) Helper alive across the borrow → captured via per-pid delta."""
+    _skip_msan()
+    qid = "persistent-helper-1"
+    _run(
+        "SELECT sum(test_pool_udf_persistent_helper(number)) FROM numbers(64)",
+        qid,
+    )
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTime > 0 (persistent helper alive), got {cpu}"
+    # Sanity upper bound — 64 rows of light CPU should not exceed 60 s.
+    assert cpu < 60 * 1_000_000, f"UserTime suspiciously high: {cpu}"
+
+
+def test_persistent_helper_reaped(started_cluster):
+    """(b) Helper reaped mid-borrow → captured via parent's `cutime` delta."""
+    _skip_msan()
+    qid = "helper-reaped-1"
+    _run(
+        "SELECT sum(test_pool_udf_helper_reaped(number)) FROM numbers(10)",
+        qid,
+    )
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTime > 0 (reaped helper via cutime), got {cpu}"
+    assert cpu < 60 * 1_000_000, f"UserTime suspiciously high: {cpu}"
+
+
+def test_per_row_child_reaped(started_cluster):
+    """(c) Short-lived per-row child, reaped → captured via `cutime` delta."""
+    _skip_msan()
+    qid = "per-row-child-1"
+    _run(
+        "SELECT sum(test_pool_udf_per_row_child(number)) FROM numbers(20)",
+        qid,
+    )
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTime > 0 (per-row reaped children via cutime), got {cpu}"
+    assert cpu < 120 * 1_000_000, f"UserTime suspiciously high: {cpu}"
+
+
+def test_multi_layer_reaping_chain(started_cluster):
+    """(d) UDF → python helper → `sort` grandchild → reaped: cutime propagates."""
+    _skip_msan()
+    qid = "multi-layer-1"
+    _run(
+        "SELECT sum(test_pool_udf_multi_layer(number)) FROM numbers(20)",
+        qid,
+    )
+    user_cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    sys_cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionSystemTimeMicroseconds")
+    # `sort` work shows up in the helper's `c{u,s}time` delta.
+    assert user_cpu + sys_cpu > 0, (
+        f"Expected UserTime + SystemTime > 0 (multi-layer reaping), got "
+        f"{user_cpu} + {sys_cpu}"
+    )
+
+
+def test_lazy_pool_spawned_in_borrow(started_cluster):
+    """(e) `multiprocessing.Pool` created mid-borrow → bucket-3 dispatch."""
+    _skip_msan()
+    qid = "lazy-pool-1"
+    _run(
+        "SELECT sum(test_pool_udf_lazy_pool(number)) FROM numbers(20)",
+        qid,
+    )
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    # Pool workers spawned after `recordPidAcquired` → not in `pre_walk_pids`,
+    # so the three-bucket dispatch counts their full post value.
+    assert cpu > 0, f"Expected UserTime > 0 (lazy Pool workers via bucket 3), got {cpu}"
+    assert cpu < 60 * 1_000_000, f"UserTime suspiciously high: {cpu}"
+
+
+def test_peak_rss_max_across_live_descendants(started_cluster):
+    """peak_rss is `max` across live descendants, not `sum`.
+
+    Three helper subprocesses each allocate and touch a ~50 MiB
+    `bytearray` and stay alive throughout the borrow. The pre-walk
+    enrolls them in `pre_snapshot`; the post-walk reads each helper's
+    `VmHWM`. `recordReleased` then folds them with
+    `peak_rss = std::max(peak_rss, hwm_bytes)`.
+
+    `PeakMemoryByteSeconds / elapsed_seconds` recovers the effective
+    `peak_rss`. With `max` it lands around the per-helper RSS
+    (~60 MiB after Python interpreter footprint inherited at fork).
+    With `sum` it would land around ~180 MiB. The bounds below are
+    tight enough to falsify `sum` aggregation while leaving room for
+    the parent's own footprint to vary.
+    """
+    _skip_msan()
+    qid = "multi-mem-1"
+    _run(
+        "SELECT sum(test_pool_udf_multi_mem(number)) FROM numbers(10)",
+        qid,
+    )
+
+    byte_seconds = _profile_event_value(
+        qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds"
+    )
+    elapsed_us = _profile_event_value(
+        qid, "ExecutableUserDefinedFunctionElapsedMicroseconds"
+    )
+
+    assert byte_seconds > 0, (
+        f"Expected PeakMemoryByteSeconds > 0, got {byte_seconds}"
+    )
+    assert elapsed_us > 0, f"Expected Elapsed > 0, got {elapsed_us}"
+
+    # Invert the encoding `byte_seconds = peak_bytes × elapsed_us / 1e6`.
+    derived_peak_bytes = byte_seconds * 1_000_000 // elapsed_us
+
+    forty_mib = 40 * 1024 * 1024
+    hundred_mib = 100 * 1024 * 1024
+    assert forty_mib <= derived_peak_bytes <= hundred_mib, (
+        f"Expected derived peak in [40 MiB, 100 MiB] to lock max-not-sum "
+        f"semantics across 3 × ~50 MiB live helpers; got "
+        f"{derived_peak_bytes / 1024 / 1024:.1f} MiB "
+        f"(byte_seconds={byte_seconds}, elapsed_us={elapsed_us})"
+    )
