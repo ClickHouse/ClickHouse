@@ -4260,6 +4260,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
         auto result_type = func->getResultType();
 
+        /// If we try to convert a wide type to a narrow type, we could lose precision and get wrong result.
+        if (result_type->getSizeOfValueInMemory() < current_type->getSizeOfValueInMemory())
+            return {};
+
         /// For functions like CAST between integer types that share the same Field representation
         /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
         /// on the given range, the Field values are guaranteed to be unchanged.
