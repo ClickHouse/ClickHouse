@@ -34,6 +34,8 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool compress_snapshots_with_zstd_format;
     extern const CoordinationSettingsUInt64 snapshot_transfer_chunk_size;
+    extern const CoordinationSettingsFloat hash_map_min_load_factor;
+    extern const CoordinationSettingsUInt64 min_node_count_for_auto_optimize;
 }
 
 namespace
@@ -386,6 +388,56 @@ TYPED_TEST(CoordinationTest, SnapshotableHashMapDataSize)
     world.disableSnapshotMode();
     world.clearOutdatedNodes();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
+}
+
+TYPED_TEST(CoordinationTest, SnapshotableHashMapAutoOptimize)
+{
+    /// Enable automatic rehashing with a deliberately high load-factor threshold.
+    /// `absl::flat_hash_map` can never reach a load factor of 0.99 after `rehash(0)`, so without the
+    /// guard in `optimizeIfNeeded` the predicate would stay true and rehash the whole index on every
+    /// insert. The map must stay correct (and avoid repeated O(N) rehashing) in this configuration.
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    (*settings)[DB::CoordinationSetting::hash_map_min_load_factor] = 0.99f;
+    (*settings)[DB::CoordinationSetting::min_node_count_for_auto_optimize] = 8;
+    auto context = std::make_shared<DB::KeeperContext>(true, settings);
+
+    DB::SnapshotableHashTable<IntNode> map;
+    map.initialize(context);
+
+    static constexpr int node_count = 2000;
+    for (int i = 0; i < node_count; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        /// The iterator returned by insert must stay valid even if an internal rehash happened.
+        EXPECT_EQ(it->second->value, i);
+    }
+    EXPECT_EQ(map.size(), node_count);
+
+    /// All nodes must still be reachable after the inserts (and any rehashing).
+    for (int i = 0; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+
+    /// Erase most of the nodes inside snapshot mode and clean them up. This drives the shrink path
+    /// through clearOutdatedNodes -> optimizeIfNeeded.
+    map.enableSnapshotMode(map.snapshotSizeWithVersion().second);
+    for (int i = 0; i < node_count - 10; ++i)
+        EXPECT_TRUE(map.erase("/node" + std::to_string(i)));
+    map.disableSnapshotMode();
+    map.clearOutdatedNodes();
+
+    EXPECT_EQ(map.size(), 10);
+    for (int i = node_count - 10; i < node_count; ++i)
+        EXPECT_EQ(map.getValue("/node" + std::to_string(i)), i);
+
+    /// Inserting again after the shrink must keep working and return valid iterators.
+    for (int i = node_count; i < node_count + 100; ++i)
+    {
+        auto [it, inserted] = map.insert("/node" + std::to_string(i), i);
+        EXPECT_TRUE(inserted);
+        EXPECT_EQ(it->second->value, i);
+    }
+    EXPECT_EQ(map.size(), 110);
 }
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotSimple)

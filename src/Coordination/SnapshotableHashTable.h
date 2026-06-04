@@ -129,6 +129,10 @@ private:
     float min_load_factor{0.0f};
     uint64_t min_node_count_for_auto_optimize{0};
 
+    /// State used by `optimizeIfNeeded` to avoid redundant rehashing (see the method).
+    size_t bucket_count_at_last_optimize{0};
+    size_t node_count_at_last_optimize{0};
+
     enum OperationType
     {
         INSERT_OR_REPLACE = 0,
@@ -415,12 +419,21 @@ public:
 
     bool optimizeIfNeeded()
     {
-        if (min_load_factor > 0 && map.load_factor() < min_load_factor && map.size() > min_node_count_for_auto_optimize)
-        {
-            optimize();
-            return true;
-        }
-        return false;
+        if (min_load_factor <= 0 || map.size() <= min_node_count_for_auto_optimize || map.load_factor() >= min_load_factor)
+            return false;
+
+        /// `optimize` only helps when `rehash(0)` can actually shrink the table. If we already rehashed
+        /// at the current bucket count and no node has been erased since (the node count only grew),
+        /// another `rehash(0)` would be a no-op. Skipping it prevents repeated O(N) rehashing of the
+        /// whole node index when `hash_map_min_load_factor` is set higher than the load factor the
+        /// container can reach after a rehash (`absl::flat_hash_map` tops out below 1.0).
+        if (map.bucket_count() == bucket_count_at_last_optimize && map.size() >= node_count_at_last_optimize)
+            return false;
+
+        optimize();
+        bucket_count_at_last_optimize = map.bucket_count();
+        node_count_at_last_optimize = map.size();
+        return true;
     }
 
     void clear()
