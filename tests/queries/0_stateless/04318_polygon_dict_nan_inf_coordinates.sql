@@ -56,3 +56,34 @@ SELECT dictGet('dict_polygons_inf', 'name', tuple(0.5, 0.5)); -- { serverError B
 
 DROP DICTIONARY dict_polygons_inf;
 DROP TABLE polygons_inf;
+
+
+-- A finite Float64 coordinate that overflows to infinity when narrowed to the
+-- Float32 coordinate type must also be rejected. This relies on the validation
+-- happening after the cast to `Coord`.
+DROP DICTIONARY IF EXISTS dict_polygons_overflow;
+DROP TABLE IF EXISTS polygons_overflow;
+
+CREATE TABLE polygons_overflow
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))),
+    name String
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO polygons_overflow VALUES ([[[(0, 0), (1, 0), (1e39, 1), (0, 1)]]], 'with_overflow');
+
+CREATE DICTIONARY dict_polygons_overflow
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))),
+    name String
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(TABLE 'polygons_overflow' DB currentDatabase()))
+LIFETIME(0)
+LAYOUT(POLYGON());
+
+SELECT dictGet('dict_polygons_overflow', 'name', tuple(0.5, 0.5)); -- { serverError BAD_ARGUMENTS }
+
+DROP DICTIONARY dict_polygons_overflow;
+DROP TABLE polygons_overflow;
