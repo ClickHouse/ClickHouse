@@ -193,21 +193,23 @@ TEST(MergeTreeBitmapStoreTest, DropPartErasesInMemoryStateAndCache)
     EXPECT_NE(bm_after.get(), bm_first.get());
 }
 
-TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityAborts)
+/// LOGICAL_ERROR aborts in debug/sanitizer builds and throws otherwise.
+/// Coverage builds take the throw path, so EXPECT_DEATH does not work
+/// uniformly — use the right matcher per build.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+#define EXPECT_MONOTONICITY_REJECTS(stmt) EXPECT_DEATH(stmt, "must be strictly greater")
+#else
+#define EXPECT_MONOTONICITY_REJECTS(stmt) EXPECT_THROW(stmt, DB::Exception)
+#endif
+
+TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityRejected)
 {
-    /// Death-test: the LOGICAL_ERROR aborts in debug/sanitizer builds and
-    /// throws otherwise — both terminate the forked child, which is what
-    /// EXPECT_DEATH expects.
     PartStorageFixture fx;
     MergeTreeBitmapStore store{/*cache=*/nullptr};
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
 
-    EXPECT_DEATH(
-        store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)),
-        "must be strictly greater");
-    EXPECT_DEATH(
-        store.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(3)),
-        "must be strictly greater");
+    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)));
+    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(3)));
 }
 
 TEST(MergeTreeBitmapStoreTest, InstallBitmapAfterDropPartReseesAllVersions)
@@ -234,16 +236,14 @@ TEST(MergeTreeBitmapStoreTest, InstallBitmapAfterDropPartReseesAllVersions)
 
 TEST(MergeTreeBitmapStoreTest, InstallBitmapMonotonicityHoldsAcrossDropPart)
 {
-    /// The monotonicity check re-snapshots from disk after a drop, so
-    /// reinstalling an existing on-disk csn still aborts.
+    /// Monotonicity re-snapshots from disk after a drop, so reinstalling
+    /// an existing on-disk csn must still be rejected.
     PartStorageFixture fx;
     MergeTreeBitmapStore store{/*cache=*/nullptr};
     store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(1));
     store.dropPart("p");
 
-    EXPECT_DEATH(
-        store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)),
-        "must be strictly greater");
+    EXPECT_MONOTONICITY_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/10, bitmapWithRow(2)));
 }
 
 TEST(MergeTreeBitmapStoreTest, CorruptFileSurfacesError)
