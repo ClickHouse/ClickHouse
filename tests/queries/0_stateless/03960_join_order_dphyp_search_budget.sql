@@ -8,6 +8,8 @@ SET enable_parallel_replicas = 0;
 SET cross_to_inner_join_rewrite = 0;
 -- Low budget so a small clique already exceeds it.
 SET query_plan_optimize_join_order_max_searched_plans = 10;
+-- Pin the relation limit so the clique is actually reordered (randomized settings may lower it).
+SET query_plan_optimize_join_order_limit = 10;
 
 CREATE TABLE sb_a (k UInt32) ENGINE = MergeTree() PRIMARY KEY k SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE sb_b (k UInt32) ENGINE = MergeTree() PRIMARY KEY k SETTINGS auto_statistics_types = 'uniq';

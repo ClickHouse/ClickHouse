@@ -9,6 +9,8 @@ SET cross_to_inner_join_rewrite = 0;
 SET query_plan_merge_filter_into_join_condition = 1;
 -- Keep the single-table filter above the join so it gets merged into the join condition.
 SET query_plan_filter_push_down = 0;
+-- Pin the relation limit so the joins are reordered (randomized settings may lower it).
+SET query_plan_optimize_join_order_limit = 10;
 
 CREATE TABLE mff_a (id UInt32, val UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE mff_b (id UInt32, a_id UInt32, val UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';
