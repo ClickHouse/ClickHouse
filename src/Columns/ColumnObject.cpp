@@ -1163,6 +1163,11 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
 
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, uint32_t * hash_out, bool initial) const
 {
+    /// Like the former `getWeakHash32` (and `updateHashWithValueRange`), this hashes the physical
+    /// path layout: it does NOT guarantee equal hashes for a logically equal object whose paths are
+    /// split differently between dynamic columns and `shared_data` across blocks. The in-memory
+    /// scatter consumers only need a fast per-query partitioning, not a layout-stable hash.
+    ///
     /// Build the finalized per-row object hash by chaining the sub-objects in the existing
     /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
     /// buffer is always seeded (no empty-object special case needed).

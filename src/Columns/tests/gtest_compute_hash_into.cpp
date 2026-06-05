@@ -11,7 +11,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/HashCombine32.h>
-#include <Common/randomSeed.h>
 #include <Common/thread_local_rng.h>
 
 #include <cstring>
@@ -21,7 +20,10 @@ using namespace DB;
 
 namespace
 {
-pcg64 rng(randomSeed()); // NOLINT(cert-err58-cpp,bugprone-throwing-static-initialization)
+/// Fixed seed: the distributional tests assert a p=0.001 chi-square cutoff, which a correct
+/// hash exceeds with non-zero probability. A deterministic seed keeps those checks (and every
+/// other randomized case here) reproducible so they cannot flake in CI.
+pcg64 rng(0x9e3779b97f4a7c15ULL); // NOLINT(cert-err58-cpp,bugprone-throwing-static-initialization)
 
 // ──────────────────────────────────────────────────────────────────────
 // Helpers
@@ -163,6 +165,7 @@ TEST(ComputeHashInto, InitialFlagSemantics)
     col->computeHashInto(0, n, combined_api.data(), false);
 
     EXPECT_NE(combined_api, out_init) << "initial=false must modify the buffer";
+    EXPECT_EQ(combined_api, combined_manual) << "initial=false must combine via fmix32Combined(h(row), prior)";
 }
 
 
