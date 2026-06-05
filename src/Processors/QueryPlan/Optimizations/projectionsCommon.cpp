@@ -137,12 +137,10 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
             {
                 outputs.erase(it);
             }
-            else
-            {
-                auto column = node->result_type->createColumnConst(0, 1);
-                *it = &dag.addColumn(std::move(column), node->result_type, node->result_name);
-            }
-
+            /// When the filter column survives (`remove == false`), it must be left alone:
+            /// its `result_name` may also denote a downstream-used data column (e.g.
+            /// `WHERE c GROUP BY c`), and replacing the output with a const-1 placeholder
+            /// would corrupt that column for every consumer of `query.dag`.
             return node;
         }
     }
