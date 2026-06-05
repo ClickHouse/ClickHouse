@@ -369,8 +369,15 @@ void OpenMetricsTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             auto lit = lhs.labels.find(bucket_label);
             auto rit = rhs.labels.find(bucket_label);
             if (lit != lhs.labels.end() && rit != rhs.labels.end())
-                return tryParseFloat(lit->second) < tryParseFloat(rit->second);
-            return false;
+            {
+                const Float64 lval = tryParseFloat(lit->second);
+                const Float64 rval = tryParseFloat(rit->second);
+                if (lval != rval)
+                    return lval < rval;
+            }
+            /// Same bucket bound and/or different series labels: fall back to a total order so
+            /// multi-series histogram families are emitted deterministically across platforms.
+            return lhs.labels < rhs.labels;
         });
 }
 
