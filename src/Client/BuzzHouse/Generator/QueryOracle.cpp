@@ -347,22 +347,26 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
 
     /// Choose roundtrip function pair
     String roundtrip_pred;
-    switch (rg.randomInt<uint32_t>(0, 3))
+    switch (rg.randomInt<uint32_t>(0, 4))
     {
         case 0:
-            /// hex/unhex — exercises hex encoding path
+            /// hex/unhex
             roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
             break;
         case 1:
-            /// baseEncode/Decode
-            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            /// bin/unbin
+            roundtrip_pred = fmt::format("unbin(bin({0})) = {0}", val);
             break;
         case 2:
-            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            /// baseEncode/Decode
             {
-                const String rev = rg.nextBool() ? "UTF8" : "";
-                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+                static const std::vector<String> base_variants = {"32", "58", "64"};
+                roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.pickRandomly(base_variants), val);
             }
+            break;
+        case 3:
+            /// reverse (byte-level only; reverseUTF8 has undefined behavior on invalid UTF-8)
+            roundtrip_pred = fmt::format("reverse(reverse({0})) = {0}", val);
             break;
         default: {
             /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
