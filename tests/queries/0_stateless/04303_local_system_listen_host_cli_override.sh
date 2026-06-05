@@ -12,7 +12,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `listen_try=0` would fail. With `--listen_host 127.0.0.1` the config hosts are
 # ignored entirely, so the HTTP listener starts successfully.
 
+# Fail fast: if the leaked `listen_host[1]` makes `SYSTEM START LISTEN HTTP` fail, `clickhouse-local`
+# exits non-zero and the test must report that failure instead of swallowing it during cleanup.
+set -e
+
 CONFIG="${CLICKHOUSE_TMP}/04303_listen_override_config.xml"
+trap 'rm -f "$CONFIG"' EXIT
 cat > "$CONFIG" <<'XML'
 <clickhouse>
     <listen_host>127.0.0.1</listen_host>
@@ -31,5 +36,3 @@ ${CLICKHOUSE_LOCAL} \
     SYSTEM STOP LISTEN HTTP;
     SELECT 'http_stopped';
 "
-
-rm -f "$CONFIG"
