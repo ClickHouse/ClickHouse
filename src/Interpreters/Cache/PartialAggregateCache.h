@@ -29,7 +29,7 @@ public:
 
         /// Part identity (`name` + authoritative mutation counter from the data part, not inferred by parsing `part_name`).
         String part_name;
-        UInt64 part_mutation_version;
+        UInt64 part_mutation_version = 0;
 
         bool operator==(const Key & other) const;
     };
