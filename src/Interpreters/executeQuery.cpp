@@ -2194,7 +2194,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
+    std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
@@ -2332,12 +2332,14 @@ void executeQuery(
             static_cast<double>(context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw]),
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size || http_continue_callback)
+    if (istr->available() > max_query_size || http_continue_callback || flags.parse_query_from_initial_buffer)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
         /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
         /// in the buffer already because it should have been extracted from the query parameter.
+        /// The same applies to streaming inserts whose query is already in the initial buffer and whose body must remain
+        /// available for the input format.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
