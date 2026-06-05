@@ -89,10 +89,21 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
+    try
+    {
+        PullingPipelineExecutor executor(io.pipeline);
 
-    /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-    writeQueryResponse(response, executor, converter.getResultType());
+        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+        writeQueryResponse(response, executor, converter.getResultType());
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Fire BlockIO finish callbacks so the query is recorded in system.query_log (QueryFinish with read_rows/read_bytes).
+    io.onFinish();
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
