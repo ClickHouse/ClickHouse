@@ -66,7 +66,9 @@ The `ArrowStream` output is raw binary, so rather than printing it to the
 terminal we pipe it into a consumer. The stream is self-describing (it carries
 its own schema), so here we pipe it straight into
 [`clickhouse-local`](/operations/utilities/clickhouse-local), which reads the
-incoming batches with `--input-format ArrowStream` and queries them as a table:
+incoming batches with `--input-format ArrowStream` and queries them as a table.
+The `forex` table is large, so we bound the remote query with a `WHERE`
+predicate and a `LIMIT` to keep this example small:
 
 ```bash
 curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
@@ -78,11 +80,13 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
             CAST(ask, 'Float32') AS ask,
             ask - bid AS spread
         FROM forex
+        WHERE base = 'USD' AND quote = 'CHF'
         ORDER BY datetime ASC
+        LIMIT 5
         FORMAT ArrowStream
         SETTINGS output_format_arrow_compression_method='none'" \
   | clickhouse-local --input-format ArrowStream \
-      --query "SELECT * FROM table ORDER BY last_update ASC LIMIT 5 FORMAT PrettyCompact"
+      --query "SELECT * FROM table ORDER BY last_update ASC FORMAT PrettyCompact"
 ```
 
 ```response title="Response"

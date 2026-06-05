@@ -17,12 +17,9 @@ doc_type: 'reference'
 
 `HiveText` reads the text serialization format used by [Apache Hive](https://hive.apache.org/)
 tables (the format produced by Hive's `LazySimpleSerDe`). It is a delimited text
-format, similar to [`CSV`](/interfaces/formats/CSV), but with the
-non-printable delimiters Hive uses by default:
-
-- fields are separated by `\x01` (Ctrl-A),
-- items of a collection (an array or a map) are separated by `\x02`,
-- key/value pairs of a map are separated by `\x03`.
+format, similar to [`CSV`](/interfaces/formats/CSV), in which fields are
+separated by the Hive default `\x01` (Ctrl-A) delimiter. The field delimiter is
+configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
 
 `HiveText` is an input-only format. The data has no header row: values are
 mapped positionally onto the columns of the destination table, so the column
@@ -31,6 +28,18 @@ structure) rather than inferred from the data. While reading, ClickHouse parses
 dates and times in best-effort mode (see [`date_time_input_format`](/operations/settings/settings-formats#date_time_input_format)),
 fills omitted trailing fields with column defaults, and skips fields it does not
 recognize.
+
+Within a field, values are parsed using the same escaping rules as `CSV` rather
+than Hive's nested delimiters. In particular, a column of type
+[`Array`](/sql-reference/data-types/array) is read from the bracketed
+representation (for example, `"['a','b','c']"`), not from values separated by
+the Hive collection delimiter `\x02`.
+
+:::note Nested delimiter settings have no effect
+The [`input_format_hive_text_collection_items_delimiter`](#format-settings) and
+[`input_format_hive_text_map_keys_delimiter`](#format-settings) settings are
+accepted for compatibility but are currently not used during parsing.
+:::
 
 By default, rows are allowed to have a variable number of fields (see
 [`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)):
@@ -112,6 +121,6 @@ a parsing exception.
 | Setting                                                | Description                                                                                                                           | Default |
 |--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|---------|
 | `input_format_hive_text_fields_delimiter`              | Delimiter between fields in Hive Text File                                                                                             | `\x01`  |
-| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File                                                                    | `\x02`  |
-| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File                                                                           | `\x03`  |
+| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Accepted but currently not used during parsing.                   | `\x02`  |
+| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Accepted but currently not used during parsing.                          | `\x03`  |
 | `input_format_hive_text_allow_variable_number_of_columns` | Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields as default values        | `1`     |
