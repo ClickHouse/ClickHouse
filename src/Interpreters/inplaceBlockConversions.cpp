@@ -181,7 +181,7 @@ ASTPtr convertRequiredExpressions(
             /// (e.g. if a second ALTER removes the DEFAULT, but first is not completed).
             ASTPtr default_value;
             if (auto column_default = columns.getDefault(required_column.name))
-                default_value = cloneAndExpandColumnDefaultExpression(*column_default, columns, context);
+                default_value = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, columns, context);
             else if (!forbid_default_defaults)
                 default_value = make_intrusive<ASTLiteral>(required_column.type->getDefault());
             else
