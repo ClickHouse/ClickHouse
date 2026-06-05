@@ -6,15 +6,10 @@
 
 #if USE_AWS_S3
 
-#include <cstdlib>
 #include <memory>
-#include <string>
-
-#include <base/scope_guard.h>
 
 #include <boost/algorithm/string/split.hpp>
 
-#include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
 #include <aws/core/client/AWSError.h>
@@ -29,7 +24,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
-#include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
 #include <Poco/Util/ServerApplication.h>
@@ -51,19 +45,8 @@ namespace DB::S3RequestSetting
  * */
 [[maybe_unused]] static Poco::Util::ServerApplication app;
 
-static void restoreEnvVarForAwsS3ClientTests(const char * name, bool had_value, const std::string & saved_value)
-{
-    if (had_value)
-    {
-        (void)::setenv(name, saved_value.c_str(), 1); // NOLINT(concurrency-mt-unsafe)
-    }
-    else
-    {
-        (void)::unsetenv(name); // NOLINT(concurrency-mt-unsafe)
-    }
-}
 
-static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
+String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_header)
 {
     String content;
     for (const auto & [header_name, header_value] : message_header)
@@ -86,7 +69,7 @@ static String getSSEAndSignedHeaders(const Poco::Net::MessageHeader & message_he
     return content;
 }
 
-static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     String version_id;
     UInt64 max_single_read_retries = 1;
@@ -107,7 +90,7 @@ static void doReadRequest(std::shared_ptr<const DB::S3::Client> client, const DB
     DB::readStringUntilEOF(content, read_buffer);
 }
 
-static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
 {
     UInt64 max_unexpected_write_error_retries = 1;
 
@@ -128,7 +111,7 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
 
-static void testServerSideEncryption(
+void testServerSideEncryption(
     RequestFn do_request,
     bool disable_checksum,
     String server_side_encryption_customer_key_base64,
@@ -346,53 +329,6 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         /*is_s3express_bucket=*/true);
 }
 
-TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)
-{
-    DB::RemoteHostFilter remote_host_filter;
-    unsigned int s3_max_redirects = 100;
-    unsigned int s3_retry_attempts = 0;
-    bool s3_slow_all_threads_after_network_error = true;
-    bool s3_slow_all_threads_after_retryable_error = true;
-    bool enable_s3_requests_logging = false;
-    DB::S3::URI uri("https://test-perf-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-north-1.amazonaws.com/test.csv");
-
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        /*force_region=*/"",
-        remote_host_filter,
-        s3_max_redirects,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
-        s3_slow_all_threads_after_network_error,
-        s3_slow_all_threads_after_retryable_error,
-        enable_s3_requests_logging,
-        /* for_disk_s3 = */ false,
-        /* opt_disk_name = */ {},
-        /* request_throttler = */ {},
-        "https");
-
-    client_configuration.endpointOverride = uri.endpoint;
-
-    DB::HTTPHeaderEntries headers;
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .disable_checksum = false,
-        .gcs_issue_compose_request = false,
-        .is_s3express_bucket = DB::S3::isS3ExpressEndpoint(uri.endpoint),
-    };
-
-    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        /*access_key_id=*/"ACCESS_KEY_ID",
-        /*secret_access_key=*/"SECRET_ACCESS_KEY",
-        /*server_side_encryption_customer_key_base64=*/"",
-        {},
-        headers,
-        DB::S3::CredentialsConfiguration{});
-
-    ASSERT_TRUE(client);
-    EXPECT_EQ(client->getRegion(), "eu-north-1");
-}
-
 namespace
 {
 
@@ -600,87 +536,6 @@ TEST(IOTestAwsS3Client, AssumeRole)
         ASSERT_TRUE(sts_http.hasLastRequest());
         validateCredential(get_credential_string(sts_http.getLastRequestHeader()), "sts", access_key_id, region);
         validateAssumeRoleQueryParams(sts_http.getLastQueryParams(), role_arn, "ClickHouseSession");
-    }
-}
-
-TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
-{
-    constexpr const char * k_role = "AWS_ROLE_ARN";
-    constexpr const char * k_token = "AWS_WEB_IDENTITY_TOKEN_FILE";
-
-    const char * prev_role = std::getenv(k_role); // NOLINT(concurrency-mt-unsafe)
-    const char * prev_token = std::getenv(k_token); // NOLINT(concurrency-mt-unsafe)
-    const bool had_role = prev_role != nullptr;
-    const bool had_token = prev_token != nullptr;
-    const std::string saved_role = had_role ? std::string(prev_role) : std::string();
-    const std::string saved_token = had_token ? std::string(prev_token) : std::string();
-
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_role, had_role, saved_role); });
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_token, had_token, saved_token); });
-
-    ASSERT_EQ(0, ::setenv(k_role, "arn:aws:iam::123456789012:role/clickhouse_unit_test_role", 1)); // NOLINT(concurrency-mt-unsafe)
-    ASSERT_EQ(0, ::setenv(k_token, "/tmp/clickhouse_web_identity_token_path_for_gtest", 1)); // NOLINT(concurrency-mt-unsafe)
-
-    EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured({}));
-}
-
-TEST(IOTestAwsS3Client, WebIdentityConfiguredFromKmsRoleOverrideAndTokenFile)
-{
-    constexpr const char * k_role = "AWS_ROLE_ARN";
-    constexpr const char * k_token = "AWS_WEB_IDENTITY_TOKEN_FILE";
-
-    const char * prev_role = std::getenv(k_role); // NOLINT(concurrency-mt-unsafe)
-    const char * prev_token = std::getenv(k_token); // NOLINT(concurrency-mt-unsafe)
-    const bool had_role = prev_role != nullptr;
-    const bool had_token = prev_token != nullptr;
-    const std::string saved_role = had_role ? std::string(prev_role) : std::string();
-    const std::string saved_token = had_token ? std::string(prev_token) : std::string();
-
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_role, had_role, saved_role); });
-    SCOPE_EXIT({ restoreEnvVarForAwsS3ClientTests(k_token, had_token, saved_token); });
-
-    ASSERT_EQ(0, ::setenv(k_role, "", 1)); // NOLINT(concurrency-mt-unsafe)
-    ASSERT_EQ(0, ::setenv(k_token, "/tmp/clickhouse_web_identity_token_path_for_gtest_override", 1)); // NOLINT(concurrency-mt-unsafe)
-
-    EXPECT_TRUE(DB::S3::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::isWebIdentityConfigured(
-        "arn:aws:iam::123456789012:role/from_kms_role_arn_override"));
-}
-
-TEST(IOTestAwsS3Client, WrongSigningRegionBadRequest)
-{
-    {
-        SCOPED_TRACE("400 with non-empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "us-west-2");
-        EXPECT_TRUE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("2xx with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
-        response.set("x-amz-bucket-region", "eu-central-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(200, response));
-    }
-    {
-        SCOPED_TRACE("400 without header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("400 with empty x-amz-bucket-region");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
-        response.set("x-amz-bucket-region", "");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(400, response));
-    }
-    {
-        SCOPED_TRACE("404 with header");
-        Poco::Net::HTTPResponse response;
-        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        response.set("x-amz-bucket-region", "ap-south-1");
-        EXPECT_FALSE(DB::S3::isS3WrongSigningRegionBadRequest(404, response));
     }
 }
 

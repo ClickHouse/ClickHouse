@@ -24,6 +24,7 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 
+
 namespace DB
 {
 
@@ -33,15 +34,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
-}
-
-UInt128 SerializationMap::getHash(const SerializationPtr & nested_, MergeTreeMapSerializationVersion serialization_version_)
-{
-    SipHash hash;
-    hash.update("Map");
-    hash.update(nested_->getHash());
-    hash.update(static_cast<UInt8>(serialization_version_));
-    return hash.get128();
 }
 
 SerializationMap::SerializationMap(
@@ -73,7 +65,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        chassert(tuple.size() == 2);
+        assert(tuple.size() == 2);
         key_serialization->serializeBinary(tuple[0], ostr, settings);
         value_serialization->serializeBinary(tuple[1], ostr, settings);
     }
@@ -81,7 +73,7 @@ void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
@@ -147,17 +139,6 @@ void SerializationMap::readMapSafe(DB::IColumn & column, std::function<void()> &
 
         throw;
     }
-}
-
-SerializationPtr SerializationMap::create(
-    const SerializationPtr & key_serialization_,
-    const SerializationPtr & value_serialization_,
-    const SerializationPtr & nested_serialization_,
-    MergeTreeMapSerializationVersion serialization_version_)
-{
-    if (!nested_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_));
-    return ISerialization::pooled(getHash(nested_serialization_, serialization_version_), [&] { return new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_); });
 }
 
 template <typename KeyWriter, typename ValueWriter>
@@ -574,7 +555,7 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
     ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
     SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
-        return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);
+        return std::make_shared<SerializationMapKeysOrValues>(nested_creator->create(prev, type), serialization_version);
     }
 };
 
@@ -619,8 +600,8 @@ void SerializationMap::enumerateStreams(
         /// and sums them to produce the total map size per row.
         settings.path.push_back(Substream::ArraySizes);
         auto subcolumn_name = "size" + std::to_string(settings.array_level);
-        auto array_size_serialization = SerializationNamed::create(SerializationArrayOffsets::create(), subcolumn_name, SubstreamType::NamedOffsets);
-        auto map_size_serialization = SerializationMapSize::create(array_size_serialization, serialization_version);
+        auto array_size_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationArrayOffsets>(), subcolumn_name, SubstreamType::NamedOffsets);
+        auto map_size_serialization = std::make_shared<SerializationMapSize>(array_size_serialization, serialization_version);
         settings.path.back().data = SubstreamData(map_size_serialization)
             .withType(map_type ? std::make_shared<DataTypeUInt64>() : nullptr)
             .withColumn(map_column ? map_column->getNestedColumn().getOffsetsPtr() : nullptr);
@@ -784,13 +765,13 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     /// Otherwise read the buckets info stream from disk.
     else if (auto * stream = settings.getter(settings.path))
     {
-        UInt8 version = 0;
+        UInt8 version;
         readBinary(version, *stream);
         if (!magic_enum::enum_cast<BucketsInfoSerializationVersion>(version))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown Map buckets info serialization version: {}", static_cast<UInt32>(version));
 
         /// Read number of buckets.
-        UInt64 buckets = 0;
+        UInt64 buckets;
         readBinaryLittleEndian(buckets, *stream);
 
         /// Read statistics if any.
@@ -891,7 +872,7 @@ size_t SerializationMap::calculateNumberOfBuckets(const ColumnMap::StatisticsPtr
     if (min_avg_size > 0 && statistics->avg < static_cast<Float64>(min_avg_size))
         return 1;
 
-    UInt64 result = 0;
+    UInt64 result;
     switch (strategy)
     {
         /// Always use max_buckets_in_map regardless of the average map size.
@@ -1027,9 +1008,9 @@ void splitMapToBucketsDispatch(
 /// one per bucket. Each key-value pair is assigned to a bucket by hashing the key via
 /// `getBucketForKeyImpl`. Uses two-level type dispatch (`splitMapToBucketsDispatch`) to
 /// devirtualize `insertFrom` and hash computation for common key/value column types.
-VectorWithMemoryTracking<ColumnPtr> SerializationMap::splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const
+Columns SerializationMap::splitMapToBuckets(const IColumn & map_column, size_t start, size_t end, size_t buckets) const
 {
-    VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets);
+    Columns map_buckets(buckets);
     std::vector<IColumn *> map_keys_buckets(buckets);
     std::vector<IColumn *> map_values_buckets(buckets);
     std::vector<ColumnArray::Offsets *> map_offsets_buckets(buckets);
@@ -1062,13 +1043,13 @@ VectorWithMemoryTracking<ColumnPtr> SerializationMap::splitMapToBuckets(const IC
 /// For each row, key-value pairs from all buckets are concatenated back into one map entry.
 /// Used during deserialization to reconstruct the original Map column from the bucketed
 /// on-disk representation.
-void SerializationMap::collectMapFromBuckets(const VectorWithMemoryTracking<ColumnPtr> & map_buckets, IColumn & map_column) const
+void SerializationMap::collectMapFromBuckets(const Columns & map_buckets, IColumn & map_column) const
 {
     if (map_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
 
-    VectorWithMemoryTracking<ColumnPtr> map_keys_buckets(map_buckets.size());
-    VectorWithMemoryTracking<ColumnPtr> map_values_buckets(map_buckets.size());
+    Columns map_keys_buckets(map_buckets.size());
+    Columns map_values_buckets(map_buckets.size());
     std::vector<const ColumnArray::Offsets *> map_offsets_buckets(map_buckets.size());
     for (size_t bucket = 0; bucket != map_buckets.size(); ++bucket)
     {
@@ -1207,7 +1188,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     /// then reassemble them into a single column via `collectMapFromBuckets`.
     else
     {
-        VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets_info_state->buckets);
+        Columns map_buckets(buckets_info_state->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state->buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
