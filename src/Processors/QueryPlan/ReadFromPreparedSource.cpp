@@ -68,6 +68,11 @@ void ReadFromStorageStep::serialize(Serialization & ctx) const
     writeStringBinary(storage->getName(), ctx.out);
 }
 
+bool ReadFromStorageStep::isSerializable() const
+{
+    return storage && storage->getName() == "SystemOne";
+}
+
 std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization & ctx)
 {
     String storage_name;

@@ -34,6 +34,8 @@ public:
     const StoragePtr & getStorage() const { return storage; }
 
     void serialize(Serialization & ctx) const override;
+    /// serialize is implemented only for StorageSystemOne.
+    bool isSerializable() const override;
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 

@@ -6,7 +6,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 
-#include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -50,20 +49,24 @@ namespace ErrorCodes
 namespace
 {
 
-/// A stage fragment is shipped to workers by serializing its query plan. A step without serialization
-/// support would fail late, mid-execution, with a generic NOT_IMPLEMENTED. Attempt the serialization
-/// up front (the same path used at dispatch) so an unsupported plan fails early with a clear message.
+/// A stage fragment is shipped to workers by serializing its query plan, so every step must support
+/// serialization. Check up front (without serializing) so an unsupported plan fails early with a clear
+/// message instead of late, mid-execution, with a generic error.
 void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
 {
-    try
+    std::vector<const QueryPlan::Node *> stack;
+    if (fragment.getRootNode())
+        stack.push_back(fragment.getRootNode());
+    while (!stack.empty())
     {
-        WriteBufferFromOwnString out;
-        fragment.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    }
-    catch (const Exception & e)
-    {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan cannot serialize stage '{}' for remote execution: {}", stage_name, e.message());
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->step && !node->step->isSerializable())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
+                "serializable for remote execution", node->step->getName(), stage_name);
+        for (const auto * child : node->children)
+            stack.push_back(child);
     }
 }
 

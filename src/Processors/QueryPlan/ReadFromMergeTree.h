@@ -413,6 +413,7 @@ public:
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
 
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
