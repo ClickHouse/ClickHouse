@@ -83,6 +83,8 @@ Obfuscates the result of a query, producing a table that retains some statistica
 
 It is designed to publish almost real production data for usage in benchmarks. The transformation is deterministic for a given seed, controlled by the `obfuscate_*` settings. It uses some cryptographic primitives, but the result should never be considered secure.
 
+The table function is a repeating, effectively infinite source: it trains on the result of the inner query and then re-executes that query to generate obfuscated rows, advancing the seed on every pass. Always bound the output with an outer `LIMIT` (as in the example below); otherwise the query runs until cancelled.
+
 See also the `clickhouse obfuscator` tool, which implements the same algorithm over files.
 )",
             .examples{{"obfuscate", "SELECT * FROM obfuscate(SELECT number, toString(number) FROM numbers(10000)) LIMIT 10", ""}},

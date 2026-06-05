@@ -55,6 +55,9 @@ private:
 
     Phase phase = Phase::Training;
     bool source_was_empty = true;
+    /// Whether the current generation pass over the inner query has produced any rows.
+    /// If a full pass yields nothing, we stop instead of rebuilding forever.
+    bool generated_rows_in_pass = false;
 
     QueryPipeline inner_pipeline;
     std::unique_ptr<PullingPipelineExecutor> inner_executor;

@@ -16,6 +16,29 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsUInt64 limit;
+    extern const SettingsUInt64 offset;
+}
+
+namespace
+{
+
+/// The inner query is interpreted as a standalone top-level SELECT, so the query-level
+/// `limit` / `offset` result settings would be applied to it as well. That would train and
+/// generate from a truncated source just because the user limited the final result, e.g.
+/// `SELECT * FROM obfuscate(SELECT * FROM numbers(1000)) SETTINGS limit = 10`. Clear them
+/// for the inner execution; the outer pipeline still applies them to the obfuscated output.
+ContextPtr makeInnerContext(const ContextPtr & context)
+{
+    if (context->getSettingsRef()[Setting::limit] == 0 && context->getSettingsRef()[Setting::offset] == 0)
+        return context;
+
+    auto inner_context = Context::createCopy(context);
+    inner_context->setSetting("limit", Field(UInt64(0)));
+    inner_context->setSetting("offset", Field(UInt64(0)));
+    return inner_context;
+}
+
 }
 
 ObfuscateSource::ObfuscateSource(
@@ -28,7 +51,7 @@ ObfuscateSource::ObfuscateSource(
     : ISource(header_)
     , inner_query(std::move(inner_query_))
     , column_names(std::move(column_names_))
-    , context(std::move(context_))
+    , context(makeInnerContext(context_))
     , obfuscator(*header_, seed_, markov_model_params_)
 {
 }
@@ -96,7 +119,10 @@ Chunk ObfuscateSource::generate()
     while (true)
     {
         if (!inner_executor)
+        {
             rebuildInnerPipeline();
+            generated_rows_in_pass = false;
+        }
 
         Block block;
         if (inner_executor->pull(block))
@@ -104,16 +130,24 @@ Chunk ObfuscateSource::generate()
             if (block.rows() == 0)
                 continue;
 
+            generated_rows_in_pass = true;
             Columns columns = obfuscator.generate(block.getColumns());
             size_t num_rows = block.rows();
             return Chunk(std::move(columns), num_rows);
         }
 
-        /// Inner pipeline drained. Advance seed and rebuild to produce a fresh
-        /// stream of source blocks for the next iteration. Outer LIMIT stops us.
-        obfuscator.updateSeed();
+        /// Inner pipeline drained.
         inner_executor.reset();
         inner_pipeline.reset();
+
+        /// Fail closed: if a full generation pass produced no rows (e.g. the inner query is
+        /// non-repeatable and became empty after a non-empty training pass), stop instead of
+        /// rebuilding forever. Otherwise advance the seed and produce a fresh stream of source
+        /// blocks for the next iteration. The outer LIMIT bounds the otherwise-infinite stream.
+        if (!generated_rows_in_pass)
+            return {};
+
+        obfuscator.updateSeed();
     }
 }
 

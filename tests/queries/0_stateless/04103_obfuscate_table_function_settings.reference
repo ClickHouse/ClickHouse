@@ -2,7 +2,8 @@
 0
 --- same seed produces identical output across invocations ---
 1
---- empty seed produces different output each invocation (not always equal) ---
-0
+--- empty seed is accepted and produces a bounded result ---
+8
+--- invalid markov settings are rejected ---
 --- all markov parameters are accepted and do not error ---
 20

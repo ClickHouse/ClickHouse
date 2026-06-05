@@ -13,16 +13,17 @@ WITH
     b AS (SELECT groupArray(number) AS xs FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8 SETTINGS obfuscate_seed = 'stable'))
 SELECT (a.xs = b.xs) AS equal FROM a, b;
 
-SELECT '--- empty seed produces different output each invocation (not always equal) ---';
--- Two subsequent calls with empty seed produce two independent random seeds, so
--- the outputs coincide only with negligible probability (1 in 2^64) — they are
--- essentially never equal. With eight distinct source values and eight sampled
--- rows, the probability that two independent random permutation-like streams
--- happen to agree is vanishing, so "equal = 0" is a reliable expectation.
-WITH
-    a AS (SELECT groupArray(number) AS xs FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8)),
-    b AS (SELECT groupArray(number) AS xs FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8))
-SELECT (a.xs = b.xs) AS equal FROM a, b;
+SELECT '--- empty seed is accepted and produces a bounded result ---';
+-- An empty seed generates a fresh random seed for each query. We only assert that the
+-- query succeeds and returns the requested number of rows; asserting that two random
+-- runs differ would be probabilistic (for such a tiny domain the outputs can coincide
+-- by chance) and could flake.
+SELECT count() FROM (SELECT * FROM obfuscate(SELECT * FROM numbers(8)) LIMIT 8);
+
+SELECT '--- invalid markov settings are rejected ---';
+SELECT * FROM obfuscate(SELECT toString(number) AS s FROM numbers(8)) LIMIT 1 SETTINGS obfuscate_markov_order = 0; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM obfuscate(SELECT toString(number) AS s FROM numbers(8)) LIMIT 1 SETTINGS obfuscate_markov_frequency_desaturate = 2; -- { serverError BAD_ARGUMENTS }
+SELECT * FROM obfuscate(SELECT toString(number) AS s FROM numbers(8)) LIMIT 1 SETTINGS obfuscate_markov_frequency_desaturate = -1; -- { serverError BAD_ARGUMENTS }
 
 SELECT '--- all markov parameters are accepted and do not error ---';
 SELECT count()

@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace Setting
 {
     extern const SettingsString obfuscate_seed;
@@ -41,10 +46,17 @@ ObfuscateStep::ObfuscateStep(
     seed = seed_string.empty() ? randomSeed() : sipHash64(seed_string);
 
     markov_model_params.order = settings[Setting::obfuscate_markov_order];
+    if (markov_model_params.order == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'obfuscate_markov_order' must be greater than zero");
+
     markov_model_params.frequency_cutoff = settings[Setting::obfuscate_markov_frequency_cutoff];
     markov_model_params.num_buckets_cutoff = settings[Setting::obfuscate_markov_num_buckets_cutoff];
     markov_model_params.frequency_add = settings[Setting::obfuscate_markov_frequency_add];
+
     markov_model_params.frequency_desaturate = static_cast<double>(settings[Setting::obfuscate_markov_frequency_desaturate]);
+    if (markov_model_params.frequency_desaturate < 0.0 || markov_model_params.frequency_desaturate > 1.0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'obfuscate_markov_frequency_desaturate' must be in the range [0, 1]");
+
     markov_model_params.determinator_sliding_window_size = settings[Setting::obfuscate_markov_determinator_sliding_window_size];
 }
 
