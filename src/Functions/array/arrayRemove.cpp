@@ -138,15 +138,6 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         /// equals() on tuples with nullable components may return ColumnConst(Nullable(UInt8)).
         /// convertToFullIfNeeded() unwraps ColumnConst so removeNullable can strip the Nullable layer.
         auto else_col = removeNullable(equals_result->convertToFullIfNeeded());
-        /// equals() on a Variant operand whose alternatives are all incompatible with the other
-        /// argument returns Nullable(Nothing) when `variant_throw_on_type_mismatch` is disabled.
-        /// In that case removeNullable yields a ColumnNothing while the declared type below is
-        /// UInt8 — passing that mismatch through to FunctionIf::executeGeneric trips an
-        /// assertTypeEquality chassert in IColumn::insertFrom. Detect the situation and replace
-        /// the column with a constant-zero UInt8: no comparison was possible so no element is
-        /// considered equal to elem.
-        if (else_col->getDataType() != TypeIndex::UInt8)
-            else_col = ColumnUInt8::create(arr_elements_count, UInt8(0));
 
         auto cond_arg = ColumnWithTypeAndName{cond_col, std::make_shared<DataTypeUInt8>(), "cond"};
         auto then_arg = ColumnWithTypeAndName{then_col, std::make_shared<DataTypeUInt8>(), "then"};
