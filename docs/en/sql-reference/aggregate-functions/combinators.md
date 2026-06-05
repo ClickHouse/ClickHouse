@@ -309,6 +309,61 @@ Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` a
 
 Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
+## TOTALS {#totals}
+
+The `TOTALS` keyword can be placed inside the argument list of an aggregate function. The aggregate function is then evaluated over the entire input dataset, independently of `GROUP BY`. The same global value is returned in every output row.
+
+**Syntax**
+
+```sql
+<aggFunction>(<args> TOTALS)
+```
+
+**Example**
+
+```sql
+SELECT
+    country,
+    avg(salary) AS country_avg,
+    avg(salary TOTALS) AS global_avg
+FROM employees
+GROUP BY country;
+```
+
+The `country_avg` column contains the average salary per country, while `global_avg` contains the same global average value (over all rows) repeated in every row. This makes it convenient to compute and display percentage shares, ratios to the global value, and other comparative metrics without subqueries or window functions.
+
+The `TOTALS` combinator cannot be combined with `BY` on the same aggregate function call.
+
+## BY {#by}
+
+The `BY` keyword can be placed inside the argument list of an aggregate function, followed by a subset of the `GROUP BY` keys. The aggregate function is then evaluated per unique combination of these keys, regardless of the full grouping granularity. The result is the same for all output rows that share the same `BY` key combination.
+
+**Syntax**
+
+```sql
+<aggFunction>(<args> BY <key1>, <key2>, ...)
+```
+
+The columns listed after `BY` must be a subset of the query's `GROUP BY` keys.
+
+**Example**
+
+```sql
+SELECT
+    country,
+    city,
+    avg(salary) AS city_avg,
+    avg(salary BY country) AS country_avg
+FROM employees
+GROUP BY country, city;
+```
+
+Here `city_avg` is the average salary for each (country, city) pair, while `country_avg` is the average salary for each country (aggregated across all cities of that country). Rows with the same `country` share the same value of `country_avg`.
+
+If the `BY` column list is empty or contains a column that is not in `GROUP BY`, the query is rejected with `BAD_ARGUMENTS`.
+
+The `BY` combinator cannot be combined with `TOTALS` on the same aggregate function call.
+
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
