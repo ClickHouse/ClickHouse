@@ -358,7 +358,10 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     /// So, we allocate 0 index for rows with NULL values.
     variants.emplace_back();
     /// Remember indexes in selector for each variant type.
-    UnorderedMapWithMemoryTracking<String, size_t> variant_indexes;
+    /// Shared and non-shared variants are defensively kept in separate maps
+    /// because the same type may potentially appear in both shared and non-shared.
+    UnorderedMapWithMemoryTracking<String, size_t> shared_variant_indexes;
+    UnorderedMapWithMemoryTracking<String, size_t> non_shared_variant_indexes;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
     auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
@@ -382,12 +385,12 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             auto type = decodeDataType(buf);
             auto type_name = type->getName();
 
-            /// Check if we already allocated selector index for this variant type.
+            /// Check if we already allocated selector index for this variant type in the shared variant.
             /// If not, append it to list of variants and remember its index.
-            auto indexes_it = variant_indexes.find(type_name);
-            if (indexes_it == variant_indexes.end())
+            auto indexes_it = shared_variant_indexes.find(type_name);
+            if (indexes_it == shared_variant_indexes.end())
             {
-                indexes_it = variant_indexes.emplace(type_name, variants.size()).first;
+                indexes_it = shared_variant_indexes.emplace(type_name, variants.size()).first;
                 variants.emplace_back(type->createColumn(), type, "");
             }
 
@@ -403,12 +406,12 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         else
         {
             auto global_discr = variant_column.globalDiscriminatorByLocal(local_discr);
-            /// Check if we already allocated selector index for this variant type.
+            /// Check if we already allocated selector index for this non-shared variant type.
             /// If not, append it to list of variants and remember its index.
-            auto it = variant_indexes.find(variant_info.variant_names[global_discr]);
-            if (it == variant_indexes.end())
+            auto it = non_shared_variant_indexes.find(variant_info.variant_names[global_discr]);
+            if (it == non_shared_variant_indexes.end())
             {
-                it = variant_indexes.emplace(variant_info.variant_names[global_discr], variants.size()).first;
+                it = non_shared_variant_indexes.emplace(variant_info.variant_names[global_discr], variants.size()).first;
                 variants.emplace_back(variant_column.getVariantPtrByLocalDiscriminator(local_discr), variant_types[global_discr], "");
             }
 
