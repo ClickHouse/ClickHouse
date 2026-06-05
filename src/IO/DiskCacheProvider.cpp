@@ -31,7 +31,7 @@ DiskCacheHandle::DiskCacheHandle(
     const FilesystemCacheSettings & cache_settings_,
     ThrottlerPtr local_throttler_,
     String source_file_path_,
-    RetainedCacheReader * retained_reader_)
+    ReaderAnchorCache * anchors_)
     : cache(std::move(cache_))
     , cache_key(cache_key_)
     , origin(std::move(origin_))
@@ -40,7 +40,7 @@ DiskCacheHandle::DiskCacheHandle(
     , cache_settings(cache_settings_)
     , local_throttler(std::move(local_throttler_))
     , source_file_path(std::move(source_file_path_))
-    , retained_reader(retained_reader_)
+    , anchors(anchors_)
     , requested_range(requested)
 {
     /// `FileCache` keys segments by object-local offset (the cache key is
@@ -277,43 +277,24 @@ Rope DiskCacheHandle::get(ByteRange range)
 
         auto buf = std::make_shared<OwnedRopeBuffer>(overlap_size);
 
-        /// Reuse the retained reader when this overlap lands in the same segment
-        /// file as the previous `get` (the common sequential case) — saves an
-        /// `open`/`stat` per window. Otherwise open and retain it, dropping the
-        /// previous one. See `RetainedCacheReader`.
-        std::shared_ptr<ReadBufferFromFileBase> reader;
-        if (retained_reader && retained_reader->reader && retained_reader->path == path)
-        {
-            reader = retained_reader->reader;
-        }
-        else
-        {
-            /// `ReadSettings` for the cache-file read are fully fixed except for
-            /// the throttler. See `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`
-            /// for which fields are deliberately NOT propagated from the caller's
-            /// settings and why.
-            ReadSettings cache_file_read_settings;
-            cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-            cache_file_read_settings.local_fs_settings.buffer_size = 0;
-            cache_file_read_settings.local_throttler = local_throttler;
+        /// Always create a fresh reader. It is cheap: `createReadBufferFromFileBase`
+        /// (pread) shares the descriptor via `OpenedFileCache`, kept warm by the
+        /// anchor cache (see `ReaderAnchorCache`), so a hot segment is an
+        /// `OpenedFileCache` hit rather than an `open`. A fresh reader per read
+        /// keeps concurrent `readBigAt` calls race-free. `ReadSettings` are fixed
+        /// except for the throttler (see
+        /// `CachedOnDiskReadBufferFromFile::getCacheReadBuffer`).
+        ReadSettings cache_file_read_settings;
+        cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        cache_file_read_settings.local_fs_settings.buffer_size = 0;
+        cache_file_read_settings.local_throttler = local_throttler;
 
-            reader = createReadBufferFromFileBase(
-                path, cache_file_read_settings,
-                /*read_hint=*/std::nullopt,
-                /*file_size=*/std::nullopt,
-                segment->getFlagsForLocalRead());
+        std::shared_ptr<ReadBufferFromFileBase> reader = createReadBufferFromFileBase(
+            path, cache_file_read_settings,
+            /*read_hint=*/std::nullopt,
+            /*file_size=*/std::nullopt,
+            segment->getFlagsForLocalRead());
 
-            if (retained_reader)
-            {
-                retained_reader->path = path;
-                retained_reader->reader = reader;
-            }
-        }
-
-        /// Always reposition: a reused reader is left at the previous overlap's
-        /// end, and `pread` is positional so this only resets the buffer's
-        /// logical offset (no fd cost). `set()` below re-arms the external buffer
-        /// before any read, so the prior call's stale buffer pointer is unused.
         reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
 
         size_t copied = 0;
@@ -337,6 +318,12 @@ Rope DiskCacheHandle::get(ByteRange range)
         /// Node's logical_offset is file-level — translate from object-local.
         result.append(RopeNode{
             std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
+
+        /// Anchor the just-used reader so the next read of this segment hits
+        /// `OpenedFileCache` instead of re-`open`ing; the cache bounds how many
+        /// fds stay warm. The anchor is never read through, so this is race-free.
+        if (anchors)
+            anchors->set(path, reader);
     }
     return result;
 }
@@ -563,6 +550,9 @@ DiskCacheProvider::DiskCacheProvider(
     , local_throttler(std::move(local_throttler_))
     , custom_cache_key(std::move(custom_cache_key_))
     , custom_origin(std::move(custom_origin_))
+    /// 16 keep-alive anchors, untracked metrics; `EqualWeightFunction` makes the
+    /// byte cap an entry count.
+    , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
     /// Register a per-query context if `query_id_` is non-empty and the
     /// cache settings request a per-query download budget. `getQueryContextHolder`
@@ -588,7 +578,7 @@ std::unique_ptr<ICacheHandle> DiskCacheProvider::lookup(
         cache_settings,
         local_throttler,
         object.remote_path,
-        &retained_reader);
+        &reader_anchors);
 }
 
 }

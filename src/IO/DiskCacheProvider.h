@@ -6,23 +6,23 @@
 
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/CacheBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {
 
-class ReadBufferFromFileBase;
-
-/// A single retained open cache-segment file reader, reused across consecutive
-/// `DiskCacheHandle::get` calls that hit the same segment file. Legacy
-/// `CachedOnDiskReadBufferFromFile` keeps its `cache_file_reader` the same way;
-/// here it is hoisted into `DiskCacheProvider` so it outlives the per-window
-/// handles. Reused while `path` matches; the previous reader (and its fd) is
-/// dropped when a different segment is opened.
-struct RetainedCacheReader
-{
-    String path;
-    std::shared_ptr<ReadBufferFromFileBase> reader;
-};
+/// Bounded keep-alive cache of open cache-segment readers, at most one per
+/// segment path, LRU/SLRU-evicted (`EqualWeightFunction` makes the size cap a
+/// count). The readers are held only as ANCHORS, never read through:
+/// `createReadBufferFromFileBase` (pread) shares descriptors via
+/// `OpenedFileCache`, whose `weak_ptr` drops an fd once the last reader dies, so
+/// sequential windows would otherwise reopen the same segment every time.
+/// Keeping one recently-used reader per segment alive keeps its `OpenedFile`
+/// alive, so the next `create` is an `OpenedFileCache` hit (no `open` syscall).
+/// `CacheBase` is internally synchronized, and since the anchors are never read,
+/// `DiskCacheHandle::get` reads through its own fresh reader — nothing to race on.
+using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
 /// Holds a `FileSegmentsHolder` for the request's lifetime so the segments
 /// referenced by `status` / `get` stay pinned across the handle's calls.
@@ -39,7 +39,7 @@ public:
         const FilesystemCacheSettings & cache_settings,
         ThrottlerPtr local_throttler,
         String source_file_path,
-        RetainedCacheReader * retained_reader);
+        ReaderAnchorCache * anchors);
 
     ~DiskCacheHandle() override;
 
@@ -71,10 +71,10 @@ private:
     /// from the caller's `ReadSettings`.
     ThrottlerPtr local_throttler;
     String source_file_path;
-    /// Borrowed from the owning `DiskCacheProvider`, which outlives this
-    /// per-window handle. The open cache-file reader retained across `get`
-    /// calls. Not owned; null disables retention.
-    RetainedCacheReader * retained_reader = nullptr;
+    /// Borrowed from the owning `DiskCacheProvider` (which outlives this
+    /// per-call handle): the keep-alive anchor cache that `get` inserts each
+    /// just-used reader into. Not owned; null disables anchoring.
+    ReaderAnchorCache * anchors = nullptr;
     ByteRange requested_range;
     FileSegmentsHolderPtr holder;
     /// File-level ranges returned by successful `get` calls. The destructor
@@ -88,12 +88,11 @@ private:
 
 /// ICacheProvider wrapping FileCache.
 ///
-/// NOT thread-safe: a provider and the `DiskCacheHandle`s it hands out share
-/// mutable state (the retained cache-file reader) with no internal locking, so
-/// the caller must serialize all access. The `ReaderExecutor` satisfies this —
-/// the consumer and the single in-flight prefetch worker never read
-/// concurrently (a running prefetch is always joined via `PrefetchHandle::get`
-/// before the next read begins).
+/// Safe for concurrent use: `lookup` only reads immutable members and the
+/// internally-locked `FileCache`, each `DiskCacheHandle` is per-call, and the
+/// only shared mutable state — the `ReaderAnchorCache` keep-alive set — is
+/// internally synchronized. This matters because `PipelineReadBuffer::readBigAt`
+/// fans out concurrent reads over one shared provider.
 ///
 /// Per-object cache identity:
 ///   - When `custom_cache_key` is set, that key is used for every lookup
@@ -146,11 +145,11 @@ private:
     /// `tryReserve` charges every `DiskCacheHandle::put` against the same
     /// per-query budget — mirrors `CachedOnDiskReadBufferFromFile`'s holder.
     FileCache::QueryContextHolderPtr query_context_holder;
-    /// Retained open cache-segment reader, reused across the per-window
-    /// `DiskCacheHandle`s to avoid re-`open`/`stat`-ing the same segment file
-    /// each window. Borrowed by each handle in `lookup`. Relies on the external
-    /// serialization noted above.
-    RetainedCacheReader retained_reader;
+    /// Keep-alive anchors for recently-used cache-segment readers, borrowed by
+    /// each handle in `lookup`. Keeps hot segment fds warm so the per-call
+    /// `createReadBufferFromFileBase` in `get` hits `OpenedFileCache` instead of
+    /// re-`open`ing. See `ReaderAnchorCache`.
+    ReaderAnchorCache reader_anchors;
 };
 
 }
