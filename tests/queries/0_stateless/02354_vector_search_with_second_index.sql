@@ -48,6 +48,8 @@ SELECT trimLeft(explain) FROM (
 )
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%minmax%';
 
+SET use_query_condition_cache = 1;
+
 SELECT '-- Run the query with use_skip_indexes_on_data_read=0/1 to verify';
 
 SELECT id
@@ -63,5 +65,11 @@ WHERE attr1 > 100
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 2
 SETTINGS vector_search_filter_strategy = 'postfilter', use_skip_indexes_on_data_read = 0;
+
+SELECT '-- Make sure that query condition cache was not updated by the vector search query';
+
+SELECT count(*)
+FROM tab
+WHERE attr1 > 100;
 
 DROP TABLE tab;

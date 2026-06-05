@@ -6,3 +6,5 @@ Description: minmax GRANULARITY 1
 2
 1
 2
+-- Make sure that query condition cache was not updated by the vector search query
+12
