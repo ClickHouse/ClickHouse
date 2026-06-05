@@ -15,6 +15,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
+#include <Common/Scheduler/ISpaceSharedNode.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/ResourceAllocation.h>
@@ -470,6 +471,50 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
     sync_after_drop.arrive_and_wait();
 
     t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// Regression: when `ResourceGuard`'s Default-lock constructor's `wait()` throws (the scheduler
+// failed the request), the thread-local `Request` must be reset back to `Finished`. Otherwise
+// the next `ResourceGuard` on the same thread chasserts in `enqueue` because the request is
+// still in `Dequeued` state with `exception` set.
+TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
+    t.query("CREATE WORKLOAD intermediate IN all");
+
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
+
+    // Holder keeps the only slot busy so the second request blocks in `wait()`.
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        TestGuard g(t, link, 1);
+        sync_before_enqueue.arrive_and_wait();
+        sync_before_drop.arrive_and_wait();
+        sync_after_drop.arrive_and_wait();
+    });
+
+    sync_before_enqueue.arrive_and_wait();
+
+    t.async("intermediate", "res1", [&] (ResourceLink link)
+    {
+        sync_before_drop.arrive_and_wait();
+        // Default-lock guard: blocks in the ctor's `wait()`. The queue purge below fails the
+        // request, so the ctor throws.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+        // Reusing the thread-local `Request` must NOT trip the `state == Finished` chassert.
+        // With the fix the call cleanly throws (queue is now `is_not_usable`); without the fix
+        // it would SIGABRT first.
+        EXPECT_THROW(ResourceGuard(ResourceGuard::Metrics::getIOWrite(), link, 1), DB::Exception);
+    });
+
+    sync_before_drop.arrive_and_wait();
+    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's FifoQueue
+    sync_after_drop.arrive_and_wait();
+    t.wait();
 }
 
 TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
@@ -3239,6 +3284,40 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSizeNoCounterUnderfl
     }
 }
 
+// Regression: a zero-reserve allocation that grew, shrank back to 0, then grew again must not
+// re-fire `Kind::Initial`. The previous predicate `allocation.allocated == 0` would do so and
+// double-increment `allocations` in the queue and parents, silently leaking the counter.
+TEST(SchedulerWorkloadResourceManager, MemoryReservationShrinkThenGrowDoesNotReadmit)
+{
+    ResourceTest t;
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    {
+        TestAllocation a(link, "z", 0);
+        a.setSize(10);
+        a.waitSync();
+        a.setSize(0);
+        a.waitSync();
+        a.setSize(5);
+        a.waitSync();
+        a.setSize(0);
+        a.waitSync();
+        // Destructor below removes the allocation. With the bug, the queue's `allocations`
+        // counter would be left at `1` (incremented twice, decremented once).
+    }
+
+    // Verify no leak: every space-shared node in the tree must report `allocations == 0`.
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+            EXPECT_EQ(ss->allocations, 0u) << "leaked counter in node '" << path << "'";
+    });
+}
+
 // Regression: `CREATE OR REPLACE RESOURCE` must clear role-name fields that the previous
 // definition owned, and must reject changes to the resource's cost unit.
 TEST(SchedulerWorkloadResourceManager, CreateOrReplaceResourceChangesRoleAndRejectsUnitChange)
@@ -3304,6 +3383,16 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
         WorkloadSettings ws;
         ASTCreateWorkloadQuery::SettingsChanges changes;
         changes.emplace_back("max_memory_ratio", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
+    }
+
+    // Huge ratio — float result is outside `Int64` range. Must clamp to `unlimited` instead of
+    // triggering UB on conversion (which previously could produce a negative/garbage limit).
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_memory_ratio", Field(Float64(1e100)), "");
         ws.initFromChanges(changes);
         EXPECT_EQ(ws.max_memory, WorkloadSettings::unlimited);
     }

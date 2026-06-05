@@ -90,8 +90,11 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     allocation.fair_key = allocation.allocated + increase_size;
     running_allocations.insert(allocation);
 
-    // Enqueue increase request
-    allocation.increase.prepare(increase_size, allocation.allocated == 0 ? IncreaseRequest::Kind::Initial : IncreaseRequest::Kind::Regular);
+    // Enqueue increase request. `Kind::Initial` is the first increase that admits the allocation
+    // into the hierarchy (it makes `apply(IncreaseRequest)` increment `allocations`). Use the
+    // sticky `admitted` flag — not `allocated == 0` — because an allocation that has been admitted
+    // and then shrunk back to zero must not be re-admitted on a later grow.
+    allocation.increase.prepare(increase_size, allocation.admitted ? IncreaseRequest::Kind::Regular : IncreaseRequest::Kind::Initial);
     increasing_allocations.insert(allocation);
     if (&allocation == &*increasing_allocations.begin())
         scheduleActivation();

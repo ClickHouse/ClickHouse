@@ -377,7 +377,10 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         {
             // `getMemoryAmountOrZero` already accounts for cgroups, so a container-level limit is respected.
             // On platforms where physical memory cannot be determined the ratio is ignored.
-            Int64 value = static_cast<Int64>(ratio * static_cast<Float64>(getMemoryAmountOrZero()));
+            // Clamp before casting to `Int64`: a large ratio (e.g. `1e100`) would otherwise produce a
+            // float outside `Int64` range and trigger undefined-behaviour on conversion.
+            Float64 raw = ratio * static_cast<Float64>(getMemoryAmountOrZero());
+            Int64 value = (raw >= static_cast<Float64>(unlimited)) ? unlimited : static_cast<Int64>(raw);
             if (value > 0 && value < limit)
                 limit = value;
         }

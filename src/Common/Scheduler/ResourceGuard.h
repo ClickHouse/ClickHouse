@@ -96,7 +96,18 @@ public:
             chassert(state == Finished);
             state = Enqueued;
             ResourceRequest::reset(cost_);
-            estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
+            try
+            {
+                estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
+            }
+            catch (...)
+            {
+                // The queue rejected the request (e.g. it has been purged). The thread-local
+                // `Request` would otherwise be stuck in `Enqueued`, poisoning the next
+                // `ResourceGuard` on this thread which would chassert in this very function.
+                state = Finished;
+                throw;
+            }
         }
 
         // This function is executed inside scheduler thread and wakes thread issued this `request`.
@@ -185,7 +196,22 @@ public:
         {
             request.enqueue(cost, link);
             if (type == Lock::Default)
-                request.wait();
+            {
+                try
+                {
+                    request.wait();
+                }
+                catch (...)
+                {
+                    // The scheduler failed our request and `wait` is rethrowing. The dtor will not
+                    // run (object is only partially constructed), so we must reset the thread-local
+                    // request back to `Finished` here; otherwise the next `ResourceGuard` on this
+                    // thread reuses a poisoned request and chasserts in `enqueue`.
+                    request.consumeException();
+                    link.reset();
+                    throw;
+                }
+            }
         }
     }
 
