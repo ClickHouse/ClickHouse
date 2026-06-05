@@ -21,6 +21,13 @@ struct LogicalJoinInfo
 class JoinStep : public IQueryPlanStep
 {
 public:
+
+    enum class JoinStage : size_t
+    {
+        Build = 0,
+        Probe = 1,
+    };
+
     JoinStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
@@ -69,6 +76,8 @@ public:
 
     bool isOptimized() const { return optimized; }
     void setOptimized() { optimized = true; }
+
+    String getStepGroupName(size_t group) const override;
 
 private:
     bool optimized = false;

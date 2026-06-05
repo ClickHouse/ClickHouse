@@ -195,7 +195,7 @@ private:
     using MapStepToWallClock = std::unordered_map<StepAndGroup, std::shared_ptr<StepWallClock>, Hash>;
 
     bool measure_step_wall_clock = false;
-    bool query_start_ns = false;
+    UInt64 query_start_ns = 0;
     MapStepToWallClock clocks;
 };
 

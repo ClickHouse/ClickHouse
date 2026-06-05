@@ -117,6 +117,21 @@ UInt64 IProcessor::getOutputPortNumber(const OutputPort * output_port) const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
 }
 
+IProcessor::PortDataCounters IProcessor::getPortDataCounters(const Port & port) const
+{
+    if (&port.getProcessor() != this)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Port does not belong to {} processor", getName());
+
+    return {port.rows, port.bytes};
+}
+// IProcessor::PortDataCounters IProcessor::getOutputPortDataCounters(const OutputPort & port) const
+// {
+//     if (&port.getProcessor() != this)
+//         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port does not belong to {} processor", getName());
+
+//     return {port.rows, port.bytes};
+// }
+
 IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
 {
     ProcessorDataStats stats;

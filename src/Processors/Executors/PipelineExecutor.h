@@ -39,7 +39,7 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool measure_step_wall_clock_);
+    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, bool measure_step_wall_clock_ = false);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.

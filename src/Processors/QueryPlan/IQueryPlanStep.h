@@ -171,6 +171,8 @@ public:
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
 
+    virtual String getStepGroupName(size_t) const { return {}; }
+
 protected:
     virtual void updateOutputHeader() = 0;
 

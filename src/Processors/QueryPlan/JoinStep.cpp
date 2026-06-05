@@ -163,6 +163,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_rows,
                 min_block_size_bytes,
                 max_streams,
+                this,
                 keep_left_read_in_order,
                 &processors);
         }
@@ -230,6 +231,16 @@ void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
     }
     keep_left_read_in_order = true;
     join->keepLeftPipelineInOrder();
+}
+
+String JoinStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<JoinStage>(group))
+    {
+        case JoinStage::Probe: return "probe";
+        case JoinStage::Build: return "build";
+    }
+    return {};
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const

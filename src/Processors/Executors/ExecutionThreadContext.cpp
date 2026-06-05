@@ -121,7 +121,7 @@ bool ExecutionThreadContext::executeTask()
         node->processor()->getStepWallClock()->onLeave();
     }
 
-    if (profile_processors)
+    if (profile_processors || measure_step_wall_clock)
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;

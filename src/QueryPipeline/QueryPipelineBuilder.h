@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -138,6 +139,7 @@ public:
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
+        IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 

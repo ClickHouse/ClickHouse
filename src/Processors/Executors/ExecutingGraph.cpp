@@ -35,7 +35,6 @@ ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool pro
     /// Create edges.
     for (auto & node : nodes)
         addEdges(node);
-
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_iter)

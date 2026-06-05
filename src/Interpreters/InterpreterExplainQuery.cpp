@@ -459,7 +459,6 @@ struct QueryAnalyzeSettings
     {
         {"header", query_plan_options.header},
         {"description", query_plan_options.description},
-        {"actions", query_plan_options.actions},
         {"indexes", query_plan_options.indexes},
         {"indices", query_plan_options.indexes},
         {"projections", query_plan_options.projections},
@@ -467,8 +466,6 @@ struct QueryAnalyzeSettings
         {"distributed", query_plan_options.distributed},
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
-        {"compact", query_plan_options.compact},
-        {"pretty", query_plan_options.pretty},
         {"optimize", optimize},
     };
 

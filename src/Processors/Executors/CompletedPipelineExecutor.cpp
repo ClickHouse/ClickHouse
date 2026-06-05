@@ -101,7 +101,7 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.measure_step_wall_clock);
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
         executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     }

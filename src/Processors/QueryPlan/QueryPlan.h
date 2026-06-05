@@ -149,7 +149,7 @@ public:
         size_t max_description_length = 0,
         const std::string & parent_tree_prefix = "",
         bool is_last_child_plan = true,
-        const AnalyzeStepsStats * steps_to_stats = nullptr) const;
+        AnalyzeStepsStats * steps_to_stats = nullptr) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
