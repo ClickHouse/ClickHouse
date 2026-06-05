@@ -298,6 +298,25 @@ RACE_DURATION_SECONDS = 45
 # In-container driver. Numeric parameters (SEED/CHURNERS/VICTIMS/DURATION) are
 # prepended as shell variable assignments by the test, so this body needs no
 # Python string substitution (keeps the literal shell braces intact).
+#
+# Why an in-container bash driver instead of Python threads or `xargs -P`:
+#
+#   * The race window is narrow, so reproduction reliability is a function of
+#     iterations-per-second. Each worker iteration spawns a `clickhouse-client`
+#     process; running the hot loop inside the container keeps that cost local.
+#     Driving it from the host with `node.query` would add a host<->container
+#     round trip to every iteration, lowering the iteration rate and forcing a
+#     longer DURATION to stay reliable -- trading proven reproduction (it hits
+#     UNKNOWN_ROLE in ~17s on a buggy build) for stylistic tidiness.
+#
+#   * `xargs -P` only replaces the `& ... wait` fan-out (two lines). The bulk
+#     here is the worker bodies (time-bounded loop + shared FOUND stop-flag),
+#     the multi-statement victim SQL and the seeding -- none of which `xargs`
+#     removes. Worse, `xargs` runs an external command, not a shell function,
+#     so each worker body would have to be re-nested inside another `bash -c`
+#     string (a third level of quoting). These are long-lived workers with
+#     shared state and early exit, not a command mapped over a list, so
+#     background jobs + `wait` are the idiomatic and more readable fit.
 _RACE_DRIVER_BODY = r"""
 set -u
 CLIENT="clickhouse-client"
