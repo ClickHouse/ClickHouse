@@ -594,35 +594,13 @@ bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds)
         return true;
     }
 
-    if (impl && !working_buffer.empty() && working_buffer.begin() != memory.data())
+    if (impl)
     {
-        impl->position() = const_cast<char *>(pos);
-    }
-
-    ReadBuffer * current = impl;
-    while (current)
-    {
-        if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(current))
+        if (!working_buffer.empty() && working_buffer.begin() != memory.data())
         {
-            current = const_cast<ReadBuffer *>(&wrapper->getWrappedReadBuffer());
+            impl->position() = const_cast<char *>(pos);
         }
-        else if (auto * parallel = dynamic_cast<ParallelReadBuffer *>(current))
-        {
-            current = &parallel->getReadBuffer();
-        }
-        else if (auto * peekable = dynamic_cast<PeekableReadBuffer *>(current))
-        {
-            current = const_cast<ReadBuffer *>(&peekable->getSubBuffer());
-        }
-        else
-        {
-            break;
-        }
-    }
-
-    if (current)
-    {
-        return current->poll(timeout_microseconds);
+        return impl->poll(timeout_microseconds);
     }
 
     return true;
